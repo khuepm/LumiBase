@@ -1,14 +1,14 @@
 ---
-version: 6
-lastUpdated: 2026-07-29T00:18:05.194Z
+version: 7
+lastUpdated: 2026-10-26T15:56:00.639Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: b42656099b8c2f3b
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-29T00:18:05.194Z
-codeVerifiedHash: b42656099b8c2f3b
-codeVerifiedClaims: 26
+sourceHash: 4b8146f76f71569d
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-10-26T15:56:00.639Z
+codeVerifiedHash: 4b8146f76f71569d
+codeVerifiedClaims: 28
 ---
 
 # Permissions, Roles & Policies
@@ -80,7 +80,7 @@ purpose-built endpoint, not a permission row.
 **Hard guards.** `adminAccess`/`appAccess` on the `public` role and policy are
 pinned off by check constraints (migration `0012`) — an elevation flag there
 would be an unauthenticated admin bypass. Route guards refuse the same edits
-with a readable 4xx. Policies attached to the public role by hand are screened
+with a readable 4xx. Policies attached to the `public` role by hand are screened
 at the attach point, since a table check cannot see across the `role_policies`
 join. The generic policy-permission editor is screened for the read-only limit
 too, because a grant added there lands in the same compiled bundle.
@@ -273,6 +273,11 @@ backend.
   `admin_access` is set — so screening policies alone is not enough: a role
   carrying the flag on its own column, with no elevated policy (or no policy at
   all), would pass the screen and then grant admin at request time.
+- A publishable key can never use AI decisions (`ai:decide`):
+  `POST /api/v1/ai/decisions`, the `ai:decide` routes of draft review and Flows
+  `ai:decision` nodes return `403 FORBIDDEN` even when a policy grants `create`
+  on `lumibase_ai_decisions` (#562). The same applies to `frontend`-audience
+  sessions. Call decisions from Studio or from a server with a secret key.
 
 ## 7. API
 

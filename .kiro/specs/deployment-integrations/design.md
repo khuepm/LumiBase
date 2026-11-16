@@ -222,7 +222,7 @@ khi status=error: poller/refresh đã lưu logExcerpt + errorMessage  [Req 4.2]
 
 ### 6.7 Inbound webhook (Req 7, optional)
 ```
-POST /api/v1/deployments/webhook/:provider
+POST /api/v1/deployments/webhook/:provider/:siteId  (hoặc /:provider qua withTenant)
   → rawBody = await c.req.text()                        [verify trên RAW bytes, trước JSON.parse]
   → secret = settings['deployment.webhook.<provider>'].secret   [per-site, KHÔNG từ header]
   → await provider.verifyWebhook({ headers, rawBody }, secret)  [401 nếu fail, Req 7.2]
@@ -248,7 +248,8 @@ input do client kiểm soát thành `500` (class lỗi backlog B12).
 | GET | `/api/v1/deployments/:id` | `deployments:read` | chi tiết |
 | GET | `/api/v1/deployments/:id/logs` | `deployments:read` | build log |
 | POST | `/api/v1/deployments/:id/refresh` | `deployments:read` | đồng bộ trạng thái ngay |
-| POST | `/api/v1/deployments/webhook/:provider` | (chữ ký) | inbound status webhook |
+| POST | `/api/v1/deployments/webhook/:provider/:siteId` | (chữ ký) | inbound status webhook (path tenant, dùng được trên shared host) |
+| POST | `/api/v1/deployments/webhook/:provider` | (chữ ký) | inbound status webhook (qua `withTenant`) |
 
 Tất cả tuân `{ data, meta? }` / `{ errors }`, header `X-Lumi-Site`, Bearer auth.
 

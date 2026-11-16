@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
-import { buildQs, confirmDescription, okText, run } from './_shared.js';
+import { buildQs, confirmDescription, okAfter, okText, run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 export function registerTranslationMemoryTools(server: McpServer, client: LumiBaseClient) {
@@ -93,8 +93,8 @@ export function registerTranslationMemoryTools(server: McpServer, client: LumiBa
     },
     async ({ id }) =>
       run(async () => {
-        await client.delete(`/tm/${encodePathSegment(id)}`);
-        return okText(`Translation-memory entry "${id}" deleted.`);
+        const response = await client.delete(`/tm/${encodePathSegment(id)}`);
+        return okAfter(response, `Translation-memory entry "${id}" deleted.`);
       }),
   );
 }

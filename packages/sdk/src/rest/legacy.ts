@@ -1,5 +1,22 @@
 import { LumiClient } from "../client";
 import { RealtimeClient } from "../realtime";
+
+/** Options for item `patch` / `replace`. */
+export interface ItemWriteOptions {
+  /**
+   * Only write if the item is still at this version (from `ItemRow.version`
+   * or the detail response's `ETag`). If someone else changed it first, the
+   * request fails with a `LumiError` of status 412 and code
+   * `PRECONDITION_FAILED`, and nothing is written. Omit to overwrite
+   * unconditionally (the default).
+   */
+  ifMatch?: number;
+}
+
+function ifMatchInit(options: ItemWriteOptions | undefined): { headers?: Record<string, string> } {
+  if (options?.ifMatch === undefined) return {};
+  return { headers: { "if-match": `"${options.ifMatch}"` } };
+}
 import {
   CollectionResource,
   CollectionInput,
@@ -16,9 +33,15 @@ import {
   SchemaDiffInput,
   TypegenSchemaFilters,
   ListItemsParams,
+  ExportItemsParams,
+  DuplicateItemOptions,
+  ImportJob,
+  ImportJobStatus,
+  ImportRowError,
   ItemRow,
   ListItemsResponse,
   RevisionRow,
+  TreeMoveResult,
   DefaultSchema,
   RoleResource,
   RoleDetail,
@@ -47,6 +70,10 @@ import {
   ShareCreateInput,
   ShareResource,
   ShareSecretResult,
+  PreviewSettingsResource,
+  PreviewTokenMintInput,
+  PreviewTokenResource,
+  PreviewTokenSecretResult,
   PresetResource,
   TranslationResource,
   ContentVersion,
@@ -64,12 +91,21 @@ import {
   TeamMemberResource,
   FolderResource,
   FileResource,
+  FileVersionResource,
+  FileReferenceResource,
+  FolderTreeNodeResource,
+  FileListQuery,
+  DamSettingsResource,
   UploadConfigResource,
   WebhookResource,
   ActivityResource,
   ExtensionResource,
   DeploymentTargetResource,
   DeploymentResource,
+  DeploymentEnvironmentResource,
+  DeploymentApprovalResource,
+  DeploymentRequestOutcome,
+  DeploymentAccessResource,
 } from "../types";
 
 /**
@@ -81,7 +117,8 @@ import {
 export interface UserPreferencesPayload {
   language?: string;
   theme?: "auto" | "light" | "dark";
-  timezone?: string;
+  /** Display time zone (IANA); `null` clears it → browser zone (#747). */
+  timezone?: string | null;
   keybindings?: Record<string, string>;
   [key: string]: unknown;
 }
@@ -233,6 +270,20 @@ export function legacyRest() {
       listRelations: relations.list,
       createRelation: relations.create,
       deleteRelation: relations.delete,
+      /**
+       * Collection form layout (#750): tabs / groups / dividers + conditions.
+       * Typed loosely so the SDK stays decoupled from contracts; parse with
+       * `parseFormLayout` from `@lumibase/contracts/form-layout`.
+       */
+      getFormLayout: (name: string) =>
+        client.rawRequest<{ layout: unknown }>(
+          `/api/v1/collections/${name}/form-layout`,
+        ),
+      setFormLayout: (name: string, layout: unknown) =>
+        client.rawRequest<{ layout: unknown }>(
+          `/api/v1/collections/${name}/form-layout`,
+          { method: "PUT", body: JSON.stringify({ layout }) },
+        ),
     };
 
     function items<TName extends keyof TSchema & string>(name: TName) {
@@ -257,6 +308,8 @@ export function legacyRest() {
         if (params.offset !== undefined)
           qs.set("offset", String(params.offset));
         if (params.status) qs.set("status", params.status);
+        if (params.publicationState) qs.set("publicationState", params.publicationState);
+        if (params.modifiedSincePublish) qs.set("modifiedSincePublish", "true");
         const s = qs.toString();
         return s ? `?${s}` : "";
       }
@@ -278,6 +331,8 @@ export function legacyRest() {
           data: Partial<Row["data"]>;
           status?: string;
           sort?: number;
+          /** Tree collections (#749): parent item id; null/absent = root. */
+          parentId?: string | null;
           /** ISO timestamps for content scheduling (Publish_Window). */
           publishAt?: string | null;
           unpublishAt?: string | null;
@@ -296,21 +351,42 @@ export function legacyRest() {
             publishAt?: string | null;
             unpublishAt?: string | null;
           },
+          options?: ItemWriteOptions,
         ) =>
           client.rawRequest<Row>(`${base}/${id}`, {
             method: "PATCH",
             body: JSON.stringify(input),
+            ...ifMatchInit(options),
           }),
         replace: (
           id: string,
           input: { data: Row["data"]; status?: string; sort?: number },
+          options?: ItemWriteOptions,
         ) =>
           client.rawRequest<Row>(`${base}/${id}`, {
             method: "PUT",
+            ...ifMatchInit(options),
             body: JSON.stringify(input),
           }),
         delete: (id: string) =>
           client.rawRequest<null>(`${base}/${id}`, { method: "DELETE" }),
+        /**
+         * Stream the collection as CSV or JSON (#727). Resolves with the
+         * unread `Response`: pipe `res.body` to a file, or `await res.text()`.
+         * Uses the caller's read permission; filters use the list syntax.
+         */
+        export: (params: ExportItemsParams = {}): Promise<Response> => {
+          const qs = new URLSearchParams();
+          if (params.format) qs.set("format", params.format);
+          if (params.fields?.length) qs.set("fields", params.fields.join(","));
+          if (params.locales?.length) qs.set("locales", params.locales.join(","));
+          if (params.relations) qs.set("relations", params.relations);
+          if (params.filter) qs.set("filter", JSON.stringify(params.filter));
+          if (params.sort?.length) qs.set("sort", params.sort.join(","));
+          if (params.status) qs.set("status", params.status);
+          const s = qs.toString();
+          return client.rawFetch(`${base}/export${s ? `?${s}` : ""}`);
+        },
         bulk: (
           op: "create" | "update" | "delete",
           payload: Array<Record<string, unknown>>,
@@ -319,6 +395,63 @@ export function legacyRest() {
             method: "POST",
             body: JSON.stringify({ op, items: payload }),
           }),
+        /**
+         * Save-as-copy (#689): a draft copy with unique fields suffixed
+         * (`-copy`, `-copy-2`, …). Goes through the normal create path.
+         */
+        duplicate: (id: string, options: DuplicateItemOptions = {}) =>
+          client.rawRequest<Row>(`${base}/${encodeURIComponent(id)}/duplicate`, {
+            method: "POST",
+            body: JSON.stringify(options),
+          }),
+        /**
+         * Manual ordering (#690) on a `meta.manualSort` collection: place `id`
+         * right after `after` (null = first) or right before `before`.
+         */
+        reorder: (id: string, target: { after: string | null } | { before: string }) =>
+          client.rawRequest<Row>(`${base}/${encodeURIComponent(id)}/reorder`, {
+            method: "POST",
+            body: JSON.stringify(target),
+          }),
+        /**
+         * Patch without recording a revision (#693) — for autosave and
+         * machine writes. Agent-authored writes keep their revision anyway.
+         */
+        patchWithoutRevision: (id: string, input: { data?: Partial<Row["data"]> }) =>
+          client.rawRequest<Row>(`${base}/${id}?saveRevision=false`, {
+            method: "PATCH",
+            body: JSON.stringify(input),
+          }),
+        /**
+         * Hierarchical collections (#749) on a `meta.tree.enabled` collection.
+         * Reads apply the caller's row rules; the anchor must be readable.
+         */
+        tree: {
+          children: (parent: string | null, params?: ListItemsParams): Promise<ListResp> => {
+            const q = buildQuery(params);
+            const sep = q ? "&" : "?";
+            return client.rawRequest<ListResp[keyof ListResp]>(
+              `${base}${q}${sep}tree=children&parent=${encodeURIComponent(parent ?? "null")}`,
+            ) as unknown as Promise<ListResp>;
+          },
+          subtree: (parent: string | null, params?: ListItemsParams): Promise<ListResp> => {
+            const q = buildQuery(params);
+            const sep = q ? "&" : "?";
+            return client.rawRequest<ListResp[keyof ListResp]>(
+              `${base}${q}${sep}tree=subtree&parent=${encodeURIComponent(parent ?? "null")}`,
+            ) as unknown as Promise<ListResp>;
+          },
+          ancestors: (node: string): Promise<ListResp> =>
+            client.rawRequest<ListResp[keyof ListResp]>(
+              `${base}?tree=ancestors&node=${encodeURIComponent(node)}`,
+            ) as unknown as Promise<ListResp>,
+          /** Move an item and its subtree; `position` is its 0-based index among the new siblings. */
+          move: (id: string, input: { parentId: string | null; position?: number }) =>
+            client.rawRequest<TreeMoveResult>(`${base}/${id}/move`, {
+              method: "POST",
+              body: JSON.stringify(input),
+            }),
+        },
         listRevisions: (id: string) =>
           client.rawRequest<RevisionRow[]>(`${base}/${id}/revisions`),
         revertRevision: (id: string, revisionId: string) =>
@@ -700,10 +833,79 @@ export function legacyRest() {
           body: JSON.stringify(patch),
         }),
       delete: (id: string) => client.rawRequest<null>(`/api/v1/files/folders/${id}`, { method: "DELETE" }),
+      /** Nested folder tree with id paths (`/a/b/`) and name paths (#701). */
+      tree: () => client.rawRequest<FolderTreeNodeResource[]>("/api/v1/files/folders/tree"),
     };
 
     const files = {
-      list: () => client.rawRequest<FileResource[]>("/api/v1/files"),
+      /**
+       * List / filter the library. Without a query: the first 1000 files,
+       * newest first. `meta` carries `{ total, limit, offset }`.
+       */
+      list: (query?: FileListQuery) => {
+        const q = new URLSearchParams();
+        if (query?.folder !== undefined) q.set("folder", query.folder);
+        if (query?.subfolders) q.set("subfolders", "true");
+        if (query?.search) q.set("search", query.search);
+        if (query?.mime?.length) q.set("mime", query.mime.join(","));
+        if (query?.ids?.length) q.set("ids", query.ids.join(","));
+        if (query?.limit !== undefined) q.set("limit", String(query.limit));
+        if (query?.offset !== undefined) q.set("offset", String(query.offset));
+        const qs = q.toString();
+        return client.rawRequest<FileResource[]>(`/api/v1/files${qs ? `?${qs}` : ""}`);
+      },
+      get: (id: string) => client.rawRequest<FileResource>(`/api/v1/files/${encodeURIComponent(id)}`),
+      /**
+       * Replace the bytes behind a file in place (#703): same id, key, folder
+       * and references; `version` bumps. Pass `expectedVersion` to refuse
+       * (409) when someone replaced it since you loaded it.
+       */
+      replaceContent: (
+        id: string,
+        body: Blob | ArrayBuffer | Uint8Array,
+        opts: { mime: string; filename?: string; expectedVersion?: number },
+      ) => {
+        const q = opts.filename ? `?filename=${encodeURIComponent(opts.filename)}` : "";
+        const headers: Record<string, string> = { "content-type": opts.mime };
+        if (opts.expectedVersion !== undefined) headers["if-match"] = `"v${opts.expectedVersion}"`;
+        return client.rawRequest<FileResource>(`/api/v1/files/${encodeURIComponent(id)}/content${q}`, {
+          method: "PUT",
+          body: body as RequestInit["body"],
+          headers,
+        });
+      },
+      /** URL that serves the current bytes; pass `version` for an immutable, cacheable URL. */
+      contentUrl: (id: string, version?: number) =>
+        `${client.url.replace(/\/$/, "")}/api/v1/files/${encodeURIComponent(id)}/content${version !== undefined ? `?v=${version}` : ""}`,
+      versions: (id: string) => client.rawRequest<FileVersionResource[]>(`/api/v1/files/${encodeURIComponent(id)}/versions`),
+      restoreVersion: (id: string, versionId: string) =>
+        client.rawRequest<FileResource>(
+          `/api/v1/files/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/restore`,
+          { method: "POST" },
+        ),
+      /** Items and pages that reference the file (#706). */
+      usage: (id: string) => client.rawRequest<FileReferenceResource[]>(`/api/v1/files/${encodeURIComponent(id)}/usage`),
+      /** Files with the same content hash (lowercase hex SHA-256). */
+      duplicates: (hash: string) =>
+        client.rawRequest<FileResource[]>(`/api/v1/files/duplicates?hash=${encodeURIComponent(hash)}`),
+      /** Bulk move and/or merge editorial metadata (alt, title, caption, credit, tags). */
+      bulk: (input: {
+        ids: string[];
+        folder?: string | null;
+        metadata?: { alt?: string; title?: string; caption?: string; credit?: string; tags?: string[] };
+      }) =>
+        client.rawRequest<FileResource[]>("/api/v1/files/bulk", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      settings: {
+        get: () => client.rawRequest<DamSettingsResource>("/api/v1/files/settings"),
+        update: (patch: Partial<DamSettingsResource>) =>
+          client.rawRequest<DamSettingsResource>("/api/v1/files/settings", {
+            method: "PUT",
+            body: JSON.stringify(patch),
+          }),
+      },
       create: (input: Record<string, unknown>) =>
         client.rawRequest<FileResource>("/api/v1/files", {
           method: "POST",
@@ -714,7 +916,13 @@ export function legacyRest() {
           method: "PATCH",
           body: JSON.stringify(patch),
         }),
-      delete: (id: string) => client.rawRequest<null>(`/api/v1/files/${id}`, { method: "DELETE" }),
+      /**
+       * Safe delete (#706): a referenced file answers 409 `FILE_IN_USE` with the
+       * references in `errors[0].details.usage`; repeat with `{ confirm: true }`
+       * to delete anyway (unless the site's policy is `block`).
+       */
+      delete: (id: string, opts?: { confirm?: boolean }) =>
+        client.rawRequest<null>(`/api/v1/files/${id}${opts?.confirm ? "?confirm=true" : ""}`, { method: "DELETE" }),
       getPresignedUrl: (filename: string) =>
         client.rawRequest<{ url: string; method: string; key: string }>("/api/v1/files/presigned-url", {
           method: "POST",
@@ -883,6 +1091,29 @@ export function legacyRest() {
         }),
     };
 
+    /** Live preview tokens + settings (epic #667). User principals only. */
+    const preview = {
+      mintToken: (input: PreviewTokenMintInput) =>
+        client.rawRequest<PreviewTokenSecretResult>("/api/v1/preview/token", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      listTokens: () => client.rawRequest<PreviewTokenResource[]>("/api/v1/preview/tokens"),
+      revokeToken: (id: string) =>
+        client.rawRequest<PreviewTokenResource>(`/api/v1/preview/tokens/${encodeURIComponent(id)}/revoke`, {
+          method: "POST",
+        }),
+      /** Rotation: revoke every live preview token of the site (site admin). */
+      revokeAll: () =>
+        client.rawRequest<{ revoked: number }>("/api/v1/preview/tokens/revoke-all", { method: "POST" }),
+      getSettings: () => client.rawRequest<PreviewSettingsResource>("/api/v1/preview/settings"),
+      updateSettings: (input: PreviewSettingsResource) =>
+        client.rawRequest<PreviewSettingsResource>("/api/v1/preview/settings", {
+          method: "PUT",
+          body: JSON.stringify(input),
+        }),
+    };
+
     const shares = {
       create: (input: ShareCreateInput) =>
         client.rawRequest<ShareSecretResult>("/api/v1/shares", {
@@ -927,11 +1158,51 @@ export function legacyRest() {
           }),
         delete: (id: string) =>
           client.rawRequest<null>(`/api/v1/deployments/targets/${id}`, { method: "DELETE" }),
+        /**
+         * Resolves with the deployment (201), or — when the target belongs to
+         * an approval-gated environment (#743) — with a `pending_approval`
+         * outcome (202).
+         */
         deploy: (id: string, input: { branch?: string; reason?: string } = {}) =>
-          client.rawRequest<DeploymentResource>(`/api/v1/deployments/targets/${id}/deploy`, {
-            method: "POST",
-            body: JSON.stringify(input),
+          client.rawRequest<DeploymentResource | Extract<DeploymentRequestOutcome, { status: "pending_approval" }>>(
+            `/api/v1/deployments/targets/${id}/deploy`,
+            {
+              method: "POST",
+              body: JSON.stringify(input),
+            },
+          ),
+      },
+      // Environments, promotion and deploy approvals (#743).
+      access: () => client.rawRequest<DeploymentAccessResource>("/api/v1/deployments/access"),
+      environments: {
+        list: () =>
+          client.rawRequest<DeploymentEnvironmentResource[]>("/api/v1/deployments/environments"),
+        update: (environments: DeploymentEnvironmentResource[]) =>
+          client.rawRequest<DeploymentEnvironmentResource[]>("/api/v1/deployments/environments", {
+            method: "PUT",
+            body: JSON.stringify({ environments }),
           }),
+        deploy: (key: string, input: { branch?: string; reason?: string } = {}) =>
+          client.rawRequest<DeploymentRequestOutcome>(
+            `/api/v1/deployments/environments/${encodeURIComponent(key)}/deploy`,
+            { method: "POST", body: JSON.stringify(input) },
+          ),
+        promote: (key: string, input: { deploymentId?: string; reason?: string } = {}) =>
+          client.rawRequest<DeploymentRequestOutcome>(
+            `/api/v1/deployments/environments/${encodeURIComponent(key)}/promote`,
+            { method: "POST", body: JSON.stringify(input) },
+          ),
+      },
+      approvals: {
+        list: (status: string = "pending") =>
+          client.rawRequest<DeploymentApprovalResource[]>(
+            `/api/v1/deployments/approvals?status=${encodeURIComponent(status)}`,
+          ),
+        decide: (id: string, input: { decision: "approved" | "rejected"; reason?: string }) =>
+          client.rawRequest<DeploymentApprovalResource>(
+            `/api/v1/deployments/approvals/${encodeURIComponent(id)}/decide`,
+            { method: "POST", body: JSON.stringify(input) },
+          ),
       },
       list: (params?: { targetId?: string; status?: string }) => {
         const qs = new URLSearchParams();
@@ -947,14 +1218,54 @@ export function legacyRest() {
         client.rawRequest<DeploymentResource>(`/api/v1/deployments/${id}/refresh`, { method: "POST" }),
     };
 
+    // Background collection imports (#726).
+    const imports = {
+      /**
+       * Upload a CSV or JSON export file and queue it. Resolves with the job
+       * (`202`); poll `get(id)` until `status` is terminal.
+       */
+      create: (
+        collection: string,
+        file: Blob | string,
+        opts: { format?: "csv" | "json"; mode?: "create" | "upsert"; filename?: string } = {},
+      ) => {
+        const qs = new URLSearchParams({ collection });
+        if (opts.format) qs.set("format", opts.format);
+        if (opts.mode) qs.set("mode", opts.mode);
+        const form = new FormData();
+        const blob = typeof file === "string" ? new Blob([file], { type: "application/octet-stream" }) : file;
+        form.append("file", blob, opts.filename ?? `${collection}.${opts.format ?? "csv"}`);
+        return client.rawRequest<ImportJob>(`/api/v1/imports?${qs.toString()}`, { method: "POST", body: form });
+      },
+      list: (params: { collection?: string; status?: ImportJobStatus; limit?: number } = {}) => {
+        const qs = new URLSearchParams();
+        if (params.collection) qs.set("collection", params.collection);
+        if (params.status) qs.set("status", params.status);
+        if (params.limit !== undefined) qs.set("limit", String(params.limit));
+        const s = qs.toString();
+        return client.rawRequest<ImportJob[]>(`/api/v1/imports${s ? `?${s}` : ""}`);
+      },
+      get: (id: string) => client.rawRequest<ImportJob>(`/api/v1/imports/${encodeURIComponent(id)}`),
+      errors: (id: string) =>
+        client.rawRequest<{ errors: ImportRowError[]; truncated: number }>(
+          `/api/v1/imports/${encodeURIComponent(id)}/errors`,
+        ),
+      /** The error report as a CSV download (`row,id,message`). */
+      errorsCsv: (id: string) => client.rawFetch(`/api/v1/imports/${encodeURIComponent(id)}/errors?format=csv`),
+      cancel: (id: string) =>
+        client.rawRequest<ImportJob>(`/api/v1/imports/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
+    };
+
     return {
       schema,
       items,
+      imports,
       roles,
       policies,
       access,
       apiKeys,
       shares,
+      preview,
       me,
       permissions,
       presets,

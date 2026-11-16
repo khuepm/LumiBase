@@ -149,6 +149,12 @@ vi.mock('virtual:docs-registry', () => {
 vi.mock('@shikijs/rehype', () => ({
   default: () => () => { },
 }));
+vi.mock('@shikijs/rehype/core', () => ({
+  default: () => () => { },
+}));
+vi.mock('shiki', () => ({
+  createHighlighter: vi.fn(() => Promise.resolve(null)),
+}));
 
 /**
  * Helper to render the app with a memory router at a given initial path.

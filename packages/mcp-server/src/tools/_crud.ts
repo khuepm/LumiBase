@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z, type ZodRawShape } from 'zod';
 import type { LumiBaseClient } from '../client.js';
-import { buildQs, confirmDescription, okText, run } from './_shared.js';
+import { buildQs, confirmDescription, okAfter, okText, run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 export interface CrudModuleOptions {
@@ -120,8 +120,8 @@ export function registerCrud(
       async (args: Record<string, unknown>) => {
         const id = String(args[idParam]);
         return run(async () => {
-          await client.delete(`${basePath}/${encodePathSegment(id)}`);
-          return okText(`${resource} "${id}" deleted.`);
+          const response = await client.delete(`${basePath}/${encodePathSegment(id)}`);
+          return okAfter(response, `${resource} "${id}" deleted.`);
         });
       },
     );

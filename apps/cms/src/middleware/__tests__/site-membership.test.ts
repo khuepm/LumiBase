@@ -16,6 +16,7 @@ function makeFakeDb(results: unknown[][]): Database {
   let selectCount = 0;
   const fluent = {
     from: () => fluent,
+    innerJoin: () => fluent,
     where: () => fluent,
     limit: () => Promise.resolve(results[selectCount++] ?? []),
   };
@@ -80,6 +81,44 @@ describe('withSiteMembership', () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it('binds a dev-admin principal to its persisted user so permission checks see its roles', async () => {
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('auth', { email: 'seed@example.com', externalId: 'dev_seed@example.com', roles: ['admin'], raw: { dev: true } });
+      c.set('siteId', 'victim-site');
+      c.set('db', makeFakeDb([
+        [{ id: 'seed-user', externalId: 'dev_seed@example.com', email: 'seed@example.com', isBootstrap: true }],
+      ]));
+      c.set('runtime', { cache: {} } as AppEnv['Variables']['runtime']);
+      await next();
+    });
+    app.use('*', withSiteMembership());
+    app.get('/api/v1/collections', (c) => c.json({ userId: c.get('auth').userId ?? null, raw: c.get('auth').raw }));
+
+    const res = await app.request('/api/v1/collections');
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ userId: 'seed-user', raw: { dev: true, isBootstrap: true } });
+  });
+
+  it('keeps a dev-admin principal with no persisted user unbound', async () => {
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('auth', { email: 'ghost@example.com', externalId: 'dev_ghost@example.com', roles: ['admin'], raw: { dev: true } });
+      c.set('siteId', 'victim-site');
+      c.set('db', makeFakeDb([[]]));
+      c.set('runtime', { cache: {} } as AppEnv['Variables']['runtime']);
+      await next();
+    });
+    app.use('*', withSiteMembership());
+    app.get('/api/v1/collections', (c) => c.json({ userId: c.get('auth').userId ?? null }));
+
+    const res = await app.request('/api/v1/collections');
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ userId: null });
   });
 
   it('keeps the Cloudflare Access admin fallback working when no matching users row exists', async () => {

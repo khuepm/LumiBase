@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 /**
  * Insights routes — dashboards, panels, and panel execution.
  * Mounted at `/api/v1/dashboards`. See `.kiro/specs/insights-dashboard`.
@@ -78,7 +79,7 @@ insightsRouter.get('/:id', async (c) => {
 insightsRouter.patch('/:id', async (c) => {
   const siteId = c.get('siteId');
   const db = c.get('db');
-  const parsed = dashboardCreateSchema.partial().safeParse(await c.req.json());
+  const parsed = patchSchema(dashboardCreateSchema).safeParse(await c.req.json());
   if (!parsed.success) return zodErr(c, parsed.error.issues);
   const [row] = await db
     .update(dashboards)
@@ -140,7 +141,7 @@ insightsRouter.post('/:id/panels', async (c) => {
   return c.json({ data: row }, 201);
 });
 
-const panelPatchSchema = panelCreateSchema.partial();
+const panelPatchSchema = patchSchema(panelCreateSchema);
 
 insightsRouter.patch('/:id/panels/:panelId', async (c) => {
   const siteId = c.get('siteId');

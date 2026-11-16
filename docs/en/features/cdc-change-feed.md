@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-09-01T19:25:55.310Z
+version: 3
+lastUpdated: 2026-11-12T18:28:18.599Z
 sourceLang: en
-contentHash: f969bfdcd82da644
-codeVerified: 2026-09-01T19:25:55.310Z
-codeVerifiedHash: f969bfdcd82da644
+contentHash: e68474f4497e2855
+codeVerified: 2026-11-12T18:28:18.599Z
+codeVerifiedHash: e68474f4497e2855
 codeVerifiedClaims: 10
 ---
 
@@ -30,6 +30,7 @@ ItemService mutation ──(same request)──▶ lumibase_cdc_change_events (o
 
 - **Capture** — `OutboxWriter` runs in the post-mutation side-effect cluster of `ItemService`. It never throws: a failed insert emits a `cdc_event_write_failed` audit warning and the mutation proceeds. Sites without an active subscription (and without `cdc_feed.enabled`) skip the write entirely (a cached per-site flag).
 - **Ordering** — event ids are nanoid (no ordering meaning). The feed's total order per site is the composite keyset `(occurred_at, id)`, with `occurred_at` stamped by Postgres `now()` — one clock. Every read path applies a **2s safety lag** so a long transaction holding an earlier `now()` cannot be overtaken and skipped.
+- **Runtime** — on Docker/Node the backstop sweep runs every 30s. On Cloudflare Workers it runs from the Cron Trigger every minute (every five minutes on profiles without the minute trigger), and the latency-path `cdc-dispatch` queue is not bound, so Workers delivers within about a minute instead of seconds (backlog B131). Workers delivers to **webhook** subscriptions only: an extension subscriber loads its bundle with a dynamic `import()` the Workers runtime does not allow, so extension lanes are skipped there (not failed, so they are never marked dead) and are delivered by a Docker/Node deployment.
 - **Delivery semantics** — at-least-once, never exactly-once. `event.id` is the idempotency key; consumers MUST dedupe on it. A cursor only advances past a successfully delivered batch, so events are never skipped. Long-lived: on the HTTP driver (Workers) the outbox write is post-commit best-effort — reconcile by comparing item `updatedAt` against the feed if you need a hard guarantee.
 
 ## 2. Event envelope (schemaVersion 1)

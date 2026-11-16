@@ -64,4 +64,35 @@ describe('system version route', () => {
       releaseChannel: 'unknown',
     });
   });
+
+  it('falls back to metadata baked into the Node bundle (Docker image)', () => {
+    expect(
+      resolveBuildMetadata(
+        { LUMIBASE_ENV: 'test' },
+        {},
+        {
+          LUMIBASE_VERSION: '1.0.0-rc.5',
+          LUMIBASE_GIT_SHA: 'aaaabbbbcccc',
+          LUMIBASE_BUILD_TIME: '2026-09-29T00:00:00.000Z',
+          LUMIBASE_RELEASE_CHANNEL: 'production',
+        },
+      ),
+    ).toEqual({
+      version: '1.0.0-rc.5',
+      gitSha: 'aaaabbbbcccc',
+      buildTime: '2026-09-29T00:00:00.000Z',
+      releaseChannel: 'production',
+    });
+  });
+
+  it('lets runtime env override the baked value, but not the "unknown" placeholder', () => {
+    const baked = { LUMIBASE_VERSION: '1.0.0', LUMIBASE_GIT_SHA: 'baked-sha' };
+    expect(
+      resolveBuildMetadata(
+        { LUMIBASE_ENV: 'test', LUMIBASE_VERSION: 'unknown', LUMIBASE_GIT_SHA: 'env-sha' },
+        {},
+        baked,
+      ),
+    ).toMatchObject({ version: '1.0.0', gitSha: 'env-sha' });
+  });
 });

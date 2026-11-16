@@ -193,6 +193,27 @@ async function main() {
     }
   }
 
+  // API explorer (#745): a real page per locale (200, not the 404 shell). Its
+  // static HTML is only the form — Swagger UI is code-split and loads after
+  // the reader enters a document URL, so nothing host-specific is baked in.
+  for (const idx of indexes) {
+    const url = `/${idx.locale}/api-explorer/`;
+    const title = idx.locale === 'en' ? 'API explorer' : 'Trình khám phá API';
+    const description =
+      idx.locale === 'en'
+        ? "Browse your LumiBase site's live OpenAPI 3.1 document."
+        : 'Duyệt tài liệu OpenAPI 3.1 trực tiếp của site LumiBase.';
+    const body = await render(url);
+    const html = template
+      .replace(/<html lang="[^"]*">/, `<html lang="${escapeAttr(idx.locale)}">`)
+      .replace(/<title>[^<]*<\/title>/, `<title>${escapeAttr(`${title} — LumiBase Docs`)}</title>`)
+      .replace('</head>', `    ${buildHead({ title, description, url })}\n  </head>`)
+      .replace('<div id="root"></div>', `<div id="root">${body}</div>`);
+    writeHtml(url, html);
+    sitemapEntries.push({ url, lastModified: idx.lastModified });
+    written++;
+  }
+
   // 404.html — Cloudflare Pages serves this (with a 404 status) for any request
   // that does not match a prerendered static asset. It carries the unmodified
   // SPA shell (empty #root) so the client router boots, resolves the requested

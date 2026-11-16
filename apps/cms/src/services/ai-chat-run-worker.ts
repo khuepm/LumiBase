@@ -1,13 +1,17 @@
+import { publicLLMFailure } from './llm-provider';
 import type { Database } from '@lumibase/database';
 import { aiMessages } from '@lumibase/database';
-import type { KeyProvider } from '@lumibase/runtime';
-import { asc, eq } from 'drizzle-orm';
+import type { CacheProvider, KeyProvider } from '@lumibase/runtime';
 import { AISecureHarness } from './ai-harness';
-import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from './llm-provider';
+import { loadCopilotHistory } from './copilot-history';
+import { ExtensionsService } from './extensions-service';
+import { EffectiveCapabilityService } from './effective-capability-service';
+import { resolvePrincipalCapabilities } from './governed-capabilities';
+import { itemServiceForPrincipal, itemServiceForSystem } from './item-service-factory';
+import { createConfiguredLLMProvider, createLLMProvider } from './llm-provider';
 import { SchemaService } from './schema-service';
+import { resolveCopilotPlaybooks } from './site-skill-service';
 import { markRunRunning, persistAiChatOutcome, type AiChatRunJob } from './flow-run-service';
-
-const MAX_CONTEXT_MESSAGES = 20;
 
 /**
  * Worker path for `Prefer: respond-async` AI chat (high-load §10.3).
@@ -19,25 +23,44 @@ export async function executeAiChatRun(
   job: AiChatRunJob,
   keys?: KeyProvider,
   env?: Record<string, string | undefined>,
+  cache?: CacheProvider,
 ): Promise<void> {
   await markRunRunning(db, job.runId, job.siteId);
   const envRecord = env ?? {};
 
   try {
-    const historyRows = await db
-      .select({ role: aiMessages.role, content: aiMessages.content })
-      .from(aiMessages)
-      .where(eq(aiMessages.conversationId, job.conversationId))
-      .orderBy(asc(aiMessages.createdAt))
-      .limit(MAX_CONTEXT_MESSAGES);
+    // Same newest-first window as the synchronous route (#582).
+    const llmMessages = await loadCopilotHistory(db, job.conversationId);
 
-    const llmMessages: LLMMessage[] = historyRows.map((row) => ({
-      role: row.role as LLMMessage['role'],
-      content: row.content,
-    }));
+    // Capabilities are re-resolved at pickup, not taken from the enqueued
+    // snapshot (#472), so a grant revoked while the job queued is honoured.
+    // Jobs enqueued before `principal` existed fall back to their snapshot.
+    const capabilities = job.principal
+      ? await resolvePrincipalCapabilities(
+          new EffectiveCapabilityService({ db, siteId: job.siteId }),
+          job.principal,
+        )
+      : {
+          allowed: true as const,
+          capabilities: job.userCapabilities ?? [],
+          controlPlaneAdmin: false,
+          callerClass: 'standard' as const,
+        };
+
+    // Site playbooks (#712), resolved with the same inputs as the synchronous
+    // route — which is why the capability resolution above runs before the
+    // model call rather than after it.
+    const playbooks = await resolveCopilotPlaybooks(
+      { db, siteId: job.siteId },
+      { text: job.message, history: llmMessages, capabilities: capabilities.capabilities },
+    );
+    const siteSkillsMeta = playbooks.applied.length > 0 ? { siteSkills: playbooks.applied } : {};
 
     const llmProvider = createLLMProvider(envRecord);
-    const llmResponse = await llmProvider.chat(llmMessages);
+    const llmResponse = await llmProvider.chat(
+      llmMessages,
+      playbooks.systemPrompt ? { systemPrompt: playbooks.systemPrompt } : undefined,
+    );
 
     if (llmResponse.toolCalls.length === 0) {
       const responseText =
@@ -46,7 +69,7 @@ export async function executeAiChatRun(
         conversationId: job.conversationId,
         role: 'assistant',
         content: responseText,
-        metadata: { status: 'denied', runId: job.runId },
+        metadata: { status: 'denied', runId: job.runId, ...siteSkillsMeta },
       });
       await persistAiChatOutcome(
         db,
@@ -56,6 +79,7 @@ export async function executeAiChatRun(
           status: 'denied',
           message: responseText,
           conversationId: job.conversationId,
+          ...siteSkillsMeta,
         },
         'success',
       );
@@ -64,28 +88,73 @@ export async function executeAiChatRun(
 
     const toolCall = llmResponse.toolCalls[0]!;
     const schemaService = new SchemaService({ db, siteId: job.siteId });
-    const itemService = new (await import('./item-service')).ItemService({
-      db,
-      siteId: job.siteId,
-      userId: job.userId,
-      keyProvider: keys ?? undefined,
-    });
+
+    // ItemService must be PRINCIPAL-BOUND here, and this is the reason it has to
+    // be built after resolution rather than before.
+    //
+    // Capabilities are the coarse gate; row rules and field masks live in
+    // `ItemService` and apply only when it receives a `permissionCtx`. Without
+    // one, a user whose policy grants `create` on `articles` alone resolves to
+    // `items:write` — which is true, they may write *something* — and then
+    // writes to any collection, because nothing narrower is left to stop them.
+    // The coarse check passing is exactly what makes the gap easy to miss.
+    //
+    // It also made the two halves of one endpoint disagree: the synchronous
+    // `POST /ai/chat` builds its harness with `itemServiceForRequest(c)`, so the
+    // same message enforced row/field RBAC when answered inline and skipped it
+    // when answered through the queue. Same request, same user, different
+    // authorization — decided by a `Prefer` header.
+    const itemDeps = { db, siteId: job.siteId, userId: job.userId, keyProvider: keys ?? undefined };
+    const itemService = capabilities.permissionContext
+      ? itemServiceForPrincipal(itemDeps, capabilities.permissionContext)
+      : // Legacy jobs (enqueued before `principal`) have no principal to bind, so
+        // there is nothing to derive a context from. Named rather than implicit,
+        // and it disappears once the queue has drained past the deploy.
+        itemServiceForSystem(itemDeps, 'background-worker');
 
     const harness = new AISecureHarness({
       db,
       siteId: job.siteId,
       schemaService,
       itemService,
+      extensionsService: new ExtensionsService({
+        db, siteId: job.siteId, userId: job.userId, cache,
+        permissionCtx: capabilities.permissionContext,
+        env: { ...envRecord, LUMIBASE_ENV: envRecord.LUMIBASE_ENV ?? 'production' },
+      }),
       llm: createConfiguredLLMProvider(envRecord),
       keys,
+      cache,
     });
 
-    const result = await harness.execute(
-      toolCall.name,
-      toolCall.arguments,
-      job.userCapabilities,
-      job.message,
-    );
+    const result = capabilities.allowed
+      ? await harness.execute(
+          toolCall.name,
+          toolCall.arguments,
+          capabilities.capabilities,
+          job.message,
+          // Provenance travels with the execution, or the approval it parks is
+          // unapprovable (#472 F2).
+          //
+          // `executeApproved` refuses an approval with no recorded requester,
+          // which is correct for rows written before the column existed — but a
+          // park that forgets to pass this produces a BRAND NEW row that is
+          // indistinguishable from those, and then refuses it with "re-request
+          // the action". Re-requesting through the same async path hits the same
+          // wall, so the work becomes impossible rather than merely blocked.
+          //
+          // The synchronous half of `POST /ai/chat` already passed it. This is
+          // the same class as the RBAC split above: one endpoint, two paths,
+          // chosen by a `Prefer` header, and only one of them correct.
+          job.principal
+            ? { requestedByPrincipal: { kind: 'principal', ref: job.principal } }
+            : undefined,
+        )
+      : {
+          status: 'denied' as const,
+          code: capabilities.code,
+          message: capabilities.message ?? 'Capability resolution denied',
+        };
 
     const responseMessage =
       result.message ??
@@ -104,6 +173,7 @@ export async function executeAiChatRun(
         status: result.status,
         approvalId: result.approvalId,
         runId: job.runId,
+        ...siteSkillsMeta,
       },
     });
 
@@ -115,11 +185,13 @@ export async function executeAiChatRun(
         ...result,
         message: responseMessage,
         conversationId: job.conversationId,
+        ...siteSkillsMeta,
       },
       'success',
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const failure = publicLLMFailure(err);
+    const message = failure ? `${failure.code}: ${failure.message}` : err instanceof Error ? err.message : String(err);
     await persistAiChatOutcome(
       db,
       job.runId,

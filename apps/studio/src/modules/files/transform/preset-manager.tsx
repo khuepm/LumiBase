@@ -23,7 +23,7 @@ async function presetApi<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       'Content-Type': 'application/json',
       ...(getActiveToken() ? { Authorization: `Bearer ${getActiveToken()}` } : {}),
-      ...(getActiveSite() ? { 'x-site-id': getActiveSite()! } : {}),
+      ...(getActiveSite() ? { 'X-Lumi-Site': getActiveSite()! } : {}),
       ...(init?.headers ?? {}),
     },
   });

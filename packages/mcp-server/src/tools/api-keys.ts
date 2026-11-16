@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
-import { confirmDescription, okText, run } from './_shared.js';
+import { confirmDescription, okAfter, okText, run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 export function registerApiKeyTools(server: McpServer, client: LumiBaseClient) {
@@ -84,8 +84,8 @@ export function registerApiKeyTools(server: McpServer, client: LumiBaseClient) {
     },
     async ({ id, roleId }) =>
       run(async () => {
-        await client.delete(`/api-keys/${encodePathSegment(id)}/roles/${encodePathSegment(roleId)}`);
-        return okText(`Role "${roleId}" detached from API key "${id}".`);
+        const response = await client.delete(`/api-keys/${encodePathSegment(id)}/roles/${encodePathSegment(roleId)}`);
+        return okAfter(response, `Role "${roleId}" detached from API key "${id}".`);
       }),
   );
 
@@ -115,8 +115,8 @@ export function registerApiKeyTools(server: McpServer, client: LumiBaseClient) {
     },
     async ({ id, policyId }) =>
       run(async () => {
-        await client.delete(`/api-keys/${encodePathSegment(id)}/policies/${encodePathSegment(policyId)}`);
-        return okText(`Policy "${policyId}" detached from API key "${id}".`);
+        const response = await client.delete(`/api-keys/${encodePathSegment(id)}/policies/${encodePathSegment(policyId)}`);
+        return okAfter(response, `Policy "${policyId}" detached from API key "${id}".`);
       }),
   );
 }

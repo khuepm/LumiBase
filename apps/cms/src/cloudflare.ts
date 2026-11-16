@@ -16,14 +16,20 @@
  */
 
 import * as Sentry from '@sentry/cloudflare';
-import { createDb } from '@lumibase/database';
 import { createCloudflareRuntime } from '@lumibase/runtime';
 import app from './index';
+import { FIVE_MINUTE_SWEEPS, HOURLY_SWEEPS, MINUTE_SWEEPS, runWorkerSweeps } from './cloudflare-cron-parity';
+import { processCloudflareQueue } from './cloudflare-queue';
+import { createCloudflareSystemDb } from './cloudflare-system-db';
 import type { Bindings } from './env';
 import { runScheduledRotation } from './modules/audit/scheduled';
 import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
+import { runScheduledReviewRunPurge } from './services/review-run-retention';
+import { runScheduledTelemetry } from './modules/activation/telemetry';
+import { resolveBuildMetadata } from './routes/system';
 import { runScheduledPageviewFlush } from './modules/pageviews/scheduled';
 import { resolveSentryOptions } from './observability/sentry';
+import { withWorkerRuntimeDefault } from './worker-runtime-default';
 
 // ── Default export: ExportedHandler (fetch + scheduled) ─────────────────────
 //
@@ -53,17 +59,21 @@ import { resolveSentryOptions } from './observability/sentry';
 export default Sentry.withSentry(
   (env: Bindings) => resolveSentryOptions(env),
   {
-  // Bind so `this` inside Hono's fetch stays the app instance.
-  fetch: app.fetch.bind(app),
+  // Routes by `batch.queue` to the agent-runs, flow-runs and flow-events consumers.
+  queue: processCloudflareQueue,
+
+  fetch: (request: Request, env: Bindings, ctx: ExecutionContext) =>
+    app.fetch(request, withWorkerRuntimeDefault(env), ctx),
 
   /**
    * Cloudflare Cron Trigger handler (design §10.2). Fires on the
-   * `[triggers] crons` schedule in wrangler.toml (`0 * * * *`, hourly).
+   * `[triggers] crons` schedule in wrangler.toml (minute, 5-minute, hourly).
    *
-   * Builds a Drizzle client from the Hyperdrive binding — the SAME fallback
-   * path `middleware/db.ts` uses (`createDb(hyperdrive.connectionString)`) —
-   * and runs the shared `runScheduledRotation`, wrapped in `ctx.waitUntil`
-   * so the isolate stays alive until the prune completes.
+   * Builds a Drizzle client on the SYSTEM connection (`HYPERDRIVE_SYSTEM`,
+   * else `HYPERDRIVE` while `LUMIBASE_DB_RLS` is off — B130): the sweeps
+   * below cross sites with no site scope — and runs the shared
+   * `runScheduledRotation`, wrapped in `ctx.waitUntil` so the isolate stays
+   * alive until the prune completes.
    *
    * Never throws: `runScheduledRotation` is best-effort, and the missing-
    * binding branch logs + returns rather than raising, so a misconfigured
@@ -74,23 +84,64 @@ export default Sentry.withSentry(
     env: Bindings,
     ctx: ExecutionContext,
   ): Promise<void> {
-    const hyperdrive = env.HYPERDRIVE;
-    if (!hyperdrive) {
-      console.error(
-        '[lumibase-cms] scheduled work skipped: HYPERDRIVE binding ' +
-          'is not configured.',
+    const system = createCloudflareSystemDb(env);
+    if (!system.db) {
+      console.error(`[lumibase-cms] scheduled work skipped: ${system.error}`);
+      return;
+    }
+    const db = system.db;
+
+    // Three triggers share this handler (wrangler [triggers] crons):
+    //   "* * * * *"    → the minute sweeps Docker runs on node-cron (B131):
+    //                    content scheduler (incl. schedule flows, B118), goal
+    //                    dispatch, deployment poll, CDC backstop, plus the
+    //                    import resume tick (#726); only those
+    //   "*/5 * * * *"  → pageview flush + stale-claim/run sweeps + veto commits,
+    //                    and the minute sweeps again for profiles with no
+    //                    minute trigger (staging); overlap-safe, see
+    //                    cloudflare-cron-parity.ts
+    //   "0 * * * *"    → the 5-minute work plus audit rotation, refresh-token
+    //                    prune, review-run purge and retention (top of the hour)
+    // `controller.cron` names the schedule that fired; branch so the minute
+    // tick doesn't run the 5-minute work and the hourly work doesn't run 12×
+    // per hour.
+    const runtime = createCloudflareRuntime(env as unknown as Record<string, unknown>);
+
+    const sweepDeps = { db, runtime };
+    if (controller.cron === '* * * * *') {
+      // The scheduler tick includes the schedule-flow sweep Docker's
+      // `flow-schedule` cron runs; overlapping ticks enqueue each due flow once
+      // (B132).
+      ctx.waitUntil(runWorkerSweeps(MINUTE_SWEEPS, sweepDeps));
+      // Resume background imports whose lease expired (#726). The guarded
+      // claim on `lease_until` keeps overlapping ticks from double-processing.
+      ctx.waitUntil(
+        import('./services/import-service')
+          .then(({ runImportTick, resolveImportConfig }) =>
+            runImportTick(
+              {
+                db,
+                config: resolveImportConfig(env as unknown as Record<string, string | undefined>),
+                realtime: runtime.realtime,
+                env: env as unknown as Record<string, unknown>,
+              },
+              { budgetMs: 25_000 },
+            ),
+          )
+          .catch(() => console.error('[import] tick failed')),
+      );
+      // Resume locale-generation jobs (#714), same lease guard as imports.
+      ctx.waitUntil(
+        Promise.all([import('./services/locale-generation-service'), import('./routes/locale-generation')])
+          .then(([{ runLocaleJobTick }, { localeJobDeps }]) =>
+            runLocaleJobTick(localeJobDeps(db, env as unknown as Bindings), { budgetMs: 25_000 }),
+          )
+          .catch(() => console.error('[locale-generation] tick failed')),
       );
       return;
     }
 
-    const db = createDb(hyperdrive.connectionString);
-
-    // Two triggers share this handler (wrangler [triggers] crons):
-    //   "*/5 * * * *"  → pageview flush (every 5 min)
-    //   "0 * * * *"    → audit rotation + refresh-token prune (top of the hour)
-    // `controller.cron` names the schedule that fired; branch so the hourly
-    // work doesn't run 12× per hour. The pageview flush runs on every tick.
-    const runtime = createCloudflareRuntime(env as unknown as Record<string, unknown>);
+    ctx.waitUntil(runWorkerSweeps({ ...MINUTE_SWEEPS, ...FIVE_MINUTE_SWEEPS }, sweepDeps));
     ctx.waitUntil(runScheduledPageviewFlush(db, runtime));
 
     // Abandoned approval claims (#453). A Worker eviction mid-execution leaves
@@ -117,9 +168,41 @@ export default Sentry.withSentry(
         }),
     );
 
+    // Quarantine executions interrupted by a Worker eviction; never replay writes.
+    ctx.waitUntil(
+      import('./services/agent-run-service')
+        .then(({ sweepStaleRuns }) => sweepStaleRuns({ db }))
+        .catch(() => console.error('[agent-run-sweep] failed')),
+    );
+
+    // askUser question timeout (#710): expire overdue questions and fail their
+    // waiting runs (`question_timeout`). Same sweep as the Docker cron.
+    ctx.waitUntil(
+      import('./services/agent-question-service')
+        .then(({ sweepExpiredQuestions }) => sweepExpiredQuestions({ db }))
+        .then((expired) => {
+          for (const question of expired) {
+            console.warn('[agent-question-sweep] question expired', JSON.stringify(question));
+          }
+        })
+        .catch(() => console.error('[agent-question-sweep] failed')),
+    );
+
     if (controller.cron === '0 * * * *') {
       ctx.waitUntil(runScheduledRotation(db));
       ctx.waitUntil(runScheduledRefreshTokenPrune(db));
+      ctx.waitUntil(runScheduledReviewRunPurge(db, env.DECISION_REVIEW_RETENTION_DAYS));
+      // Opt-in anonymous usage telemetry — same pass as the Docker hourly cron.
+      // Off unless enabled AND an endpoint is set; then it is a no-op.
+      ctx.waitUntil(
+        runScheduledTelemetry({
+          db,
+          env: env as unknown as Record<string, string | undefined>,
+          runtime: 'cloudflare',
+          version: resolveBuildMetadata(env).version,
+        }).then(() => undefined),
+      );
+      ctx.waitUntil(runWorkerSweeps(HOURLY_SWEEPS, sweepDeps));
     }
   },
   } satisfies ExportedHandler<Bindings>,

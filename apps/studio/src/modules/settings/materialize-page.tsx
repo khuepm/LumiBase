@@ -33,7 +33,7 @@ async function materializeFetch<T>(path: string, init?: RequestInit): Promise<T>
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(site ? { 'x-site-id': site } : {}),
+      ...(site ? { 'X-Lumi-Site': site } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -197,12 +197,12 @@ function MaterializationRowView({ row }: { row: MaterializationRow }) {
       <td className="py-2 font-mono text-xs">mat_{row.target}</td>
       <td className="py-2 text-xs">
         {row.refreshStrategy}
-        {row.refreshCron ? <code className="ml-1 rounded bg-muted px-1">{row.refreshCron}</code> : null}
+        {row.refreshCron ? <code className="ms-1 rounded bg-muted px-1">{row.refreshCron}</code> : null}
       </td>
       <td className="py-2 text-xs text-muted-foreground">
         {row.lastRefreshAt ? new Date(row.lastRefreshAt).toLocaleString() : 'never'}
       </td>
-      <td className="py-2 text-right">
+      <td className="py-2 text-end">
         <span className="inline-flex items-center gap-1">
           <button
             type="button"
@@ -244,7 +244,7 @@ function MaterializationRowView({ row }: { row: MaterializationRow }) {
           )}
         </span>
         {(refreshMutation.isError || dropMutation.isError) && (
-          <p className="mt-1 text-right text-[10px] text-destructive">
+          <p className="mt-1 text-end text-[10px] text-destructive">
             {((refreshMutation.error ?? dropMutation.error) as Error)?.message ?? 'Action failed.'}
           </p>
         )}
@@ -295,7 +295,7 @@ export function MaterializePage() {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+              <tr className="border-b text-start text-xs uppercase text-muted-foreground">
                 <th className="py-2">Source</th>
                 <th>Table</th>
                 <th>Strategy</th>

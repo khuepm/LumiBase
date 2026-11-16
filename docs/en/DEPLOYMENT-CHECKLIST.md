@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:05:49.466Z
+version: 11
+lastUpdated: 2026-11-13T19:16:12.263Z
 sourceLang: en
-contentHash: 8213b15617869cfe
-codeVerified: 2026-08-02T19:05:54.545Z
-codeVerifiedHash: 8213b15617869cfe
-codeVerifiedClaims: 26
+contentHash: 440989947c2b355b
+codeVerified: 2026-11-15T11:40:42.607Z
+codeVerifiedHash: 440989947c2b355b
+codeVerifiedClaims: 34
 ---
 
 # LumiBase Production Deployment Checklist
@@ -13,6 +13,8 @@ codeVerifiedClaims: 26
 > Complete checklist for deploying LumiBase to production. Supports both **Cloudflare Workers** (edge) and **Docker** (self-hosted) deployments.
 
 ---
+
+The CMS deploy and release workflows ensure the missing Flows queues (`flow-runs`, `flow-events`), content queues (`content-indexing`, `revalidation-dispatch`), the envelope-migration queue (`encryption-envelope-migration`) and their dead-letter queues before deployment using `scripts/ensure-flow-queues.mjs`. Existing queues are preserved. The deploy token needs Queues edit permission. Local/manual deployment still uses the queue creation commands below.
 
 ## Table of Contents
 
@@ -74,6 +76,16 @@ codeVerifiedClaims: 26
   ```bash
   wrangler queues create lumibase-realtime
   ```
+- [ ] Queues created for agent runs, Flows, search indexing, ISR revalidation and envelope migration, with their dead-letter queues, for every named profile you deploy (see [Flows queues](features/flows-automation.md#cloudflare-workers-flows-queues)):
+  ```bash
+  cd apps/cms
+  for profile in staging production dev demo; do
+    for q in agent-runs flow-runs flow-events content-indexing revalidation-dispatch encryption-envelope-migration; do
+      pnpm exec wrangler queues create "lumibase-$q-$profile"
+      pnpm exec wrangler queues create "lumibase-$q-$profile-dlq"
+    done
+  done
+  ```
 - [ ] Update `wrangler.toml` with binding IDs
 
 ### Docker (Self-Hosted Deployment)
@@ -120,6 +132,7 @@ Set via `wrangler secret put --env production`:
 | `CF_ACCESS_AUDIENCE` | If using CF Access | `wrangler secret put CF_ACCESS_AUDIENCE --env production` |
 | `SENTRY_DSN` | Recommended | `wrangler secret put SENTRY_DSN --env production` |
 | `METRICS_TOKEN` | Recommended | `wrangler secret put METRICS_TOKEN --env production` |
+| `LUMIBASE_OPS_TOKEN` | Optional | `wrangler secret put LUMIBASE_OPS_TOKEN --env production` |
 | `OPENAI_API_KEY` | If using AI | `wrangler secret put OPENAI_API_KEY --env production` |
 
 ### Docker Environment
@@ -175,7 +188,28 @@ pnpm -F @lumibase/database migrate
 
 ### Database Security
 
-- [ ] Row Level Security (RLS) enabled
+- [ ] Choose the RLS mode. The backstop only enforces anything with `LUMIBASE_DB_RLS=enforce`; the full procedure is in [Request-path RLS scope](features/rls-request-scope.md).
+  - `off` (default): the app connects with a role that bypasses RLS (a role with `BYPASSRLS`; a superuser also bypasses it). The table owner is not exempt: `rls-policies.sql` sets `FORCE ROW LEVEL SECURITY`, so a non-superuser owner sees no rows. Applying the file changes nothing in this mode.
+  - `enforce`: two roles. `DATABASE_URL` (or `HYPERDRIVE`) is an app role created `NOSUPERUSER NOBYPASSRLS`; never a superuser or a `BYPASSRLS` role, or the backstop enforces nothing. `DATABASE_SYSTEM_URL` (or the `HYPERDRIVE_SYSTEM` binding) is a system role with `BYPASSRLS`, preferably not a superuser, for workers, cron and system routes. Both roles get `USAGE` on the schema and `SELECT, INSERT, UPDATE, DELETE` on all tables (re-grant after migrations that add tables).
+- [ ] With `enforce`: the Docker startup log shows `[db-rls] request-path RLS scope: enforce (…)` and no `[db-rls] WARNING`; `GET /health/ready` is 200 (it probes both connections).
+- [ ] Row Level Security (RLS) enabled: apply `packages/database/migrations/rls-policies.sql` as the database owner (not the app role). `pnpm db:migrate` does not apply it; re-apply after every upgrade.
+  ```bash
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction \
+    -f packages/database/migrations/rls-policies.sql
+  ```
+- [ ] RLS policies verified: the query below returns 2 rows per table (`site_isolation` RESTRICTIVE, `site_isolation_permit` PERMISSIVE).
+  ```sql
+  SELECT tablename, policyname, permissive FROM pg_policies
+   WHERE policyname IN ('site_isolation', 'site_isolation_permit')
+   ORDER BY 1, 2;
+  ```
+- [ ] RLS smoke test as a role without BYPASSRLS: the count is > 0 for a site that has settings, and 0 when `app.site_id` is not set. This test opens its own transaction; it proves the policies, not that the application is scoped. For the application, run the two-site check in [Request-path RLS scope](features/rls-request-scope.md#enable-it).
+  ```sql
+  BEGIN;
+  SELECT set_config('app.site_id', '<site id>', true);
+  SELECT count(*) FROM lumibase_settings;
+  COMMIT;
+  ```
 - [ ] No public schema access
 - [ ] Audit logging enabled
 - [ ] Backup schedule configured
@@ -379,6 +413,7 @@ curl https://api.yourdomain.com/api/v1/health
 ### API Security
 
 - [ ] `/metrics` endpoint protected by `METRICS_TOKEN`
+- [ ] `/api/v1/ops/*` answers 404 unless `LUMIBASE_OPS_TOKEN` (≥ 32 chars) is set — see [Ops diagnostics](./features/ops-diagnostics.md)
 - [ ] SCIM endpoint protected (if used)
 - [ ] GraphQL introspection disabled in production
 - [ ] File upload MIME type validation enabled
@@ -527,6 +562,7 @@ docker compose up -d
 | `CF_ACCESS_AUDIENCE` | If using CF Access | From CF dashboard |
 | `SENTRY_DSN` | Recommended | From Sentry project |
 | `METRICS_TOKEN` | Recommended | `openssl rand -base64 24` |
+| `LUMIBASE_OPS_TOKEN` | Optional | `openssl rand -base64 36` |
 
 ### Docker
 

@@ -9,7 +9,1747 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Added
+- Extensions can register governed MCP tools, prompts and resources (#715, epic #671 A07). An `mcp` block in the extension manifest declares them; `defineTool` / `defineMcp` / `mcpManifest` in `@lumibase/extension-sdk` author them. Each block needs an admin grant on the installed row (`mcp:tools`, `mcp:prompts`, `mcp:resources`). Tools are advertised as `ext_<key>__<tool>` and run through the same harness path as external-action tools (capability, autonomy gradient, human-only approval); a `schema:write` or `delete*` tool always waits for a signed-in human. The HTTP MCP endpoint gains `resources/list` and `resources/read`; the stdio `@lumibase/mcp-server` discovers extension tools at startup and forwards every call to the governed endpoint. Example: `examples/extension-mcp-notes`.
+- Agent receipts dashboard (#713, epic #671 A05): **Mission Control → Receipts** and `GET /api/v1/agent/receipts` report runs by agent and outcome, tool calls by skill × outcome, approval latency (p50/p90), veto and human-override rates, `askUser` questions, token/USD cost, drift, incidents, autonomy grants and promotions, and a daily series over a window of up to 180 days. Read-only from existing ledger and audit tables (no new writes on the agent hot path). Alert thresholds (`GET/PUT /api/v1/agent/receipts/alerts`) are evaluated at read time; `GET /api/v1/agent/receipts/export` returns CSV for runs, tool calls or approvals.
+- One-shot translation generator for a new locale (#714, epic #671 A06): **Settings → Localization → Add a locale** and `/api/v1/locale-generation`. A job adds the locale to the `locales` setting and translates every missing `translatable-text` value of the chosen collections and the `ui` strings (translation memory → glossary → MT provider) into a review queue with provenance (`origin`, `provider`, `tmScore`). Nothing reaches content until a reviewer approves: approval writes through the reviewer's item service (RBAC, validation, revision) and refuses stale suggestions; approved values feed translation memory. Jobs run in chunks under a lease and resume from their cursor on Docker and Workers; cancel and resume are supported.
+- Live preview & visual editing (epic #667). Site-scoped preview tokens (`POST /api/v1/preview/token`, HS256 signed with a per-site key derived from `JWT_SECRET`, revocable and rotatable, rate-limited; table `lumibase_preview_secrets`) and public preview reads under `/api/v1/deliver/preview/:site_id` that return one `401` for every token failure. A token can target an item, a content version (related items resolve to the same branch) or a release, plus a locale. Studio: a resizable live preview pane beside the item form (field-level patches, reload on save, click-to-focus), Settings → Preview (allowed origins, TTL, revoke, rotate) and a Preview URL field per collection. New package `@lumibase/visual-editing` (click-to-edit overlay, origin-validated `postMessage` bridge, ≤ 15 kB gzip). Studio HTML now carries `frame-src` (tighten with `LUMIBASE_STUDIO_FRAME_SRC`). Threat model: [ADR-014](docs/en/architecture/decisions/adr-014-preview-bridge-threat-model.md); guide: [Live preview & visual editing](docs/en/features/visual-editing.md) (#679, #680, #681, #683; #682 API only).
+- **Self-healing docs** (#756): a PR check (`docs-self-heal.yml` → `pnpm docs:i18n:drift`) maps changed source files to the docs that cite them, verifies those docs at the PR head and base, and fails on newly stale claims with an annotation on the doc line naming the cause (file moved, route segment / env var / export renamed or removed). On pushes to `main`, `pnpm docs:i18n:heal` rewrites the mechanical cases in both locales identically, re-stamps provenance only when the pair verifies, and opens or updates one `docs/self-heal` PR listing every fix and every claim that needs a human. Deterministic: no model call, no API key, never auto-merged. See [Self-healing docs](docs/en/contributing/docs-self-heal.md).
+- `lumibase types` reads `lumibase.typegen.config.{ts,mts,js,mjs,json}` exporting one config or an array: each config has its own source (a CMS, with URL / site / token taken from named environment variables, or a saved manifest file), `include` / `exclude`, and one or more targets — `ts`, `zod` (runtime validators), `graphql-sdl` (matches the `/graphql` schema), `openapi` (OpenAPI 3.1 `components/schemas`) and `manifest`. All targets run in one pass; `--check` fails CI when any output is stale; `--watch` regenerates on schema change. The generators are exported from `@lumibase/sdk` (`generateZod`, `generateGraphQLSdl`, `generateOpenApi`). See [Typegen configs and output targets](docs/en/cli/typegen-config.md) (#753).
+- `GET /api/v1/typegen/schema` returns a weak `ETag` and answers `304` to a matching `If-None-Match`; the manifest adds each field's `interface` and each relation's stored `relationType` and GraphQL `alias`. The TS target now types `translatable-text` fields as `Partial<Record<Locale, string>>`, `file`/`files` fields as file ids, and `float`/`dateTime` fields — run `lumibase types` once if `--check` reports those files stale (#753).
+- **Studio RTL layout (#761)**: Arabic, Hebrew and Farsi interface languages set `<html dir="rtl">` and mirror the Studio (logical CSS throughout `apps/studio`, directional icons flip, code editors and the flow canvas stay LTR). Content fields follow the content locale's direction independently (`dir`/`lang` per translation, `dir="auto"` otherwise). New **Interface language** selector in the top bar; new `pnpm logical-css:check` guard in `check:all`; Arabic Playwright layout check in the new `Studio RTL layout` workflow. Layout only: no Arabic/Hebrew/Farsi UI copy ships. See [RTL layout in Studio](docs/en/features/studio-rtl-layout.md).
+- **Extension hot reload** (#754): `lumibase-ext dev` watches an extension, rebuilds it incrementally with esbuild and hot-swaps it without a restart. Studio's dev server swaps UI slots in place and keeps host state. A Node CMS started with `NODE_ENV=development LUMIBASE_EXTENSION_DEV=1` atomically swaps hook and endpoint modules, and in-flight requests finish on the old version. The feature is local-development only: the hub is loopback-bound and needs a per-session token, the CMS refuses it in production, and Workers does not support it. Measured edit-to-Studio latency is about 35 ms against a 2 s budget. See [Extension hot reload](docs/en/contributing/extension-hot-reload.md).
+- Supported-runtime policy (#760): [Supported runtimes](docs/en/contributing/supported-runtimes.md) lists the support windows for Node.js, the Workers compatibility date, PostgreSQL, Redis, Next.js/React and Studio browsers, and explains how versions are dropped. A new `runtime-matrix` workflow runs typecheck and unit tests on Node.js 22 and 24, and builds the scaffolded Next.js template on Next.js 15 and 16. `pnpm runtime:check` (in `check:all`) fails when `.nvmrc`, `engines.node`, the Dockerfile Node majors, the CI matrix and the policy page disagree. Dependabot no longer proposes `node` image or `@types/node` majors and groups Next.js/React majors into one PR. The `lumibase` and `create-lumibase` CLIs now declare the root `engines.node`. They warn on a Node.js version outside it and still refuse to start below 22.
+- **Studio intent links** (#759): stable URLs `/{adminPath}/intent/{open,create,edit}?collection=&id=&locale=&field=&site=` (versioned contract v1) open the item in the requested locale and focus the field, opening collapsed groups on the way. The link survives sign-in, a different `site` needs the user's access and an explicit switch confirmation, and invalid links get an error page; every target is internal. `@lumibase/contracts/intents` exports `buildStudioIntentPath` / `buildStudioIntentUrl` for CMS-side producers; extensions claim intents with `defineIntentHandler` (`@lumibase/extension-sdk`) under an `intents:claim:<action>:<collection>` capability. `lumibase://intent/...` deep links in the desktop shell open the same route. See [Studio intent links](docs/en/features/studio-intent-links.md).
+- Framework adapters over `@lumibase/sdk`: `@lumibase/vue` (composables `useItems`/`useItem`/`useRealtime`/`usePresence` plus a Nuxt 3/4 module whose server token stays in private runtime config), `@lumibase/svelte` (stores, a `use:lumiPresence` action and SvelteKit `createLumiHandle`) and `@lumibase/astro` (an integration with a server-only `virtual:lumibase` client, a Content Layer loader and `watchCollection` for client scripts). They are SSR-safe, typed from `lumibase types` output through the new `SchemaOf`, and clean up realtime subscriptions on unmount or destroy. They share one connection per `RealtimeClient` through the new SDK `retainRealtime()`. Each adapter has a smoke example under `examples/` that CI type-checks. See [Framework adapters](docs/en/sdk/frameworks.md) (#752).
+- SDK fix: `readItem()` now resolves with the row itself, as its type always declared. It used to return the `{ data }` response envelope.
+- **Studio bundle budget (#757)**: CI fails when the Studio's initial JS/CSS (entry chunk + its static imports, gzip) exceeds `apps/studio/bundle-budget.json`; `pnpm studio:budget` prints the top chunks. Initial JS went from 258.1 kB to 178.2 kB gzip by keeping the setup wizard (Zod, React Hook Form), drag-and-drop, the command palette and the Monaco wrapper off the boot path. A Studio boot now makes at most two permission/identity requests, and Mission Control widgets load independently. See [Studio performance](docs/en/contributing/studio-performance.md).
+- **Storybook** for `@lumibase/ui` and representative Studio components (field interfaces, displays, a data table, dialogs) in a new `apps/storybook` package, published with the docs at `/storybook/`. Every story's interaction test and axe scan run in Chromium in light and dark, and an a11y violation fails CI. Every `@lumibase/ui` export must have a story. Pull requests also get a base-vs-head visual diff. Issues the gate found are fixed in Studio: the light `--muted-foreground` and both `--destructive` tokens now meet WCAG AA contrast, and the rating display, the save-bookmark dialog and the slider, colour and tags inputs now have accessible names (#755).
+- Editorial UX (epic #668). Items carry `firstPublishedAt`, `publishedAt` and `hasUnpublishedChanges`; list only modified items with `?modifiedSincePublish=true`, and Studio shows the publish dates and a "Modified since publish" badge and list toggle (#687).
+- `publicationState=live|preview|all` on `GET /items/:collection` and `GET /items/:collection/:id`, and as a GraphQL argument. Nested relations follow the cohort; anonymous and frontend-realm callers are always served `live` (#688).
+- `POST /items/:collection/:id/duplicate`: a draft copy with unique fields and `slug` suffixed (`-copy`, `-copy-2`, …), m2m links copied by reference or one level of o2m children copied (`relations: "deep"`), optional single-locale translations, and an `item_duplicated` audit entry. Studio has a **Duplicate** action; the SDK has `items(name).duplicate()` (#689).
+- `PATCH`/`PUT /items/:collection/:id?saveRevision=false` skips the revision row for autosave and machine writes (agent writes always keep theirs); SDK `patchWithoutRevision()`. Collections can cap history with `meta.revisionRetention: { maxRevisions?, maxAgeDays? }`, pruned by an hourly `revision-retention` sweep (#693).
+- Manual ordering: `meta.manualSort: true` lists a collection by `sort`, appends new items at the end and is the delivery default; `POST /items/:collection/:id/reorder` (`{ after }` / `{ before }`) moves an item with one write in the common case. Studio rows can be dragged; SDK `items(name).reorder()` (#690).
+- Release validation summary: `GET /releases/:id/validate` lists every invalid item with field paths, and publishing blocks invalid items with reason `VALIDATION_FAILED`. Studio gains a **Releases** page whose issues link to the item editor at the field (`#field=<name>`) (#692).
+- **Digital asset management (epic #670).** The files module becomes an asset library. See `docs/en/features/digital-asset-management.md`.
+  - Replace in place (#703): `PUT /api/v1/files/:id/content` keeps the id, storage key, folder and every reference, bumps `version`, keeps the previous binary for `versionRetentionDays` (default 30) with `GET …/versions` + `POST …/versions/:versionId/restore`, and purges the file's edge copies plus the cache tags of every collection that references it. `GET /api/v1/files/:id/content` delivers by id (`?v=<version>` → immutable).
+  - Duplicates, where used, safe delete (#706): SHA-256 `content_hash` on registration and replace, `GET /api/v1/files/duplicates?hash=`, `GET /api/v1/files/:id/usage` (items + pages), and `DELETE` answering `409 FILE_IN_USE` with the references unless `?confirm=true` (`deletePolicy: confirm`) — or never (`block`).
+  - Embedded metadata (#705): EXIF/IPTC/XMP extracted from JPEG/PNG/WebP/TIFF into `files.metadata.embedded`, searchable through `GET /api/v1/files?search=`; optional `stripGpsOnPublic` removes GPS from delivered bytes.
+  - Folders (#701): folder tree endpoint, rename/move with cycle guard, empty-only folder delete, Studio sidebar with drag-to-move; members get folder-scoped access through `files` policy rules on `folder` / `folder_path` / `uploaded_by` / `mime`.
+  - Bulk upload (#702): Studio queue (3 concurrent, retry with backoff, per-file errors, duplicate prompt) and `POST /api/v1/files/bulk` for move + alt/caption/credit/tags.
+  - Media picker (#708): one picker for the library, `file`/`files` fields and extensions (`getStudioHost().openMediaPicker({ initiallySelected, multiple, allowedMimeTypes, folder, max })` in `@lumibase/extension-sdk`); server-side `folder`/`subfolders`/`search`/`mime`/`ids`/`limit`/`offset` filters on `GET /api/v1/files`.
+  - Malware scanning (#707), off by default: HTTP scanner adapter (`MALWARE_SCAN_URL`, `MALWARE_SCAN_TOKEN`, `MALWARE_SCAN_FIELD`), docker-compose profile `malware-scan` (ClamAV + REST front), `scanStatus` quarantine gate (`423`) on delivery, audit events `file_quarantined` / `file_scan_clean` / `file_scan_error`.
+  - SDK: `files.list(query)`, `get`, `replaceContent`, `contentUrl`, `versions`, `restoreVersion`, `usage`, `duplicates`, `bulk`, `settings`, `delete(id, { confirm })`, `folders.tree()`.
+
 ### Changed
+- `/api/v1/files` is no longer site-admin only: members with a `files` policy permission are admitted, scoped per file by the permission's rule. Sites that never grant `files` see no change. Folder management, `PUT /api/v1/files/settings` and `POST /api/v1/files/:id/scan` stay site-admin only.
+- `DELETE /api/v1/files/folders/:id` refuses a non-empty folder with `409 FOLDER_NOT_EMPTY` (it used to fail on the files' foreign key).
+
+### Fixed
+- Liveness no longer depends on PostgreSQL, Redis, S3 or search. New `GET /health/live` answers `200` in milliseconds without probing anything; the Docker image `HEALTHCHECK` (`docker/scripts/healthcheck.mjs`) and the Helm chart's startup and liveness probes now use it. `/health` waits up to 3 s on a down dependency, longer than those probes' timeouts, so a database outage restarted (Kubernetes) or marked unhealthy (Docker) a CMS that was serving fine, and the v2.1.0 release smoke test failed with the container stuck in `starting`. Readiness (`/health/ready`) still reports dependency state; the chart's readiness probe gets `timeoutSeconds: 5` so a down dependency yields a 503 rather than a probe timeout. The release smoke test now also asserts `/health/live` 200 and `/health/ready` 503 with every dependency down, and that a `LUMIBASE_PROCESS_ROLE=worker` container turns healthy.
+
+### Upgrade notes
+- Migration `0037_item_publication_state` adds three columns and a partial index to `lumibase_items` and backfills `first_published_at`/`published_at` for items that are already `published` (from `publish_at`, else `updated_at`). It is additive and re-runnable.
+- A release that contains an item failing full validation (for example a required field left empty by an import) is now blocked at publish. Run `GET /releases/:id/validate` on pending scheduled releases after upgrading.
+- Migration `0038_dam_assets` is additive and idempotent (`lumibase_files.content_hash` / `version` / `scan_status` / `updated_at`, new `lumibase_file_versions`). No backfill is required: existing files keep `scan_status = skipped` (served as before) and a NULL hash, which only means they do not show up as duplicates until replaced. If you run with `LUMIBASE_DB_RLS=enforce`, re-apply `rls-policies.sql` so the new table gets the `site_isolation` policy pair.
+
+### Upgrade notes
+- Migration `0040_locale_generation` adds `lumibase_locale_generation_jobs` and `lumibase_translation_suggestions` (additive, no backfill) and both are added to `rls-policies.sql`.
+
+### Changed
+- The extension manifest accepted by `POST/PATCH /api/v1/extensions` may now carry the structured `mcp` block; it is validated at install time. Other manifest values must still be strings.
+- `buildAuthorizedHarness` (approval decision routes) is now async, so the decision path knows the site's extension tools.
+
+## [2.1.0] - 2026-11-16
+
+### Version
+- `v2.1.0`
+
+### Date
+- `2026-11-16`
+
+### Highlights
+- Three epics complete. **Security hardening parity (#674):** active session and device management, passkeys (WebAuthn) for staff, social login (Google, Apple, GitHub) for members, a configurable password policy with an optional breach check, a self-service security history, filter and upload sanitisation, secure-by-default `create-lumibase` templates and `lumibase doctor --security`, a coordinated disclosure programme, and a hardened distroless image.
+- **Deployment & hosting convenience (#675):** one-click Render deploy, an official Helm chart, role-based deploy permissions with environment promotion, Astro and SvelteKit starters, and a live per-site OpenAPI 3.1 document.
+- **Content modeling parity (#676):** `geopoint` fields with a map input and map layout, timezone-aware datetimes, dynamic zones (`blocks`), hierarchical collections with folder-mode permissions, tabs/groups form layout with conditional visibility, and field option parity.
+- Ops diagnostics plane: a read-only `/api/v1/ops/*` surface and MCP tools, gated by `LUMIBASE_OPS_TOKEN`, that report pending migrations, schema drift, RLS coherence and captured 5xx errors.
+- Background jobs reach parity on Cloudflare Workers (B131): search indexing, revalidation, scheduled publish, veto commits, reconciler goals, deployment polling, Change Feed webhooks and envelope migration.
+- Agents and MCP: OAuth 2.1 for hosted MCP connectors, Site Skills, the `askUser` clarification tool and governed external-action tools; background CSV/JSON import, collection export and typed JSON filters.
+
+### Security
+- Filter sanitisation (#738, epic #674): a filter, sort or search `filter`/`sort` that names a field the caller cannot read is refused with `403 FIELD_FORBIDDEN` before any query runs, so hidden fields can no longer be probed through `_eq`/`_starts_with`/`_null`, `_or` nesting, JSON paths, sort order or counts (REST, GraphQL, export, MCP). `%`, `_` and `\` in `_contains`/`_starts_with`/`_ends_with` values are matched literally (item filters, permission rules, SCIM). o2m expansion no longer groups by a hidden foreign key and m2m expansion requires `read` on the junction. Search drops hits whose `_title` comes from a hidden field and reports only visible `totalHits` to restricted callers. Filters nest at most 16 levels. Audit: [Filter sanitisation audit](docs/en/security/filter-sanitisation-audit.md).
+- Bootstrap and single-use token race audit (#732, epic #674): parallel `POST /api/v1/setup/complete` requests yield exactly one admin, and requests that were in flight when another setup committed now get `409 SETUP_ALREADY_COMPLETED` instead of `404` (later requests still get `404`). `POST /api/v1/auth/verify-email` and `POST /api/v1/auth/reset-password` are single-winner under concurrency (conditional `UPDATE` / compare-and-swap on `token_version`) and get a per-IP brake (20 per 15 minutes). The public auth brakes now count with the runtime's atomic rate limiter, so a parallel burst can no longer slip past them. See [Bootstrap & single-use token audit](docs/en/security/bootstrap-and-token-race-audit.md).
+- Upload hardening (#740, epic #674): raw-byte uploads are classified by magic bytes and must match the declared type (HTML/JS/SVG/PHP or executables disguised as images, PDFs or text are refused). A polyglot scan rejects ZIP/JAR archives appended to images or PDFs (GIFAR), markup or PHP inside images and video, PDF headers hidden in images, data after PNG `IEND` (`UPLOAD_EMBEDDED_PAYLOAD`), and PDFs with JavaScript, launch or rich-media actions, including inside compressed object streams (`UPLOAD_ACTIVE_PDF`). A Workers-safe SVG sanitiser backs the existing `UPLOAD_UNSAFE_SVG` check and strips external references when SVGs are served; clean SVGs are served byte-identical. Filenames with control characters, NUL, bidi overrides, traversal or a dangerous extension in any position (`shell.php.png`) get `400 UPLOAD_UNSAFE_FILENAME`, including at `POST /files/presigned-url`. `GET /media/:key` serves only PNG/JPEG/GIF/WebP/AVIF/MP4/WebM `inline` and everything else as an attachment, always with `nosniff` and a `sandbox` CSP. MP4 and WebM join the upload catalogue, off by default. See [Upload security](docs/en/security/upload-security.md).
+
+- External-issuer JWTs can no longer set LumiBase's own principal markers. `withAuth` previously copied the verified payload onto `auth.raw` as-is, so a trusted issuer's `dev`, `isBootstrap` or `tfaVerified` claim reached the dev-admin bypass, bootstrap provenance and Studio 2FA guards. Those markers (and `anonymous`, `apiKey`, `mcpOAuth`) are now dropped; issuer claims such as `amr`/`acr` are kept.
+- Hardened production image: both base images are pinned by digest (`node:22-slim@sha256:…`, `gcr.io/distroless/nodejs22-debian13:nonroot@sha256:…`; Dependabot bumps tag and digest); the runtime stage is distroless (no shell, no package manager), runs as UID/GID `65532`, keeps application files root-owned, and starts with a read-only root filesystem. The shell entrypoint is replaced by `docker/scripts/entrypoint.mjs` and the `HEALTHCHECK` by `docker/scripts/healthcheck.mjs`, which now probes the worker health port for `LUMIBASE_PROCESS_ROLE=worker` instead of always `1989`. `docker/docker-compose.prod.yml` and `docker/docker-compose.gcp.yml` set `read_only: true`, a `/tmp` tmpfs, `cap_drop: [ALL]`, `no-new-privileges` and `init: true` (#734).
+- Release supply chain: `release.yml` builds the image and fails on any CRITICAL Trivy finding in the image or in `pnpm-lock.yaml` in a job that the GitHub Release — and through it every publish job (Docker image, Worker, Pages, npm) — depends on, so a failed gate stops the release as a whole rather than leaving one without its image; it then signs the pushed digest with keyless cosign (GitHub OIDC, no stored key), attests an SPDX SBOM, verifies both in the smoke job, and attaches image and dependency SBOMs to the GitHub Release. `docker.yml` builds once, locally, runs the same Trivy gate and a read-only, capability-free container health check on every PR and on `main`, and pushes that same image from `main` only after both pass. Trivy, Syft and cosign are installed by `scripts/install-image-tools.sh`, pinned by version and SHA-256 (#734).
+
+### Added
+- Conditional item writes (`ETag` / `If-Match`). `GET /api/v1/items/:collection/:id` returns the item's `version` as a strong `ETag`; sending it back as `If-Match` on `PATCH` or `PUT` makes the write fail with `412 PRECONDITION_FAILED`, writing nothing, if someone else changed the item first. The check runs inside the same `UPDATE`. Without `If-Match` writes overwrite as before. The SDK takes `items(name).patch(id, input, { ifMatch })` (also `replace`), and the Studio item editor now sends the version its draft was loaded from and, on a conflict, says so instead of overwriting the other person's edit. Migration `0036_items_version` adds `lumibase_items.version` (default 0, no table rewrite, no backfill). CORS now allows `If-Match` and exposes `ETag`. Phase A of [Content Environments](.kiro/specs/content-environments/).
+- Field value options (#751): `allowClear: false` on `select-radio` / `select-dropdown` fields stops a set value from being cleared (Studio hides the clear control, the API rejects `null`/`""`); `minLength` / `maxLength` on `string` / `text` fields are enforced by the API, counted in Unicode code points; `options.slug` sets a slug charset policy (`ascii` with Vietnamese transliteration, `unicode`, or `custom` with a ReDoS-safe, linear-time pattern). Options are validated on schema write (`422 INVALID_FIELD_OPTIONS`) and enforced on every item write. Fields without these keys behave as before. See [Field value options](docs/en/features/field-value-options.md).
+- Timezone-aware datetime fields (#747): `options.timezone: true` on a `datetime`/`timestamp` field stores `{ instant, tz, offset }` (IANA zone, validated with `Intl`). Writes accept `{ instant, tz }`, `{ local, tz }` or an ISO string; DST gaps and overlaps follow Temporal's `disambiguation` (`compatible` by default, `reject` available). Filters and sort compare the instant; GraphQL exposes `ZonedDateTime`, typegen and the SDK type the object. Fields without the option are unchanged. See [Timezone-aware datetime fields](docs/en/features/timezone-aware-datetime.md).
+- Studio: Settings → Date & time sets a per-user display time zone (`users.preferences.timezone`, default: browser). Timezone-aware values are edited with a zone picker and listed in the user's zone with the original zone as a hint.
+- Form layout for collections (#750): arrange the item form into tabs, groups (optionally collapsible) and dividers, and show any node only when sibling field values match a declarative condition (`eq`, `neq`, `in`, `nin`, `empty`, `nempty`, `gt`, `lt`, `gte`, `lte`, `contains` with `and`/`or`/`not`; no `eval`). Stored at `collection.meta.formLayout` (no migration), edited in Data model → Form layout or via `GET/PUT /api/v1/collections/:name/form-layout`. The Studio and the CMS share one condition engine: a field hidden by its condition skips required validation only when `skipRequiredWhenHidden: true`, and `hiddenValue: keep|clear` (default `keep`) decides what saving does to its stale value. Collections without a layout render as before. See [Form layout](docs/en/features/form-layout.md).
+- Dynamic zones: a `blocks` field type holding an ordered list of `{ id, type, data }` blocks, where each `type` is a block template (a collection of the same site) listed in `options.allowedBlocks` (`min`/`max` optional). Every block is validated against its template with the collection field validator, recursively for nested zones (max depth 5), with path-precise errors; `null` is stored as `[]`. GraphQL exposes each zone as a list of a union of `<Template>Block` types, typegen emits a discriminated union on `type`, the SDK exports `LumibaseBlock`, and Studio gets a block editor (add, remove, drag/keyboard reorder, collapse). See [Dynamic zones](docs/en/features/dynamic-zones.md) (#748).
+- `geopoint` field type (#746, epic #676): `{ lat, lng }` validated on write, with `_near` (`{ lat, lng, radius }` in metres) and `_within_bbox` (`[minLng, minLat, maxLng, maxLat]`) filters on REST and GraphQL. Plain Postgres computes them with a range prefilter plus haversine; with PostGIS installed (detected at runtime) the exact test is `ST_DWithin` on the same sphere, so both return the same rows. Antimeridian and poles are handled; no migration. Typed as `{ lat: number; lng: number }` by SDK typegen and as `GeoPoint` in GraphQL. See [Geopoint fields](docs/en/features/geopoint.md).
+- Studio: geopoint input with a lazy-loaded MapLibre map (click or drag), typed coordinates and Use my location, plus a **Map** layout for collections with a geopoint field (markers open the item; Only this area filters by the visible bounds). Default tiles are OpenFreeMap (no API key); override with `VITE_MAP_STYLE_URL` or a field's `mapStyleUrl` option. The CMS `Permissions-Policy` now allows `geolocation=(self)`.
+- Hierarchical collections (#749): a collection with `meta.tree = { enabled, maxDepth?, onDelete? }` stores items as a tree (`parentId` + materialised `path`, maintained server-side). Create under a parent with `parentId`, read with `?tree=children|subtree|ancestors`, and move a subtree with `POST /api/v1/items/:collection/:id/move` (cycles and depth overflow are `409`; concurrent moves are serialised per collection). Deleting a parent follows `onDelete`: `restrict` (default), `cascade` or `reparent`. Row rules apply to every tree query. Studio shows such collections as a tree with reorder / indent / outdent / add-child. Migration `0034_item_tree` adds two nullable columns and two indexes to `lumibase_items`; no backfill, existing items read as roots. `parent_id` has no foreign key: every tree lookup is by `site_id` + collection + id, so the tree is correct whether item ids are unique per instance or per site. See [Hierarchical collections](docs/en/features/hierarchical-collections.md).
+- Folder-mode permissions (#749): a policy with `read` + `update` but no `create`/`delete` on a collection now hides **New item**, **Add child** and **Delete** in Studio while browsing and editing keep working (the API already refused those actions). The item editor's Delete button is hidden instead of shown disabled when `delete` is not granted.
+- Coordinated vulnerability disclosure programme (#737, epic #674): `SECURITY.md` now lists the real supported lines (`2.0.x`; `1.0.x` security fixes until 2027-05-10), response targets by CVSS severity (acknowledge 3 business days, triage 7, fix 14/30/60/90 days for Critical/High/Medium/Low), GHSA + CVE flow, embargo, credit and safe harbour, and a triage policy for AI-generated and scanner reports (working PoC against a supported version required; how such reports are closed). New bilingual pages: [vulnerability disclosure policy](docs/en/security/vulnerability-disclosure.md), [security advisories](docs/en/security/advisories.md) (where advisories are published and the GitHub API / OSV feed), [advisory template](docs/en/security/advisory-template.md) and [advisory runbook](docs/en/security/advisory-runbook.md) with a dry run of the first advisory. The issue chooser links to private vulnerability reporting; release notes get a `Security` section and label category.
+- Secure-by-default `create-lumibase` templates and `lumibase doctor --security` (#731, epic #674). No template ships a secret or a default admin any more: the committed `.env.example` / `.dev.vars.example` leaves secrets empty and the scaffolder writes a gitignored `0600` `.env` / `.dev.vars` with fresh `JWT_SECRET`, `ENCRYPTION_KEY` and (Next.js) first-admin password. The Next.js compose file reads its secrets as `${VAR:?…}` instead of `dev_secret_key`; the Docker and Cloudflare starters add CSP headers, an exact-origin CORS allowlist and a fail-closed `JWT_SECRET` check, and `wrangler.toml` no longer carries secrets in `[vars]`. `lumibase doctor --security [--production] [--json] [--env-file]` audits `.env`, `wrangler.toml` and compose files against the production checklist (secrets, CORS, refresh-cookie flags, setup-token gate, RLS, rate limits, Redis, database TLS, browser-exposed credentials) with a severity, rule and fix per finding, and exits 1 on any critical. A fresh scaffold of every template passes with zero criticals. See `docs/en/security/secure-defaults.md`.
+- Password policy (#733, epic #674): one configurable policy — length, character classes, a zxcvbn-style strength score (in-house estimator shared by the CMS and Studio) and an optional Have I Been Pwned k-anonymity check, **off by default** — is enforced on registration, change password, reset password (incl. invite first password), the setup wizard and backup-code recovery. A rejected password returns `400 { errors: [{ code: 'PASSWORD_POLICY', message, rules: [{ rule, ok, … }] }] }` naming each failed rule. The default keeps the previous rules (12+ characters, four character classes) and adds a "fair" strength floor (`minStrength: 2`), so `Password1234!` is now refused; existing passwords keep working. `GET /api/v1/auth/password-policy` serves the public rule set; `GET/PUT /api/v1/admin/password-policy` reads and changes it (PUT: bootstrap admin, audited). Studio: strength meter + live checklist on Settings → Security → **Change password** (new) and the recovery reset. See [Password policy](docs/en/security/password-policy.md).
+- Security history (#739, epic #674): `GET /api/v1/me/security-history` returns the caller's own sign-ins, failed attempts, new devices, password and two-factor changes and session sign-outs from the audit log, newest first with a cursor, for staff and members alike. Only an allow-list of events is shown, IPs are shortened (`203.0.113.x`), and an administrator's IP or browser is never shown. `?scope=account` adds the other sites the user belongs to. `GET /api/v1/me/security-history/export?format=csv|json` downloads up to 5,000 events (formula-safe CSV, 10 exports per 15 minutes). A sign-in (password or TOTP) from a device the account has not used before emails the owner after the response is sent: time, device, approximate IP and where to sign the session out (`LUMIBASE_SECURITY_SETTINGS_URL`, optional). At most 3 emails per user per hour; every new device is recorded as `new_device_login`. Devices are the anomaly detector's fingerprints in `login_baselines`, now learned even when the device check is off. TOTP sign-ins are now audited as `login_success`, and `refresh_token_reuse_detected` records the token owner. Studio: **Settings → Security → Security history** with CSV/JSON export. See [Security history](docs/en/security/security-history.md).
+- Passkeys (WebAuthn) for staff (#735, epic #674): register under **Settings → Security → Passkeys** (password step-up), then sign in without a password ("Sign in with a passkey") or use the passkey as the second factor after the password. Both sessions are TFA-verified (`amr` `webauthn`, `tfaVerified`), so `enforceTfa` policies are satisfied, and both carry `sid` like any other login. `/auth/login` now lists the accepted second factors in `methods` on `mfa_required`. Challenges are single-use with a 5-minute TTL; a signature-counter regression is rejected and audited as `passkey_counter_regression`. Recovery codes are shared with TOTP, and a passkey-only user gets them with the first passkey. RP ID / origins come from `WEBAUTHN_ORIGINS` / `WEBAUTHN_RP_ID` or, unset, from an already-trusted Studio origin. A Studio user under `enforceTfa` with no second factor can now reach the TOTP and passkey enrollment endpoints (and only those) instead of being locked out. Passkey controls are hidden in the desktop app. New table `lumibase_user_passkeys` (migration `0032`). See [Passkeys](docs/en/security/passkeys.md).
+- Social login for members (#736, epic #674): sign in with Google, Apple or GitHub on the subscriber (`frontend`) realm. Per-site provider settings in Studio (**Settings → Social login**, `/api/v1/admin/social-providers`) with the client secret / Apple `.p8` key encrypted under `ENCRYPTION_KEY`, an exact-match redirect allow-list, and authorization code + PKCE + `state` + `nonce` (Google/Apple ID tokens verified against the provider JWKS; GitHub via its API, primary verified email only; Apple `form_post` with a per-exchange ES256 client secret). The frontend redeems a one-time code with its own PKCE verifier at `POST /api/v1/auth/social/exchange` and gets the same session as password login (`aud: frontend`, `sid`). A new identity auto-links to an existing account only when the provider verified the email and the account verified its own, and never onto a Studio account; members list, link (`/me/identities`) and unlink identities but cannot remove their last login method. Apple's first-authorization name is stored and kept on later sign-ins. Migration `0033` adds `lumibase_user_identities` (the #794 link table, backfilled from `users.external_id`) and `lumibase_social_auth_providers`. Audited as `social_login`, `social_account_created`, `social_identity_linked`, `social_identity_unlinked`, `social_login_failed`, `social_provider_configured`. See [Social login](docs/en/security/social-login.md).
+- Active session & device management (#730, epic #674): every login and refresh signs the session id (refresh-token family) into the access JWT as `sid`. `GET /api/v1/me/sessions` rows now carry a stable `sessionId`, `startedAt`, `lastSeenAt` and `current`; `DELETE /api/v1/me/sessions/:id` accepts the `sessionId`; `DELETE /api/v1/me/sessions?scope=others` signs out every other device. A revoked session's access token is rejected on the next request on both runtimes instead of living until it expires. Confirming TOTP enrolment signs out every other session. Revocations are audited as `session_revoked` / `sessions_revoked`. Studio: **Settings → Security → Active sessions** lists devices with per-device sign-out and "Sign out other sessions".
+- Deployment environments, role-based deploy permissions and promotion (#743). A site maps deployment targets to environments (`preview`, `staging`, `production` by default, settings key `deployment.environments`) and grants `deploy:trigger:<env|target|*>` / `deploy:approve:<env|*>` through permission rows on `lumibase_deploy:<scope>`. Triggering or promoting into an environment with `requiresApproval` (production by default) parks a pending approval in `lumibase_ai_approvals` that another signed-in person holding `deploy:approve:<env>` must accept; the requester cannot approve their own request. `POST /environments/staging/promote` ships the same build (Vercel promote / Netlify restore) or re-triggers the same commit. New endpoints under `/api/v1/deployments`: `access`, `environments`, `environments/:key/deploy|promote`, `approvals`, `approvals/:id/decide`; the deployments page gains environments, promote and pending-approval panels. Non-admins with a deploy grant can now use the deployments API; target CRUD, the environment map and build logs stay admin-only. No migration. See [Deployment environments](docs/en/features/deployment-environments.md).
+- `create-lumibase --template astro`: an Astro 7 static site that reads content through the `lumibase` client at build time and deploys `dist/` to Cloudflare Pages with `npm run deploy`. It accepts only a publishable key for normal builds; an opt-in draft preview build needs a separate secret token and fails closed without it. See [Astro starter](docs/en/tutorials/astro-starter.md) and [Static export to Cloudflare Pages](docs/en/deployment/static-export-cloudflare-pages.md) (#744).
+- `create-lumibase --template sveltekit`: a SvelteKit 3 site on `@sveltejs/adapter-cloudflare` with server-side loads and draft preview behind an HMAC-signed, HttpOnly cookie (off unless `LUMIBASE_PREVIEW_SECRET` and `LUMIBASE_PREVIEW_TOKEN` are set). Both starters ship typed content, an `.env.example` with every secret empty, and a marked hook point for visual editing, which is not released yet. `create-lumibase --help` lists the templates. The CI scaffold smoke now also builds both starters and, on `main` with Cloudflare secrets configured, deploys the Astro build to Pages (#744).
+- Live OpenAPI 3.1 document per site: `GET /api/v1/openapi.json` is generated from the site schema and filtered by the caller's permissions. It lists only readable collections, fields allowed by the field mask, and operations the caller holds; the `public` realm gets reads only. Off by default, and while off it answers with the unknown-route 404. A site admin enables it and picks realms (`studio`, `frontend`, `api_key`, `public`) with `PUT /api/v1/openapi/config` or in Studio → Settings → Developer → Types (setting key `openapi`, no migration). Documents are cached per schema version and permission fingerprint, and a schema change invalidates them. Field types map the same way `lumibase typegen` maps them. The docs site has an API explorer page (bundled Swagger UI) that loads a URL you enter. See [Live OpenAPI document](docs/en/api/live-openapi.md).
+- Official Helm chart for Kubernetes (`deploy/helm/lumibase`, #742): the CMS API and Studio from the published image, migrations in init containers, a release Job or the image entrypoint, serialised by a PostgreSQL advisory lock in `migrate.cjs apply` so concurrent web pods apply once, with the worker held by a read-only `migrate.cjs wait` gate until the schema is current, probes on `/health` and `/health/ready`, non-root with a read-only root filesystem, bundled or external PostgreSQL and Redis, optional Meilisearch, ingress with optional TLS, HPA, PDB, NetworkPolicy and `helm test`. `JWT_SECRET` and `ENCRYPTION_KEY` are generated once and kept across upgrades, or read from `secrets.existingSecret`. CI lints and render-tests the chart and installs it on kind, including an N-1 to N schema upgrade with a worker and two web replicas; each release pushes it to `oci://ghcr.io/khuepm/charts/lumibase`. See [Kubernetes (Helm chart)](docs/en/deployment/kubernetes-helm.md).
+- Usage emitter seam (`@lumibase/contracts/platform`, `registerPlatformSeams({ usage })`): the CMS reports API and delivery requests, storage writes, organization membership changes, agent runs, model tokens and outbound email as tenant-attributed `UsageEvent`s with a uuidv7 idempotency key. The built-in default is a no-op that builds no event and performs no I/O; with an emitter registered, attribution, `emit` and `flush` run after the response (`waitUntil` on Workers). `pnpm -F @lumibase/cms bench:usage-seam` measures the request-path cost. See `docs/en/architecture/platform-extension-points.md`.
+- **Ops diagnostics plane**: a read-only operator surface under `/api/v1/ops/*`, gated by a new static secret `LUMIBASE_OPS_TOKEN` (at least 32 characters; unset → 404 everywhere). `diagnostics` reports the release, pending migrations against the deployed code, schema drift (tables and columns the code selects that the database lacks), RLS flag/role/policy coherence (the Docker startup checks, now also on Workers) and service health as typed findings with fixes. `sites/:siteId/probe` runs `GET /api/v1/site`'s statement on the request connection and says whether the row is missing, hidden by RLS or failing (with SQLSTATE). Responses carry no row data. See [Ops diagnostics](docs/en/features/ops-diagnostics.md).
+- Every 5xx response is captured to `lumibase_ops_errors` by `requestId`, with the sanitized error chain including the Postgres SQLSTATE that Drizzle wraps (query params, Postgres `detail` and tokens are dropped). It is readable at `GET /api/v1/ops/errors[/:requestId]`, kept for 14 days, and written best-effort on the system connection. Migration `0031_ops_errors`; re-apply `rls-policies.sql`, which forces RLS on the table with no policy.
+- MCP: `ops_diagnostics`, `ops_list_errors`, `ops_get_error` and `ops_probe_site` when the server's environment has `LUMIBASE_OPS_TOKEN`; with no `LUMIBASE_TOKEN` the server runs ops-only.
+- External-action tools: a registry for agent tools whose effect lands outside the CMS. A tool declares `risk`, `reversibility`, `blastRadius`, the capability it needs and the names of its secrets, and the harness decides on that declaration. A high-risk or irreversible tool waits for an approval at every autonomy level; with no autonomy grant the level is L1. The same decision is returned through MCP `tools/call` and the Agent API. Each proposal, approval, rejection, refusal and execution writes an `agent.external_action.*` activity row. LumiBase registers no such tool itself; `createHttpEchoTool` is a reference for tests. See [External-action tools](docs/en/features/external-action-tools.md).
+- Approvals for external-action tools are stored with `approvalPolicy: human_required` and are released only by a signed-in user. An API key, an OAuth connector token and the agent reviewer are refused with `HUMAN_APPROVAL_REQUIRED`.
+- `GET/PUT/DELETE /api/v1/agent/tool-secrets[/:name]`: per-site secrets for external-action tools, encrypted with the runtime `KeyProvider` and never returned. Managed by a signed-in site administrator; API keys are refused. A tool reads a secret by the name it declared, only while its handler runs, and the resolved values are removed from whatever the handler returns or throws (migration `0030`, no backfill).
+- Platform extension points for operators: a deployment entry can supply its own policy implementations with `registerPlatformSeams()` (`@lumibase/cms/platform`), with the contracts in `@lumibase/contracts/platform`. The first seam is an entitlement resolver (`resolve` / `authorize`); its built-in default is unlimited and performs no I/O, a resolver that throws is logged and the request proceeds, and a refusal is answered `429 LIMIT_EXCEEDED` on REST, GraphQL and MCP alike. The stock entry points register nothing, so existing behaviour is unchanged. See `docs/en/architecture/platform-extension-points.md`.
+- `@lumibase/cms` now exports its entry points (`/app`, `/cloudflare`, `/node`, `/platform`) so a deployment can wrap them. `@lumibase/cms/node` provides `startNodeServer()`, which starts nothing on import; running `serve.ts` directly is unchanged.
+- Cached site → organization lookup (`siteOrganizationId`) through the runtime cache, invalidated when a site is created, transferred or deleted.
+- `pnpm imports:check` (part of `pnpm check:all`): every `@lumibase/*` import and dependency under `apps/` and `packages/` must resolve to a package in this workspace.
+- Activation milestones: each site records the first time it reaches `site_created`, `item_published`, `delivery_request` and `agent_run`. `GET /api/v1/activation` (site admins) returns the funnel with timestamps. Milestones are write-once, site-scoped and stay in the install's own database (migration `0029`).
+- Opt-in anonymous usage telemetry for self-hosted installs. Off by default, no built-in endpoint: it sends only when `LUMIBASE_TELEMETRY_ENABLED=true` and `LUMIBASE_TELEMETRY_ENDPOINT` are both set, and `LUMIBASE_TELEMETRY_DISABLED=true` or `DO_NOT_TRACK=1` turns it off. At most four events per install, each matching the published schema (`docs/schemas/telemetry-event.v1.schema.json`): a random install id, the event name, a UTC day, the version and the runtime. See [Activation milestones and usage telemetry](docs/en/operations/usage-telemetry.md).
+- **Site Skills** (#712): playbooks a site writes for its agents — house style, translation rules, page structure — as Markdown with front matter. Active skills are added to the instructions of matching runs in the Copilot chat, the generation tools (`aiContentAssist`, `aiSuggestField`, `repairTranslation`, `generateAppSpec`, `generateSeedData`) and over MCP as `prompts/list` / `prompts/get`. Every content change is an immutable version with author, source and sha256 hash, and each run records the `slug@version` it used. A skill is instruction text only: it grants no tool or capability and does not bypass approvals, autonomy levels, the kill switch or the constitution.
+- `/api/v1/agent/skills` API: CRUD, activate/archive, version trail and restore, Markdown import/export, and `/match` to preview what a run would receive. Reading and writing skills both need a control-plane admin — over MCP too, where `prompts/*` are empty for any other caller; non-admin skill authors are not supported yet, and `riskClass` is a review label, not a permission tier. Each write (skill, version, audit entry) is one transaction. `PATCH` takes `expectedVersion` and status actions take `version` (`409 VERSION_MISMATCH`); a skill that was ever active cannot be deleted, only archived (`409 SKILL_HAS_BEEN_ACTIVE`); an import that would change an active skill is refused per document unless it sets `updateActive`. A body is at most 12,000 characters — the per-run injection budget, so any active skill can be injected. Copilot triggers match the latest user turns of the conversation, not only the current message.
+- `lumibase skills list | pull | push | install` in the CLI, for keeping skills in git and deploying them from CI (`push --check` fails when the site differs from the directory). `push` is the deploy path and updates active skills; `install` never changes a skill that is already active.
+- Studio: Mission Control → Skills, with an editor, lifecycle actions, version history and a match preview. Saving and activating are guarded by the version on screen, and skills that were ever active offer Archive instead of Delete.
+- MCP tool-schema fidelity suite. CI validates every stdio and HTTP tool `inputSchema` as JSON Schema (meta-schema and strict compilation in draft-07 and 2020-12) and fails when the `tools/list` output of either transport differs from its committed golden. What it proves about agreement with the server depends on the tool. HTTP tools and governed stdio tools are probed value by value against the canonical contract (`validateAgentToolInput`). The probes include every enum member and invalid array elements. The 33 ungoverned stdio mutations that send a JSON body, plus `diff_schema`, are compared with the Zod object their REST route parses with. The comparison covers key set at every depth, types, enums and required keys. It also checks that the handler forwards every advertised key to the bound route and that the route body schema accepts every probed value. That route body golden is generated in `apps/cms` and pinned against the live route schemas. A field-type × nullable × localized × repeatable matrix, including relations and files, checks that values pass through both transports unchanged. Not covered: rules that JSON Schema cannot state, such as cross-field refinements (`webhook_id` when `kind` is `"webhook"`), cursor decoding and transforms. Also not covered: query parameters of read tools, documents forwarded verbatim (`apply_access_import`, `restore_backup`), HTTP read skills without a canonical schema (B204), per-site schema overrides (B205) and the field `type` vocabulary (B206). Each accepted gap is listed in the suite and fails once it is stale (#716).
+- One-click deploys of the CMS with its Studio (#741): a Render Blueprint (`render.yaml`, with a Deploy to Render button in the README) that provisions the published image, Render Postgres and a `noeviction` Key Value instance and generates `JWT_SECRET`/`ENCRYPTION_KEY`; a Fly.io `fly.toml` (one machine always on, `SIGTERM` shutdown, secrets set with one `fly secrets set`); and a Railway `railway.json` plus `docker/railway-template-variables.json`, the variable set for the Railway template. Every template gates setup with `LUMIBASE_REQUIRE_SETUP_TOKEN`. Cloudflare has no deploy button yet; [One-click deploys](docs/en/deployment/one-click.md) explains what is and is not one-click on each platform.
+- The image entrypoint defaults `CORS_ALLOWED_ORIGINS` to the deployment's own origin when it is unset — from the new `LUMIBASE_PUBLIC_URL`, or the platform's `RENDER_EXTERNAL_URL`, `RAILWAY_PUBLIC_DOMAIN` or `FLY_APP_NAME` — and treats a value with no host (such as `https://` from an empty platform domain) as unset; prints the setup wizard URL while setup is pending; and in production, when the server is going to start, exits before touching the database when a required variable is missing or `ENCRYPTION_KEY` is one the server would reject, naming it. `ENCRYPTION_KEY` is passed to the server exactly as supplied — the CDC registry derives its key from the string, so re-encoding it would change the key. `MIGRATION_MODE=preflight|dry-run` still needs only `DATABASE_URL` (#741).
+- Typed JSON filters (Cast_Rule): `_eq`/`_neq`/`_in`/`_nin`/`_gt`/`_gte`/`_lt`/`_lte` compare numeric, boolean and date fields by type instead of as text, so `filter={"price":{"_gt":9}}` matches `10`. Nested JSON paths infer the cast from a number/boolean value. A stored value of the wrong type drops out of the result instead of failing the query; a filter value that cannot be cast returns `400 INVALID_FILTER`. Sorting on numeric/boolean/date fields is typed too (#729, epic #673).
+- `GET /api/v1/collections/:name/index-advice?path=&cast=` (read-only, `schema:read`) returns `CREATE INDEX CONCURRENTLY` DDL whose expression matches the typed filter, partial on the collection (#729).
+- Collection export: `GET /api/v1/items/:collection/export` streams CSV or JSON with field selection, locale columns for translatable fields (`title.vi`), relation modes (`id`, `slug`, `embed`), the list filter/sort syntax and the caller's read permission. CSV neutralises spreadsheet formulas reversibly. Each export is audited as `items_exported`. Export → import → export round-trips losslessly, translations included (#727, epic #673).
+- Studio: an **Export** button and dialog on the collection list (format, fields, locales, relations, current filters).
+- SDK: `client.items(name).export(params)` returns the streaming `Response`; `client.rawFetch(path, init)` is the streaming counterpart of `rawRequest`.
+- Extensions: `items.export.before` hook to transform or drop fields from each exported row.
+- Content migration from Contentful (#728, epic #673): `lumibase migrate contentful --file space.json` reads a `contentful space export`, prints a dry-run plan (collections, field types and interfaces, relations, conflicts, warnings) and, with `--apply` plus a confirmation (`--yes` in CI), creates the schema, uploads assets and imports entries with their Contentful ids and statuses. Additive only: an existing collection only gains missing fields, and a clashing field goes to `<name>_contentful`. Re-runs update items in place and skip assets already uploaded (state file under `.lumibase/`). Sanity, WordPress and Strapi adapters follow on the same framework. See [Content migration](docs/en/features/content-migration.md).
+- Portable rich-text model in `@lumibase/contracts/richtext` — a versioned JSON document (blocks, marks, links, item/file refs, embeds, tables) with escaping HTML, Markdown and plain-text serializers that only keep `http(s)`/`mailto`/`tel`/relative links — and the source-neutral migration framework in `@lumibase/contracts/migrate` (Contentful parser, planner, entry transform). Contentful rich text converts to this model; R01 (#695) builds the `richtext` field type on it.
+- Agent skills `planContentMigration` (`schema:read`) and `applyContentMigrationSchema` (`schema:create` + `schema:update`; control-plane, always parks for approval) plan and create a migration's schema from the content types of a Contentful export.
+- Studio: `richtext` interface for `json` fields — rendered preview with a locale switcher and a raw JSON toggle.
+- Background imports: `POST /api/v1/imports` takes a CSV or JSON export file, answers `202` and writes the rows in chunks under the uploader's permissions, re-checked every chunk. Progress at `GET /api/v1/imports/:id`, cancel at `POST …/cancel`, row-level error report at `GET …/errors` (`?format=csv`). `create` or `upsert` (by `id`). Jobs survive restarts: a one-minute tick resumes any job whose lease expired. Limits: `IMPORT_TIMEOUT`, `IMPORT_MAX_CONCURRENCY` (per site), `IMPORT_MAX_BYTES`, `IMPORT_CHUNK_SIZE` (#726, epic #673).
+- Studio: **Import** button and dialog on the collection list with live progress, cancel and the error report download.
+- SDK: `client.imports.create / list / get / errors / errorsCsv / cancel`.
+- Database: migration `0028_import_jobs` adds `lumibase_import_jobs` (site-isolated under RLS).
+
+### Changed
+- A string filter value on a numeric/boolean/date field that is not a valid number/boolean/date now returns `400 INVALID_FILTER`; previously it was compared as text and silently matched nothing or the wrong rows.
+
+- `GET /api/v1/agent/approvals` no longer lists `askUser` questions, and
+  `POST /api/v1/agent/approvals/:id/decide` / `/reopen` refuse a question id with
+  `409 NOT_AN_APPROVAL`.
+- The `agent-runs` queue worker now passes a Web Push notifier to the harness, so
+  approvals and questions parked by a queued run notify subscribed operators (realtime
+  in-app delivery still needs a request context). It forwards only `approval` and
+  `question`: queued runs still send no run succeeded/failed pushes. On Workers the send
+  is kept alive with the queue consumer's `waitUntil` (the `queue()` dispatcher now
+  forwards its `ExecutionContext`); on Docker the worker awaits it; a failed send never
+  fails the run.
+- Security: external-issuer JWTs on the MCP endpoint must carry the MCP resource URI in `aud` (token pass-through from other audiences is refused), and a token whose only audience is an MCP resource is refused on every other path. API keys and LumiBase session JWTs are unaffected. Set `LUMIBASE_PUBLIC_URL` behind a TLS-terminating proxy so the resource URI matches.
+
+### Fixed
+- Item ids are unique per site, not per instance. `lumibase_items` had `PRIMARY KEY (id)` while the create path only checked the caller's site, so a string id another site already used answered `500`, and one site could take an id another site could then never use. Migration `0035_items_site_scoped_pk` makes the key `(site_id, id)` and turns the foreign keys from revisions, release items and content reviews into same-site composite keys (content reviews keep `site_id` on item deletion via `ON DELETE SET NULL (item_id)`, PostgreSQL 15+). A reused id inside one site — now also across collections, or repeated in one bulk payload — is `409 ITEM_ID_EXISTS`. Scheduler publish/unpublish/retention updates and the automated-decisions report now match items by site as well as id. **Upgrade:** the migration rebuilds the items primary key under an exclusive lock; run it in a maintenance window on very large tables.
+- SDK: `rawRequest` no longer forces `content-type: application/json` on a `FormData` body, which broke multipart uploads.
+- Typed JSON timestamp filters (#729) accept the end-of-day time `24:00` (also `24:00:00`, `24:00:00.000`), which PostgreSQL casts to midnight of the next day. The guard rejected it while the cast accepts it; `24:01`, `24:00:01` and `24:00:00.5` stay rejected, as they are in PostgreSQL.
+
+- **Agent harness: `askUser` clarification tool (#710).** An agent that cannot continue
+  without a decision it may not make asks a human instead of guessing. The run parks in
+  the new `waiting_user` status (no queue worker, no lock held), the question reaches the
+  Mission Control inbox and a `question` notification, and an answer resumes the run: the
+  `askUser` tool call completes with the answer (wrapped as untrusted data for the model)
+  and the run settles `succeeded`. Stored as `agent_approvals` rows with
+  `kind = 'question'` — **no migration**. New endpoints `GET /api/v1/agent/questions`,
+  `GET /api/v1/agent/questions/:id` and `POST /api/v1/agent/questions/:id/answer`
+  (signed-in users only — any API key, site- or organization-scoped, gets `403`; a holder
+  of `approvals:decide`, or the requesting user once backlog B207 opens the route beyond
+  site administrators; tenant-scoped,
+  audited as `agent_question.*`, a second answer is `409`; the requester's rights are
+  re-resolved before resuming). New read skill `getUserAnswer` returns the outcome to the
+  requester only. Both skills are offered to governed agents (agent runs, the queue
+  worker, MCP), not to the Copilot chat, which has no run to pause. Questions time out (default one day, max seven) through the 5-minute
+  `agent-question-sweep` on both runtimes, failing the run with
+  `stopReason: question_timeout`; freezing a role or the site, pausing an intent or
+  cancelling the run ends waiting runs. MCP `tools/call` returns
+  `status: "waiting_user"` with `questionId`. Metrics
+  `lumibase_agent_questions_total{status}` and `lumibase_agent_question_wait_seconds`; the
+  trust ledger shows question counts in promotion evidence.
+- `POST /api/v1/deployments/webhook/:provider/:siteId` carries the tenant in the URL path so Vercel and Netlify outgoing deployment webhooks (which cannot send custom `X-Lumi-Site` headers) work on the shared API host (`api.lumibase.dev`) without a per-site host mapping. `POST /api/v1/deployments/webhook/:provider` remains supported via `withTenant` (#569, B163).
+- MCP: OAuth 2.1 protected-resource support for hosted connectors (Claude, ChatGPT, IDE remote MCP) — #346. RFC 9728 metadata at `/.well-known/oauth-protected-resource[/api/v1/mcp[/sites/<siteId>]]` advertising the site's trusted external issuers as authorization servers; `WWW-Authenticate: Bearer resource_metadata=…` on MCP 401s; site-addressed endpoint `POST /api/v1/mcp/sites/<siteId>`; scopes `mcp:read`/`mcp:write`/`mcp:delete`/`mcp:admin` that only narrow the RBAC capability set, with `403 INSUFFICIENT_SCOPE` step-up challenges. No Dynamic Client Registration in LumiBase (use the IdP's, or register the client manually). Guide: `docs/en/agent-setup/oauth-connector.md`.
+- MCP `tools/list`: each tool now carries `title` and `annotations` (`readOnlyHint`, `destructiveHint`) derived from the registry — client hints only (#346, consolidated from #805).
+
+- `@lumibase/mcp-server` tools no longer drop or misdescribe keys that the server accepts. Collection and field tools accept `null` where REST clears a column, such as `note`, `sortField` or `length`. `upsert_field` no longer sends Zod defaults with every update; those defaults reset `required`, `hidden`, `encrypted`, `width` and other columns. New stdio fields therefore use database defaults, as REST does, so `searchable` defaults to `true`. `upsert_field` also forwards `classification`, `validation`, `rawEnabled` and `migrationPlan` instead of dropping them. As on REST, any `migrationPlan` object, even `{}`, now passes the risky-change guard like `confirmRiskyChange: true`, and the plan itself is not executed (B213). Translation keys, CDC targets and intent `rules` and `schedule` advertise the constraints that the governed contract enforces (#716).
+- `apply_schema` and `diff_schema` take their `fields[]` entries from the `upsert_field` schema. They previously stripped 12 keys that REST accepts, so `encrypted: true, classification: "pii"` created a plaintext, unclassified field. Both tools now also advertise the collection metadata and the `relations[]` list that the schema endpoint applies. `fields` and `relations`, when given, are complete lists, and entries missing from them are deleted. `create_collection` and `update_collection` add `system`, `itemDuplicationFields`, `translations` and `meta`. `primaryKeyField` carries the REST name pattern (#716).
+- `POST /collections/diff` (and so `diff_schema`) reports a field `classification` change, rated `medium` like `encrypted`. A preview that downgraded `pii` to `none` previously listed the field as unchanged. The requests the stdio `apply_schema`, `diff_schema`, `create_cdc_subscription` and `update_cdc_subscription` tools send are now pinned in a golden and replayed against the real routes over PostgreSQL (#716).
+- `update_cdc_subscription` advertises exactly what `PATCH /cdc/subscriptions/:id` accepts. `status` (`active` or `paused`) is new, which is the only way to pause or resume a subscription. `kind`, `webhook_id` and `extension_name` are removed, because the PATCH ignored them. CDC `collections` entries must be non-empty, and `cdc_subscription_replay` requires an ISO `occurred_after` and a non-empty `cursor` (#716).
+- `publish_extension` matches the route: `publisher` is a string, and `signature`, `publisherKeyId` and a hex `bundleSha256` are required. Every call that the previous shape described was refused. `create_release` and `update_release` forward `maintenanceWindow`. Flow nodes accept `branches` on `create_flow` and `update_flow`. The canonical `createFlow` contract, used by HTTP MCP and governed stdio, previously stripped `branches` from a branching node (#716).
+- The `upsert_field` description lists the canonical `FieldType` spellings (`datetime`, not `dateTime`; no `float`) (#716).
+- Organization MCP `tools/list` omits the `$schema` 2020-12 dialect URI, as site tools do. Draft-07 validators, including Ajv's default class, can now compile those schemas (#716).
+
+- **Search indexing and ISR revalidation now run on Cloudflare Workers (B131,
+  part 1).** The Worker had no `content-indexing` or `revalidation-dispatch`
+  queue, so every item write logged `Queue binding not found` and on Workers the
+  search index and the revalidation targets never saw a content change. Each
+  queue now has a producer, consumer and dead-letter queue in every
+  `wrangler.toml` profile, and the Worker's `queue()` runs the same handlers as
+  Docker. Deploy and release workflows create the missing queues; manual
+  deployments create them as in `DEPLOYMENT-CHECKLIST.md`. Until a queue is
+  bound, `ItemService` indexes inline and revalidation is dispatched inline
+  instead of being dropped. Existing Workers search indexes are not rebuilt
+  automatically: run the reindex CLI.
+
+- **Scheduled publish, veto-window commits, reconciler goals, deployment status,
+  Change Feed webhooks and envelope migration now run on Cloudflare Workers
+  (B131, parts 2-5).** Docker ran these on `node-cron` with a leader lock; the
+  Worker had no counterpart, so on Workers scheduled items were never published
+  or unpublished, veto-window stagings were never committed, reconciler goals
+  never dispatched, deployments stayed `building` and webhook subscriptions
+  received nothing. The Worker's Cron Trigger now runs the same sweeps
+  (`cloudflare-cron-parity.ts`): every minute on local/production, every five
+  minutes on staging, not at all on dev/demo (no crons there). Workers delivers
+  Change Feed events to webhook subscriptions only (extension subscribers stay
+  Docker/Node, B215), within about a minute. Envelope migrations continue on a
+  new `encryption-envelope-migration` queue, created by the deploy workflows.
+  Veto commits now claim the approval (`pending → deciding`) before applying
+  the patch: with no leader lock, two overlapping sweeps applied it twice. A
+  human veto that arrives while a commit holds the claim now returns `409
+  ALREADY_DECIDED` instead of overwriting it.
+
+- **Reopening a veto whose patch is already live is refused.** A veto commit
+  that dies after applying its patch is quarantined `failed` by the claim sweep;
+  `POST /agent/approvals/:id/reopen` used to put it back to `pending`, and the
+  next sweep applied the same staging again. It now answers `409
+  VETO_ALREADY_APPLIED` when a live revision carries this staging's commit
+  marker (`{ kind: 'veto_staging', revisionId }` in its provenance `sources`,
+  written in the same transaction as the item update). Commits made before the
+  marker existed read as not applied.
+
+### Migrations
+- `0026_site_skills`: two new tables for Site Skills and their version trail; no backfill.
+- `0027_email_identity_policy`: email identity mode (instance) and per-site strict mode; existing instances are backfilled to `exact` (no behaviour change).
+- `0028_import_jobs`: `lumibase_import_jobs`; no backfill.
+- `0029_activation_milestones`: activation milestones and the telemetry state singleton; no backfill.
+- `0030_agent_tool_secrets`: per-site secrets for external-action tools; no backfill.
+- `0031_ops_errors`: `lumibase_ops_errors` for captured 5xx errors; no backfill.
+- `0032_user_passkeys`: WebAuthn passkeys; no backfill.
+- `0033_social_login_identities`: social login providers and the `user_identities` link table, with a one-time backfill of existing `users.external_id`.
+- `0034_item_tree`: optional `parent_id` and materialised `path` on items for hierarchical collections; existing rows stay roots.
+- All are additive and re-runnable. `packages/database/migrations/rls-policies.sql` changed in this release: re-apply it after migrating.
+
+### Upgrade notes
+- Back up PostgreSQL, then apply migrations `0026`–`0034` before starting the new CMS, and re-apply `packages/database/migrations/rls-policies.sql` (`pnpm db:migrate` does not apply it). Neither the release nor the deploy workflows run migrations.
+- Optional: set `LUMIBASE_OPS_TOKEN` (at least 32 characters) to enable the ops diagnostics plane; unset, its routes answer 404.
+- MCP OAuth (#346): an external-issuer token sent to `/api/v1/mcp` must now carry the MCP resource URI in `aud`. A token minted for another API is refused (401), even from a trusted issuer. To keep using an issuer on MCP, add the resource URI (`https://<host>/api/v1/mcp` or `…/api/v1/mcp/sites/<siteId>`) to its `audience` and have the IdP issue tokens for it. Behind a TLS-terminating proxy, set `LUMIBASE_PUBLIC_URL` so the URI LumiBase computes matches the token's `aud`. API keys and LumiBase session tokens on MCP are unaffected.
+- External issuers (#809): a `tfaVerified` claim from an IdP no longer satisfies the Studio 2FA gate (nor do `dev` / `isBootstrap` claims have any effect). Assert MFA with the OIDC `amr` (`mfa`, `otp`, `totp`, `webauthn`) or `acr` claims, or with `mfa`.
+- One-click templates (#741): an explicitly set `CORS_ALLOWED_ORIGINS` that names a host is never changed; one with no host at all (`https://`) is ignored with a log line. A Docker deployment that sets none and runs where `RENDER_EXTERNAL_URL`, `RAILWAY_PUBLIC_DOMAIN` or `FLY_APP_NAME` is present now starts with that origin instead of failing production validation.
+- Docker image (#734): the container runs as the fixed UID/GID `65532` instead of the `lumibase` system user (whose UID `adduser --system` assigned at build time; it was already non-root), and its filesystem is read-only under the production compose files. Make `*_FILE` secret files readable by UID `65532` — Compose `file:` secrets keep the host file's owner and mode, so a `0600` file must be re-moded or re-owned on the host; remove scratch bind mounts or volumes under `/app` (nothing in LumiBase writes there — use a `tmpfs` if your own tooling needs one); replace custom entrypoints or commands that call `/entrypoint.sh`, `bash` or `sh` (there is no shell — use `--entrypoint /nodejs/bin/node` with `dist/migrate.cjs preflight|apply` for one-off migration commands); replace in-container `curl` health probes with an HTTP probe on `/health` or `/nodejs/bin/node /app/bin/healthcheck.mjs`. `docker exec … sh` no longer works; use `docker debug` or an ephemeral debug container. Environment variables, migrations and ports are unchanged. See [Docker deployment → Hardened image](docs/en/deployment/docker.md#hardened-image).
+- Migration `0026_site_skills` adds two tables and changes nothing existing; no backfill. Re-apply `packages/database/migrations/rls-policies.sql` after migrating, as after every upgrade. Sites start with no skills, so agent behaviour is unchanged until an admin activates one.
+
+## [2.0.0] - 2026-11-10
+
+### Version
+- `v2.0.0`
+
+### Date
+- `2026-11-10`
+
+### Highlights
+- Organizations (ADR-013): manage sites, members, roles and credentials within an organization, with a Studio workspace switcher and human-approved organization MCP operations.
+- Security hardening for cross-tenant site administration and queued agent execution, plus production setup fixes and copy-ready MCP starter prompts.
+
+### Added
+- Organization schema and fixed owner/admin/member/billing permissions; organization-scoped `lbo_` keys and `/api/v1/orgs` APIs for organizations, sites, members, keys and approvals. Organization owners/admins inherit administrator access to their sites; site credentials cannot administer an organization (#634, #637).
+- Studio Settings → Organization with General, Sites, Members, Keys and Approvals. The Organization entry remains visible to owners/admins with one organization; the switcher appears when there are multiple organizations. Site switching clears cached content, and login/refresh use current organization authority (#639).
+- Eight organization MCP tools, token-specific tool profiles, per-call site routing and read-only configuration. Organization writes require human approval, recheck the requester's current permissions and commit the operation with its receipt atomically. Keys cannot approve requests or read secret receipts (#638).
+- Twelve copy-ready starter prompts on Studio's MCP setup page, grouped by Explore, Content, Schema and Operations, with access labels and checks against registered tool names (#631).
+- Bilingual organization API, data-model, security, MCP and Studio guides; ADR-013 is Accepted. Organization environment defaults are included in local, Docker and scaffold examples (#640).
+
+### Fixed
+- Queued agent jobs bound to a user or API key fail with `PERMISSION_CONTEXT_MISSING` when permission resolution returns no context, instead of falling back to system privileges (#580, #632).
+- Cross-tenant administration through the legacy `/api/v1/admin/sites` routes is eliminated by removing those routes; organization APIs enforce membership and ownership instead (#628, #637).
+- Organization keys can no longer change members, create or revoke organization keys, or update organization settings; those operations require a live human owner/admin session. Minted organization-key plaintext is kept out of approval storage and appears only in the authorized human execution receipt (#775).
+- `LUMIBASE_READ_ONLY=true` is enforced from the HTTP request method and an explicit query/preview allowlist, so a mutating request cannot bypass read-only mode through a misleading tool name (#775).
+- Studio no longer displays the development badge in production. New setup derives the site URL from the Studio origin rather than saving a localhost default; CMS setup without a project URL stores no guessed URL. Existing site URLs are unchanged (#627).
+- Organization Settings remain usable on narrow screens and retain the active navigation item under a custom admin path (#639).
+- Pending transfer approvals can be rejected, and completed receipts replayed, after the destination organization is deleted. Executing a pending transfer still requires both organizations and the same human owner of each (#640).
+
+### Changed
+- Updated runtime, build and test dependencies, including jsdom 31 and `@hookform/resolvers` 7, and refreshed CodeQL tooling (#616, #619, #620, #626).
+
+### Removed
+- Legacy `POST /api/v1/admin/sites` and `DELETE /api/v1/admin/sites/:id`, and `LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT`. Use `/api/v1/orgs/:orgId/sites` instead. k6 provisioning now uses `ORGANIZATION_ID` and `ORGANIZATION_TOKEN` (`lbo_`); destructive cleanup requires `ORGANIZATION_OWNER_TOKEN` (a Studio owner session).
+
+### Migrations
+- `0024_organizations`: backfills all existing sites into one organization with slug `default`, makes the bootstrap user its owner when present, and retains existing API keys in site scope. Fresh setup creates the parent organization before inserting site `__default__` (#634).
+- `0025_organization_approvals`: preserves site approvals while adding organization-scoped approvals, requester attribution and human-only execution receipts. Every approval has exactly one site or organization parent (#638).
+
+### Upgrade notes
+- Compatibility: the removed admin-site endpoints and documented containment flag are breaking changes for integrations that used them. The [versioning policy](docs/en/contributing/versioning-policy.md) requires a major version for removed API or documented environment-variable contracts.
+- Back up PostgreSQL before applying migrations `0024` and `0025`; run the database migrations before starting the new CMS. There is no automatic schema rollback: restore the pre-upgrade backup to revert. Reapply `packages/database/migrations/rls-policies.sql` when using RLS enforcement. Repair manually introduced orphan organization IDs or inconsistent API key scope targets before retrying a failed migration.
+- Existing installations see their `default` organization in Settings → Organization. Owners may rename its slug. Site transfers require the same human to own both organizations; organization keys are never owners.
+- `LUMIBASE_ALLOW_ORG_SIGNUP` defaults off; `true` allows Studio users to create organizations. Bootstrap operators do not need this flag. `LUMIBASE_MCP_ORG_TOOLS` defaults on as a global gate, but organization MCP stays disabled until its organization setting is enabled; set the environment flag to `off` to force it off. Organization MCP writes always require human approval.
+- Replace legacy admin-site API calls and remove the retired containment flag from deployment configuration. Existing site API keys remain site-scoped; mint an organization key explicitly for organization API or MCP access.
+- Password-only recovery still requires a live site. Before deleting the last site, retain a valid organization credential or Studio session to recreate a site; otherwise restore a backup (B196).
+
+## [1.0.1] - 2026-11-09
+
+### Fixed
+- Studio admin detail routes and tab overflow, expanded/reorderable module navigation, serialized navigation preference saves, and guided IDE MCP setup with scoped API keys (#615).
+- Tag-triggered Studio releases use the configured production CMS origin and reject an unset origin; production release metadata reports the production channel (#624).
+- Delivery edge cache no longer stores `304 Not Modified` under the page URL, which could serve an empty 304 to a client with nothing cached; edge hits answer `If-None-Match` from the stored `ETag` (#622).
+- Delivery edge key and tag→URL purge index use a canonical URL (`locale`, `lang`, `provenance`, `preview` only), so unrelated query parameters can no longer evict real pages from the 200-entry index (#622).
+
+### Upgrade notes
+- No new database migrations or environment variables. Includes the Studio production hotfix workflow (#621).
+
+## [1.0.0] - 2026-11-09
+
+### Version
+- `v1.0.0`
+
+### Date
+- `2026-11-09`
+
+### Highlights
+- First stable Content OS release, with governed agent operations, multi-tenant content management, Studio, SDK and CLI on Cloudflare Workers and Docker.
+- Public REST and SDK contracts follow the documented 1.0 semantic versioning policy. Jev decision, review and automation surfaces and the Studio M2A JSON helper remain experimental.
+- Includes the changes from rc.1–rc.4 and the security, authorization and upgrade-path fixes listed below.
+
+### Upgrade notes
+- Read `docs/en/operations/upgrades.md` before upgrading a 0.x installation. Back up the database and run the migration 0017 preflight to settle duplicate active goal runs.
+- Migrations 0001–0023 are applied from the 0.18.0 baseline. Migration 0013 relaxes nullability. Rollback must not cross below 0.26.0.
+- Cloudflare installations must provision the documented flow queues before deployment. Backend M2A relation creation returns `501 RELATION_TYPE_NOT_IMPLEMENTED`.
+
+### Migrations
+- Includes the migration chain through 0023. The 0.18.0 → 1.0 schema and data upgrade is covered by the PostgreSQL upgrade-path E2E.
+
+
+### Added
+- **Flows run on Cloudflare Workers (B118).** The Worker `queue()` export is
+  now a dispatcher (`processCloudflareQueue`) that routes by queue name to
+  `agent-runs`, `flow-runs` and `flow-events`. The flow handlers run the same
+  `registerFlowRunsWorker` / `registerFlowEventWorker` code as Docker, with the
+  same cache, key provider and string-only provider env, so manual runs
+  (including J10 `ai:decision` and the J11 Jev automation flows), async AI chat
+  and event/schedule runs (including a scheduled J12 `drift-scan`) execute on
+  Workers. A new `* * * * *` cron sweeps due schedule flows. `wrangler.toml`
+  adds `FLOW_RUNS_QUEUE` / `FLOW_EVENTS_QUEUE` producers, consumers
+  (`max_retries = 2`, same 3 deliveries as Docker) and `-dlq` dead-letter
+  queues in all five profiles. A tripwire
+  (`worker-queue-consumers.wiring.test.ts`) fails when a queue is consumed on
+  only one entrypoint or with a different provider set; DoD §2b gains the
+  matching checklist line. Verified by unit tests, `wrangler deploy --dry-run`
+  for every profile, `verify:worker-bundle`, `verify:worker-startup` and a local
+  `wrangler dev` run with a stub decision provider; not on a deployed Worker.
+  **Upgrade note (Cloudflare only):** create the four Flows queues for each
+  named profile **before** deploying this version — a consumer bound to a
+  missing queue makes the deploy fail. From `apps/cms`:
+
+  ```bash
+  for profile in staging production dev demo; do
+    for q in flow-runs flow-events; do
+      pnpm exec wrangler queues create "lumibase-$q-$profile"
+      pnpm exec wrangler queues create "lumibase-$q-$profile-dlq"
+    done
+  done
+  ```
+
+  Docker/Node needs no change. See `docs/{en,vi}/features/flows-automation.md`
+  › Cloudflare Workers: Flows queues.
+- **Request-path RLS scope, opt-in (B130).** `LUMIBASE_DB_RLS=enforce`
+  (default `off`) makes the Postgres RLS backstop from `rls-policies.sql`
+  enforce on the request path: every request statement runs as
+  `BEGIN; set_config('app.site_id', $1, true); <query>; COMMIT` on one
+  connection. New, additive configuration: `DATABASE_SYSTEM_URL` (+ `_FILE`,
+  Docker) and the optional `HYPERDRIVE_SYSTEM` binding (Workers) for the
+  BYPASSRLS system role used by workers, cron and system routes. Docker refuses
+  to start when `enforce` lacks a BYPASSRLS system role; any value other than
+  `off`/`enforce` fails closed. See `docs/en/features/rls-request-scope.md`.
+- **Studio: Flows, semantic drift and automation status in Settings → AI
+  decisions (#518, #519).** Site admins switch `aiDecisions.flows` and
+  `aiDecisions.drift` there. Jev automation is shown read-only (configured
+  mode, gate record present, thresholds per locale; an unreadable block shows
+  as shadow) with a **Return to shadow** action that keeps the thresholds and
+  gate. Studio still never turns automation live. Other `aiDecisions` keys are
+  kept as stored; an absent `flows`/`drift` flag stays absent until set.
+- **Draft review profiles and runs (#512).** Versioned review profiles
+  (`/api/v1/ai/review-profiles`, admin-managed, immutable versions; presets
+  `taxonomy`, `brand-voice`, `brief-alignment`) and item-bound review runs
+  (`POST /api/v1/ai/reviews`) that read the item with the caller's own row and
+  field permissions, or validate an unsaved snapshot field by field, then ask
+  the governed decision model. Runs record provider, model, `calibrated`,
+  profile version, revision and a content hash, report `stale` once the item
+  changes, and are idempotent per `Idempotency-Key` and caller (keys never
+  cross principals). A run that ended in `error`, or was left `running` for
+  five minutes, is retried in place and rebound to the content, revision and
+  profile version the retry reviewed. Editors record accept/edit/reject
+  feedback (one row per question and editor; the first verdict is final and is
+  what the response returns); accepting a stale run needs `acknowledgeStale`. Suggest-only: nothing writes to items.
+  Runs and feedback are purged after `DECISION_REVIEW_RETENTION_DAYS`
+  (default 180). **Migration** `0019_jev_review_profiles_runs` adds three
+  tables (additive, no backfill).
+- **SDK: typed draft review (#514).** `@lumibase/sdk` adds
+  `listReviewProfiles`, `getReviewProfile`, `reviewDraft`, `getReview`,
+  `listReviews` and `submitReviewFeedback`. Each takes `{ signal }` and has
+  types for profiles, runs (`status`, `stale`/`staleReason`, `calibrated`,
+  nullable `usage`) and feedback. `reviewContentHash(values)` computes the
+  same `sha256:<hex>` content hash as the CMS (WebCrypto, no request), so a
+  client can send the hash of the draft it shows now with snapshot feedback
+  (a changed draft then gets 409 `REVIEW_STALE`) and derive idempotency keys
+  that change with the content. A parity test checks it against the CMS
+  implementation. The new `decisionErrorCode(err)` helper reads the typed code
+  off a `LumiError`. `LumiError.retryAfter` exposes `Retry-After` in seconds,
+  or `null` when the response has none. Existing exports and the
+  `LumiError(status, body)` constructor are unchanged. The SDK keeps zero
+  runtime dependencies. A type-equality test against `@lumibase/contracts`, a
+  devDependency only, fails the SDK typecheck if the mirrored types drift.
+  **Type-level note:** `DecisionErrorCode` gains 9 `REVIEW_*` members. Code
+  that maps it exhaustively (a `Record<DecisionErrorCode, …>`, or a `switch`
+  with a `never` check) stops compiling until it handles the new codes.
+  Runtime behaviour is unchanged.
+- **Studio: draft review in the editor (#515).** The item editor and the
+  new-item form get a **Draft review** panel that runs a site review profile on
+  the content being edited and lists one suggestion per question: the suggested
+  category, each criterion level with its probability, "not enough
+  information", and the provider/model with a calibrated badge. No rationale is
+  shown (Jev returns none). Accept / Edit / Reject record feedback; for a
+  `choice` question whose key is a collection field, Accept and Edit also set
+  that field in the draft, only after the feedback is stored. Nothing is saved
+  or published by the panel: the existing Save and editorial actions are
+  unchanged. Pinned and non-writable fields are read-only. A change to the
+  reviewed content after a review started makes the result stale (Accept/Edit
+  disabled, "Run again"), as does a 409 `REVIEW_STALE`. Failures map to explicit
+  states (turned off, not set up, no permission, budget used up with
+  `Retry-After`, timed out, provider unavailable) and never read as a pass;
+  Cancel and leaving the editor abort the request. Copy ships in EN and VI.
+  Guide: `docs/{en,vi}/features/draft-review.md`. No migration, env or setup
+  step.
+- **Jev benchmark harness (#513).** `pnpm -F @lumibase/cms bench:jev` scores a
+  decision provider (`typesafe`, `openrouter`, `llm`, or a seeded `mock`) on a
+  versioned dataset of 200 hand-authored synthetic editorial samples (100 VI,
+  100 EN; taxonomy, ambiguous, out-of-taxonomy, thin, prompt-injection and
+  needs-review cases) using the shipped review presets. Reports keep VI and EN
+  apart and give per-label precision/recall, coverage/abstention, Brier/ECE
+  (not a correctness probability), p50/p95 latency, usage/cost when reported,
+  failures/timeouts and Wilson 95% intervals. Thresholds are derived only on
+  the tune split; a held-out run loads them frozen and cannot write them. Mock
+  reports are flagged and cannot be merged with live ones. An opt-in live smoke
+  test covers both Jev endpoints and is skipped without keys. Lives in
+  `apps/cms/eval/`, outside the Worker bundle. **No measured results yet**: no
+  live run has been recorded, so there is no automation go/no-go. Guide:
+  `docs/{en,vi}/features/jev-benchmark.md`. No migration, env or setup step.
+- **Draft-review pilot: rollout controls, timing and metrics (#516).** The
+  `aiDecisions` setting gains `review: { enabled, pilotCollections, mode:
+  'baseline' | 'assisted' }` (off when absent or malformed). Studio adds
+  **Settings → AI decisions** with the opt-in, the pilot collections and mode,
+  and a **Turn everything off** kill switch. Turning it off hides and blocks the
+  entry points and deletes nothing: runs, feedback, sessions and history stay
+  readable. Editors' sessions (open → first save) on pilot collections are
+  timed in both modes through `POST /api/v1/ai/reviews/sessions`;
+  `GET /api/v1/ai/reviews/rollout` reports a collection's mode. Site admins
+  read `GET /api/v1/ai/reviews/metrics?from=&to=`: time per item (baseline vs
+  assisted p50/p95), accept/edit/reject rates over viewed suggestions only,
+  coverage, errors, latency, tokens per run, splits by locale, provider and
+  profile version, and the pre-registered criteria of protocol `jev-pilot-v1`
+  with `insufficientSample` flags and distinct editor/item counts. API calls
+  are never counted as user value: only signed-in users record sessions (API
+  keys and the dev principal get `403`), and metrics drop non-user sessions and
+  verdicts. The page caps the pilot at 100 collections, the server limit.
+  `pnpm -F @lumibase/cms pilot:report` turns the metrics into a versioned
+  report. **No pilot data yet**: the committed report is an empty template and
+  there is no go/no-go. Guide: `docs/{en,vi}/features/jev-draft-review-pilot.md`.
+  **Migration** `0020_jev_review_sessions` adds one table (additive, no
+  backfill); `lumibase_review_sessions` is added to `rls-policies.sql`.
+- **Flows: explicit branches and the `ai:decision` operation (#517).** A flow
+  node may declare `branches` (branch key → next node, `null` ends the run).
+  The runner follows the branch the operation returned and never falls
+  through to `next`; a returned branch with no mapping is a run error. Legacy
+  `next`-only graphs run unchanged, and `condition` also returns
+  `branch: 'true' | 'false'` next to `pass`. The new `ai:decision` operation
+  runs one review with a pinned profile version on one item and returns
+  `true`/`false`/`unknown` (noul threshold), a choice key or `unknown` (minimum
+  confidence, abstention), or `error`. Forbidden, disabled, quota, timeout,
+  cancel and provider failures take the `error` branch when mapped and fail the
+  node otherwise; they are never `true`. At execution time the worker
+  re-resolves the principal of the manual run, checks `ai:decide` and re-reads
+  the site switches, so a revoked grant or a later kill switch stops queued
+  runs. Re-executing a run replays the stored decision (key
+  `flow:<runId>:<nodeId>`) with no second provider call; nodes after a decision
+  must be idempotent, because the runner has no step-level resume. A cancelled
+  or timed-out run now starts no further node. Studio adds an **AI Decision**
+  palette block with true/false/unknown/error handles, and run history shows
+  each decision, the branch taken and an explicit unknown state. **Off by
+  default:** it needs the new `aiDecisions.flows: true` as well as
+  `aiDecisions.enabled`. Event, schedule and webhook runs carry no principal
+  and are refused. Verified on the Docker/Node worker path only: Cloudflare
+  Workers has no `flow-runs` consumer. No migration.
+- **Jev automation: shadow-first tagging and review-queue routing (#518).**
+  New flow operations `ai:apply-tags` and `editorial:route` read an upstream
+  `ai:decision` and record one action per flow run, node and item in
+  `lumibase_ai_automation_actions` (unique, so a redelivered job proposes
+  nothing twice). They are **shadow by default**: the proposal is recorded and
+  nothing is written. A proposal goes live only when the admin-written
+  `aiDecisions.automation` has `mode: 'live'`, a gate record (`approvedBy`,
+  `approvedAt`, `evidenceRef`) and a per-locale, per-action threshold whose
+  provider, model, profile key, profile version and question match the
+  decision, and the confidence is in that zone; a malformed block or any
+  mismatch forces shadow. The decision's value and confidence are read from
+  the stored review run, which must be about the item the node acts on; a
+  step output that disagrees with the run, a cut outside the `ai:decision`
+  option range, or a run about another item, is skipped and recorded. A live
+  proposal goes through `AISecureHarness` (`updateItem`, agent
+  `jev-automation`, `autonomyCap: 1`, the run principal's RBAC, agent
+  provenance, pinned fields, kill switch), so it always becomes an approval
+  (or is refused at L0); automation never writes on its own authority. Only
+  the target field is proposed: never `status`, deletes or schema, and the
+  `submit_review` transition is proposed only. Stale decisions, editor
+  overrides, pinned and unreadable fields are skipped and recorded. New
+  control-plane routes under `/api/v1/ai/automation` (site admin): templates
+  (`taxonomy-tagging`, `editorial-routing`) and a build endpoint that writes
+  nothing, action history with the audit chain (revision → review run →
+  action → feedback), accept/override/reject feedback (an override is stored
+  as the decision's value, mapped back from the tag or queue), revert of an applied
+  action (refused when the field changed since), and shadow metrics
+  (precision and coverage in the auto-action zone, protocol
+  `jev-automation-v1`, `insufficientSample`/`shadowRequired`). Studio adds
+  **Flows → Create from template** (saves a draft manual flow) and
+  **Automation suggestions** in the editorial review queue. No live
+  configuration ships and no precision has been measured, so every site stays
+  in shadow. **Migration** `0021_jev_automation_actions` adds one table
+  (additive, idempotent, no backfill).
+- **Content Intents: semantic drift rules (#519).** An intent rule of type
+  `semantic` (`key`, `version`, `profileKey`, `profileVersion`, `questionKey`,
+  `threshold`, optional `fields`, `contextSource` `intent` or `field:<name>`)
+  is judged by one `noul` question of a pinned review profile version through
+  the governed decision path. The drift scan runs these rules in a separate
+  pass after the deterministic ones, with its own item budget
+  (`maxSemanticItems`, default 25) and cursor, as the system principal: only
+  the rule's fields minus pinned fields, plus the context field, are read and
+  sent. The fingerprint includes the rule version, profile version and content
+  hash, so a retry on unchanged content replays the stored run (no provider
+  call, no duplicate drift or goal) and a rubric, intent or content change is
+  re-evaluated. A provider outage, an answer between the thresholds or a
+  missing profile records the new drift status `unevaluated`, which never
+  resolves earlier drift and never creates a goal; the deterministic pass no
+  longer touches semantic rows. Open semantic drift becomes a reconciler
+  review goal carrying the run id, model and profile version, and the
+  dispatcher blocks it as `HUMAN_REVIEW_REQUIRED` (no repair skill, nothing
+  edited). Mission Control shows the rule and profile versions, model,
+  revision and the uncertainty state. The SLO health ratio leaves unevaluated
+  rows out and reads `unknown` (not 100 %) when nothing conclusive backs it
+  (every row unevaluated, drifts failed to load, or a semantic intent with no
+  row); the dashboard card averages only known health. Changing a stored
+  semantic rule's profile, question, context or fields without a `version`
+  bump returns `422 SEMANTIC_RULE_VERSION_REQUIRED`. Rows of removed semantic
+  rules resolve on the next scan (`semanticOrphansResolved`), and switching
+  `aiDecisions.drift` off stops a running pass at the next item. The benchmark gains `--task drift` with 40 synthetic
+  VI/EN fixtures (true drift, false-positive traps, prompt injection); only
+  mock runs exist. **Off by default:** it needs `aiDecisions.drift: true` as
+  well as `aiDecisions.enabled`. **Migration** `0022_semantic_drift_cursor`
+  adds one nullable column (additive, idempotent, no backfill). Event and
+  schedule Flows runs report the semantic pass as `unavailable`.
+
+### Changed
+- **Agent item writes are classified by impact (#578).** `createItem` with
+  `status: 'published'`, an `updateItem` that changes the item's status, and an
+  `updateItem` on a published item now take the same approval and autonomy
+  gradient as dangerous skills (default: pending approval; L3 stages data
+  patches in the veto window; L4 executes). Draft writes are unchanged. The tool
+  call output carries `riskReason` (`publication_change`, `live_content`,
+  `unknown_state`). An intent capped at L0 now refuses dangerous skills with
+  `AUTONOMY_SHADOW` instead of parking an approval. See
+  `docs/en/mcp/governed-tool-contract.md` §3a.
+- **Editorial gate on create (#578).** On a collection with
+  `editorialWorkflow: true`, creating an item as `published` returns
+  `409 EDITORIAL_GATE_REQUIRED`, the same as publishing a draft through PATCH.
+  Applies to REST, GraphQL and agents. Create items as drafts and publish
+  through the editorial workflow.
+- **LLM calls outside the Copilot keep their own instructions (#579).**
+  Generation skills, the constitution compiler and judge, and the intent
+  compiler now send their instructions in the provider's system slot with tools
+  disabled (`completeWithInstructions`). Before, they received the Copilot
+  prompt and the full tool list, and Gemini/Anthropic demoted their rules to a
+  user turn. The constitution judge sends the content under review as the only
+  user turn, inside an `<untrusted>` block.
+- **Draft review needs the pilot (#516).** The Studio draft review panel shows
+  only while the collection is in the pilot in `assisted` mode, and
+  `POST /api/v1/ai/reviews` plus new feedback return `403 DECISION_DISABLED`
+  otherwise. **Upgrade step:** a site already using reviews adds
+  `"review": { "enabled": true, "pilotCollections": ["<collection>"], "mode":
+  "assisted" }` to its `aiDecisions` setting, or uses Settings → AI decisions.
+- **Governed decisions (#511).** `POST /api/v1/ai/decisions` now requires the
+  `ai:decide` capability (a policy permission `create` on
+  `lumibase_ai_decisions`; site admins have it) and a per-site opt-in: decisions
+  stay off until a site admin stores the `aiDecisions` setting with
+  `enabled: true`, and turning it off is the site kill switch. An optional
+  `allowedStateFields` list restricts what `state` may send. Hourly, in-flight
+  and daily token budgets per site are reserved atomically before the provider
+  is called (retries included, unknown usage charged at the estimate) and fail
+  closed when the counter is down. Each call writes an `ai_decision` audit event
+  without content, email or IP. **Upgrade:** sites that already call the
+  endpoint get `403 DECISION_DISABLED` until they opt in. New optional env
+  ceilings `DECISION_SITE_REQUESTS_PER_HOUR`, `DECISION_SITE_MAX_CONCURRENT`,
+  `DECISION_SITE_TOKENS_PER_DAY`. No migration.
+- **Shell: `tauri-plugin-updater` 2.13.1 → 2.14.1 in `Cargo.lock`, with
+  `@tauri-apps/plugin-updater` `^2.14.1` (2.14.1 resolved).** The grouped
+  Dependabot update #573 moves the npm package to 2.14, and `pnpm tauri:check`
+  refuses a different minor on the crate side; Dependabot does not update
+  `Cargo.lock`. Both sides now move together on `main`, so #573 passes the
+  check after a rebase. The crate update also brings `zip` 4 → 9 and
+  `minisign-verify` 0.2 → 0.3 (updater signature check), and Cargo re-resolves
+  some Windows-only crates from `windows-sys` 0.61 to 0.60. Desktop
+  `cargo check --locked` passes; the Android target is checked by
+  `shell-check.yml`.
+
+### Fixed
+- **Tenant domain, site config, and delivery-page routes enforce Studio and
+  admin guards (`v1.0.0` security review §1c).** `/api/v1/domains` is now in
+  `CONTROL_PLANE_PATHS` and `STUDIO_ACCESS_PATH_PREFIXES` and enforces
+  `requireSiteAdmin()` in-router; `PATCH /api/v1/site` now requires
+  `requireSiteAdmin()` (`GET /api/v1/site` remains readable by authenticated
+  site members); and `/api/v1/pages` is now in `STUDIO_ACCESS_PATH_PREFIXES` so
+  `frontend`-audience subscriber sessions and API keys without Studio access are
+  refused. `upgrade-path.e2e.test.ts` now also provisions an isolated
+  `0000_lumibase_init` (`v0.18.0`) database, seeds `0.x` rows, runs the
+  documented `0017` preflight, applies `0001`–`0023` via Drizzle's migrator, and
+  verifies schema parity and RBAC backfill. Audit:
+  `docs/review-agent/2026-11-08-v1-security-review-v0.18-to-rc.md`.
+- **Model calls are bounded to 20 seconds, including the response body
+  (#583).** The OpenAI, NVIDIA, Anthropic, Gemini, Vertex and Workers AI
+  adapters used to wait on an unresponsive upstream with no limit outside the
+  decision path. Each request now carries one 20-second deadline that stays
+  active while the body streams; a shorter caller deadline still wins. A
+  deadline hit, before or during the body, is a network failure
+  (`DECISION_UNAVAILABLE` on decisions), not an unparseable response, and
+  caller cancellation keeps its own error. An outage sends one attempt and runs
+  no fallback tool. `apps/cms/eval/model-routing` adds a reproducible local
+  overhead workload with p50/p95/p99, synthetic token counts and illustrative
+  cost; it does not measure live provider latency or billing. Audit:
+  `docs/review-agent/2026-11-01-ai-audit-583-model-routing-cache-isolation.md`.
+- **Model calls fit a bounded context, and provider failures are actionable
+  (#582).** Every network provider now counts the system prompt, tool
+  definitions, history and output reserve against a context window before the
+  request leaves, drops the oldest history first, and never drops policy, tools
+  or the newest user turn. Workers AI now sends the same 1,024-token output cap
+  as the other providers. A request that cannot fit returns `413
+  LLM_CONTEXT_LIMIT`; rate limits, unreachable providers and unusable responses
+  return `LLM_RATE_LIMIT`, `LLM_UNAVAILABLE`, `LLM_INVALID_RESPONSE` or
+  `LLM_PROVIDER_ERROR` without the provider body and without running any
+  proposed tool. `aiContentAssist` gains an opt-in `grounded: true` mode that
+  only accepts exact quotes from the permitted samples, or an abstention.
+  **Upgrade note:** provider defaults keep a 32,768-token ceiling. If
+  `LLM_MODEL` names any other model, set `LLM_CONTEXT_WINDOW_TOKENS` to its
+  window; until then every model call returns `LLM_CONTEXT_LIMIT` (routes that
+  do not call a model are unaffected). Audit:
+  `docs/review-agent/2026-11-01-ai-audit-582-token-budgets-grounding.md`.
+- **`aiContentAssist` sends sample content only, and embedding primitives fail
+  on mixed dimensions (#581).** The skill's context samples used to be whole
+  item rows, so site and collection ids, user ids and the wrapped DEK went to
+  the model provider. It now sends each sample's `status` and `data`, and it no
+  longer runs a `count(*)` over the collection for a 3-row sample (at 100k
+  items: 8.5 ms vs 0.15 ms per call, single client, local Postgres 17). In
+  `embedding-service.ts`, `cosineSimilarity` throws
+  `EMBEDDING_DIMENSION_MISMATCH` instead of scoring 0, providers reject a
+  response with the wrong number or size of vectors, and the OpenAI provider
+  reports the dimension of its configured model. Nothing calls the embedding
+  service yet; the docs no longer say the skills run a vector search. Audit:
+  `docs/review-agent/2026-11-01-ai-audit-581-embedding-retrieval-baseline.md`;
+  baseline dataset `apps/cms/eval/retrieval/dataset.v1.json`.
+- **Copilot sends the newest conversation history, not the oldest (#582).**
+  `POST /api/v1/ai/chat` and its `Prefer: respond-async` worker loaded history
+  with `ORDER BY created_at ASC LIMIT 20`, so from the 21st message of a
+  conversation on, the turn the user had just sent was missing from the model
+  request: the model answered the first ten turns again, and a tool call it
+  returned ran with the user's rights. Both paths now share
+  `loadCopilotHistory`: the newest 20 messages, oldest first, opening on a user
+  turn. The 20-message limit and the system prompt are unchanged. No migration
+  or configuration change. Audit report:
+  `docs/review-agent/2026-11-01-ai-audit-582-token-budgets-grounding.md`.
+- **Queued Agent API runs enforce the requester's row and field rules (#580).**
+  The `agent-runs` worker re-resolved the job's principal at pickup (#472) but
+  then executed the skill with a system `ItemService`, so a queued
+  `POST /api/v1/agent/goals` (`execution: 'async'`) or `/runs/:id/retry` could
+  write collections and fields the principal may not write, and read masked
+  fields back, while the same call through Copilot or governed MCP was refused.
+  The worker now binds `ItemService` to the principal's permission context for
+  user and API-key principals. Reconciler (agent-role) jobs and legacy
+  capability-snapshot jobs have no principal and keep the system posture, as do
+  development (`dev`) principals: they exist only in the development runtime
+  with the `admin` role and have no persisted role a permission context could
+  resolve. A user or API-key job whose principal resolves without a permission
+  context now fails (`stopReason: capabilities_denied`, code
+  `PERMISSION_CONTEXT_MISSING`) instead of running with the system posture.
+  Audit report:
+  `docs/review-agent/2026-11-01-ai-audit-580-authz-parity.md`. No migration,
+  env or setup step.
+- **Agent runs: truthful terminal states, no replay of an executed write, and no
+  query parameters in run errors (#584).** Four gaps in the run recovery path,
+  each reproduced on Postgres (`agent-run-recovery.db.integration.test.ts`):
+  - `cancelRun` re-checks the status in its UPDATE. A cancel that raced the
+    run's completion used to rewrite `succeeded` as `cancelled`, which made the
+    run retryable; it now answers `409 NOT_CANCELLABLE` and the outcome stays.
+  - A run cancelled while the harness classifies a call that needs approval is
+    no longer parked. The harness parks the run before creating the approval,
+    and only if the run is still in flight; before, the cancelled run came back
+    as `awaiting_approval` and its approval executed when approved.
+  - `POST /api/v1/agent/runs/:id/retry` refuses a run whose tool call is
+    recorded `executed` (the skill ran, saving the outcome failed) with
+    `409 RUN_EFFECT_RECORDED`. It used to re-execute it: two items for one
+    request. Other retry behaviour is unchanged.
+  - Run and tool call errors no longer contain Drizzle's `params:` list. A
+    failed statement is recorded as `Database query failed (SQLSTATE <code>):
+    <driver message>`; before, item content and secret-keyed values that the
+    tool call input masks reached `GET /api/v1/agent/runs` and run
+    notifications.
+  Operator guidance for reading a run's rows is in
+  `docs/{en,vi}/features/async-agent-runs.md`. No migration, no new setting.
+- **Staging deploy check now separates boot from readiness, and `/health/ready`
+  reaches the Worker on dev/staging/demo (#461).** On the shared-domain
+  hostnames only `/health` was routed to the CMS Worker. A Cloudflare route
+  without a trailing `*` matches one path, so `/health/ready` fell through to
+  Pages and answered 200 with Studio's `index.html`. `wrangler.toml` now routes
+  `<env>.lumibase.dev/health/*` as well. The `Verify deployment health` step of
+  `deploy-cms.yml` runs `scripts/verify-cms-deploy.mjs`. It fails when
+  `/health` or `/health/ready` is not the Worker's JSON, or when the release
+  channel is wrong. A `503` from `/health/ready` is a warning that lists each
+  dependency, unless the GitHub environment variable `CMS_REQUIRE_READY=true`
+  makes it fail the step. Before, the step passed on a staging Worker whose
+  database, cache and storage were all unhealthy. The remaining staging 500s
+  (`/api/v1/setup/*`) come from missing Hyperdrive/KV/R2 bindings, which need
+  an owner with Cloudflare access. The runbook is in
+  `docs/en/deployment/shared-domain-environments.md` (step 2b and
+  "Troubleshooting"). **Upgrade note:** none for self-hosted installs. The next
+  deploy of each shared-domain env adds the `/health/*` route.
+- **Copilot conversations belong to their owner (#579).** The
+  `/api/v1/ai/conversations/:id/messages` and `DELETE /api/v1/ai/conversations/:id`
+  routes, and `POST /api/v1/ai/chat` with a `conversationId`, checked only the
+  site. Another member who had a conversation id could read it, delete it, or
+  append to it, and an append became part of the owner's next model turn. They
+  now get `404`, a no-op delete, or a new conversation of their own. A
+  conversation started by an API key records that key (`api_key_id`), and an
+  API key owns only its own conversations, so keys of the same site no longer
+  share them. **Migration** `0023_ai_conversation_api_key_owner` adds one
+  nullable column with an FK (`ON DELETE SET NULL`) and an index (additive,
+  idempotent, no backfill). **Upgrade note:** user-less conversations created
+  before `0023` have no recorded key, so no API key can list, read, delete or
+  append to them after the upgrade; they are removed with their site.
+- **`listSettings` redacts secrets (#579).** The agent skill now applies the
+  same secret-field redaction as `GET /api/v1/settings`. Before, governed MCP
+  clients received raw values such as `media.signedTransform.secret`.
+- **`GET /api/v1/deployments` returns the newest deployments first (#568,
+  B162).** The list had no `ORDER BY`, so with `limit` Postgres could return
+  any rows rather than the most recent ones. It is now ordered by `createdAt`
+  descending, with `id` descending as tie-breaker. The same order applies to
+  the `listDeployments` AI skill. An invalid `limit` now returns `400 VALIDATION`.
+  Before, `?limit=abc` and `?limit=-5` returned every deployment of the site
+  with no limit, and `?limit=1.5` failed with `500`. `0` still returns an
+  empty list and values above 200 are still capped at 200. The `{ data }`
+  response shape is unchanged. `apps/cms/openapi.yaml` now documents the
+  `limit` parameter, the `400` response and the order as well (B164).
+- **Deployments API documented in the API spec (B55).** `docs/{en,vi}/api/hono-api-spec.md`
+  gains section 7c covering `/api/v1/deployments/*`: target CRUD, manual trigger,
+  deployment list/detail/logs/refresh, the inbound webhook, the per-target
+  trigger rate limit (`429 RATE_LIMITED` + `Retry-After`) and webhook signature
+  verification (`401 INVALID_SIGNATURE`). Docs only; no API change.
+- **Benchmark CLI: validated merges and frozen thresholds across runs (#513).**
+  `bench:jev --merge` now validates each report file (schema, generator,
+  `mode`, `split`, dataset, rubric, protocol, seed, sample counts, runs)
+  before the mode check, so a hand-edited report without `mode` is refused.
+  A tune run refuses (exit 2) to overwrite a `thresholds.json` that a
+  held-out report in the same output was scored with. A `report.heldout*.json`
+  that cannot be read also counts as frozen (exit 2), so a corrupted or
+  hand-edited report no longer switches the guard off. A source-scan test
+  keeps every module under `apps/cms/eval/` out of the CMS runtime.
+- **Mission Control SLO card no longer reads a partly evaluated intent as
+  healthy (#519).** An active intent with a resolved row and `unevaluated`
+  rows showed 100 % with an ok tone. The card now counts such intents as
+  "partly not evaluated" in its label and is flagged. Adds a DB integration
+  test that the `aiDecisions.drift` switch is re-read at the provider call
+  (switched off mid-pass: `DECISION_DISABLED`, recorded `unevaluated`,
+  nothing resolved).
+- **Scheduled and event Flows get the decision runtime (#519, B121).** The
+  Docker/Node `flow-events` worker now passes the cache and process env to
+  each run, like the manual-run worker, so a scheduled `drift-scan` runs its
+  semantic pass instead of reporting `unavailable` (still gated by
+  `aiDecisions.enabled` + `aiDecisions.drift`). `ai:decision` still refuses
+  event/schedule runs (no principal). A source-scan tripwire requires every
+  `registerFlow*Worker` in `serve.ts` to receive `cache`, `env` and `keys`.
+  Cloudflare Workers still has no `flow-events` consumer (B118) — fixed, see
+  Added.
+- **Manual flow runs and async AI chat no longer fail on a Worker without the
+  `flow-runs` binding (B118).** `POST /api/v1/flows/:id/run` used to enqueue,
+  throw `Queue binding not found`, return 500 and leave its `pending` run row
+  behind; it now runs inline (`LUMIBASE_FLOW_SYNC_TIMEOUT`), and AI chat
+  `Prefer: respond-async` falls back to the sync path. Event dispatch and the
+  schedule sweep skip when `flow-events` is not bound, without consuming
+  schedule slots. Docker is unchanged (BullMQ accepts any queue name).
+- **A due schedule flow is enqueued once per tick, not twice (B132).** Docker
+  ran the schedule sweep from two leader-locked crons with different locks, and
+  advanced `next_run_at` unconditionally. The advance is now conditional
+  (still due → advance and enqueue; already advanced → skip).
+- **A 50/50 noul is unknown, not `true` (#518, J10 follow-up).** With
+  `noulThreshold: 0.5` (the lowest allowed), an answer of exactly 0.5 met
+  both sides and took the `true` branch, which Jev automation then acted on.
+  `ai:decision` now returns `unknown` (`between_thresholds`) and the J12
+  semantic drift pass records `unevaluated` for the same tie. Stored flows
+  with 0.5 stay valid. Also adds a DB integration test for the worker-path
+  content access that decides which fields reach the provider.
+- **Orphaned live automation claims are settled (#518, B120).** A live Jev
+  automation row claimed `pending` by a process that died before the harness
+  call linked an approval stayed `pending` forever. A redelivery more than
+  five minutes later now settles it `denied` with reason `orphaned` (DB clock,
+  conditional update) and still proposes nothing. No migration.
+- **An approved Jev automation write re-checks the field (#518, B119).**
+  `updateItem` accepts an optional `expect` precondition (field → value the
+  item must still hold); the harness re-reads those fields when the update
+  runs, including after an approval, and refuses with
+  `ITEM_PRECONDITION_FAILED` before writing. Jev automation sends the value
+  each proposal was computed from, so a human edit made while the proposal
+  waited is kept: the approval is settled `failed` with that reason and the
+  automation row reads `denied` / `stale_at_approval`. Additive for every
+  other caller; no migration.
+- **RLS backstop for draft review profiles, runs and feedback (#516, B114).**
+  `lumibase_review_profiles`, `lumibase_review_runs` and
+  `lumibase_review_feedback` are added to the `site_isolation` list in
+  `packages/database/migrations/rls-policies.sql`, and the review-run
+  retention purge now deletes site by site inside a transaction that sets
+  `app.site_id`, so it keeps working where the policies are applied.
+  Operators who applied `rls-policies.sql` re-run it (it is idempotent); no
+  schema migration.
+- **A late review completion no longer overwrites a reclaimed run (#515,
+  #516).** A review call that outlived the five-minute orphan timeout could
+  still complete the run after a retry had reclaimed it, writing answers about
+  the old content over the retry's binding (draft staleness and pilot metrics
+  read that run). `completeRun` now writes only while the attempt's claim
+  holds (`status = 'running'` and the claim's `created_at`); the late call
+  returns the run as stored. No migration.
+- **Draft review keeps the stored verdict on a feedback retry (#515).** When a
+  feedback request failed after the CMS had stored it, a retry with a
+  different action applied the new value to the draft while the CMS kept the
+  first verdict. The panel now reads the stored row, shows "Earlier feedback
+  was already recorded" and does not change the field. Applying a choice that
+  is also a reviewed field now says why the rest of the run went stale.
+- **Studio renders in the user's or the site's language (#515, B112).** The
+  Studio i18n instance started in English and never switched, so the
+  Vietnamese draft review copy only rendered in tests. After sign-in the
+  Studio now uses the user's `language` preference, else the site's default
+  language (Settings → Site), else English; `vi-VN` selects `vi`, other
+  languages fall back. The browser language is not used. No migration.
+- **Cloudflare counters expire (#511).** The `PageviewCounter` Durable Object
+  now honours the `increment` TTL (window armed on create, like Redis `EXPIRE NX`)
+  and prunes expired rows, and the 5-minute pageview flush drains only `pv`
+  keys. API rate-limit windows and decision quotas on Cloudflare now reset on
+  their own window instead of every flush. Existing DOs add the `expires_at`
+  column on wake; no wrangler migration.
+- **LLM decision errors are classified like Jev's, and never leak upstream
+  bodies (#510).** The LLM adapters now raise `LLMHttpError` (with the
+  status), `LLMNetworkError` (fetch rejected without an abort) or
+  `LLMResponseError` (2xx body unusable), keeping their original messages, so
+  `/ai/chat` and the Copilot are unchanged. With `DECISION_PROVIDER=llm`,
+  `POST /api/v1/ai/decisions` maps them to the same codes as Jev
+  (`DECISION_AUTH`, `DECISION_VALIDATION`, `DECISION_RATE_LIMITED`,
+  `DECISION_UNAVAILABLE`, `DECISION_PARSE_FAILED`, `DECISION_UPSTREAM`) instead
+  of `500 INTERNAL`, with fixed messages; any other error (a custom provider's
+  `TypeError` included) is `DECISION_UPSTREAM`, not a network failure. Jev error
+  messages no longer carry the upstream body either, so it is never logged.
+- **LLM decisions get a per-request output budget (#510).** The answer size is
+  estimated from the questions and checked against
+  `DECISION_LLM_MAX_OUTPUT_TOKENS` (default 4096) before the call (`413`, before
+  any quota is reserved), so a schema-valid 32-question request is no longer
+  truncated by the fixed 1024 cap into `502 DECISION_PARSE_FAILED`. Gemini/Vertex
+  get `DECISION_LLM_THINKING_TOKENS` (default 1024) of headroom, and their usage
+  now includes `thoughtsTokenCount`. Governance reserves the cap actually sent
+  upstream. Copilot calls keep sending 1024. Both variables are optional.
+- **LLM decisions reserve quota for one attempt, not for retries (#510).** The
+  daily decision budget was reserved as `(input + output cap) ×
+  (DECISION_MAX_RETRIES + 1)` for every provider, but `DECISION_PROVIDER=llm`
+  sends exactly one request, so a site near its `budgetPerDay` got `429
+  DECISION_QUOTA_EXCEEDED` early. `llm` now reserves `input + output cap`.
+  Jev and OpenRouter, which do retry, reserve exactly as before. Charging and
+  refunds are unchanged. No route, error code, setting or counter key changes.
+- **Decision quota fails closed on non-finite counter values (#511).** A counter
+  backend that answers without a numeric value (for example a Durable Object
+  reply with no `value`) now returns `503 DECISION_QUOTA_UNAVAILABLE` instead of
+  admitting the request.
+- Synchronous audit-log inserts now use uuidv7 ids, like the queue path. Older
+  rows keep their `nanoid` ids; audit cursors accept both.
+- `Retry-After` is exposed through CORS (`Access-Control-Expose-Headers`), so
+  cross-origin Studio, the desktop shell and browser SDK callers can read the
+  decision `429` hint.
+- The Studio policy editor lists the AI decision permission ("AI usage → AI
+  decisions", `lumibase_ai_decisions` → `create`), so site admins can grant
+  `ai:decide` without the API.
+- The Definition of Done §2c gains a line: request/worker paths that call a
+  paid AI decision provider go through `authorizeDecision` +
+  `runGovernedDecision`, locked by `decision-governance.wiring.test.ts`.
+  Principal-less system passes (the J12 semantic drift scan) are listed
+  explicitly and must still go through `runGovernedDecision`. No
+  migration and no upgrade step for any of the entries above.
+- **P2 queue recovery and governed write parity (B93, B87).** Queue submission
+  failures settle only unclaimed runs, preserve masked tasks for explicit retries,
+  and expire stale queued runs across origins. Flow, extension and CDC skills now
+  share REST validation, signature/permission checks, scheduling, cache invalidation
+  and audit behavior. No migration. See `docs/en/features/governed-write-parity.md`
+  and `docs/en/features/async-agent-runs.md`.
+
+- **P1 governance and async execution (B85, B86, B92, B10).** PATCH validates only
+  supplied fields without resetting intent autonomy/budgets, webhook configuration,
+  flows or extensions. Async goals retain their budget through queue execution,
+  including older jobs via the stored run budget. Cloudflare now binds and consumes
+  `agent-runs` with provider parity, individual acknowledgement/retry, dead-letter
+  queues and stale-run quarantine. Provision the environment-specific queue before
+  deployment; see `docs/en/features/async-agent-runs.md`. No database migration.
+
+
+- Desktop release workflow passes `uploadUpdaterJson` to `tauri-action@v1`.
+  The old `includeUpdaterJson` input was reported as unsupported and ignored,
+  so `latest.json` for the in-app updater depended on the action's default (#451).
+
+- Raise the `sharp` override floor to 0.35.5 for GHSA-wq5f-xc86-pv6w (high), fixing the bundled librsvg dependency used by Next.js and Miniflare.
+
+- Cloudflare Sentry upgrades to 11.x: remove the obsolete `enableLogs` option and explicitly retain the v10 data-collection baseline, so the upgrade does not enable user data, cookies, HTTP bodies, AI content, database query data, queue payloads, or GraphQL documents/variables. No environment changes are required.
+
+- Dependency updates unblock the production audit gate and align the Tauri JavaScript packages with their Rust crates. Security overrides are declared in both pnpm settings files; Vite and ws overrides now match the grouped dependency updates.
+
+- Decision providers reject missing, malformed or out-of-range answers and invalid
+  probability distributions with `DECISION_PARSE_FAILED`, instead of turning them
+  into zero-valued or clamped decisions. Choice/Score confidence is required.
+  The Definition of Done now requires shared upstream AI-output validation and
+  regression coverage for this failure class.
+- CMS and Studio test suites cap isolated workers at four to prevent excessive
+  concurrent imports from causing test timeouts and worker startup failures.
+
+- Next.js starters carry PostCSS security overrides for both npm and pnpm;
+  fresh-install smoke checks now include Next.js and audit its production dependencies.
+
+- **Studio panels that sent the wrong tenant header (B103).** Eleven Studio
+  request helpers sent `x-site-id` instead of `X-Lumi-Site`, so the CMS
+  answered `400 TENANT_REQUIRED`. On the published Docker image this broke,
+  for every user: the item Versions panel, list presets and bookmarks, role
+  presets, Mission Control actions, AI approvals, Insights, email settings,
+  materialisation, image-transform presets and push subscription. Found on
+  `1.0.0-rc.4`. A source-scan tripwire
+  (`apps/studio/src/lib/__tests__/tenant-header.wiring.test.ts`) now fails on
+  any `x-…site…` header other than `X-Lumi-Site`.
+- **Realtime in same-origin Studio (B104).** With the Studio served by the CMS
+  (Docker image) the API base URL is `''`, and `RealtimeClient` threw
+  `Invalid URL` building the socket URL, so Live Mode and notifications never
+  connected. `@lumibase/sdk` now resolves a relative `baseUrl` against the
+  page origin (new export `toWebSocketBase`); `AudienceClient` and the Studio
+  notification and presence sockets use the same helper.
+- **Presence never connected (B104).** `usePresence` read site and token from
+  `localStorage` keys the Studio never writes, so every item page sent an
+  empty ticket request (`400`). It now uses the shared accessors, which also
+  honour the desktop shell's keychain. The tripwire above also forbids those
+  raw keys.
+- **Docker image reported `version: "unknown"` (B105).** The Node bundle read
+  build metadata from runtime env, which never carries it, so
+  `GET /api/v1/system/version` answered `unknown` on every published image
+  and the upgrade runbook's "determine your current version" step could not
+  work. The metadata is now baked into `dist/serve.cjs` at build time
+  (runtime env still overrides it), and the release workflow passes the
+  commit and channel as build args.
+- **Studio footer said "Backend unavailable" (B105).** The footer read `.data`
+  from `/api/v1/system/version`, which answers with the bare metadata object.
+  It now reads both shapes. The endpoint's response shape is unchanged.
+- **CDC feed cursors must be the exact token the server issued.** The decoder
+  accepted the standard-base64 alphabet and read a blank or whitespace
+  timestamp as `0`, so a malformed `cursor` such as `Czo+` was treated as a
+  valid position near the start of the feed instead of being rejected with
+  400. Found by the property test in the v1.0.0-rc.4 release run.
+- **Onboarding commands install the 1.0 release candidate (#333).** README,
+  Getting Started (EN/VI) and the `create-lumibase` README said
+  `npm create lumibase@latest`, but npm's `latest` is still the 0.x scaffolder,
+  which has no Next.js template. They now use `@next`, with a note that the
+  commands return to `@latest` when 1.0.0 ships. The npm dist-tags are
+  unchanged.
+- **`lumibase init` suggests the release it pins.** When the package manager
+  cannot be spawned, the hint now reads `npm create lumibase@<cli version>`
+  instead of `@latest`, which pointed at a different major.
+- **Six more documented commands that never ran (B69).** The guard written for
+  the `pnpm -F @lumibase/database db:migrate` family found a second one on its
+  first run: `pnpm lumibase typegen` (the root `lumibase` script is
+  `turbo run dev`, so it started two dev servers and ignored the argument),
+  `pnpm -F @lumibase/sdk typegen` (that package has build/test/typecheck/clean)
+  and a CI snippet running `pnpm typegen`, which is not a root script either.
+  All six now name what exists — `pnpm -F @lumibase/cms typegen` in the
+  monorepo, `npx lumibase types --check` for a consumer's CI — including the
+  docstring in `apps/cms/scripts/typegen.ts` the wrong form had spread from.
+  `pnpm docs:cmd:check` (`scripts/check-docs-commands.mjs`, in `check:all`) now
+  resolves every `pnpm` command in a docs code fence against the package it
+  names, and fails when the script does not exist. It tokenises options
+  (`--filter=`, `-C`, `-r`, `--if-present`, flags such as `--silent`), resolves
+  the script after `pnpm run` instead of skipping it, and follows `cd` into a
+  workspace package. On its first run it found two more commands that could not
+  work as written: `pnpm landing:build` after a `cd apps/docs` in
+  `deployment/cloudflare-pages-ci.md` (the docs deploy now uses
+  `--cwd apps/docs`, as CI does), and `pnpm run deploy:production` in
+  `features/async-agent-runs.md`, which only exists in `apps/cms` (the block now
+  starts with `cd apps/cms`).
+- **Three dead Vietnamese links, and the reason they were invisible (B67).**
+  `docs/vi/README.md`, `docs/vi/agent-setup/index.md` and `docs/vi/mcp/index.md`
+  linked `./llms.txt` and `../agent-setup/mcp-config.json`, which resolve under
+  `docs/vi/` where neither file exists. The parity checker could not see it: it
+  compared link *text*, so a VI link pointing at a missing file matched an EN
+  link pointing at a real one perfectly. It now compares the file a link
+  **resolves** to, collapsing the locale segment only for links inside the
+  doc's own locale tree when both trees have that file — which also stops it flagging a legitimately different path for the same
+  target. Repo-wide parity drops from 37 problems in 30 pairs to 35 in 29. A link
+  that is dead in both locales still compares equal, as it did before: parity is
+  not a dead-link check, and reporting it as a locale mismatch would mislead.
+- **Docs command guard and parity follow-ups (B168).** `pnpm --filter
+  @lumibase/cms deploy` in `deployment/overview.md` and the enterprise CI recipe
+  in `enterprise/private-submodule.md` ran pnpm's builtin `deploy` (which fails
+  with `ERR_PNPM_INVALID_DEPLOY_TARGET`), not the package's deploy script; both
+  now say `run deploy`, and the guard reports a builtin that shadows a script of
+  the target package. The guard also follows pnpm 9's fallback to a
+  `node_modules/.bin` binary (root and directory form only — `--filter`/`-r`
+  get an `exec` hint instead), resolves scope-less `--filter` names to their
+  unique `@scope/<name>` (ambiguous names are reported), joins `\`-continued
+  lines before parsing, tracks fence markers per CommonMark, and scans only
+  shell-like fences, so a SQL `-- … pnpm …` comment is no longer a command. No
+  documented command lost coverage: on the unchanged docs the guard checks the
+  same 183 script commands as before. The parity checker no longer
+  treats a link into the other locale's tree as equal to an own-locale link; on
+  its first run that found `docs/vi/deployment/google-cloud-vm.md` sending
+  readers to the English Devpost draft although a Vietnamese one exists, now
+  fixed together with a drifted `git clone` line in the same pair.
+- **Docs parity no longer reads a translated trailing comment as code drift
+  (B111).** `check-parity` stripped only whole-line comments from code fences,
+  so `gh secret set X  # paste the token` against its Vietnamese copy was
+  reported as changed code. It now also strips a trailing `  # …` in shell and
+  YAML-like fences (`bash`, `sh`, `yaml`, `toml`, `env`, …), only when the `#`
+  has whitespace on both sides, sits outside quotes and does not follow an
+  escaped space, so URL fragments, `"#fff"`, `${#arr}` and `foo\ # bar` stay
+  code and a difference before the `#` is still reported. Dockerfile fences are
+  deliberately excluded: there only a leading `#` is a comment (B139). The two blanket `allow code-fences` waivers this
+  forced (`docs/vi/deployment/cloudflare-pages-ci.md`,
+  `docs/vi/enterprise/private-submodule.md`) are removed, so code changes in
+  those pairs are checked again. Repo-wide parity drops from 28 problems in 23
+  pairs to 25 in 20: three more pairs whose only difference was translated
+  trailing comments now pass, and no hidden drift surfaced.
+- **The Docker production override is documented as the local trap it is
+  (B47c).** `docs/{en,vi}/deployment/docker.md` now says to set
+  `DATABASE_SSL_MODE=disable` when trying that stack locally: the override
+  defaults to `require`, which is right for a managed database and cannot
+  connect to the compose PostgreSQL, which serves no TLS — so the CMS fails with
+  a connection error rather than a configuration one.
+### Changed
+
+- The release Docker smoke test now fails when the image reports a version
+  other than its tag, or when `/setup` does not serve the Studio.
+
+### Security
+
+- **Desktop shell `rustls` 0.23.41 → 0.23.46, and the Pages deploy workflow
+  token is read-only.** The Tauri shell lockfile picks up the patched `rustls`
+  (with `rustls-webpki` 0.103.16 and `aws-lc-rs` 1.19.0) for the open
+  Dependabot advisories, including Debug formatting that exposed TLS secrets
+  and TLS 1.3 handshake messages accepted across encryption levels.
+  `pages-deploy.yml` drops its top-level `contents: write` to `read`; it never
+  wrote to the repository.
+- **Permission bundle cache is keyed per principal and skips request-bound
+  policies (#583).** The cache key of a compiled permission bundle named only
+  the role when the context carried both a user and a role.
+  `EffectiveCapabilityService`, which resolves capabilities for Copilot tool
+  calls, MCP, the Agent API, the `agent-runs` worker, approvals and Flows
+  `ai:decision`, passes both. Two members of one role therefore shared a bundle
+  for up to 60 s, including policies granted to one of them directly (for
+  example admin access), and a share link for that role read the same entry.
+  The key now names the API key, the user and the role
+  (`perm:{site}:v{n}:user:{id}|role:{id}`). Separately, a bundle compiled from
+  a policy with an IP allow/deny list or a validity window was cached under a
+  key without the ip, so a request from a denied address was granted the policy
+  for up to 60 s. Such principals are now compiled per request; others keep the
+  cache. No migration or configuration change. Old cache entries are no longer
+  addressed and expire within 60 s. Test:
+  `permission-cache-principal-scope.db.integration.test.ts`. Report:
+  `docs/review-agent/2026-11-01-ai-audit-583-model-routing-cache-isolation.md`.
+- **AI decisions refuse publishable API keys and frontend sessions (#562,
+  B144).** `POST /api/v1/ai/decisions`, every `ai:decide` route under
+  `/api/v1/ai/review-profiles` and `/api/v1/ai/reviews`, and Flows
+  `ai:decision` nodes now return `403 FORBIDDEN` for publishable API keys
+  (`lbk_pub_…`) and `frontend`-audience sessions, even when a role or policy
+  grants `create` on `lumibase_ai_decisions` or admin access. These
+  credentials live in browsers and apps, so anyone holding one could spend the
+  site's paid decision budget. The check runs in the shared
+  `authorizeDecision`, before the body is read, quota is reserved or the
+  provider is called. The refusal writes the same single `ai_decision` audit
+  event as other refusals. The error code is unchanged (`FORBIDDEN`); only the
+  message names the caller type.
+  **Upgrade note:** this narrows the #529 contract for misconfigured callers
+  only. Move browser or app callers behind your own server with a secret API
+  key, or use Studio. Secret keys and Studio users with the grant are
+  unaffected. No migration. The Definition of Done §2c gains a line for this
+  class: client-held credentials never use a paid capability, and the refusal
+  lives in the shared authorization function, not per route.
+
+- **Dependency advisories cleared; `pnpm audit --prod --audit-level high`
+  passes again** (0 findings of any severity, from 22 plus 5 seroval findings
+  published later). All fixes stay inside
+  the major already in use:
+  - `next` 16.3.8 → 16.4.3 (`apps/landing`, `apps/consumer`, with
+    `eslint-config-next` in lockstep):
+    [GHSA-2464-fhr4-w9xw](https://github.com/advisories/GHSA-2464-fhr4-w9xw)
+    and [GHSA-673q-mjm6-r5xr](https://github.com/advisories/GHSA-673q-mjm6-r5xr)
+    (critical, RCE),
+    [GHSA-p3m5-59mp-jv5r](https://github.com/advisories/GHSA-p3m5-59mp-jv5r)
+    (high, DoS).
+  - `dompurify` 3.4.16 → 3.4.17 (`apps/docs`, `apps/studio` and the override):
+    GHSA-cg2g-xh64-v4q7 (critical), GHSA-mrv2-3pqr-j5jr (high),
+    GHSA-c6gr-qvv4-5v3f (low).
+  - `zod` 4.6.5 → 4.6.7 (CMS validation, `@lumibase/contracts`,
+    `@lumibase/ai-skills`, `@lumibase/extensions`, `@lumibase/mcp-server`,
+    Studio): GHSA-mrhx-c7xc-m3w5 (high, memory exhaustion on oversized input).
+    The published packages now declare `zod ^4.6.7`, so their consumers
+    resolve the patched version.
+  - `body-parser` 2.3.0 → 2.4.0 through a new `body-parser@2` override
+    (`@lumibase/mcp-server` via `@modelcontextprotocol/sdk` → `express`):
+    GHSA-27r3-jxmh-p828 (high, DoS).
+  - `undici` 7.29.1 → 7.30.1 (override floor; `miniflare` pins `7.29.1`):
+    GHSA-xjj6-f33q-929c (high), GHSA-4qv8-2p9j-2685, GHSA-f72v-6w45-q472
+    (moderate).
+  - `nodemailer` 10.0.14 → 10.1.7 (`apps/cms`): GHSA-8c8m-p3m8-cjg8,
+    GHSA-m943-m63m-w62w, GHSA-85x2-q946-cp5h (moderate).
+  - `fast-uri` 4.1.5 → 4.2.3 (override, now a floor instead of an exact pin):
+    GHSA-w74x-v6f9-j3xg, GHSA-wjr9-j795-jxcr (moderate), GHSA-xhq7-xmqj-769h,
+    GHSA-333x-w4r6-6crp (low).
+  - `ip-address` 10.7.3 → 10.7.5 (override floor `^10.7.4`):
+    GHSA-rxp7-6hxx-x8q5 (moderate).
+  - `seroval` 1.6.7 → 1.7.3 through a new `seroval` override (`apps/studio`
+    via `@tanstack/react-router` → `@tanstack/router-core`, which still
+    declares `^1.6.7`): GHSA-97r2-qh9m-474h, GHSA-wp97-x4hv-qvhp,
+    GHSA-7rv5-mrxv-xcr9 (high), GHSA-9wx9-5pv9-3349, GHSA-f86p-h4j2-7qgj
+    (moderate). Published after the first audit run on this change.
+  - `qs` override floor `^6.16.0` → `^6.16.1` (6.16.1), the range
+    `body-parser@2.4.0` declares. Not an advisory.
+
+  No migration and no upgrade step. Rationale and removal conditions for each
+  override: `docs/{en,vi}/security/dependency-overrides.md`.
+
+- **Bounded audit volume for refused AI decisions (#564, B147).** Every
+  refused `ai:decide` request used to write one `ai_decision` audit row, so a
+  cheap or public credential (a publishable key, a frontend session, a member
+  without the grant) could turn free requests into audit-table writes on the
+  shared database and bury real events. Authorization refusals (`403
+  FORBIDDEN`) are now aggregated per site, refusal reason and subject (the
+  principal, or a keyed hash of the client IP when there is none): the first
+  refusal in each window writes an event, later ones write again only at counts
+  10, 100, 1000 …, and the first event of the next window carries the exact
+  count of the previous one. Refusal events carry `metadata.refusal`
+  (`reason`, `count`, `dedup`, `windowStart`, `windowSeconds`,
+  `previousWindowCount`) and `clientIpHash` (HMAC-SHA256 keyed by
+  `JWT_SECRET`), never the IP. If the counter store is down, every refusal
+  still writes an event. Two new metrics give the exact totals:
+  `lumibase_ai_decision_refusals_total{reason,principal,audit}` and
+  `lumibase_ai_ip_rate_limited_total`. A per-client-IP, per-site limit on
+  `/api/v1/ai/*` (default 300 requests per minute) runs before authentication
+  and answers `429 RATE_LIMITED` with `Retry-After`. New optional env vars:
+  `DECISION_REFUSAL_AUDIT_WINDOW_SECONDS` (default `300`, `0` = one event per
+  refusal) and `LUMIBASE_AI_IP_RATE_LIMIT` (default `300`, `0` = off). The API
+  spec recommends a Cloudflare WAF rate-limiting rule for `/api/v1/ai/*` as the
+  outer defence.
+  **Behaviour change:** refused-authorization `ai_decision` events are no
+  longer one per request; read `refusal.count` (or the metric) for volume.
+  Admitted calls and calls refused after authorization still write one event
+  each. No migration, no backfill. Behind a reverse proxy on Docker, the proxy
+  must overwrite `CF-Connecting-IP` with the real client IP for the IP limit to
+  apply. The Definition of Done §2c gains a line for this class: an audited
+  refusal path reachable by untrusted callers must be aggregated, counted in a
+  metric and rate-limited before authentication.
+- **RLS backstop no longer hides every row (B125).** Every `site_isolation`
+  policy in `packages/database/migrations/rls-policies.sql` was RESTRICTIVE and
+  the file created no PERMISSIVE policy. Postgres shows a role without
+  BYPASSRLS no rows unless a permissive policy passes, so the non-superuser app
+  role the file requires saw 0 rows and wrote 0 rows on every scoped table.
+  Each table now gets a pair with the same predicate: `site_isolation`
+  (RESTRICTIVE) and `site_isolation_permit` (PERMISSIVE). The permissive half
+  is not `USING (true)`, and the restrictive half stops any other permissive
+  policy from widening access. With `app.site_id` unset or empty, no row is
+  visible and every write is refused. `lumibase_extensions` keeps its global
+  rows (`site_id IS NULL`) visible, as before. `app_site_id()` is now
+  `SECURITY INVOKER` with a pinned `search_path` (B128), and the
+  `ALTER DATABASE` default uses `current_database()` instead of the hardcoded
+  name `lumibase`. Tested as a NOSUPERUSER NOBYPASSRLS role in
+  `apps/cms/src/__tests__/rls-policies.db.integration.test.ts`, plus a static
+  tripwire in `rls-policies.wiring.test.ts`.
+
+  **Upgrade:** operators who already applied the old `rls-policies.sql` MUST
+  re-apply the new file, as the database owner:
+  `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f packages/database/migrations/rls-policies.sql`.
+  It is idempotent and converges from the restrictive-only version. Then check
+  that `SELECT tablename, policyname, permissive FROM pg_policies WHERE policyname IN ('site_isolation', 'site_isolation_permit') ORDER BY 1, 2;`
+  returns two rows per table. A `USING (true)` permissive policy added by hand
+  as a workaround can be dropped afterwards (it is harmless if kept). No schema
+  migration and no backfill. Deployments that never applied the file are not
+  affected.
+
+  **Fixed (B130):** `withRls` used to run `set_config` as a standalone
+  autocommit statement, so the setting ended with that statement and no
+  request query was scoped. With `LUMIBASE_DB_RLS=enforce` every request
+  statement now runs in its own transaction with `app.site_id` set
+  (`createSiteScopedSql`), routers that learn the site in the handler scope
+  themselves, and workers, cron, queue consumers and system routes use a
+  BYPASSRLS system connection (`DATABASE_SYSTEM_URL` / `HYPERDRIVE_SYSTEM`).
+  `withRls` fails closed with `503 RLS_UNAVAILABLE` on an unscoped request db.
+  Cost measured on a local Docker Postgres: 1000 sequential list requests p50
+  2.11–2.31 ms with the flag off and 3.42–3.85 ms with it on (three runs;
+  Hyperdrive not measured). With the flag off (default) the app still needs a
+  role that bypasses RLS, and the table owner is not exempt (`FORCE ROW LEVEL
+  SECURITY`).
+  **Upgrade note:** nothing to do for default deployments; with the flag off
+  `withRls` no longer runs its per-request `set_config` round trip. To turn the
+  backstop on, follow `docs/en/features/rls-request-scope.md` (two roles, the
+  new variables, no migration, no backfill; roll back with
+  `LUMIBASE_DB_RLS=off`).
+
+
+## [1.0.0-rc.4] - 2026-09-29
+
+### Version
+- `v1.0.0-rc.4`
+
+### Date
+- `2026-09-29`
+
+### Highlights
+- A fresh `create-lumibase` Next.js starter now runs the release it came from:
+  the `lumibase` client and the CMS image are pinned to the scaffolder's own
+  version, so a new install gets this release's Studio and API.
+- Invited users can use Studio, and invited Administrators can administer the
+  site — before this, only the bootstrap admin could.
+- The Studio editor saves long-form text as text and clears its unsaved state
+  after a save, so Submit for review and Publish are available right away.
+
+### Fixed
+
+- **A new Next.js starter now runs the release it came from (B95).**
+  `create-lumibase` pinned an older `edge` CMS digest and `lumibase@^1.0.0-rc.1`,
+  which npm resolved to rc.1 because that is the `latest` dist-tag, so a fresh
+  scaffold ran none of the Studio fixes it shipped with. The client and the CMS
+  image are now rendered from the scaffolder's own version: an exact `lumibase`
+  pin and `ghcr.io/khuepm/lumibase-cms:<version>`. `cms:verify` also probes a
+  made-up site id on every run (the pinned CMS answers `404 TENANT_NOT_FOUND`
+  and stays up — #469) instead of behind `LUMIBASE_VERIFY_CROSS_TENANT`, and the
+  generated README documents the working setup-token gate (#470).
+- **Studio edits long-form text fields as text.** A `text` field whose interface
+  Studio does not recognise fell back to the JSON editor and rejected prose as
+  "not valid JSON" — the starter's `body` field (`textarea`) hit this. `text`
+  now resolves to the multi-line editor, and the starter creates `body` with
+  `input-multiline`; re-running `cms:bootstrap` repairs an existing project.
+- **Saving an item clears its unsaved state.** The editor compared the draft
+  with the saved row as JSON strings, so a field filled in after the others
+  (JSONB returns keys in its own order) left the form "unsaved" after a
+  successful save, and Submit for review / Publish stayed disabled until a
+  reload.
+
+- **Invited users can use Studio.** `GET /api/v1/permissions/me` sat behind
+  the control-plane admin backstop, which recognises only the literal `admin`
+  role, so every user other than the bootstrap admin got 403 and Studio showed
+  "You do not have read permission" — including users holding the
+  Administrator role. The caller's own bundle is now readable by any signed-in
+  principal; the rest of `/permissions` stays admin-only.
+- **Invited Administrators can administer the site.** The control-plane
+  backstop recognised admins by role *name* only, while invited users carry
+  their role *id*, so only the bootstrap admin could reach Users, Roles,
+  Settings and the other control-plane routes. It now also admits a signed-in
+  user whose role grants admin access in the active site — the same check
+  `requireSiteAdmin` makes. API keys are unchanged.
+- **A Studio served at the site root no longer reloads itself forever.**
+  Anonymous requests made before sign-in answer 401, and the global handler
+  answered each with `location.assign('/')` — the page it was on — until the
+  API limiter returned 429. It now redirects only when a stale session token
+  is present, so the reload that clears it cannot repeat.
+- **`POST /api/v1/users/invite` validates its body.** An empty `roleId` was
+  stored as the member's role id, and a malformed body answered 500; both now
+  answer 400 before touching the database.
+- **Desktop and Android release builds run again.** `release-apps.yml` had
+  failed on every tag since v0.26.0. The `tauri-plugin-updater` crate is back in
+  step with `@tauri-apps/plugin-updater` (2.12), the Android job points
+  `NDK_HOME` at the NDK it installs, macOS no longer tries to import an empty
+  Apple certificate, and Windows pre-releases build the NSIS installer only
+  (WiX cannot version `-rc.N`). A missing updater signing key now fails fast
+  with instructions instead of after a full compile.
+
+### Added
+
+- **`pnpm tauri:check`** (in `check:all`): fails a PR when an `@tauri-apps/*`
+  package and its Rust crate drift to different major/minor releases.
+
+### Migrations
+- None
+
+## [1.0.0-rc.3] - 2026-09-26
+
+### Version
+- `v1.0.0-rc.3`
+
+### Date
+- `2026-09-26`
+
+### Highlights
+- The editorial journey runs end to end in Studio: create an item, submit it for
+  review, approve and publish it without touching the API.
+- Studio behind a private admin path survives reloads on every content screen.
+- Quick setup no longer fails at the last step on a fresh install.
+
+### Added
+
+- **Create items and drive the editorial workflow from Studio.** The collection
+  list gains **New item** and **Reviews**; the editor shows the item's editorial
+  state with **Submit for review**, **Approve**, **Reject**, **Publish** and
+  **Unpublish**, backed by the existing `/api/v1/editorial/*` endpoints and item
+  `PATCH`. Transitions are offered only with `update` permission and never while
+  edits are unsaved; the CMS still enforces the `editorialWorkflow` gate and the
+  separate-reviewer rule, and its error is shown inline. The previously broken
+  **Save & create new** action now lands on the create form.
+
+### Fixed
+
+- **Studio keeps the private admin prefix while you navigate.** From
+  `/{adminPath}`, content links such as the item list and editor breadcrumbs went
+  to `/content/...`: client-side navigation worked, but a reload behind the CMS
+  answered 404. A router output rewrite now re-applies the prefix to every module
+  path in one place rather than per link, and the content screens read their
+  params from either route shape. `/setup`, `/insights` and `/teams` are no longer
+  mistaken for an admin prefix.
+- **Quick setup completes on a fresh install.** The Studio wizard has no control
+  for `loginStallMs` and omits it, while `POST /api/v1/setup/complete` required it,
+  so the last step failed with `400 VALIDATION_ERROR`. The route now applies the
+  codec default (500 ms).
+
+- **Retrying an agent run now actually runs it.** `POST /api/v1/agent/runs/:id/retry`
+  inserted a new run with `status: 'running'`, answered `201`, and enqueued nothing
+  — and because the worker only claims `queued` runs, nothing could ever have picked
+  it up. The row sat until the stale sweep failed it, and the goal read as having a
+  run in flight in the meantime. A retry now inserts a `queued` run (`retryOfRunId`
+  → the original) and enqueues it on `agent-runs`, so it goes through the same
+  worker claim, harness, approvals and kill switch as any async run. The task is
+  recovered from the original's recorded tool call and the governance envelope
+  (role, intent, autonomy cap, budget) from its goal; it executes under the
+  **requester's** re-resolved rights, never the original requester's. One request
+  yields at most one new execution: only `failed`/`cancelled` runs, only the goal's
+  latest attempt, only while nothing on the goal is in flight — decided under a lock
+  on the goal row, with the one-active-run-per-goal index behind it — so a
+  double-click or two operators produce one run and a `409`. Refusals are explicit:
+  `409` (not retryable, in flight, superseded, goal closed or being dispatched,
+  intent not active, or the input cannot be replayed because it was recorded with
+  masked secrets), `423` frozen, `400` without a queue adapter, `503` when the
+  enqueue fails (the retry row is then settled `failed`, so it can be retried). A
+  blocked reconciler goal resumes when its run is retried, and every accepted retry
+  is recorded as `agent_run.retried` in activity. This is the sanctioned way to
+  re-run a `stale_unverified` run after inspecting it (#455) — nothing is replayed
+  automatically. The `201` body gains `status` and `retryOfRunId`; no migration.
+- **`LUMIBASE_REQUIRE_SETUP_TOKEN=true` no longer locks the instance out
+  (#470).** `/setup/complete` demanded a token that nothing ever produced: the
+  helper that mints it, stores its hash and prints it had no caller, so the only
+  way out was turning the flag off and recreating the container. The Node/Docker
+  entrypoint now mints the token in every HTTP process before it starts
+  listening and prints one `[lumibase-cms] SETUP_TOKEN=<token>` line. Replicas
+  booting together print exactly one token between them (the write is
+  conditional, so the losers neither crash on the primary key nor print a token
+  the last writer invalidates — measured on Postgres). A restart keeps the issued
+  token instead of reprinting it and logs the SQL that clears it if the line was
+  lost. The request path and startup now share one parser for the flag
+  (`true`/`1`/`yes`, unchanged), so they cannot disagree on a value. Cloudflare
+  Workers have no process start to mint in, so the flag is documented as
+  Node/Docker-only and `/setup/complete` there answers
+  `503 SETUP_TOKEN_NOT_ISSUED` with an explanation instead of a silent
+  `SETUP_TOKEN_REQUIRED`. No migration; an instance stuck in the old state gets
+  its token on the first start after upgrading.
+
+### Security
+
+- **Ten more agent skills validate their input before anything runs (#454
+  follow-up).** `createRelation`, `createFlow`, `createIntent`, `updateTranslation`,
+  `createWebhook`, `updateWebhook`, `installExtension`, `updateExtension`,
+  `createCdcSubscription` and `deleteCdcSubscription` had a skill but no canonical
+  schema, so the harness executed whatever it was handed and `tools/list` advertised
+  `{type:'object'}` for them. They now have strict schemas in `@lumibase/contracts`,
+  mirroring what the handler and its REST route accept. That closes a concrete hole
+  on `POST /api/v1/mcp`: `updateWebhook`, `updateTranslation` and `updateExtension`
+  hand their patch straight to `.set()`, so a key such as `siteId` — or
+  `isOfficial`/`verifiedAt` on an extension — was passed through into the update
+  statement. Reaching it needed an admin principal and, below autopilot, a human
+  approval, since all ten skills are control-plane; it is now refused with
+  `VALIDATION` before a run or approval is created. `installExtension` also gains the
+  `bundleUrl` protocol gate `POST /extensions` applies.
+
+### Changed
+
+- **stdio routes 33 mutation tools through the governed harness, up from 27 (#454
+  follow-up).** With the schemas above, `create_relation`, `create_intent`,
+  `update_translation`, `create_webhook`, `update_webhook` and
+  `delete_cdc_subscription` (`id` → `subscriptionId`) now go to `POST /api/v1/mcp`
+  instead of REST. The other four of that group stay on REST with a sharper reason:
+  `create_cdc_subscription` is `contract-narrower-than-tool` (the handler never
+  forwards `payload_mode`), and `create_flow`, `install_extension` and
+  `update_extension` are the new `skill-weaker-than-rest` — the skill accepts the
+  arguments but skips checks its REST route applies (graph/cron gates and
+  `nextRunAt`; bundle signature, reserved namespace and per-action permission
+  probes), so routing would have traded one gate for another. Remaining gap: 55
+  ungoverned mutations — 5 `contract-narrower-than-tool`, 3
+  `skill-weaker-than-rest`, 47 `no-skill`; `no-canonical-contract` is empty.
+
+  Upgrade notes:
+
+  - **No migration, no backfill, no new environment variable.**
+  - With `LUMIBASE_MCP_GOVERNED=auto` (the default) on a site with `contentOs.mcp`
+    enabled, the six routed tools stop executing immediately: all six are
+    control-plane, so a non-admin principal now gets `CONTROL_PLANE_FORBIDDEN` and an
+    admin gets a pending approval below autopilot. With `on` they used to be refused
+    and now run governed. `off` is unchanged.
+  - On `POST /api/v1/mcp`, calls to the ten skills with an unknown or misspelled
+    argument now fail with `VALIDATION` instead of being executed.
+
+### Migrations
+- None
+
+## [1.0.0-rc.2] - 2026-09-23
+
+### Fixed
+
+- **Translation repair preserves a human translation entered during generation
+  (#455).** Drafts retain the latest target-locale text instead of replacing it
+  with the provider response. Approval resume also checks the requesting agent's
+  freeze, including pending approvals with the old legacy agent name, and keeps
+  frozen runs parked until the freeze is lifted.
+
+- **An abandoned agent run is no longer replayed automatically (#455).** A run left
+  `running` by a dead worker could be taken over after fifteen minutes and executed
+  again. Age cannot support that: a process can die *after* the content write and
+  *before* the terminal status is saved, at which point the row is
+  indistinguishable from one that did nothing. Measured on Postgres with a fault
+  injected in exactly that window — one item written, run stuck `running`, age
+  pushed past the threshold, job redelivered: **two items**. The queue claim now
+  accepts only `queued` runs (nothing has executed under one yet, so redelivering it
+  cannot repeat a side effect), and abandoned runs are quarantined instead: a new
+  `agent-run-stale-sweep` cron moves them to `failed` with
+  `stopReason: 'stale_unverified'` and a message telling the operator it was
+  deliberately not retried. Ambiguity becomes a visible state rather than a silent
+  second execution.
+- **Dispatch now fences at the storage boundary, not with a preceding check
+  (#455).** The lease was verified by a `SELECT` and the run was inserted after it —
+  check-then-write, one level below the race it was meant to fix. Measured: A passed
+  the check, A's lease expired, B claimed the goal and dispatched, A resumed and
+  inserted anyway → **two runs and two queue jobs for one goal and phase**. Every
+  write a dispatch authorises now happens inside one transaction that holds the goal
+  row (`SELECT … FOR UPDATE SKIP LOCKED`), with the lease token checked inside that
+  lock; the enqueue stays outside, because a queue call cannot be rolled back. A
+  contending caller skips instead of waiting, and every statement touching the goal
+  row has a two-second `lock_timeout`, so one stuck dispatcher cannot stall later
+  ticks. Underneath it, a partial unique index makes "one in-flight run per goal" a
+  database rule rather than a convention any future call site could forget.
+- **Goals and tenants waiting on something no longer starve the ones behind them
+  (#455).** Filtering settled goals fixed one prefix; a goal whose intent is
+  `paused` or `error` was another, and it came back on every tick with
+  `INTENT_NOT_ACTIVE`. Measured with `limit = 1`: two consecutive passes reported
+  that skip, enqueued nothing, and never reached the runnable goal behind it — and
+  the same shape with `sitesLimit = 1` meant one tenant was visited twice while the
+  other never ran. Unrunnable goals are now excluded in SQL, and selection rotates:
+  `dispatch_attempted_at` records when a goal was last *considered*, so being looked
+  at costs it its place in the queue. `sitesLimit` is a per-tick budget rather than a
+  cutoff — tenants are visited least-recently-considered first, so a deployment with
+  more sites than the limit reaches the rest on later ticks.
+- **A site administrator can decide an agent-reviewer approval again (#453).** The
+  capability resolver emits `admin` and deliberately never mints `*`, while
+  `ReviewerService` accepted only `review:<domain>` or `*` — so a real administrator
+  was refused with `Capability "review:items" is required`, and the agent-reviewer
+  route had no reachable positive path. The existing tests passed `review:items`
+  straight into the service, which proved it honoured a capability without proving
+  anything could produce one. Both the harness and the reviewer now share a single
+  `satisfiesCapability` predicate, so "what counts as admin" cannot drift apart
+  again, and a new suite drives the decision with capabilities from the real
+  resolver. Deciding remains admin-only on all three entry points, with regressions
+  that refuse a non-admin — including a member holding exactly the write permission
+  the parked action needs.
+- **An approved action now runs under the requester's row and field rules, not
+  only their capability tokens (#472).** The capability intersection shipped first
+  and was not enough: `items:write` says nothing about which collection, which
+  rows or which fields, so a restriction written in the policy DSL passed straight
+  through it. Measured on Postgres with a real `ItemService` — an API key parked an
+  update to `title`, its update permission was narrowed to `body` while the
+  approval waited, a direct call was refused with
+  `Permission does not allow writing field(s): title`, and the admin approving the
+  parked action **wrote `title` anyway**, because the skill executed against the
+  approver's ItemService. The executing service is now rebound to the requester's
+  permission context for the duration of the decision. Two limits are stated
+  explicitly in the governed-tool contract rather than left to be discovered: the
+  decider's own mask is not applied (approving is not performing, and intersecting
+  two policy contexts is not a defined operation), and an `agentRole` requester has
+  no row/field context by construction.
+- **An approval parked by the async chat path could not be approved by anyone
+  (#472).** `POST /ai/chat` with `Prefer: respond-async` never passed the
+  requesting principal into the harness, so the approval it created carried no
+  provenance — indistinguishable from a row written before the column existed, and
+  refused with `APPROVAL_PROVENANCE_MISSING` and an instruction to re-request.
+  Re-requesting down the same path produced the same dead end. The worker now
+  carries `job.principal` through, and a source-scan tripwire requires every
+  production `harness.execute` call to pass provenance, since the argument is
+  optional by necessity (a legacy queued job has no principal) and the type system
+  therefore cannot catch the next omission.
+- **Duplicate queue delivery no longer executes twice (#455).** `markRunning` read
+  the run status and then wrote, and it accepted `running` as a startable state —
+  so under at-least-once delivery it was not a guard at all. Measured: one job
+  delivered twice concurrently created **two items**; delivered again while its run
+  sat in `awaiting_approval` it created a **second pending approval** for the same
+  run. It is replaced by two conditional UPDATEs with distinct owners:
+  `claimQueuedRun` (the queue's, `queued → running`, with takeover of a `running`
+  row older than 15 minutes so a crashed worker still recovers) and
+  `resumeApprovedRun` (the approval's, `awaiting_approval → running`). A queue
+  redelivery can no longer resume a parked run, which is how the duplicate approval
+  appeared.
+- **A dispatch lease could be released by the caller it replaced (#455).** The
+  holder was recorded as `${HOSTNAME}:${pid}`, which is the same string for every
+  acquisition in a process — so two overlapping ticks were indistinguishable: A's
+  lease expired, B reclaimed it, A's `finally` released "its" lease by owner match
+  and deleted B's, and a third caller walked in while B was still working. Each
+  acquisition now carries its own token, release and the pre-write fence both check
+  it, and a pass that outlived its lease stops with `LEASE_LOST` instead of
+  enqueueing alongside the new holder.
+- **Goals waiting on a human no longer starve the ones behind them (#455).**
+  Filtering terminal goals in SQL fixed one starvation and left another:
+  `in_progress` is exactly the status of a goal whose run is parked at
+  `awaiting_approval`. With `limit = 1`, two consecutive passes each took the
+  oldest such goal, skipped it with `RUN_ACTIVE`, enqueued nothing, and never
+  looked at the actionable goal behind it — oldest-first had moved the starvation to
+  the front of the queue. Goals with a run in flight are now excluded in SQL, so
+  the limit counts goals that can actually move, and the same rule applies to
+  multi-tenant site discovery. A goal returns the moment its run leaves the
+  in-flight set, so nothing has to remember it.
+- **`LUMIBASE_MCP_GOVERNED=on` no longer falls back to ungoverned REST (#454).**
+  The mode that exists to guarantee governance quietly bypassed it: a mutation
+  tool with no governed mapping fell through to a direct REST call, so autonomy
+  level, HITL parking, the kill switch and run audit were all skipped — for the
+  write, after the tool had already been declared governed. `on` now **refuses**
+  such a tool before any REST call is made, naming the tool and the reason.
+  `auto` (the default) and `off` are unchanged: `auto` still falls back with a
+  one-time stderr warning, which is the documented "governance not available
+  here" path. The classifier that decides what counts as a mutation moved into
+  the source so the gate and the tripwire share one definition rather than two
+  regexes that can drift — the drifting copy would have been the one deciding
+  whether a write is allowed. 47 tools are currently ungoverned and enumerated in
+  `UNGOVERNED_MUTATIONS` with a reason each; deployments pinned to `on` will see
+  those refused instead of executed.
+- **An approval no longer executes with only the decider's authority (#472).**
+  `executeApproved` resolved capabilities for whoever pressed approve and never
+  re-read the requester's, so an action parked by user A still executed after A
+  was demoted, deactivated, or had their key revoked — the approval outlived the
+  authority it was requested under. `agent_approvals` now records the requesting
+  principal (`requested_by_principal`), and execution resolves **both** sides at
+  decision time and uses the intersection: the requester must still be allowed to
+  ask, and the decider must be allowed to approve. Pre-existing `pending`
+  approvals carry no provenance and are refused with
+  `APPROVAL_PROVENANCE_MISSING` rather than falling back to the decider — that
+  fallback is the defect. They need re-requesting; the migration header carries
+  the query that lists them. Deliberately not backfilled: nothing records who
+  asked, and inventing an identity is the error being fixed.
+- **Leader-locked cron jobs released the lock before their work finished
+  (#455).** All nine registrations in `serve.ts` were shaped
+  `() => { void work() }`. `void` discards the promise, so the callback returned
+  immediately, `leaderLockedCallback` awaited `undefined`, and the lock was
+  released while the work was still running — it guaranteed nothing for **any**
+  of them: `audit-rotation`, `pageview-flush`, `veto-sweep`,
+  `approval-claim-sweep`, `content-scheduler`, `retention-sweep`,
+  `goal-dispatch`, `deployment-poll`, `flow-schedule`. Two replicas could run the
+  same sweep concurrently. All nine now await, and both halves are locked down: a
+  source scan rejects the old shape, and a behavioural test shows
+  `withLeaderLock` releasing only after an awaited function settles.
+- **Goal dispatch is now serialized, self-healing and fair (#455).** Three
+  distinct defects in the dispatch loop added above:
+  - **Two entry points could dispatch the same goal.** The cron tick and
+    `POST /intents/:id/scan` both read-then-write, so both could see "no active
+    run" and create one. A goal now carries a dispatch lease
+    (`dispatch_lease_until` / `dispatch_lease_by`) taken with a single
+    conditional `UPDATE`, so Postgres picks the winner and the loser reports
+    `LEASE_HELD`. The lease is a timestamp, not a flag, so a process killed
+    mid-dispatch costs one skipped tick instead of stranding the goal.
+  - **A lost job stalled a goal forever.** The run row is inserted before the job
+    is enqueued; a process dying in between left a `queued` run that nothing
+    consumed, and every later pass skipped the goal on `RUN_ACTIVE`. A run
+    `queued` longer than five minutes is now treated as lost: the goal is
+    re-dispatched and the orphan is settled as `cancelled` with
+    `stopReason: 'dispatch_lost'` — cancelled rather than failed, because a lost
+    job is not a decision anyone made.
+  - **An older goal could starve.** The query took the newest `limit * 4`
+    reconciler goals and filtered for `open`/`in_progress` in memory, so enough
+    newer terminal goals pushed an older pending one out of every pass, silently.
+    Status is now filtered in SQL and goals are served oldest-first; site
+    discovery likewise only visits sites that actually have a dispatchable goal.
+- **One rejected audit row no longer discards the whole batch (#469, defence in
+  depth).** A multi-row `INSERT` is atomic, so a row rejected by the
+  `audit_log.site_id` foreign key discarded **every** row batched with it — up to
+  99 records belonging to real tenants, and precisely the ones worth keeping:
+  denied control-plane access, rejected uploads, failed authentication. The
+  batcher now retries row by row **only** when the batched statement fails, so
+  the offending row is dropped (logged with its site and event, never its
+  metadata) while the rest are written. Each table is attempted independently so
+  a failure in one cannot cause the other's rows to be written twice, and the
+  error is still rethrown so a caller that awaits `flush()` observes it.
+  To be precise about what this does and does not fix: the HTTP path can no
+  longer produce such a row. `withTenantExists` rejects an unknown site with
+  `404` before `withAuth` — the first middleware that writes audit — and that
+  landed earlier. Measured against a live CMS: four probes with a forged
+  `X-Lumi-Site` (three unauthenticated, one with a valid key from another site)
+  all answered `404`, the process stayed up, and `audit_log` gained no rows. What
+  remains reachable is the path *outside* a request: an audit job sitting in the
+  queue when its site is deleted, or a cron/CDC/worker passing a site id that has
+  since gone. Verified in `audit-batch-isolation.db.integration.test.ts`.
+
+- **Reconciler goals now execute (#455).** A content intent's drift became an
+  `agent_goals` row and stopped there. Nothing turned that goal into a run: no cron
+  task, no queue consumer, no route. Measured on Postgres before the fix — one
+  reconcile plus three further cycles left `agent_runs` empty, the drift `assigned`
+  with its `goalId` set, and the content unchanged. That was worse than inaction,
+  because goal assignment deliberately skips drift that already carries a `goalId`,
+  so the unexecutable goal **locked** its drift out of every later cycle: a site
+  accumulated assigned drift that no longer looked actionable and was never repaired.
+  - **New `GoalDispatchService`** advances each reconciler goal by one step per pass:
+    draft → promote → verify. The next step is derived from observable state (goal
+    phase, latest run, whether the draft branch exists, drift status), so a pass is
+    safe to repeat, safe to resume after a crash, and unaffected by duplicate queue
+    delivery. Driven by a leader-locked `goal-dispatch` cron tick on Node/Docker, and
+    by `POST /api/v1/intents/:id/scan`, whose response gains a `dispatch` section.
+  - **New `repairTranslation` skill** fills one missing locale into a **version
+    branch**, never live content. Publishing is a separate `promoteVersion` run, which
+    is classified dangerous and therefore always parks for human approval (#453), so
+    published content changes exactly once in the sequence, after a human approves.
+  - **The goal completes only when a fresh scan can no longer find the violation.** A
+    promote that publishes content which does not actually resolve the drift blocks the
+    goal with `VERIFY_FAILED` instead of reporting success.
+  - **Every dead end is named.** `metadata.blockedReason` records `RUN_FAILED`,
+    `RUN_CANCELLED`, `NO_REPAIR_SKILL`, `DRAFT_MISSING`, `PROMOTE_INCOMPLETE`,
+    `VERIFY_FAILED`, `ENQUEUE_FAILED` or `DRIFT_MISSING`, and Studio → Mission Control
+    shows it. The loop never retries on its own: the most common cause of a failed
+    phase is a human rejecting the approval, and re-dispatching would re-ask them.
+  - **Governance survives the queue hop.** `AgentRunJobPayload` gains optional
+    `origin`, `intentId`, `driftFingerprint`, `autonomyCap` and `agentRole`, and the
+    worker forwards them into the harness envelope. Without that, the intent's autonomy
+    ceiling was recorded on the payload and enforced nowhere at execution time.
+    Capabilities are **not** snapshotted: the worker resolves them from the agent role
+    at pickup, so disabling a role stops work already sitting in the queue.
+  - **Also fixed: the agent role library seeded only when someone opened the Studio
+    Roles page.** `agent_roles` is seeded lazily and nothing on the background path
+    triggered it, so on a site where nobody had visited that page every reconciler run
+    resolved to zero capabilities and failed `capabilities_denied`. The worker now
+    seeds before resolving; the seed is idempotent and adds no new definitions.
+  - **Runtime limits, stated rather than implied.** Dispatch runs on Node/Docker. On
+    Cloudflare Workers the `agent-runs` queue still has no consumer export, so
+    asynchronous runs — including this loop — do not execute there; a tripwire asserts
+    that rather than leaving readers to infer it. Documented in
+    `docs/{en,vi}/features/reconciler-repair-loop.md`.
+
+### Changed
+
+- **Onboarding docs: `lumibase init` is the same scaffold, and the version pin has
+  a consequence.** Two gaps on the pages a newcomer actually reads. Getting started
+  showed `npm create lumibase@latest` and never mentioned `lumibase init` outside a
+  link at the very bottom, so nothing said the two entry points are one scaffold
+  (`init` runs `create-lumibase` and forwards argv verbatim — they cannot offer
+  different templates). And the CLI reference explained the version pin without
+  stating what it costs: `init` resolves the scaffolder from the **registry**, so a
+  template that exists in the source tree is unreachable through `lumibase init`
+  until `create-lumibase` is published at that version. On releases up to
+  `1.0.0-rc.1` it fails *inside* the scaffolder with a missing-template-directory
+  error (those releases do not validate `--template`); later ones reject it as
+  `Unknown template`. Either way the name is valid. That trap
+  was known — it was recorded in a test comment and in the Setup Impact Registry —
+  but had never been told to users. Docs only; no runtime change.
+- **Corrected: `revalidate` is not an upper bound on stale content (#334).** The
+  Next.js quickstart and the `nextjs-blog` example said the withdrawal window was
+  "finite and bounded by `revalidate`". It is not. `revalidate` is the minimum age
+  at which a page may look for fresh data; the first request after expiry is still
+  answered from the stale cache while regeneration runs behind it, a page nobody
+  requests is never regenerated, and a failed regeneration keeps the previous HTML.
+  The measured 64 s is one path — traffic present, regeneration successful — not a
+  ceiling. Both documents now state plainly that this setup has **no hard takedown
+  guarantee** and that on-demand revalidation from a webhook is the only listed
+  option that reacts to the change rather than to a clock.
+- **API spec: the human approval endpoints were missing.** `POST
+  /api/v1/agent/approvals/:id/decide` and `/reopen` existed in code and in tests
+  but not in `hono-api-spec.md`, which is the document the v1 surface freeze points
+  at. Both are now specified with their capability (`approvals:decide`), status
+  codes, and — for `decide` — the requester ∩ decider rule and the
+  `APPROVAL_PROVENANCE_MISSING` refusal.
+- **MCP: one governed tool contract across both transports (#454, #472).** LumiBase
+  exposes MCP twice — `POST /api/v1/mcp` and the `@lumibase/mcp-server` stdio
+  package — and the two did not agree. The same logical operation was governed on one
+  surface and ungoverned on the other, and the schema advertised to clients did not
+  describe what the server accepted. Six changes, each closing a case that was
+  reproduced first:
+  - **One schema source.** `packages/contracts/src/agent-tools/` holds canonical Zod
+    contracts; the harness validates against them and `tools/list` advertises the
+    JSON Schema derived from the same definitions. Previously every skill without a
+    hand-written schema advertised `{type:'object'}`, so a well-behaved client could
+    send `{}` and be dispatched into a service. `.strict()` means unknown fields are
+    rejected rather than dropped silently.
+  - **Input is validated before any side effect,** and before `ensureRun` — placing
+    the check later would leave a `running` run and tool call behind for input that
+    can never execute. `createItem {}` used to reach
+    `ItemService.create(undefined, …)` and surface a raw
+    `TypeError: Cannot read properties of undefined` as the tool-result message;
+    `deleteItem {}` used to park an approval a human could approve and which could
+    then never succeed. Both now return `denied` with `code: 'VALIDATION'` naming the
+    offending field.
+  - **Writes are gated on the autonomy level, not on the `dangerous` flag.** The trust
+    gradient was reachable only through the dangerous branch, so a plain content write
+    executed at L0 and never asked for approval at L1 — contradicting
+    `AutonomyService`'s own definitions of those levels. L0 now refuses
+    (`code: 'AUTONOMY_SHADOW'`), L1 parks an approval through the same rows and ids a
+    control-plane skill uses, L2+ executes. **No behaviour change without
+    configuration:** the resolver defaults a safe capability to L2, so an install that
+    never configured autonomy is unaffected.
+  - **Capabilities are resolved from RBAC.** `auth.roles` holds a role *id* for a
+    normal user, `[]` for an API key, and the literal `'admin'` only for
+    bootstrap/dev — compared by exact string against `items:write`, the gate was
+    admin-or-nothing, and a site admin holding a real `adminAccess` role was refused
+    outright. Every transport and both queue workers now call one resolver backed by
+    the compiled permission bundle. Queue payloads carry a principal *reference*
+    instead of a capability snapshot, so a revoked key or a demoted user takes effect
+    on work that was already accepted.
+  - **The decision contract states which approval id you hold.** `approvalId` used to
+    collapse two id spaces — `agent_approvals` and the legacy `ai_approvals`, decided
+    at two different endpoints — so a client could hold a valid-looking id and call the
+    wrong route. `approvalSpace`, `agentApprovalId` and `legacyApprovalId` are
+    additive; `approvalId` keeps its meaning.
+  - **stdio routes 27 mutation tools through the harness.** Destructive tools also stop
+    asserting success: 22 call sites used to `await client.delete(...)` and then return
+    a hardcoded "deleted" without reading the response, which reports a deletion that
+    has not happened the moment a call can come back pending. The set of 27 was
+    measured by comparing each tool's advertised properties against the canonical
+    contract, not chosen by name; the remaining mutation tools stay on REST and are
+    **enumerated** with their reason in `UNGOVERNED_MUTATIONS`, with a tripwire that
+    fails when a mutation tool appears in neither table.
+
+  Upgrade notes:
+
+  - **No migration, no backfill, no new CMS environment variable.**
+  - `@lumibase/mcp-server` gains `LUMIBASE_MCP_GOVERNED`: `auto` (default) uses
+    governance when the site has `contentOs.mcp` enabled and otherwise falls back to
+    REST with one stderr warning; `on` refuses instead of falling back — the correct
+    setting for a deployment that requires governance, because a fallback that triggers
+    exactly when governance is unavailable is a bypass of governance; `off` keeps the
+    previous behaviour. The default is `auto` because `contentOs.mcp` also defaults
+    off, and defaulting to `on` would break every existing install on upgrade.
+  - Because only `items:*` and `schema:*` capabilities are derived for non-admins,
+    control-plane skills are admin-only in practice. That is fail-closed by design;
+    granting one to a non-admin means adding a pseudo-resource to the `permissions`
+    table, not loosening the capability check.
+  - Known limitation, stated rather than hidden: an approved action executes with the
+    **decider's** capabilities. The approval tables do not persist a principal
+    reference, so the requester's grant cannot be re-resolved at decision time.
+
+  Full contract: `docs/{en,vi}/mcp/governed-tool-contract.md`.
 
 - **Dependency batch: 27 minor/patch bumps, Vitest 5, Framer Motion 13.** The
   group bump carries `zod` 4.4→4.6, `next` 16.3.3→16.3.4, `hono` 4.13.5→4.13.7,
@@ -98,6 +1838,29 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   in the pre-commit hook) fails the build when a sidebar item, a whole
   category, or a navbar/footer `/docs/…` link no longer has a page behind it.
   The pages that were declared but never written are tracked as `B68`.
+
+- **The database commands printed all over the docs did not exist.**
+  `packages/database` defines `migrate` / `generate` / `studio`; the `db:`
+  prefix belongs to the **root** scripts only, so every
+  `pnpm -F @lumibase/database db:migrate` in the docs failed with *"None of the
+  selected packages has a db:migrate script"* — and `db:reset` was never a
+  script anywhere. It appeared 22 times across twelve doc files and
+  `AGENTS.md`, including **step 5 of Local Development** and **step 1 of the
+  Next.js quickstart**, which is the first command a new user runs. `CLAUDE.md`
+  had carried a warning that the form is invalid the whole time. All of them now
+  call the root scripts (`pnpm db:migrate`, `pnpm db:generate`,
+  `pnpm db:studio`); tracked as `B69`, whose remaining half is that nothing
+  verifies the commands inside a docs code fence.
+
+- **Local Development described services the compose file does not run.** Step 4
+  and the service table listed **Logto** on `:3001`; `docker/docker-compose.yml`
+  has no Logto service — `:3001` is Bull Board, and MinIO and imgproxy were
+  missing from the table entirely. The port-conflict section told readers to
+  override `STUDIO_PORT`, which nothing reads: Studio's dev port is hardcoded as
+  `server.port: 2026` in `apps/studio/vite.config.ts`, so the fix is to pass
+  `--port` to Vite. `pnpm -F @lumibase/cms wrangler:dev`, also gone — the `dev`
+  script already runs under Wrangler. This closes part (b) of `B47`; the
+  production-override SSL trap in part (c) is still open.
 
 - **A DB integration suite pointed at a database that is not there no longer
   reports as passing.** All 20 `*.db.integration.test.ts` suites gated

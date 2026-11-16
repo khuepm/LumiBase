@@ -1,13 +1,13 @@
 ---
 title: Caching
 description: Edge HTTP cache, application CacheProvider, and cache-penetration defences
-version: 4
-lastUpdated: 2026-08-10T20:04:00.102Z
+version: 7
+lastUpdated: 2026-11-09T04:18:38.708Z
 sourceLang: en
-contentHash: 218e2a3a0ef0179c
-codeVerified: 2026-08-10T20:04:00.102Z
-codeVerifiedHash: 218e2a3a0ef0179c
-codeVerifiedClaims: 16
+contentHash: 5e1114cd7d51ea0a
+codeVerified: 2026-11-09T04:18:38.708Z
+codeVerifiedHash: 5e1114cd7d51ea0a
+codeVerifiedClaims: 18
 ---
 
 # Caching
@@ -39,6 +39,10 @@ Purging by tag is one call however many URLs are affected, and it reaches copies
 
 The fallback is why the URL index exists at all. Where tag purge works, the index is redundant; where it does not, it is the whole mechanism.
 
+The URL recorded there is the **canonical** edge key, not the raw request URL: only `locale`, `lang`, `provenance=true` and `preview=true` (or `draft=true`, stored as `preview=true`) survive, in that order. Any other query parameter is dropped before `edgeCache.match/put`, so `?utm_source=…` or `?r=<random>` neither creates a new edge copy nor pushes real page URLs out of the 200-entry index.
+
+A `304 Not Modified` is never written to the edge. It answers one client's conditional request, and the edge key carries no request headers, so a stored 304 would be served with an empty body to the next client that has nothing cached. An edge hit answers `If-None-Match` itself by comparing it with the stored copy's `ETag`.
+
 Without those two variables the purge degrades to colo-local, which is **not** global invalidation: other PoPs keep serving until `s-maxage`. Configure them for any deployment where a content fix has to land faster than the `s-maxage` window.
 
 Everything on this path fails soft. A lost index entry, an expired token, a 403 from the purge API — each degrades to the old behaviour (expire on `s-maxage`) and none of them fails the write that triggered the purge. `lumibase_cache_operations_total{op="purgeEdge"}` separates `ok` from `error` so the difference is visible.
@@ -60,6 +64,10 @@ It is applied to **one** thing today: the compiled permission bundle, read on ne
 The store is module-level and bounded (256 entries, 5s TTL). Both matter: a per-request store would never return a hit, and an unbounded one leaks — a Docker process is long-lived and a Workers isolate is reused across requests from *different tenants*. Every key carries `siteId`, so no layer above needs to separate them.
 
 `lumibase_cache_operations_total{backend="process"}` reports hit and miss, so whether this layer earns its keep is measurable rather than assumed.
+
+**What `{principal}` contains.** The principal segment names every identity input the bundle is compiled from: `api_key:{id}`, `user:{id}` and `role:{id}`, joined with `|` when more than one is present (for example `user:{id}|role:{id}` for a capability resolution on the AI paths), and `anon` when none is. Before #583 a context that carried both a user and a role was keyed on the role alone, so two members of one role shared a bundle, including policies granted to one user directly.
+
+**Request-bound policies are not served from the cache.** A policy with an IP allow/deny list or a validity window (`ip_allow`, `ip_deny`, `valid_from`, `valid_until`, or the same keys in `rules`) is active or not depending on the request's ip and clock. When any candidate policy of a principal has such a guard, the cached entry only records that fact, and the bundle is compiled for each request. Unguarded principals keep the cached path. On a local pg17 run of `apps/cms/eval/permission-cache/bench.ts` (500 resolutions, 3 runs, in-process cache), a cached resolution took p95 2.0–2.8 ms, an uncached one 22.8–31.9 ms, and an IP-guarded one 8.1–10.0 ms.
 
 ## Media URLs and the `immutable` promise
 
@@ -132,3 +140,10 @@ Cache penetration keys follow the same shared-vs-isolated split as the rest of t
 | Shape guard | n/a | Pure regex, no storage | Same 404 body/headers as a real miss — never an oracle for valid shapes |
 
 **How to verify:** unit/integration Properties P17–P20 in `apps/cms/src/__tests__/cache-penetration.test.ts` (two-site tombstone isolation + credential bypass); wiring tripwire for `withDeliverRateLimit` in `security-guards.wiring.test.ts`.
+
+
+### Model routing, deadlines and workload checks
+
+All six network model adapters share a 20-second upstream deadline through response-body consumption. Caller cancellation and shorter decision deadlines still apply. Ordinary chat sends one request. An upstream outage returns a failure without switching providers or executing a tool. Explicit echo configuration and missing-credential fallback retain the normal harness authorization checks. Generation skills require a configured provider.
+
+Run `pnpm -F @lumibase/cms bench:model-routing` to measure local serialization, parsing and fallback overhead with synthetic provider responses. The workload emits p50/p95/p99, attempt/error counts, synthetic usage and estimated USD from explicit fixture prices. Each scenario must stay below 100 ms local p95, send exactly one upstream attempt per configured-provider request, and send zero for echo. Use `apps/cms/eval/permission-cache/bench.ts` against disposable PostgreSQL for separate cache-hit/miss capability-resolution measurements. These baselines describe local overhead and test prices. Production provider latency and invoices require independent measurements.

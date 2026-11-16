@@ -1,15 +1,43 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { resolve, relative, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Handlebars from 'handlebars';
 import pc from 'picocolors';
 import { createSpinner } from './utils/spinner.js';
+import { writeLocalSecrets, type LocalSecretsResult } from './secrets.js';
 import type { ProjectConfig } from './index.js';
 
-const TEMPLATES_DIR = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  'templates',
-);
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * `dist/templates` in the published package (postbuild copies them there);
+ * `../templates` when running from `src/` (tests), where no copy exists.
+ */
+const TEMPLATES_DIR =
+  [resolve(HERE, 'templates'), resolve(HERE, '../templates')].find((dir) => existsSync(dir)) ??
+  resolve(HERE, 'templates');
+
+/**
+ * The version of this scaffolder, read from its own manifest.
+ *
+ * The Next.js starter pins both the `lumibase` client and the CMS image to
+ * exactly this version (B95). A hand-maintained pin lags one release behind by
+ * construction — the image digest only exists after the release that should
+ * have carried it — so `create-lumibase@1.0.0-rc.2` shipped an older edge
+ * build and a `^1.0.0-rc.1` range that npm resolved to rc.1 (the `latest`
+ * dist-tag). Every package in the monorepo is released in lockstep, so the
+ * scaffolder's own version names the matching client and image.
+ *
+ * `../package.json` resolves from both `src/` (tests) and `dist/` (published).
+ */
+export function readScaffolderVersion(): string {
+  const manifestPath = resolve(dirname(fileURLToPath(import.meta.url)), '../package.json');
+  const { version } = JSON.parse(readFileSync(manifestPath, 'utf-8')) as { version?: unknown };
+  if (typeof version !== 'string' || version.length === 0) {
+    throw new Error(`create-lumibase manifest has no version: ${manifestPath}`);
+  }
+  return version;
+}
 
 /**
  * Files that npm renames on publish (strips the dot).
@@ -19,9 +47,10 @@ const RENAME_MAP: Record<string, string> = {
   '_gitignore': '.gitignore',
   '_env.example': '.env.example',
   '_npmrc': '.npmrc',
+  '_dev.vars.example': '.dev.vars.example',
 };
 
-export async function scaffold(config: ProjectConfig): Promise<void> {
+export async function scaffold(config: ProjectConfig): Promise<LocalSecretsResult> {
   const spinner = createSpinner(`Scaffolding ${pc.bold(config.projectName)}`);
 
   try {
@@ -29,7 +58,11 @@ export async function scaffold(config: ProjectConfig): Promise<void> {
     const ctx = buildTemplateContext(config);
 
     copyDir(templateDir, config.targetDir, ctx);
+    // Secure by default (#731): no template carries a secret; each project
+    // gets its own, in a gitignored file, at scaffold time.
+    const secrets = writeLocalSecrets(config.targetDir, config.template);
     spinner.succeed(`Scaffolded ${pc.bold(config.projectName)}`);
+    return secrets;
   } catch (err) {
     spinner.fail('Scaffold failed');
     throw err;
@@ -43,6 +76,9 @@ function buildTemplateContext(config: ProjectConfig): Record<string, unknown> {
     isCloudflare: config.template === 'cloudflare',
     isDefault: config.template === 'default',
     isNextjs: config.template === 'nextjs',
+    isAstro: config.template === 'astro',
+    isSveltekit: config.template === 'sveltekit',
+    lumibaseVersion: readScaffolderVersion(),
     year: new Date().getFullYear(),
   };
 }

@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:56.250Z
+version: 3
+lastUpdated: 2026-11-15T16:45:24.375Z
 sourceLang: en
-contentHash: 3832be55c3103f37
+contentHash: 9076eff6b8ece122
+codeVerified: 2026-11-15T16:45:24.375Z
+codeVerifiedHash: 9076eff6b8ece122
+codeVerifiedClaims: 12
 ---
 
 # Versioning Policy
@@ -53,9 +56,9 @@ breaking change to any of these requires a major bump:
 - The detailed database schema and table layout (the migration *path* is
   guaranteed; the internal column shape is not).
 - Studio internals (component structure, internal routes, build output).
-- Anything documented as experimental, reserved, or "not yet implemented"
-  (e.g. M2A relations, which return `501 RELATION_TYPE_NOT_IMPLEMENTED` and are
-  reserved for a future release).
+- Anything documented as experimental, reserved, or "not yet implemented":
+  - **M2A relations**: backend relation creation (`POST /api/v1/relations` with `type: 'm2a'`) returns `501 RELATION_TYPE_NOT_IMPLEMENTED` and is reserved for a future release; Studio's `relation-m2a` ("Builder (M2A)") editor is an experimental Studio-only JSON field helper (`Array<{ collection, id }>`) and is not part of the frozen relational surface.
+  - **Jev decisions, draft review, and governed content automation**: `/api/v1/ai/decisions`, `/api/v1/ai/review-profiles*`, `/api/v1/ai/reviews*`, `/api/v1/ai/automation*`, the corresponding `@lumibase/sdk` methods, and the `ai:decision` / `ai:apply-tags` / `editorial:route` flow operations are **experimental** in `1.0.0` pending live-data validation (`#548`), and may evolve in `1.x` minor releases before graduating to the frozen surface.
 
 ### API version pinning
 
@@ -88,6 +91,11 @@ patch or minor.
 
 This window is a commitment for the maintained line; it may be extended for a
 given release at the maintainers' discretion, never silently shortened.
+
+The runtimes a release runs on (Node.js, Cloudflare Workers compatibility date,
+PostgreSQL, Redis, Next.js/React, browsers) have their own support windows, and
+dropping one is a breaking change under this policy. See
+[Supported runtimes](./supported-runtimes.md).
 
 ## Release cadence & gates
 

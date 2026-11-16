@@ -1,18 +1,18 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T00:11:35.763Z
+version: 24
+lastUpdated: 2026-11-15T23:40:59.736Z
 sourceLang: en
-contentHash: 6edecac703c795d3
-codeVerified: 2026-07-28T00:11:35.763Z
-codeVerifiedHash: 6edecac703c795d3
-codeVerifiedClaims: 14
+contentHash: ef6fd16483d977a5
+codeVerified: 2026-11-15T23:40:59.736Z
+codeVerifiedHash: ef6fd16483d977a5
+codeVerifiedClaims: 22
 ---
 
 # Data Model (Drizzle / Postgres)
 
 This document describes the tables declared in `packages/database/src/schema/`. Internal database rows use text IDs by default. No-code content collections also carry a logical item primary key strategy through `collections.primaryKeyField` and `collections.primaryKeyType`.
 
-Every tenant-scoped domain table has `site_id`.
+Site-plane domain rows carry `site_id`; organization-plane rows carry `organization_id`.
 
 > **Physical table names carry a `lumibase_` prefix.** Every LumiBase system table
 > is physically named `lumibase_<name>` (e.g. the logical `users` table is physically
@@ -27,13 +27,17 @@ Schema files are split by domain:
 
 | File | Tables (physical) |
 |------|------|
-| `core.ts` | `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
+| `core.ts` | `lumibase_organizations`, `lumibase_organization_members`, `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
-| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
+| `social-auth.ts` | `lumibase_user_identities`, `lumibase_social_auth_providers` |
+| `imports.ts` | `lumibase_import_jobs` |
+| `locale-generation.ts` | `lumibase_locale_generation_jobs`, `lumibase_translation_suggestions` |
+| `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
 
 Migrations live in `packages/database/migrations/` and `packages/database/drizzle/`.
 
@@ -41,8 +45,16 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 
 ## 1. Core tenancy & identity (`core.ts`)
 
+### `organizations`
+- `id` text PK (nanoid), unique `slug`, `name`, `settings` jsonb default `{}`, `createdAt`, `updatedAt`.
+
+### `organization_members`
+- `userId`, `organizationId`, `role`, `createdAt`; composite PK `(userId, organizationId)`. Role CHECK: `owner`, `admin`, `billing`, `member`. Roles use the fixed `canOrg` matrix, not site policies. Organization tables have RLS using `lumibase.organization_id`.
+
 ### `sites`
+- `organizationId` is a required FK to `organizations` with delete RESTRICT. Migration `0024_organizations` backfills existing sites into the `default` organization before enforcing NOT NULL. Setup creates the personal organization and its bootstrap owner before creating the default site.
 - `id`, `name`, `domain`, `createdAt`, plus identity/branding/theme columns and `defaultLanguage`, `defaultAppearance`, and `defaultSaveAction` (`stay`|`return`|`create_new`, default `stay` — the site-wide default Studio save action; per-user override lives in `users.preferences.saveAction`).
+- `emailIdentityStrict` boolean, default `false` (migration `0027`) — per-site email identity tier: when on, one membership per root mailbox (see `user_sites.identityKey`).
 
 ### `users`
 | Column | Type | Note |
@@ -55,12 +67,17 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 | `preferences` | jsonb | per-user UI prefs: `{ language, theme, timezone, defaultPresets, saveAction }`. `saveAction` (`stay`/`return`/`create_new`) overrides `sites.default_save_action`. |
 | `lastSeenAt` | timestamp |
 | `passwordChangedAt` | timestamp | Set on every reset/change (migration `0006`). A password-reset token whose `iat` predates it is rejected → single-use reset links. |
+| `emailCanonical` | text unique | Account key under the instance email identity mode: `lower(email)` (`exact`) or the root mailbox (`root`). Written by a trigger (migration `0027`), never by the app. Nullable for one release; lookups fall back to `lower(email)` for null rows. |
+| `emailRoot` | text | Root mailbox: `+tag` stripped on every domain; Gmail dots removed and `googlemail.com` → `gmail.com`. Derived by `lumibase_email_root()` in the same trigger. Plain index. |
 | `createdAt`, `updatedAt` | timestamp |
 
-Unique indexes: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, `is_bootstrap = true`), and `users_email_lower_unique` on `lower(email)` (migration `0006`) — email is identity-global, one account per address. ⚠️ Migrating an existing instance fails if it already holds case-insensitive duplicate emails; de-duplicate first.
+Unique indexes: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, `is_bootstrap = true`), and `users_email_lower_unique` on `lower(email)` (migration `0006`) — email is identity-global, one account per address. ⚠️ Migrating an existing instance fails if it already holds case-insensitive duplicate emails; de-duplicate first. Migration `0027` adds `users_email_canonical_unique` on `email_canonical` and `users_email_root_idx` on `email_root`; under the `root` mode the canonical index makes "one root mailbox = one account" a database guarantee.
 
 ### `user_sites` (membership N-N)
-- `userId`, `siteId`, `roleId`, `joinedAt`. PK composite.
+- `userId`, `siteId`, `roleId`, `createdAt`. PK composite.
+- `identityKey` text (migration `0027`) — `users.email_root` when the site is strict, otherwise null. Unique index `user_sites_site_identity_unique` on `(site_id, identity_key)` allows one membership per root mailbox on a strict site (nulls never collide). Set by a trigger on insert and re-keyed when the member's email changes.
+
+**Email identity policy (migration `0027`).** The instance tier lives in `system_state.email_identity_mode` (`exact` | `root`, default `exact`; existing instances are backfilled to `exact`, so nothing changes on upgrade). Every writer — routes, SCIM, setup, seeds, an older app version — gets the same derived columns because triggers compute them: `lumibase_users_email_identity()` on `users` (reads the singleton `FOR SHARE`), `lumibase_user_sites_identity_key()` on `user_sites` (reads the site `FOR SHARE`) and `lumibase_users_rekey_memberships()` after an email change. The guarded change endpoint holds `FOR UPDATE` on the same rows, so a row is never keyed under a stale policy. See [User management](./security/user-management.md) and `/api/v1/admin/email-identity` in the API spec.
 
 ### `teams` / `team_members`
 - `teams`: `id`, `siteId`, `name`, `description`.
@@ -100,6 +117,8 @@ Primary key strategy:
 - `nanoid`: default logical string identifier generated by LumiBase.
 - `uuid`: service-generated UUID string.
 - `string`: caller-provided string identifier.
+
+Whatever the strategy, an item id is unique **per site**, across all of that site's collections: `items` has the primary key `(siteId, id)` (migration `0035`). Two sites may use the same id; inside one site a reused id, even in another collection, is refused with `409 ITEM_ID_EXISTS`.
 - `integer` / `bigInteger`: sequence-backed strategies reserved for materialized/physical storage support; JSONB collections block these combinations.
 
 Storage modes are intentionally explicit:
@@ -145,29 +164,35 @@ Compiled schemas expose generated system fields in addition to user-defined rows
 ### `items`
 | Column | Type |
 |---|---|
-| `id` | text PK |
+| `id` | text | unique per site |
 | `siteId`, `collectionId` | text FK |
 | `status` | text | `draft`/`published`/`archived` |
 | `data` | jsonb | values keyed by field.name |
+| `version` | integer, default 0 | Optimistic-concurrency counter: incremented by every write that changes the item's content (data, status, pins, soft delete including tree cascade, crypto-shred, moving the item in a tree); descendant path rebases, sibling sort renumbering and key-rotation re-encryption leave it alone. Served as the item's `ETag`; `If-Match` compares against it. |
 | `sort` | integer |
 | `userCreated`, `userUpdated` | text FK users |
 | `publishAt`, `unpublishAt` | timestamp nullable | Scheduling window (Req 7); the reconcile worker flips status, delivery filters to the window. |
 | `editorialState` | text nullable | Human review state (Req 9): `draft`/`in_review`/`approved`/`published`/`rejected`. Distinct from the AI veto-window. |
+| `firstPublishedAt` | timestamp nullable | First publish (#687, migration 0037). Set once, never moved by a re-publish. |
+| `publishedAt` | timestamp nullable | Most recent publish (#687). Kept when the item is unpublished. |
+| `hasUnpublishedChanges` | boolean, default false | Data edited since the last publish (#687); cleared by the next publish. Partial index `items_unpublished_changes_idx (siteId, collectionId) WHERE has_unpublished_changes AND deleted_at IS NULL`. |
 | `dekWrapped` | text nullable | Envelope mode (Req 4.5): the per-record DEK wrapped by the KEK. Non-null ⇒ this record's encrypted fields use a per-record DEK; null ⇒ shared-key mode. Reads are self-describing from this column. |
 | `createdAt`, `updatedAt` | timestamp |
 | `deletedAt` | timestamp nullable |
 
-Indexes: `(siteId, collectionId, status)`, GIN on `data`, `(siteId, status, publishAt)`, `(siteId, status, unpublishAt)`.
+Primary key `(siteId, id)`. Indexes: `(siteId, collectionId, status)`, GIN on `data`, `(siteId, status, publishAt)`, `(siteId, status, unpublishAt)`.
 
 ### `revisions`
 - `id`, `siteId`, `itemId`, `collectionId`, `delta jsonb`, `parentId`, `userId`, `createdAt`.
+- `(siteId, itemId) → items (siteId, id)` (cascade): a revision always belongs to an item of its own site.
+- A `PATCH ?saveRevision=false` writes no revision (#693); a collection's `meta.revisionRetention: { maxRevisions?, maxAgeDays? }` lets the hourly `revision-retention` sweep prune old rows (never an item's newest, staged, release-pinned or agent revisions).
 
 ### `releases` (Content Releases)
 - A cross-collection publish bundle. `id`, `siteId`, `name`, `description`, `status` (`draft`|`scheduled`|`published`|`failed`|`partially_failed`), `atomicityMode` (`all_or_nothing`|`best_effort`), `publishAt`, `publishedAt`, `maintenanceWindow jsonb`, `statusReason`, `createdBy → users.id (set null)`, `createdAt`, `updatedAt`.
 - Indexes: `releases_site_status_idx (siteId, status)`, `releases_publish_due_idx (siteId, status, publishAt)` (mirrors `items.publishDueIdx` for the scheduler sweep).
 
 ### `release_items` (Content Releases)
-- Junction release ↔ item, optionally pinned to one revision. `id`, `siteId`, `releaseId → releases.id (cascade)`, `collection`, `itemId → items.id (cascade)`, `targetStatus` (default `published`), `revisionId → revisions.id (set null)`, `outcome` (`published`|`skipped`|`failed`), `outcomeReason`, `createdAt`.
+- Junction release ↔ item, optionally pinned to one revision. `id`, `siteId`, `releaseId → releases.id (cascade)`, `collection`, `(siteId, itemId) → items (siteId, id)` (cascade), `targetStatus` (default `published`), `revisionId → revisions.id (set null)`, `outcome` (`published`|`skipped`|`failed`), `outcomeReason`, `createdAt`.
 - Unique `(releaseId, collection, itemId)` (upsert key); index `(siteId, releaseId)`.
 
 ### `activity`
@@ -194,6 +219,15 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`, `(siteId, status, publ
 ### `materialized_collections` (POST-GA6)
 - Defines denormalized read tables for hot paths.
 - `target`, `refreshStrategy` (`auto`/`cron`/`manual`), `refreshCron`, `projection jsonb`, `filter jsonb`, `lastRefreshedAt`, `rowCount`, `status`, `error`.
+
+### `import_jobs` (`imports.ts`, migration `0028`)
+- One background import (#726): `collection`, `format` (`csv`/`json`), `mode` (`create`/`upsert`), `status` (`queued`/`running`/`succeeded`/`failed`/`cancelled`/`timed_out`), `principal` jsonb (re-resolved at every step), `created_by`.
+- Progress: `total_rows`, `cursor` (next row), `created_rows`, `updated_rows`, `failed_rows`, `errors` jsonb (`{ row, id?, message }[]`, capped) and `errors_truncated`.
+- Worker coordination: `lease_owner`, `lease_until`, `timeout_ms`, `cancel_requested_at`, `started_at`, `finished_at`. `source` holds the uploaded file until the job ends, then is cleared. Site-isolated under RLS.
+
+### `activation_milestones` and `telemetry_state` (`activation.ts`, migration `0029`)
+- `activation_milestones`: one row per `site_id` and `milestone` (`site_created`/`item_published`/`delivery_request`/`agent_run`), with `reached_at` and `source` (`event`/`derived`). Written once, never updated. Site-isolated under RLS.
+- `telemetry_state`: instance-level singleton (`id = 'singleton'`), not site-scoped. Holds the random `install_id` and `sent` jsonb (event name → day delivered). The row is created only after an operator opts in to usage telemetry.
 
 ### Schema diff/apply runtime contract
 
@@ -236,17 +270,30 @@ SDK generation uses this manifest to emit base collection interfaces and `Collec
 - `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — plaintext never stored), `familyId` (rotation chain), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `createdAt`.
 - Rotating, revocable session-renewal tokens. Reuse of a revoked row revokes the whole `familyId` (theft detection). Swept on the hourly cron once expired. See [`security/user-management.md`](./security/user-management.md) §4d.
 
+### `user_passkeys` (migration `0031`, physical `lumibase_user_passkeys`)
+- `id` (nanoid), `userId`, `credentialId` (base64url, unique), `publicKey` (COSE public key), `counter`, `transports`, `aaguid`, `name`, `deviceType`, `backedUp`, `rpId`, `createdAt`, `lastUsedAt`, `updatedAt`.
+- Identity-scoped like `lumibase_user_totp_credentials`: keyed by `user_id`, no `site_id`, not under RLS — a passkey belongs to an RP ID (domain), not to a site. Nothing secret is stored. See [`security/passkeys.md`](./security/passkeys.md).
+
 ### System collections seed permissions
 
 When seeding local/staging/prod, seed system collection permissions explicitly. Sensitive collections such as `system_state`, `audit_log`, `login_attempts`, `login_baselines`, `admin_backup_codes`, `scim_tokens`, and future API key tables are admin/security-only. See [System Collections & Sensitive Access](./features/system-collections-access.md).
 
+### `api_keys`
+- `scope` is `site` (default) or `organization`. CHECK requires exactly one matching target: site scope has `siteId` and no `organizationId`; organization scope has `organizationId` and no `siteId`. Both targets are foreign keys with delete CASCADE.
+- `prefix`, `tokenHash`, name/expiry/revocation/rotation metadata; plaintext is not stored in this table. Site keys retain their role/policy links. Organization keys have fixed admin authority on their organization, and inherit administrator on its sites.
+
 ## 4. Files & Assets (`platform.ts`)
 
 ### `files`
-- `id`, `siteId`, `storage` (`r2`/`s3`/external), `filenameDisk`, `filenameDownload`, `mime`, `filesize`, `width`, `height`, `duration`, `folder`, `metadata jsonb`, `uploadedBy`, `createdAt`.
+- `id`, `siteId`, `storage` (`r2`/`s3`/external), `filenameDisk`, `filenameDownload`, `mime`, `filesize`, `width`, `height`, `duration`, `folder`, `metadata jsonb`, `uploadedBy`, `contentHash`, `version`, `scanStatus`, `createdAt`, `updatedAt`.
+- `contentHash` — full SHA-256 (hex) of the current binary, used for duplicate detection; index `(siteId, contentHash)`. `version` — bumped by every in-place replace (same id and `filenameDisk`). `scanStatus` — `skipped` (default) / `pending` / `clean` / `infected` / `error`; only `skipped` and `clean` are delivered. `metadata.embedded` holds extracted EXIF/IPTC/XMP and `metadata.searchText` the searchable summary. Migration `0038_dam_assets`.
+
+### `file_versions`
+- `id`, `siteId`, `fileId` (FK cascade), `version`, `filenameDisk` (archive key `sites/<site>/file-versions/<id>/v<n>`), `filenameDownload`, `mime`, `filesize`, `width`, `height`, `contentHash`, `metadata jsonb`, `replacedBy`, `createdAt`, `expiresAt`.
+- The file's state **before** a replace, kept until `expiresAt` for undo; pruned with its object afterwards. See [Digital Asset Management](./features/digital-asset-management.md).
 
 ### `folders`
-- `id`, `siteId`, `name`, `parent`.
+- `id`, `siteId`, `name`, `parent`. Paths, sub-trees and cycle checks are derived in `apps/cms/src/services/files/folder-tree.ts`.
 
 ## 5. UX state (`platform.ts`)
 
@@ -307,8 +354,11 @@ for the user-facing and runtime contract.
 ### `ai_approvals`
 | Column | Type | Note |
 |---|---|---|
-| `id` | text PK | nanoid(21) |
-| `siteId` | text FK → sites CASCADE |
+| `id` | text PK | existing IDs preserved; UUIDv7 for organization approvals |
+| `siteId` | text nullable FK → sites CASCADE | site-scoped approval parent |
+| `organizationId` | text nullable FK → organizations CASCADE | organization-scoped approval parent |
+| `organizationRequester` | jsonb nullable | requesting user or API-key identity |
+| `result` | jsonb nullable | committed human receipt, possibly a new key |
 | `agentName` | text | default `'lumibase-copilot'` |
 | `skillName` | text | from the `CORE_SKILLS` registry |
 | `arguments` | jsonb | the skill's arguments |
@@ -317,12 +367,16 @@ for the user-facing and runtime contract.
 | `createdAt`, `decidedAt` | timestamp |
 | `decidedBy` | text FK → users SET NULL |
 
-Index: `(siteId, status)`.
+Index: `(siteId, status)`, `(organizationId, status)`.
 
 Behavior: dangerous skills (`schema:write` or names starting with `delete`) must
 create an `ai_approvals` row and wait for approval instead of executing
 directly. See [AI Copilot](./features/ai-copilot.md). New dangerous harness
 actions also write linked/generalized `agent_approvals` records where applicable.
+
+Migration `0025_organization_approvals` makes `siteId` nullable and adds `organizationId`, `organizationRequester`, and `result`. The CHECK allows one site parent or one organization parent; organization approvals also require requester provenance. Both parents cascade on deletion. Paired restrictive/permissive RLS policies isolate receipts by the active site or organization scope.
+
+Organization MCP writes always wait for human approval. Requester reauthorization, the domain write, and its stored receipt share a transaction. Only authorized humans can retrieve a receipt containing a newly minted key; list responses and agent results omit that secret. Organization-only requests do not borrow the default site. IDs for these organization approvals are UUIDv7; existing approval IDs remain valid.
 
 ### `agent_*` harness tables
 
@@ -347,26 +401,43 @@ Operational notes:
 - `POST /api/v1/agent/generate-app` creates `page_spec`, `component_spec`, `seed_data`, and `api_spec` artifacts and evaluates each artifact before returning.
 - `agent_runs.metrics.stopReason` records completion or budget stop reasons such as `completed`, `error`, and `max_tool_calls`.
 - `agent_tool_calls.cost` stores token/cost estimates after secret masking.
+- `agent_runs.status` `waiting_user` (#710): the run asked a human with `askUser` and is parked until the question is answered (`succeeded`, `stopReason: answered`), times out (`failed`, `stopReason: question_timeout`) or is cancelled. No schema change: the question is an `agent_approvals` row (see below).
 - If the same goal fails at least three runs and a runtime `QueueProvider` is available, the run service enqueues `agent-dead-letter` with the scoped run failure payload.
+
+### Draft review tables (Jev)
+
+| Table | Purpose |
+|---|---|
+| `lumibase_review_profiles` | Versioned review rubrics; rows are immutable, unique `(site_id, key, version)` |
+| `lumibase_review_runs` | One decision run of a profile on an item or snapshot, with provider, model, content hash and answers; purged after `DECISION_REVIEW_RETENTION_DAYS` |
+| `lumibase_review_feedback` | Accept/edit/reject per run, question and principal; deleted with its run |
+| `lumibase_review_sessions` | Pilot timing (#516): one editor session from opening the editor to the first save, `mode` `baseline`/`assisted`, `duration_ms`, `locale`, the viewed `run_id` and `viewed_questions`. No content. `run_id` is set null when the run is purged |
+| `lumibase_ai_automation_actions` | Jev automation (#518): one metadata action (`tag` / `route`) per flow run, node and item, unique `(site_id, flow_run_id, node_id, item_id)`. `mode` `shadow`/`live`, `status`, `reason`, `proposed`, `previous`, `applied`, `approval_id`, `reverted_at`, plus the chain ids `revision_id`, `review_run_id` and `content_hash`. `review_run_id` is set null when the run is purged |
+
+All five tables have `site_id` (FK cascade) and every query is site scoped. All five are also in the `site_isolation` RLS list of `packages/database/migrations/rls-policies.sql`. The retention purge of `lumibase_review_runs` runs site by site, each in a transaction that sets `app.site_id` (`apps/cms/src/services/review-run-retention.ts`), so it keeps deleting on a database where those policies are applied.
+Turning the draft-review pilot off deletes none of these rows.
 
 ### Content OS tables (`content-os.ts`)
 
 | Collection | Purpose |
 |---|---|
-| `content_intents` | Declared desired state (SLO) per collection: rules, cron schedule, budget, autonomy cap, maintenance window |
-| `content_drifts` | Detected rule violations; unique `(siteId, fingerprint)` dedupes detection across scans |
+| `content_intents` | Declared desired state (SLO) per collection: rules, cron schedule, budget, autonomy cap, maintenance window. `scan_cursor` resumes the deterministic scan; `semantic_scan_cursor` (migration 0022, J12) resumes the separately budgeted [semantic pass](./features/jev-semantic-drift.md) |
+| `content_drifts` | Detected rule violations; unique `(siteId, fingerprint)` dedupes detection across scans. `status` is `open`/`assigned`/`resolved`/`stale`, or `unevaluated` for a semantic rule that could not be judged (plain text column, no CHECK constraint). Semantic rows use `rule_type = 'semantic'` and `rule_key = <key>@v<version>:<profileVersion>:<contentHash>` |
 | `agent_autonomy_grants` | Earned trust per (site, agentRole, capability): level 0–4, evidence, expiry |
 | `agent_incidents` | Demotion evidence and exception-inbox feed (`veto`, `eval_fail`, `load_guard`, …) |
 | `agent_freezes` | Kill-switch freezes (scope `site`/`role`); `liftedAt IS NULL` = active; doubles as audit trail |
 | `agent_roles` | Multi-agent role library with minimal capability sets; harness enforces role ∩ grant |
 | `constitutions` | Versioned publish-gate evaluator sets; sha256 hash identity; at most one `active` per site |
+| `site_skills` | Site Skills (`site-skills.ts`, migration 0026): playbooks injected into matching agent runs. Unique `(siteId, slug)`; `status` `draft`/`active`/`archived`; `riskClass`; scope columns `surfaces`, `tools`, `collections`, `triggers`, `requiredCapabilities`; current `body`, `version`, `hash` |
+| `site_skill_versions` | Immutable version trail of a site skill: unique `(skillId, version)`, content `snapshot`, sha256 `hash`, `source`/`sourceRef`, `changeNote`, author. Both tables are in the `site_isolation` RLS list |
+| `agent_tool_secrets` | Secrets of external-action tools (`ai.ts`, migration 0030). Unique `(siteId, name)`; `ciphertext` is a `KeyProvider` envelope bound to site and name, `keyId` the key version, `updatedBy` the administrator. Never returned by an API. In the `site_isolation` RLS set. See [external-action tools](features/external-action-tools.md) |
 
 Content OS columns on existing tables:
 
 - `revisions`: `authorType`, `createdByRunId`, `model`, `constitutionHash`, `sources`, `confidence`, `staged`, `autoCommitAt` (provenance + veto staging).
 - `items`: `pinnedFields` (Law Zero — fields a human edit locked against agent writes).
 - `agent_goals`: `parentGoalId` (goal tree), `origin` (`user/reconciler/planner/flow`), `intentId`, `driftFingerprint`, `agentRole`.
-- `agent_approvals`: `kind` (`approval`/`veto`), `autoCommitAt`, `approverType` (`human`/`agent`), `approverRunId`.
+- `agent_approvals`: `kind` (`approval`/`veto`/`promotion`/`question`), `autoCommitAt`, `approverType` (`human`/`agent`), `approverRunId`. A `question` row (`askUser`, #710) uses the existing columns: `subject_id` is the `askUser` tool call (whose `input` holds the question, options and context), `status` is `pending`/`answered`/`expired`/`cancelled`, `expires_at` is the deadline, and `decision_reason`/`decided_by`/`decided_at` record the answer and who gave it.
 
 ### Directus-inspired tables (`cms.ts`)
 
@@ -396,6 +467,14 @@ All three are `site_id`-scoped with `site_isolation` RLS. See `docs/en/features/
 ### `auth_external_issuers`
 - Per-site trusted external JWT issuer. **Public config only — no secrets** (signatures verify against the issuer's JWKS). `id`, `siteId` (FK sites, cascade), `issuer` (matches the `iss` claim), `jwksUri`/`discoveryUrl` (one required), `audience` (jsonb: string|string[]), `algorithms` (jsonb: asymmetric allowlist), `claimMapping` (jsonb: `{ email, roles, siteId?, externalId? }`), `roleMapping` (jsonb: `{ "<claim role>": { roleId|systemKey } }`), `defaultRoleId`, `jitProvisioning`, `clockSkewSeconds`, `enabled`, `createdAt`, `updatedAt`.
 - Unique `(siteId, issuer)`; index `(siteId, enabled)`. Migration: `0000_lumibase_init` (consolidated). See [security/external-jwt-auth.md](./security/external-jwt-auth.md).
+
+### `user_identities` (`social-auth.ts`, migration `0032`)
+- External login identities linked to an account: `id`, `userId` (FK users, cascade), `issuer`, `subject`, `emailAtLink`, `createdAt`. Unique `(issuer, subject)`; index on `user_id`.
+- **Identity-global** like `users` — no `site_id`, not under RLS; site access stays in `user_sites`. Migration `0032` backfills every `users.external_id` under issuer `urn:lumibase:external-id`. See [security/social-login.md](./security/social-login.md).
+
+### `social_auth_providers` (`social-auth.ts`, migration `0032`)
+- Per-site Google / Apple / GitHub configuration: `id`, `siteId` (FK sites, cascade), `provider`, `enabled`, `clientId`, `clientSecretCiphertext`, `appleTeamId`, `appleKeyId`, `applePrivateKeyCiphertext`, `allowedRedirectUris` (jsonb), `createdAt`, `updatedAt`. Unique `(siteId, provider)`; RLS `site_isolation`.
+- Secrets are KeyProvider AES-GCM envelopes bound to site + provider, never plaintext and never returned by the API.
 
 ### `lumibase_firebase_sync_pipelines`
 | Column | Type | Note |
@@ -460,7 +539,7 @@ Audit of every decrypted read of a `pii`/`phi` field (Req 6). Never stores the d
 Indexes: `(siteId, timestamp)`, `(actor, timestamp)`.
 
 ### `content_reviews`
-Human editorial sign-off records (Req 9). `itemId` is `onDelete: set null` so review history survives erasure (Req 11.3).
+Human editorial sign-off records (Req 9). `(siteId, itemId) → items (siteId, id)` with `ON DELETE SET NULL (item_id)`: deleting the item clears `itemId` and keeps `siteId`, so review history survives erasure (Req 11.3). The column-list form needs PostgreSQL 15+.
 | Column | Type | Note |
 |---|---|---|
 | `id` | text PK | nanoid |
@@ -514,4 +593,5 @@ AAD-bound to `{ siteId, integrationId, field }`); plaintext is never stored.
 
 - An index on `(siteId, …)` is mandatory on every domain table.
 - Apply the Drizzle `scopeSite(siteId)` helper at the repository layer.
-- Postgres RLS is enabled through the `withRls()` middleware (`apps/cms/src/middleware/rls.ts`) — it sets a session variable for defence in depth.
+- Defence in depth: with `LUMIBASE_DB_RLS=enforce`, `withDb()` (`apps/cms/src/middleware/db.ts`) runs each request statement in its own transaction with `app.site_id` set, and `withRls()` (`apps/cms/src/middleware/rls.ts`) fails closed if the request db is not scoped. Off by default (B130).
+- The policies live in `packages/database/migrations/rls-policies.sql`. The operator applies that file by hand; `pnpm db:migrate` does not. Each listed table gets two policies with the same predicate: `site_isolation` (RESTRICTIVE) and `site_isolation_permit` (PERMISSIVE). The exception is `lumibase_extensions`, whose global rows (`site_id IS NULL`) stay visible. With `app.site_id` unset, no row of a scoped table is visible.

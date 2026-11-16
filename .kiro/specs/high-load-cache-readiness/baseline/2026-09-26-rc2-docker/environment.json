@@ -1,0 +1,24 @@
+{
+  "date": "2026-09-26",
+  "sourceHead": "a1b7cc3fae2ac47481cb9d10c38a4c2e8cc38252",
+  "cmsImage": "ghcr.io/khuepm/lumibase-cms:1.0.0-rc.2",
+  "cmsDigest": "sha256:c8e591545be3a728a4481b46845ad57949c68fd84a31bd43ea35d1bd834d234e",
+  "dockerVM": {
+    "platform": "linux/arm64",
+    "cpus": 8,
+    "memoryBytes": 8393605120,
+    "sharedHost": true
+  },
+  "dataset": {
+    "domainItems": 500000,
+    "collections": 5,
+    "sites": 2,
+    "pagesPerSite": 100
+  },
+  "k6Image": [
+    "grafana/k6@sha256:3ddc8b1a33a2c3d8edc6e99b6a762ae36cba08788463458f5e6a7703e14eb77d"
+  ],
+  "authentication": "Fixture HS256 Studio JWT, exp 2026-09-26T11:03:37Z. No credential retained. Documented dev token lacked RBAC role and failed preflight.",
+  "limits": "API default 600 requests/minute/principal remained active; LUMIBASE_RATE_LIMIT_DISABLED is not the API limiter switch. 132 item-list responses were HTTP 429; all delivery responses were 200.",
+  "scope": "Local Docker and local nginx proxy only. No Cloudflare, production, real LLM, or public demo proof."
+}

@@ -1,11 +1,11 @@
 ---
-version: 4
-lastUpdated: 2026-09-01T19:24:38.846Z
+version: 56
+lastUpdated: 2026-11-15T23:40:56.423Z
 sourceLang: en
-contentHash: f0c3698b7ea88443
-codeVerified: 2026-09-01T19:24:38.846Z
-codeVerifiedHash: f0c3698b7ea88443
-codeVerifiedClaims: 374
+contentHash: fb7e23a8ff3b4d56
+codeVerified: 2026-11-15T23:40:56.423Z
+codeVerifiedHash: fb7e23a8ff3b4d56
+codeVerifiedClaims: 636
 ---
 
 # Hono API Specification — LumiBase
@@ -65,6 +65,15 @@ Error response:
 | `TOKEN_EXPIRED` | 401 | JWT has expired — refresh and retry |
 | `SKILL_DENIED` | 403 | AI skill requires a capability the session lacks |
 | `HITL_REQUIRED` | 202 | Dangerous operation gated for human approval |
+| `VALIDATION` | 400 | Organization payload validation failed |
+| `SCOPE_NOT_ALLOWED` | 400 | Organization keys must be minted through the organization API |
+| `ORGANIZATION_FORBIDDEN` | 403 | Credential scope or organization role does not allow this action |
+| `ORG_SIGNUP_DISABLED` | 403 | Organization signup is disabled for this caller |
+| `SITE_NOT_IN_ORGANIZATION` | 403 | Selected site does not belong to the organization key |
+| `ORGANIZATION_NOT_EMPTY` | 409 | Organization must have no sites before deletion |
+| `LAST_OWNER` | 409 | At least one owner must remain |
+| `REQUESTER_REVOKED` | 409 | Requester no longer holds live organization authority |
+| `APPROVAL_ALREADY_DECIDED` | 409 | A conflicting approval decision is already committed |
 
 > **Deprecation signalling.** A retiring endpoint returns the IETF `Deprecation`
 > and `Sunset` response headers (RFC 8594) plus a `Link rel="deprecation"` to the
@@ -107,6 +116,7 @@ Error response:
 | `_json_contains` | JSONB `@>` — value/sub-object/array-membership containment |
 | `_has_key` | The JSON object has this key |
 | `_has_any_keys`, `_has_all_keys` | The JSON object has any / all of these keys (string array) |
+| `_near`, `_within_bbox` | geopoint fields: within `{ lat, lng, radius }` metres / inside `[minLng, minLat, maxLng, maxLat]` — see [Geopoint fields](../features/geopoint.md) |
 
 **Searching inside JSON.** A filter field key may be a **dotted path** into a
 nested JSON/JSONB field — e.g. `filter={"metadata.author.country":{"_eq":"VN"}}`
@@ -115,6 +125,35 @@ restricted to `[A-Za-z0-9_]` and bound as parameters (injection-safe); depth is
 capped at 8. The `_json_contains` / `_has_*` operators run against the JSONB and
 use the existing GIN index. Top-level keys and structural fields behave exactly
 as before.
+
+**Typed comparisons (Cast_Rule).** Item values are stored as JSONB, so a naive
+comparison is textual (`'10' > '9'` is false). `_eq`, `_neq`, `_in`, `_nin`,
+`_gt`, `_gte`, `_lt` and `_lte` therefore cast both sides by type:
+
+| Field / value | Comparison |
+|---------------|------------|
+| Top-level field of type `integer`, `bigInteger`, `decimal`, `float` | `numeric` |
+| Top-level field of type `boolean` | `boolean` |
+| Top-level field of type `date`, `datetime`, `timestamp` | `timestamptz` |
+| Nested path, `json` field or unknown key with a JSON number / boolean value | `numeric` / `boolean`, inferred from the value |
+| Anything else (`string`, `text`, `uuid`, string values on nested paths) | text, as before |
+
+The stored side uses a guarded cast: a row whose value does not look like the
+type (for example `"n/a"` in a `decimal` field) compares as `NULL` and drops
+out, instead of failing the query. A filter value that cannot be cast (for
+example `{"price":{"_gt":"cheap"}}`) is rejected with `400 INVALID_FILTER`.
+String operators (`_contains`, `_starts_with`, `_ends_with`) always compare text.
+Sorting on a top-level numeric, boolean or date field uses the same cast, so
+`sort=-price` orders numerically. Structural fields (`id`, `status`, `sort`,
+`created_at`, …) keep their native column types.
+
+```
+GET /api/v1/items/products?filter={"price":{"_gt":10}}&sort=-price
+GET /api/v1/items/products?filter={"metadata.rating":{"_gte":4.5}}
+```
+
+To make a typed filter on a hot path use an index, ask the
+[index advisor](#json-path-index-advisor) for matching DDL.
 
 ### Filter forms
 
@@ -165,10 +204,30 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/me/tfa/confirm` | bearer | Confirm enrollment with a live code → single-use recovery codes |
 | `POST` | `/api/v1/me/tfa/recovery-codes` | bearer | Regenerate recovery codes (password + TOTP code) |
 | `DELETE` | `/api/v1/me/tfa` | bearer | Disable TOTP (password + either a TOTP code or a recovery code); revokes sessions and bumps `tokenVersion` |
+| `POST` | `/api/v1/auth/passkey/options` | public | Passkey authentication options: with `challengeToken` = second factor, without = passwordless staff sign-in → `{ ceremonyId, options }` |
+| `POST` | `/api/v1/auth/passkey/verify` | public | Finish a passkey ceremony → same session payload as login (`amr` contains `webauthn`, `tfaVerified`) |
+| `GET` | `/api/v1/me/passkeys` | bearer | The caller's passkeys + `recoveryCodesRemaining`, `totpEnabled`, `available` |
+| `POST` | `/api/v1/me/passkeys/registration-options` | bearer | Begin passkey registration (password step-up) → `{ ceremonyId, options }` |
+| `POST` | `/api/v1/me/passkeys` | bearer | Finish registration → `{ passkey, recoveryCodes }` (codes only for a first factor) |
+| `PATCH` | `/api/v1/me/passkeys/:id` | bearer | Rename a passkey |
+| `DELETE` | `/api/v1/me/passkeys/:id` | bearer | Remove a passkey (password); the last second factor revokes sessions and bumps `tokenVersion` |
+| `POST` | `/api/v1/me/passkeys/recovery-codes` | bearer | Regenerate recovery codes (password + a passkey-opened session) |
 | `POST` | `/api/v1/me/change-password` | bearer | Verify current password, set new hash, revoke refresh tokens + bump `tokenVersion` |
 | `GET` | `/api/v1/me/sessions` | bearer | List the caller's active sessions (live refresh tokens, redacted) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Revoke one of the caller's sessions |
-| `DELETE` | `/api/v1/me/sessions` | bearer | Revoke all of the caller's sessions |
+| `DELETE` | `/api/v1/me/sessions` | bearer | Revoke all of the caller's sessions; `?scope=others` keeps the current session |
+| `GET` | `/api/v1/me/security-history` | bearer | The caller's own security events (sign-ins, new devices, password/MFA changes, revocations), redacted; `?cursor=&limit=&scope=site\|account` — see [Security history](../security/security-history.md) |
+| `GET` | `/api/v1/me/security-history/export` | bearer | Download the same history; `?format=json\|csv&scope=` (max 5,000 rows, 10 exports / 15 min) |
+| `GET` | `/api/v1/auth/social/providers` | public | Social login providers enabled for the site |
+| `POST` | `/api/v1/auth/social/:provider/start` | public | Begin Google / Apple / GitHub sign-in (PKCE) → `authorizationUrl` |
+| `GET`/`POST` | `/api/v1/auth/social/callback/:siteId/:provider` | provider | Provider callback (`POST` = Apple `form_post`); redirects to the allow-listed URI with a one-time code |
+| `POST` | `/api/v1/auth/social/exchange` | public | Redeem the one-time code with the client `codeVerifier` → session (`aud: frontend`) |
+| `GET` | `/api/v1/me/identities` | bearer | Linked login identities + `hasPassword` |
+| `POST` | `/api/v1/me/identities/:provider/link` | bearer | Begin linking a provider to the signed-in account |
+| `POST` | `/api/v1/me/identities/complete` | bearer | Finish linking (one-time code + `codeVerifier`) |
+| `DELETE` | `/api/v1/me/identities/:id` | bearer | Unlink a provider (never the last login method) |
+| `GET` | `/api/v1/admin/social-providers` | site-admin | Per-site social provider configuration (secrets write-only) |
+| `PUT`/`DELETE` | `/api/v1/admin/social-providers/:provider` | site-admin | Configure / remove a provider — see [Social login](../security/social-login.md) |
 | `POST` | `/api/v1/users/subscriber-access` | site-admin | Grant subscribers `read` on a collection (Policy DSL) |
 | `GET`/`DELETE` | `/api/v1/users/subscriber-access[/:collection]` | site-admin | List / revoke subscriber read grants |
 | `GET` | `/api/v1/me/preferences` | bearer | Current user's preferences blob (identity-global) |
@@ -231,6 +290,13 @@ that particular seed is no longer configured. In the latter case `DELETE
 remove an enrollment whose seed can no longer be decrypted. See
 [Encryption key operations](../operations/encryption-keys.md).
 
+**Passkeys (WebAuthn).** When the user also (or only) has passkeys, the
+`mfa_required` response adds `methods` (`["totp"]`, `["webauthn"]` or both),
+and the challenge can be finished with `POST /auth/passkey/options` +
+`POST /auth/passkey/verify` instead of `verify-totp`. The same two endpoints
+without a `challengeToken` give a passwordless staff sign-in. See
+[Passkeys](../security/passkeys.md).
+
 **Consent management** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
 
 ```jsonc
@@ -269,6 +335,67 @@ validated patch into `users.preferences` (other sections like `language` /
 "create_new" }` to set the Studio editor's post-save navigation; send
 `{ "saveAction": null }` to fall back to the site default
 (`sites.default_save_action`, set via `PATCH /api/v1/site`). Invalid enum → 400.
+
+### Email identity policy
+
+`users` is identity-global (one row per human across sites), so the rule that
+decides whether two addresses are the same account is set in two tiers. A
+site can only be **stricter** than the instance, never looser.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/admin/email-identity` | site-admin | `{ instanceMode, siteStrict, effective }` for the active site |
+| `PUT` | `/api/v1/admin/email-identity/instance` | bootstrap admin | Change the instance mode — body `{ mode: "exact" \| "root", dryRun? }` |
+| `PUT` | `/api/v1/admin/email-identity/site` | site-admin | Toggle per-site strict — body `{ strict: boolean, dryRun? }` |
+
+- **Instance mode** (`exact` default, `root`). `exact` keeps every distinct
+  address as its own account. `root` makes one root mailbox one account
+  instance-wide: `+tag` is stripped on every domain, and for Gmail the local
+  part also loses its dots and `googlemail.com` folds to `gmail.com`. Stripping
+  `+tag` on every domain is a policy choice, not a guarantee that the alias
+  reaches the same mailbox (sub-addressing is a provider convention). It is
+  chosen in the Setup Wizard (`emailIdentityMode` in the
+  `POST /api/v1/setup/complete` body; omitted → `exact`) and changed later only
+  by the bootstrap admin — a user principal, never an API key (`403 FORBIDDEN`
+  otherwise).
+- **Site strict** (`false` default). Under `exact`, a strict site allows one
+  membership per root mailbox, enforced by a unique index on
+  `(site_id, identity_key)` rather than a check-then-insert. Under `root` the
+  site flag is a no-op (`effective: "root"`).
+- **Tightening** (`exact → root`, `strict: false → true`) first checks the
+  existing data and answers `409 IDENTITY_COLLISION` with the colliding
+  accounts — nothing changes. **Loosening** always succeeds. `dryRun: true`
+  runs the same transaction and rolls it back.
+
+```jsonc
+// PUT /api/v1/admin/email-identity/instance  { "mode": "root" }  →  409
+{ "errors": [{ "code": "IDENTITY_COLLISION",
+               "message": "Existing accounts share a root mailbox; resolve them before tightening the policy.",
+               "collisions": [{ "root": "test@gmail.com",
+                                "accounts": [{ "userId": "u_1", "email": "test@gmail.com" },
+                                             { "userId": "u_2", "email": "t.est+news@gmail.com" }] }] }] }
+
+// …after resolving the duplicates  →  200
+{ "data": { "previous": "exact", "current": "root", "changed": true, "dryRun": false } }
+```
+
+Every applied change writes an audit event (`email_identity_mode_changed` /
+`site_email_identity_changed`). Effects on the other endpoints:
+
+- `POST /api/v1/auth/register` keeps the identical generic `202` when the
+  address — or, under `root`, any alias of it — already exists, or when a
+  strict site already has a member with the same root mailbox. The account and
+  its membership commit in one transaction, so a refused membership never
+  leaves an orphan account.
+- `POST /api/v1/auth/login`, `/forgot-password` and `/resend-verification`
+  resolve the account under the instance mode: under `root`, any alias reaches
+  the account. Lockout is tracked on the resolved account row, so rotating
+  aliases does not reset or dodge it.
+- `POST /api/v1/users/invite` looks the account up case-insensitively (and by
+  root mailbox under `root`) and returns public fields only. Inviting an alias
+  of an existing member of a strict site answers `409 EMAIL_IDENTITY_CONFLICT`.
+- SCIM (`/scim/v2/Users`) answers `409` with `scimType: "uniqueness"` when the
+  address resolves to an existing account or collides on a strict site.
 
 ### External JWT authentication
 
@@ -331,6 +458,47 @@ HS*/`none` algorithm), `ISSUER_ALREADY_EXISTS` (409), `NOT_FOUND` (404).
 
 ---
 
+## 1b. Organizations (ADR-013)
+
+Organization requests use the authenticated identity and the target organization, without `X-Lumi-Site`. An organization key (`lbo_`) is bound to one organization and has its fixed admin role, except that it cannot change who holds authority: `PATCH /orgs/:orgId`, member writes and organization-key writes require a user session and return `403 ORGANIZATION_FORBIDDEN` to a key. A key requests those changes through organization MCP, where a human approves them. Staff identities use current organization membership. Site keys (`lbk_`), publishable keys (`lbk_pub_`), and frontend sessions cannot enter this plane. Missing membership or a resource outside the selected organization returns `404 NOT_FOUND`.
+
+| Method | Endpoint | Authority / payload |
+|---|---|---|
+| `GET` | `/api/v1/orgs` | List the caller's organizations; an organization key returns exactly its organization |
+| `POST` | `/api/v1/orgs` | Bootstrap operator, or Studio user with `LUMIBASE_ALLOW_ORG_SIGNUP=true`; `{ name, slug }`; caller becomes owner |
+| `GET` | `/api/v1/orgs/:orgId` | `org:read`; includes the caller's role |
+| `PATCH` | `/api/v1/orgs/:orgId` | `org:settings:write`; `{ name?, slug?, settings? }`; only owner can change slug |
+| `DELETE` | `/api/v1/orgs/:orgId` | Owner; `X-Confirm-Delete: <orgId>`; organization must have no sites |
+| `GET` | `/api/v1/orgs/:orgId/sites` | `org:read` |
+| `POST` | `/api/v1/orgs/:orgId/sites` | `org:sites:create`; `{ name, id?, slug? }`; `id` and `slug` must agree if both supplied |
+| `DELETE` | `/api/v1/orgs/:orgId/sites/:siteId` | Owner; `X-Confirm-Delete: <siteId>` |
+| `POST` | `/api/v1/orgs/:orgId/sites/:siteId/transfer` | The same human must own both organizations; `{ toOrganizationId }` |
+| `GET` | `/api/v1/orgs/:orgId/members` | `org:read` |
+| `POST` | `/api/v1/orgs/:orgId/members` | `org:members:manage`; `{ userId?, email?, role }`; exactly one identity field |
+| `PATCH` | `/api/v1/orgs/:orgId/members/:userId` | `org:members:manage`; `{ role }` |
+| `DELETE` | `/api/v1/orgs/:orgId/members/:userId` | `org:members:manage` |
+| `GET` | `/api/v1/orgs/:orgId/keys` | `org:read`; metadata only |
+| `POST` | `/api/v1/orgs/:orgId/keys` | `org:keys:manage`; `{ name, description?, expiresAt? }`; plaintext returned at creation |
+| `POST` | `/api/v1/orgs/:orgId/keys/:keyId/rotate` | `org:keys:manage`; old token stops working; plaintext returned at rotation |
+| `DELETE` | `/api/v1/orgs/:orgId/keys/:keyId` | `org:keys:manage`; revoke the key |
+| `GET` | `/api/v1/orgs/:orgId/approvals` | Human owner/admin only; summaries omit result secrets |
+| `GET` | `/api/v1/orgs/:orgId/approvals/:approvalId` | Human owner/admin only; a minted key is never stored or returned again (`tokenRedacted: true`) |
+| `POST` | `/api/v1/orgs/:orgId/approvals/:approvalId/decide` | Human owner/admin; `{ decision: "approved" }` / `{ decision: "rejected" }`; operation-specific owner checks still apply; approving `org:create_org_key` returns the plaintext key in this response only |
+
+Create operations return `201`, other successful operations return `200`, using the standard `data` envelope. Organization roles are `owner`, `admin`, `billing`, and `member`. Admins cannot add/change/remove owners; the final owner cannot be removed or demoted. Owner/admin inherit site administrator authority on owned sites; billing/member do not. Organization keys are always admin and can never execute owner-only operations themselves. A member email that has no identity creates an invited identity; organization membership is separate from the staff account activation flow.
+
+Site creation uses the same provisioning as setup. `settings` replaces the settings object when supplied, so preserve unrelated fields. Slug `default` can be renamed by its owner and is then available again. `POST /api/v1/api-keys` remains site-scoped and rejects `scope="organization"`; an organization key may mint site keys only for sites in its organization.
+
+### Organization MCP approvals
+
+Organization MCP is off until `settings.contentOs.mcp.allowOrganizationTools=true`; `LUMIBASE_MCP_ORG_TOOLS=off` overrides it. Every organization mutation creates a pending approval with a real organization parent. `confirm=true` cannot approve it, and no REST fallback exists for these MCP tools. The agent receives `pending_approval`, `approvalId`, `organizationId`, and a run id; it never receives a newly minted organization key.
+
+Approval rechecks live requester access and the human decider's authority. Execution and the receipt commit atomically. Repeating the same decision returns the existing receipt; a conflicting decision returns `409 APPROVAL_ALREADY_DECIDED`. A revoked requester cannot be approved (`409 REQUESTER_REVOKED`), but can be rejected. Deleting a transfer destination does not prevent rejecting its pending request or replaying an already committed receipt. Pending transfer execution still requires both organizations and their human owner. Disabling MCP blocks approval (`403 MCP_DISABLED`) without blocking rejection. Discovery with MCP disabled returns `404 MCP_DISABLED`. See [Organization settings](../features/organizations.md) and [MCP](../mcp/index.md).
+
+Organization errors additionally include `400 VALIDATION`, `400 SCOPE_NOT_ALLOWED`, `403 ORGANIZATION_FORBIDDEN`, `403 ORG_SIGNUP_DISABLED`, `403 SITE_NOT_IN_ORGANIZATION`, `404 NOT_FOUND`, `409 LAST_OWNER`, `409 ORGANIZATION_NOT_EMPTY`, and `409 CONFLICT`.
+
+---
+
 ## 2. Schema Admin
 
 ### Collections
@@ -345,6 +513,9 @@ HS*/`none` algorithm), `ISSUER_ALREADY_EXISTS` (409), `NOT_FOUND` (404).
 | `GET` | `/api/v1/collections/:name/schema` | Export collection schema as JSON |
 | `PUT` | `/api/v1/collections/:name/schema` | Apply schema (idempotent, diff-aware) |
 | `POST` | `/api/v1/collections/diff` | Compare bundle schema vs current |
+| `GET` | `/api/v1/collections/:name/index-advice?path=&cast=` | JSON path index advisor (read-only, `schema:read`) |
+| `GET` | `/api/v1/collections/:name/form-layout` | Item form layout: tabs, groups, dividers, conditions (`schema:read`); see [Form layout](../features/form-layout.md) |
+| `PUT` | `/api/v1/collections/:name/form-layout` | Replace (or with `null` remove) the form layout (`schema:update`) |
 
 **Create collection request:**
 ```json
@@ -358,6 +529,34 @@ HS*/`none` algorithm), `ISSUER_ALREADY_EXISTS` (409), `NOT_FOUND` (404).
   "sort_field": "sort"
 }
 ```
+
+#### JSON path index advisor
+
+`GET /api/v1/collections/:name/index-advice?path=<dot.path>[&cast=numeric|boolean|timestamp|text]`
+returns `CREATE INDEX` DDL whose expression matches exactly what the filter
+builder emits for that path and cast, so Postgres can use it for typed
+`_eq`/`_in`/range filters. The index is partial on the collection
+(`WHERE collection_id = … AND deleted_at IS NULL`). `cast` defaults to the
+declared type of a top-level field; it is required for nested or `json` paths.
+The endpoint never runs the DDL: an operator reviews it and runs it outside a
+transaction (`CONCURRENTLY`). `timestamp` returns `ddl: null`, because
+`timestamptz` casts are not `IMMUTABLE` and Postgres refuses to index them.
+
+```json
+{
+  "data": {
+    "path": "price",
+    "cast": "numeric",
+    "indexName": "items_products_price_numeric_idx",
+    "expression": "(case when (data ->> 'price') ~ '…' then (data ->> 'price')::numeric end)",
+    "ddl": "CREATE INDEX CONCURRENTLY IF NOT EXISTS items_products_price_numeric_idx ON lumibase_items ((…)) WHERE collection_id = '…' AND deleted_at IS NULL;",
+    "notes": ["Run outside a transaction (CONCURRENTLY).", "…"]
+  }
+}
+```
+
+Errors: `400 VALIDATION` (missing/invalid `path`, unknown `cast`, or no `cast`
+for a nested path), `404 NOT_FOUND` (collection or top-level field).
 
 ### Fields
 
@@ -467,12 +666,16 @@ active `siteId`.
 |--------|------|-------------|
 | `GET` | `/api/v1/items/:collection` | List items (paginated, filterable) |
 | `POST` | `/api/v1/items/:collection` | Create item (or array for bulk) |
-| `GET` | `/api/v1/items/:collection/:id` | Get single item |
-| `PATCH` | `/api/v1/items/:collection/:id` | Partial update |
-| `PUT` | `/api/v1/items/:collection/:id` | Full replace |
+| `GET` | `/api/v1/items/:collection/export` | Stream the collection as CSV or JSON ([Data export](../features/data-export.md)) |
+| `GET` | `/api/v1/items/:collection/:id` | Get single item; sends `ETag` |
+| `PATCH` | `/api/v1/items/:collection/:id` | Partial update; honours `If-Match` |
+| `PUT` | `/api/v1/items/:collection/:id` | Full replace; honours `If-Match` |
 | `DELETE` | `/api/v1/items/:collection/:id` | Delete item — **409 if blocked by dependents** |
 | `GET` | `/api/v1/items/:collection/:id/dependents` | List records that reference this item |
 | `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Batch-resolve a relation's dependents |
+| `POST` | `/api/v1/items/:collection/:id/reorder` | Manual ordering on a `meta.manualSort` collection: `{ after: id \| null }` or `{ before: id }` ([Editorial UX](../features/editorial-ux.md#manual-ordering)) |
+| `POST` | `/api/v1/items/:collection/:id/duplicate` | Save-as-copy: a `draft` copy with unique fields suffixed (`relations` in the body; see below) |
+| `POST` | `/api/v1/items/:collection/:id/move` | Move an item and its subtree in a tree collection; list with `?tree=children\|subtree\|ancestors` ([Hierarchical collections](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | List revisions |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Revert to revision |
 | `GET` | `/api/v1/items/:collection/:id/versions` | List named draft versions (each has a `mainChanged` flag) |
@@ -482,6 +685,19 @@ active `siteId`.
 | `DELETE` | `/api/v1/items/:collection/:id/versions/:key` | Delete a version |
 | `GET` | `/api/v1/items/:collection/:id/versions/:key/compare` | Field diff vs main → `{ main, version, changes }` |
 | `POST` | `/api/v1/items/:collection/:id/versions/:key/promote` | Apply version to main (writes a revision); `meta.mainDiverged` |
+
+**Concurrent edits (`ETag` / `If-Match`).** Every item has a `version` counter
+that each write changing its content increments. `GET /items/:collection/:id`
+returns it as a strong `ETag` (`"3"`), and it is also present as `version` in
+the response body. Send it back as `If-Match: "3"` on `PATCH` or `PUT` to make
+the write conditional: if someone else changed the item first, the write fails
+with **412 `PRECONDITION_FAILED`** and nothing is written. The check is part of
+the same `UPDATE`, so two writers holding the same tag cannot both succeed.
+Without `If-Match` the write overwrites unconditionally, as before. `*` accepts
+any version; a weak tag (`W/"3"`) never matches. Successful `PATCH`/`PUT`
+responses carry the new `ETag`. Cross-origin clients can send `If-Match` and
+read `ETag` (both are in the CORS allow/expose lists). The SDK takes the tag as
+`items(name).patch(id, input, { ifMatch: row.version })`.
 
 **Dependent records.** Because item references live in JSONB (not physical FK
 columns), a relation's `onDelete` is enforced in the application layer. On
@@ -497,6 +713,30 @@ runs transactionally (delete delegates to the normal item-delete path).
 Errors: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null on a
 required field), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
 
+**Export.** `GET /items/:collection/export?format=csv|json&fields=&locales=&relations=id|slug|embed&filter=&sort=&status=`
+streams every matching row (keyset-paged, so any size). It uses the caller's
+`read` permission and the list `filter`/`sort` syntax, runs the extensions'
+`items.export.before` hook per row, and writes an `items_exported` audit entry.
+CSV writes one `field.locale` column per locale of a translatable field and
+neutralises spreadsheet formulas; JSON is
+`{ collection, format: "lumibase-export@1", exportedAt, fields, locales, relations, items: [{ id, status, sort, created_at, updated_at, data }] }`.
+Errors before streaming: `400 VALIDATION` / `400 UNKNOWN_FIELD` / `400 INVALID_FILTER`,
+`403 FORBIDDEN`, `404 NOT_FOUND`. See [Data export](../features/data-export.md).
+
+**Imports.** Background jobs that read the export formats back:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/imports?collection=&format=csv\|json&mode=create\|upsert` | Upload a file (multipart `file` or raw body) → `202 { data: job }` |
+| `GET` | `/api/v1/imports?collection=&status=&limit=` | Recent jobs (own; site admins see all) |
+| `GET` | `/api/v1/imports/:id` | Job progress and counters |
+| `GET` | `/api/v1/imports/:id/errors` | Row errors; `?format=csv` downloads them |
+| `POST` | `/api/v1/imports/:id/cancel` | Stop a queued or running job |
+
+Bad files fail with `400 VALIDATION` / `413 PAYLOAD_TOO_LARGE` before a job is
+created; missing `create` (or `update` for `upsert`) permission is `403`. See
+[Data import](../features/data-import.md#background-import-jobs).
+
 **List pagination & totals.** `GET /items/:collection` accepts `limit`
 (1–200, default 25), `offset`, and `meta`:
 
@@ -507,6 +747,45 @@ required field), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
 
 The default is unchanged, so existing clients keep receiving `meta.total`.
 The `@lumibase/sdk` `readItems` accepts the same `meta` option.
+
+**Publication state, cohorts and copies (epic #668).**
+
+- **Publication stamps (#687).** Every item carries `firstPublishedAt` (set by
+  the first publish, never moved), `publishedAt` (the most recent publish, kept
+  on unpublish) and `hasUnpublishedChanges`. A write is a *publish* when the
+  item becomes `published`, or when the body sends `status: "published"`
+  explicitly (a re-publish). Editing the data of an item that has been
+  published sets `hasUnpublishedChanges: true`; the next publish clears it. A
+  no-op save changes nothing. `GET /items/:collection?modifiedSincePublish=true`
+  lists only modified items. GraphQL exposes them as `_firstPublishedAt`,
+  `_publishedAt` and `_hasUnpublishedChanges`.
+- **Cohorts (#688).** `GET /items/:collection` and `GET /items/:collection/:id`
+  accept `publicationState=live|preview|all`: `live` = `published` and inside
+  the publish window, `preview` = `draft` + `published`, `all` = no cohort
+  filter. Nested relation expansion (`fields=rel.*`, `deep`) follows the same
+  cohort. Anonymous and frontend-realm callers are always served `live`,
+  whatever they ask for. Without the parameter the behaviour is unchanged
+  (RBAC alone decides). An unknown value is `400 VALIDATION`. GraphQL list and
+  `_by_id` fields take the same `publicationState` argument; nested relations
+  follow it.
+- **Duplicate (#689).** `POST /items/:collection/:id/duplicate` with an
+  optional body `{ relations?: "reference"|"deep"|"none", translations?: boolean,
+  locale?: string, overrides?: object }` creates a `draft` copy through the
+  normal create path (needs `read` on the source and `create` on the
+  collection). Unique string fields (and `slug`) get a `-copy`, `-copy-2`, …
+  suffix; other unique values are dropped. `reference` (default) copies m2m
+  links, `deep` also copies one level of o2m children, `none` copies the item
+  alone. `translations: false` keeps only `locale` (default: the site default
+  locale) of `translatable-text` fields. Response `201 { data, meta: { sourceId,
+  related } }`; an `item_duplicated` audit entry names the source.
+- **Skipping revisions (#693).** `PATCH`/`PUT ?saveRevision=false` writes the
+  item without a revision row (autosave, machine writes). Agent-authored writes
+  always record their revision (provenance). A collection can cap its history
+  with `meta.revisionRetention: { maxRevisions?, maxAgeDays? }`; an hourly
+  sweep prunes older revisions but always keeps each item's newest revision,
+  staged revisions, revisions pinned by a release and agent revisions.
+
+See [Editorial UX](../features/editorial-ux.md).
 
 **Optional headers:**
 - `X-Lumi-Draft: true` — fetch draft version
@@ -540,6 +819,7 @@ editorial gate, validation, permissions and hooks all apply.
 | `GET` | `/api/v1/releases` | List releases (`?status=&page=&limit=`) |
 | `GET` | `/api/v1/releases/:id` | Release detail + its items |
 | `PATCH` | `/api/v1/releases/:id` | Update meta, `addItems`/`removeItems`, set `publishAt` |
+| `GET` | `/api/v1/releases/:id/validate` | Pre-publish validation summary (#692) |
 | `POST` | `/api/v1/releases/:id/publish` | Publish now (manual) |
 | `DELETE` | `/api/v1/releases/:id` | Delete release (items cascade) |
 
@@ -573,8 +853,54 @@ partial/failed publish still returns **HTTP 200** with the outcomes.
 `VALIDATION_FAILED` (422, incl. `publishAt` in the past). Per-item publish
 blockers surface as outcome reasons `EDITORIAL_GATE_REQUIRED` / `ITEM_DELETED`.
 
+**Validation summary (#692).** `GET /releases/:id/validate` validates, in full
+(required fields and form-layout conditions included), every item the release
+would publish — the pinned revision's snapshot when there is one. Response:
+`{ data: { valid, checked, items: [{ collection, itemId, issues: [{ field, code, message }] }] } }`;
+`items` lists only items with problems, and `field` is the dotted path of the
+offending field. Publishing runs the same check first: an invalid item never
+publishes and gets the outcome reason `VALIDATION_FAILED` with its `issues`. In
+`all_or_nothing` that fails the whole release; in `best_effort` the valid items
+still publish. Studio's **Releases** page shows the summary with links that open
+the item editor at the field (`#field=<name>`).
+
 Scheduled releases publish via the shared `content-scheduler` tick
 (`sweepDueReleases`) — idempotent and `maintenanceWindow`-aware.
+
+---
+
+## 3c. Live preview (epic #667)
+
+Preview tokens let a frontend read draft content for a short time. Security
+model: [ADR-014](../architecture/decisions/adr-014-preview-bridge-threat-model.md);
+guide: [Live preview & visual editing](../features/visual-editing.md).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/preview/token` | Mint a token (user principals only; 30/min/user → `429`) |
+| `GET` | `/api/v1/preview/tokens` | Live tokens (site admin: all; others: own) |
+| `POST` | `/api/v1/preview/tokens/:id/revoke` | Revoke one (site admin: any; others: own) |
+| `POST` | `/api/v1/preview/tokens/revoke-all` | Rotate — revoke every live token of the site (site admin) |
+| `GET` | `/api/v1/preview/settings` | `{ allowedOrigins, ttlSeconds }` |
+| `PUT` | `/api/v1/preview/settings` | Update them (site admin; exact origins only) |
+| `GET` | `/api/v1/deliver/preview/:site_id` | Public: what the token targets (+ the item / release members) |
+| `GET` | `/api/v1/deliver/preview/:site_id/items/:collection` | Public: live items + the token's overlay (`?limit=&offset=`, max 100) |
+| `GET` | `/api/v1/deliver/preview/:site_id/items/:collection/:id` | Public: one item through the overlay |
+
+**Mint body** — an item (+ optional `versionKey`) or a release:
+```json
+{ "collection": "posts", "itemId": "itm_1", "versionKey": "redesign", "locale": "vi", "ttlSeconds": 900 }
+```
+`201 { data: { id, token, expiresAt, url, … } }` — `token` is shown once;
+`url` is built from the collection's `meta.previewUrl` (or `null`).
+
+**Public reads** take the token in the `x-lumibase-preview` header or
+`?__preview=`. Every failure (malformed, other site, expired, revoked, creator
+lost access) is `401 { errors: [{ code: "PREVIEW_UNAUTHORIZED" }] }` with an
+identical body. Responses: `Cache-Control: private, no-store`,
+`X-Robots-Tag: noindex, nofollow`, `Referrer-Policy: no-referrer`. Audit events:
+`preview.token_minted`, `preview.read`, `preview.token_rejected`,
+`preview.token_revoked`, `preview.tokens_rotated`, `preview.settings_updated`.
 
 ---
 
@@ -620,11 +946,22 @@ Scheduled releases publish via the shared `content-scheduler` tick
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/api/v1/files/presigned-url` | Get presigned R2/S3 PUT URL |
-| `POST` | `/api/v1/files` | Register file metadata after upload |
-| `GET` | `/api/v1/files` | List files (filterable) |
+| `POST` | `/api/v1/files` | Register file metadata after upload; fills `contentHash` + embedded metadata, returns `meta.duplicates` |
+| `GET` | `/api/v1/files` | List files: `?folder=<id\|root>&subfolders=true&search=&mime=image/*,application/pdf&ids=&limit=&offset=` → `meta.total` |
 | `GET` | `/api/v1/files/:id` | File metadata |
-| `PATCH` | `/api/v1/files/:id` | Update metadata (title, tags, folder) |
-| `DELETE` | `/api/v1/files/:id` | Delete file |
+| `PATCH` | `/api/v1/files/:id` | Rename (`filenameDownload`), move (`folder`), editorial `metadata`; id and storage key never change |
+| `DELETE` | `/api/v1/files/:id` | Safe delete: `409 FILE_IN_USE` with references unless `?confirm=true` (policy `confirm`); never under policy `block` |
+| `PUT` | `/api/v1/files/:id/content` | Replace the bytes in place (same id/key/references, `version`+1, previous kept for undo); `If-Match: "v<n>"`, `?filename=` |
+| `GET` | `/api/v1/files/:id/content` | Deliver current bytes; `?v=<version>` → immutable; `423` while a malware scan is pending/failed |
+| `GET` | `/api/v1/files/:id/versions` | Previous binaries within the retention window |
+| `POST` | `/api/v1/files/:id/versions/:versionId/restore` | Restore a previous binary (itself a replace) |
+| `GET` | `/api/v1/files/:id/usage` | Items and pages referencing the file |
+| `POST` | `/api/v1/files/:id/scan` | Re-run the malware scan (site admin) |
+| `GET` | `/api/v1/files/duplicates?hash=` | Same-content files (SHA-256 hex); also `POST` with `{ hash }` |
+| `POST` | `/api/v1/files/bulk` | `{ ids, folder?, metadata? }` bulk move / editorial metadata; `meta.skipped` |
+| `GET/PUT` | `/api/v1/files/settings` | DAM settings (`files.dam`); `PUT` site admin |
+| `GET` | `/api/v1/files/folders` · `/folders/tree` | Folders (flat / nested with `path`) |
+| `POST/PATCH/DELETE` | `/api/v1/files/folders[/:id]` | Create / rename+move (`409 FOLDER_CYCLE`) / delete empty (`409 FOLDER_NOT_EMPTY`); site admin |
 | `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
 | `POST` | `/api/v1/media/:key` | Upload raw media bytes (RBAC `media:create`; upload guard applies) |
 | `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`); with transform params → 302 to derivative |
@@ -647,9 +984,14 @@ image URL (CF Image Resizing / Imgproxy). No params → the original bytes.
 `?preset=<key>` resolves a saved `transform_presets` row for the site. See
 `.kiro/specs/image-transform-dsl`.
 
+**Access to `/api/v1/files`.** Site admins have full access; other members need a
+`files` policy permission whose rule is evaluated per file against `folder`,
+`folder_path`, `uploaded_by`, `mime` and `id` (folder-scoped permissions). See
+`docs/en/features/digital-asset-management.md` (epic #670).
+
 **Upload policy (`/api/v1/uploads/config`).** Enforced by the `file-upload-policy`
 guard on every upload surface (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`,
-`POST /api/v1/media/:key`): a public role cannot upload; the body is size-capped on
+`PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`): a public role cannot upload; the body is size-capped on
 its true byte length; the declared MIME must be in the allowlist and match the
 filename extension; raw bytes are content-sniffed (magic bytes) and executables /
 active-content SVGs are rejected; raster images are scanned for an embedded
@@ -739,6 +1081,97 @@ Authorization: Bearer <token>
 
 ---
 
+## 7c. Deployments
+
+Per-site deployment targets (Vercel / Netlify), manual deploy triggers, build
+status and logs (spec `deployment-integrations`), plus environments, promotion and
+deploy approvals (#743, see `docs/en/features/deployment-environments.md`). Every
+route except the inbound webhook needs a site admin or a `deploy:*` capability
+(`lumibase_deploy:<scope>` permission rows): `400 TENANT_REQUIRED` without a
+resolved site, `403 FORBIDDEN` without either. Target create/update/delete,
+`PUT /environments` and `GET /:id/logs` stay site-admin only (`requireSiteAdmin`).
+Provider tokens are encrypted
+on write and never returned. Bodies are validated with
+`DeploymentTargetCreateSchema` / `DeploymentTargetUpdateSchema` /
+`DeployTriggerSchema` (`@lumibase/contracts`); a failed parse returns
+`400 VALIDATION`. `400 UNKNOWN_PROVIDER` means the stored target names a
+provider that is not registered in this deployment (only `vercel` and `netlify`
+are).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/deployments/targets` | List targets for the site (token columns omitted) |
+| `POST` | `/api/v1/deployments/targets` | Create `{ provider (vercel\|netlify), name, projectId, token, defaultBranch?, productionUrl? }` → `201`. The token is verified against the provider before anything is stored: `400 TOKEN_INVALID` |
+| `PATCH` | `/api/v1/deployments/targets/:id` | Update `{ name?, projectId?, token?, defaultBranch?, productionUrl?, status? (active\|inactive) }`. A `token` is re-verified and re-encrypted (rotation). `404 NOT_FOUND`, `400 TOKEN_INVALID`, `400 UNKNOWN_PROVIDER` (only when a `token` is sent) |
+| `DELETE` | `/api/v1/deployments/targets/:id` | Delete a target (its deployments cascade) → `{ data: null }`. `404 NOT_FOUND` |
+| `POST` | `/api/v1/deployments/targets/:id/deploy` | Trigger a build `{ branch?, reason? }` → `201` with the new deployment row (`triggerSource: "manual"`). Needs `deploy:trigger:<targetId>`, `deploy:trigger:<env>` of an environment containing it, or `deploy:trigger:*`; when one of those environments has `requiresApproval` the response is `202 { data: { status: "pending_approval", environment, approval } }` and nothing is dispatched. `403 FORBIDDEN`, `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `400 UNKNOWN_PROVIDER`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (provider call failed; an `error` row is still recorded) |
+| `GET` | `/api/v1/deployments` | List deployments, newest first (`createdAt` descending, `id` descending as tie-breaker). Filter `?targetId=&status=&limit=`. `limit` must be a non-negative integer: it defaults to 50 when absent or empty, `0` returns an empty list, and values above 200 are capped at 200. Any other value (`abc`, `-5`, `1.5`) returns `400 VALIDATION`. No `meta` |
+| `GET` | `/api/v1/deployments/:id` | Get one deployment. `404 NOT_FOUND` |
+| `GET` | `/api/v1/deployments/:id/logs` | Fetch the build log from the provider, secrets masked → `{ data: { log } }`. `404 NOT_FOUND` when the deployment does not exist or has no provider id yet, `400 UNKNOWN_PROVIDER` when its target or provider is unavailable |
+| `POST` | `/api/v1/deployments/:id/refresh` | Force a status sync from the provider (no-op once the status is terminal). `404 NOT_FOUND` when the deployment does not exist. With no provider id yet, or with an unavailable target or provider, the row is returned unchanged (`200`, never `UNKNOWN_PROVIDER`) |
+| `GET` | `/api/v1/deployments/access` | The caller's `{ admin, capabilities, humanDecider, environments: [{ key, canTrigger, canApprove }] }` |
+| `GET` | `/api/v1/deployments/environments` | The environment map (settings key `deployment.environments`, defaults `preview` / `staging` → `production` / `production` with `requiresApproval`). `500 ENVIRONMENTS_INVALID` when the stored map does not validate |
+| `PUT` | `/api/v1/deployments/environments` | Site admin. Replace the map `{ environments: [{ key, name, targetIds, requiresApproval, promotesTo }] }` (`DeploymentEnvironmentsUpdateSchema`). `400 VALIDATION` (duplicate key, unknown `promotesTo`), `400 UNKNOWN_TARGET` |
+| `POST` | `/api/v1/deployments/environments/:key/deploy` | Deploy every target of the environment `{ branch?, reason? }`. Needs `deploy:trigger:<key>` (or on every target, or `*`). `201 { data: { status: "dispatched", environment, results: [{ targetId, ok, deployment, error? }] } }`, or `202 { data: { status: "pending_approval", environment, approval } }` when `requiresApproval`. `403 FORBIDDEN`, `404 ENVIRONMENT_NOT_FOUND`, `409 NO_TARGETS` |
+| `POST` | `/api/v1/deployments/environments/:key/promote` | Promote the environment's newest `ready` deployment (or `{ deploymentId }`) into its `promotesTo` environment `{ deploymentId?, reason? }`; same build where the provider can promote, else the same commit re-triggered. Needs the trigger grant on the destination. `201` / `202` as above. `404 NOT_FOUND` (deployment not in the environment), `409 NO_PROMOTION_TARGET`, `409 SOURCE_NOT_READY` |
+| `GET` | `/api/v1/deployments/approvals` | Deploy approvals, newest first, default `?status=pending` (`status=all` for every status), each with `canDecide` for the caller |
+| `POST` | `/api/v1/deployments/approvals/:id/decide` | `{ decision: "approved" \| "rejected", reason? }` (`DeployApprovalDecisionSchema`). Approve needs a signed-in person, not the requester, holding `deploy:approve:<env>` or `deploy:approve:*`; the requester may reject (withdraw) their own. `403 HUMAN_APPROVER_REQUIRED` / `SELF_APPROVAL_FORBIDDEN` / `FORBIDDEN`, `404 NOT_FOUND`, `409 APPROVAL_ALREADY_DECIDED` / `APPROVAL_EXPIRED` / `REQUESTER_REVOKED` / `PLAN_STALE` |
+
+Public (no session; signature-verified):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/deployments/webhook/:provider/:siteId` | Inbound status webhook (`vercel` \| `netlify`) with path tenant (works on the shared API host without `X-Lumi-Site`). `404 UNKNOWN_PROVIDER`, `400 TENANT_INVALID` / `TENANT_MISMATCH`, `401 INVALID_SIGNATURE`; otherwise `200 { data: null }`, including when the body matches no deployment |
+| `POST` | `/api/v1/deployments/webhook/:provider` | Inbound status webhook (`vercel` \| `netlify`). Tenant comes from `withTenant` (`X-Lumi-Site` or host mapping). `404 UNKNOWN_PROVIDER`, `401 INVALID_SIGNATURE`; otherwise `200 { data: null }`, including when the body matches no deployment |
+
+**Target shape** (`data` of the target routes): `{ id, provider, name, projectId, defaultBranch, productionUrl, status, createdAt, updatedAt }`.
+
+**Deployment shape** (`data` of the deployment routes and the trigger): `{ id, siteId, targetId, provider, providerDeploymentId, status (queued|building|ready|error|canceled), branch, commitSha, commitMessage, url, triggeredBy, triggerSource (manual|auto|agent), errorMessage, logExcerpt, createdAt, updatedAt, completedAt }`.
+
+**Trigger rate limit:** each target has a two-tier budget, 5 triggers per 60 s and 30 per 3600 s, keyed by site and target (`apps/cms/src/services/deployment/trigger-rate-limit.ts`). It applies to every `triggerSource` (`manual`, `auto`, `agent`). A coalesced auto trigger reuses a recent build and does not consume budget. When the limiter backend is unreachable the trigger is allowed (fail-open). A rejected trigger creates no row and returns:
+
+```json
+{
+  "errors": [
+    {
+      "code": "RATE_LIMITED",
+      "message": "Too many deploy triggers for this target. Please try again later.",
+      "retryAfterSeconds": 42
+    }
+  ]
+}
+```
+
+with a matching `Retry-After: 42` header.
+
+**Webhook signatures:** the secret is the per-site setting `deployment.webhook.<provider>` (value `{ "secret": "…" }`), never a request header. An empty or missing secret rejects every request (fail-closed). Vercel sends `x-vercel-signature`, the lowercase hex HMAC-SHA1 of the raw body. Netlify sends `x-webhook-signature`, a compact JWS (HS256) whose `sha256` claim must equal the SHA-256 hex digest of the raw body (a JWS whose payload is the raw body itself is also accepted). Both comparisons are constant-time.
+
+**Trigger a deploy:**
+```bash
+POST /api/v1/deployments/targets/dpt_abc123/deploy
+Content-Type: application/json
+Authorization: Bearer <token>
+X-Lumi-Site: <siteId>
+
+{ "branch": "main", "reason": "Homepage copy update" }
+```
+
+**Response (`201`, abridged):**
+```json
+{
+  "data": {
+    "id": "dep_def456",
+    "targetId": "dpt_abc123",
+    "provider": "vercel",
+    "status": "queued",
+    "branch": "main",
+    "triggerSource": "manual"
+  }
+}
+```
+
+---
+
 ## 8. AI Copilot
 
 | Method | Path | Description |
@@ -749,6 +1182,25 @@ Authorization: Bearer <token>
 | `GET` | `/api/v1/ai/conversations` | List conversation history |
 | `GET` | `/api/v1/ai/conversations/:id/messages` | Get messages in a conversation |
 | `DELETE` | `/api/v1/ai/conversations/:id` | Delete a conversation |
+| `POST` | `/api/v1/ai/decisions` | Ask the decision model (TypeSafe Jev or equivalent) typed questions |
+| `GET` | `/api/v1/ai/review-profiles` | List active draft review profiles (`?collection=`) |
+| `GET` | `/api/v1/ai/review-profiles/:key` | Get a review profile (`?version=` for an older one) |
+| `POST` | `/api/v1/ai/review-profiles` | Create version 1 of a review profile (admin) |
+| `POST` | `/api/v1/ai/review-profiles/:key/versions` | Publish the next version of a review profile (admin) |
+| `POST` | `/api/v1/ai/reviews` | Review an item or an unsaved draft with a profile (suggest-only) |
+| `GET` | `/api/v1/ai/reviews?collection=&itemId=` | List the review runs of an item |
+| `GET` | `/api/v1/ai/reviews/:id` | Get a review run with its staleness |
+| `POST` | `/api/v1/ai/reviews/:id/feedback` | Record accept / edit / reject on a run's answers |
+| `GET` | `/api/v1/ai/reviews/rollout?collection=` | Draft-review pilot mode of a collection: `off`, `baseline` or `assisted` |
+| `POST` | `/api/v1/ai/reviews/sessions` | Record one editor review session on a pilot collection (timing) |
+| `GET` | `/api/v1/ai/reviews/metrics?from=&to=` | Draft-review pilot metrics (admin) |
+| `GET` | `/api/v1/ai/automation/templates` | Jev automation flow templates (admin) |
+| `POST` | `/api/v1/ai/automation/templates/:key/build` | Build a draft manual flow from a template; writes nothing (admin) |
+| `GET` | `/api/v1/ai/automation/actions` | Automation action history with its audit chain (admin) |
+| `GET` | `/api/v1/ai/automation/actions/:id` | One automation action with its audit chain (admin) |
+| `POST` | `/api/v1/ai/automation/actions/:id/feedback` | Accept / override / reject the decision behind an action (admin) |
+| `POST` | `/api/v1/ai/automation/actions/:id/revert` | Restore the value before an applied action (admin) |
+| `GET` | `/api/v1/ai/automation/metrics?from=&to=` | Shadow precision and coverage in the auto-action zone (admin) |
 
 **Chat request:**
 ```json
@@ -781,6 +1233,103 @@ Authorization: Bearer <token>
 { "decision": "approved" }
 ```
 
+**Decision request** (`POST /api/v1/ai/decisions`) — **Experimental in `1.0.0`** (along with `/api/v1/ai/review-profiles*`, `/api/v1/ai/reviews*`, and `/api/v1/ai/automation*`; outside the `1.0` semver freeze per [`contributing/versioning-policy.md`](../contributing/versioning-policy.md) until live-data validation `#548` completes). 1–32 questions keyed by `[A-Za-z0-9_-]{1,64}`; `noul` = yes/no, `choice` = 2–255 options, `score` = 2–10 rubric levels (lowest first). `state` is a string, object or array. The whole request (state, instructions, criteria and nesting) must fit the input budget: ≤ `DECISION_MAX_INPUT_BYTES` UTF-8 bytes (default 131,072) **and** ≤ `DECISION_MAX_INPUT_TOKENS` estimated tokens (default 24,000), checked before the provider is called. Read-only, so no HITL approval:
+```json
+{
+  "state": { "title": "Summer sale", "body": "Buy now!!!" },
+  "questions": {
+    "spam": {
+      "type": "noul",
+      "instructions": "Is this post spam?",
+      "criteria": { "true": "spam", "false": "legitimate" }
+    },
+    "topic": {
+      "type": "choice",
+      "instructions": "Pick the topic",
+      "criteria": { "promo": "Promotion", "news": null }
+    },
+    "quality": {
+      "type": "score",
+      "instructions": "Rate editorial quality",
+      "criteria": ["poor", "ok", "great"]
+    }
+  }
+}
+```
+
+**Decision response** — `calibrated` is `false` when `DECISION_PROVIDER=llm`, because those probabilities are self-reported by the LLM. `usage.inputTokens` / `usage.outputTokens` are `null` when the provider did not report them (unknown, never a made-up `0`):
+```json
+{
+  "data": {
+    "provider": "typesafe",
+    "model": "jev-1.13",
+    "calibrated": true,
+    "answers": {
+      "spam": { "type": "noul", "noul": 0.12 },
+      "topic": { "type": "choice", "choice": "promo", "probabilities": { "promo": 0.9, "news": 0.1 }, "confidence": 0.9 },
+      "quality": { "type": "score", "score": 1.4, "legend": { "0": "poor", "1": "ok", "2": "great" }, "probabilities": { "0": 0, "1": 0.6, "2": 0.4 }, "confidence": 0.6 }
+    },
+    "usage": { "inputTokens": 120, "outputTokens": 0 }
+  }
+}
+```
+
+Errors: `403 FORBIDDEN` (no `ai:decide`, or the caller is a publishable API key or a `frontend` session), `403 DECISION_DISABLED`, `422 DECISION_FIELD_NOT_ALLOWED`, `429 DECISION_QUOTA_EXCEEDED` / `DECISION_CONCURRENCY_LIMITED`, `503 DECISION_QUOTA_UNAVAILABLE` (see Governance below), `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (over the byte or token budget; the message gives sizes only), `503 DECISION_NOT_CONFIGURED` (no `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream overloaded or unreachable), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (the client closed the request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
+
+Deadlines and retries: one decision has a total deadline (`DECISION_TIMEOUT_MS`, default 20 s) that includes every retry and backoff, and each upstream attempt has its own timeout (`DECISION_ATTEMPT_TIMEOUT_MS`, default 8 s, capped by what remains of the deadline). Only `429`/`503`/`529`, network errors and attempt timeouts are retried, at most `DECISION_MAX_RETRIES` times (default 2), with full-jitter exponential backoff that honours `Retry-After`. A wait that would run past the deadline is not started. Auth, validation and parse failures are never retried. When the client disconnects, the in-flight upstream call is aborted and no retry follows. The `llm` provider is bounded by the same deadline and budget but makes a single call; the deadline and a client disconnect abort that LLM request.
+
+The token count is an estimate, not the provider's tokenizer: about 4 ASCII characters per token, and every non-ASCII code point (e.g. Vietnamese diacritics) as one token. It over-counts on purpose; the 24,000 default leaves 25% headroom under Jev's 32,000-token context.
+
+The CMS validates upstream answers before returning them: required values must be finite and in range, Choice/Score distributions must include exactly the declared options/levels and sum to 1 within an absolute tolerance of `1e-6`, and Score must lie in `0..N-1`. Missing or malformed answers return `502 DECISION_PARSE_FAILED`; values are never clamped or defaulted into decisions. Confidence is required for Choice/Score and is not inferred from the winning probability. The LLM provider uses the same validation.
+
+**`DECISION_PROVIDER=llm`** is an equivalent provider you select by configuration; it is **not** an automatic failover, and nothing switches to it when Jev fails. It calls `LLM_PROVIDER` in structured decision mode: a dedicated decision system prompt, no Copilot skills and no tool calling. A Score answer from the LLM is the weighted expected level `Σ i·p(i)` computed from its validated level probabilities, on the same `0..N-1` scale as Jev and never rounded; the level the model names is ignored, so one distribution yields one score on every adapter. Because the probabilities are uncalibrated, thresholds tuned for Jev must not be reused for `llm` as-is. Tool-only or non-JSON replies fail with `502 DECISION_PARSE_FAILED`. With `llm`, the estimated size of the complete answer is also checked against `DECISION_LLM_MAX_OUTPUT_TOKENS` before the call (`413 DECISION_INPUT_TOO_LARGE`), a 2xx reply that is not JSON or has the wrong envelope is `502 DECISION_PARSE_FAILED` (as with Jev), an unreachable provider is `503 DECISION_UNAVAILABLE`, upstream HTTP statuses map to the same codes as Jev, and upstream error bodies are never logged or returned.
+
+**Governance (#511).** Every gate below runs before the provider is called, in this order, and a request that fails one never reaches it:
+
+1. **Capability `ai:decide`.** Grant it with a policy permission `create` on the reserved collection `lumibase_ai_decisions`; site admins already satisfy it. That permission grants nothing else (no `items:write`). Without it → `403 FORBIDDEN`. Anonymous callers, members without the capability and principals of another site are all refused here. Publishable API keys (`lbk_pub_…`) and `frontend`-audience sessions are always refused here with `403 FORBIDDEN`, even when a role or policy grants `create` on `lumibase_ai_decisions` or admin access (#562). Those credentials live in browsers and apps, so paid decision calls must come from Studio users or from a server that holds a secret API key. The refusal comes before the body is read. It applies to every `ai:decide` route (decisions, review profiles, reviews, feedback, rollout, sessions) and to Flows `ai:decision` nodes. Refusals at this step are audited in aggregate, not one event per request (see the audit paragraph below).
+2. **Provider configured** → otherwise `503 DECISION_NOT_CONFIGURED`.
+3. **Site opt-in.** The site sends content to the provider only after a site admin stores the `aiDecisions` setting with `enabled: true` (`POST /api/v1/settings`). It is off by default, and a malformed value reads as off. Setting it back to `false` (or deleting the key) is the per-site kill switch: the next request gets `403 DECISION_DISABLED`. Only the decision endpoints, draft review and Flows `ai:decision` nodes read this setting, so editing, publishing and Copilot chat are unaffected. Unsetting `DECISION_PROVIDER` is the platform-wide switch.
+4. **Field allowlist.** With `allowedStateFields` set, `state` must be an object whose top-level keys are all listed; otherwise `422 DECISION_FIELD_NOT_ALLOWED`.
+5. **Input budget** → `413 DECISION_INPUT_TOO_LARGE` (above).
+6. **Site quota**, accounted atomically with the runtime counter (Redis `INCRBY` on Docker, the per-site `PageviewCounter` Durable Object on Cloudflare): admitted decisions per hour, decisions in flight, and estimated tokens per UTC day. The token reservation is the worst case, every attempt the provider can send included: with Jev/OpenRouter, (estimated input + estimated output) × (`DECISION_MAX_RETRIES` + 1); with `llm`, which sends one request and never retries, estimated input + the output cap sent upstream (thinking headroom included). Once the provider answers, the site is charged the reported usage plus an estimate for each earlier failed attempt, and the rest is refunded. An unknown count is charged at the estimate, never as free. A timeout or failure after attempts were sent is charged per attempt; a request that never reached the provider is fully refunded. A limit that would be exceeded → `429 DECISION_QUOTA_EXCEEDED` or `429 DECISION_CONCURRENCY_LIMITED` with `Retry-After`. A request whose worst-case reservation alone exceeds the daily token budget can never be admitted, so its `429 DECISION_QUOTA_EXCEEDED` carries no `Retry-After`. If the counter backend is down or answers with a non-numeric value, the request fails closed with `503 DECISION_QUOTA_UNAVAILABLE`. `Retry-After` is listed in `Access-Control-Expose-Headers`, so cross-origin callers (Studio on Pages, the desktop shell, browser SDK) can read it.
+
+The site `aiDecisions` setting can tighten the platform ceilings, never raise them:
+
+```json
+{ "key": "aiDecisions", "value": { "enabled": true, "allowedStateFields": ["title", "body"], "requestsPerHour": 100, "maxConcurrent": 2, "budgetPerDay": 200000 } }
+```
+
+Each admitted call, and each call refused after this first step, writes one `ai_decision` audit event with the request ID, the principal (type and ID), provider, model, a rubric fingerprint (`sha256:` of the questions, so the same rubric gives the same version), question types, outcome, HTTP status, latency, reported usage, attempts, and reserved and charged tokens. It never records `state`, instructions, criteria, answers, the actor's email or the client IP. Audit rows follow the audit log retention (`LUMIBASE_AUDIT_RETENTION_DAYS`, default 90 days). `POST /ai/decisions` stores no decision content. Draft review runs (below) store the answers, never the reviewed content. What the provider keeps is governed by the provider's own terms.
+
+**Refusals are audited in aggregate (#564).** A `403 FORBIDDEN` from step 1 does not write one event per request, so a flood of refused requests cannot flood the audit log. Refusals are counted per site, refusal reason and subject: the principal (type and ID), or a keyed hash of the client IP when there is no principal. The first refusal in each `DECISION_REFUSAL_AUDIT_WINDOW_SECONDS` window (default 300 s) writes an event with `refusal.count: 1`. Later refusals in the same window write again only at counts 10, 100, 1000, and so on. The first event of the next window carries `refusal.previousWindowCount`, the exact count of the window before. If no refusal follows, the last event's count is a lower bound, and the metric `lumibase_ai_decision_refusals_total{reason,principal,audit}` has the exact number of every refusal. If the counter store is unavailable, every refusal writes an event (evidence is never dropped). `0` turns aggregation off. Each refusal event has `metadata.refusal` (`reason`, `count`, `dedup`: `first` / `checkpoint` / `unbounded`, `windowStart`, `windowSeconds`) and `clientIpHash`: HMAC-SHA256 of the site and IP keyed by `JWT_SECRET`, 16 hex characters, or `null` when the IP is unknown. The `ip` column stays empty. Rotating `JWT_SECRET` changes the hashes. `refusal.reason` is one of `publishable_api_key`, `frontend_session`, `unclassified_caller`, `capability_missing`, `principal_unresolved`, `principal_site_mismatch`, `principal_not_found`, `principal_inactive`, `principal_not_member`, `api_key_revoked`, `api_key_expired`, `dev_principal_forbidden`, `principal_denied`, `other`. A key of another site is reported as `principal_not_found`.
+
+**Abuse bounds for `/api/v1/ai/*` (#564).** Every request under `/api/v1/ai` counts against a per-client-IP, per-site limit, `LUMIBASE_AI_IP_RATE_LIMIT` (default 300 per minute, 60-second window, `0` = off). It runs after the site check and before authentication, so a blocked request costs no token or API-key check, no quota reservation, no provider call and no audit event. Over the limit → `429 RATE_LIMITED` with `Retry-After` (listed in `Access-Control-Expose-Headers`); the counter is `lumibase_ai_ip_rate_limited_total`. If the limiter store is unavailable, the request passes, or gets `503 RATE_LIMIT_UNAVAILABLE` when `LUMIBASE_RATE_LIMIT_FAIL_CLOSED=true` (the same rule as the other limiters). The limit is skipped when the client IP cannot be resolved. On Docker behind a reverse proxy, the proxy must **overwrite** `CF-Connecting-IP` with the real client IP: the CMS trusts that header as sent, so a client-supplied value must never pass through.
+
+As an outer defence, add a Cloudflare WAF rate-limiting rule in front of the Worker or the Docker origin: expression `(http.request.uri.path wildcard "/api/v1/ai/*")` (optionally `and http.request.method eq "POST"`), counting by IP, for example 120 requests per 1 minute, action **Block** for 1 minute (block, not a challenge, because callers are APIs). The CMS limits stay in force behind it.
+
+**Draft review (#512).** A review profile is a versioned rubric: the top-level fields a review reads and the Decision questions it asks (same shapes as above). A review run applies one profile version to one item, or to an unsaved draft, through the governed path above (so the `ai:decide` capability, site opt-in, field allowlist, budgets and the `ai_decision` audit event all apply), and stores the answers with their provenance. Reviews only suggest: no endpoint here changes an item.
+
+- **Profiles.** Reading needs `ai:decide`; creating and versioning need a site admin. Rows are immutable: `POST /review-profiles/:key/versions` inserts version + 1 and archives the previous active version in one transaction, so a run always points at the exact questions it was answered against. A profile may be bound to one `collection` (others get `422 REVIEW_COLLECTION_MISMATCH`) and may set `minConfidence`.
+- **Presets.** `taxonomy` is a `choice` over `presetOptions.categories` plus `other` and `unknown`. `brand-voice` scores tone match and clarity on atomic 5-level rubrics (against `presetOptions.voice`) and adds a `needs_review` flag. `brief-alignment` compares the content with the `sourceField` (a brief or source the editor supplies). Without a `sourceField` it only checks internal coherence and the profile stores the note `no source — not a fact-check`. No preset claims to verify facts.
+- **Reading content.** With `itemId`, the server reads the profile's fields with the caller's own row and field permissions. Fields the caller cannot read are not sent and are listed in `omittedFields`. With `snapshot` (an unsaved draft), each key must be one of the profile's fields and one the caller may read and write (`create`, or `update` when `itemId` is also given). Otherwise the request fails with `422 REVIEW_FIELD_NOT_ALLOWED` before any provider call. Content travels only in `state` and the questions come from the stored profile, so text inside the content cannot change what is asked.
+- **Provenance and staleness.** A run records the actual provider, model, `calibrated`, the profile key and version, the latest live revision, the principal, latency, usage and `contentHash` (`sha256:` of the canonical JSON of the reviewed fields). `GET /reviews/:id` recomputes the hash and revision. When either changed, the run comes back `stale: true` with `staleReason` `content_changed`, `revision_changed` or `item_unavailable`. A caller who can no longer read a field the run reviewed gets `404`. Snapshot runs are visible only to their author and admins.
+- **Abstention.** `status` is `abstained` when every `choice` answer is `other`/`unknown`, or when a confidence is below the profile's `minConfidence`.
+- **Idempotency.** Keys are scoped to the caller: the same `idempotencyKey` (body) or `Idempotency-Key` header from the same principal returns the same run (`200`) with no second provider call, while another principal using the same key gets its own run. A run that ended in `error` is retried in place, so it never becomes a second row. The retry re-reads the item and rebinds the run (content hash, revision, profile version, omitted fields) to what it actually reviewed. A run still `running` five minutes after it started (its process died) is reclaimed the same way; until then a replay returns it as `running`. If the original call does finish after that, its answers are discarded: a run is completed only by the attempt that holds the current claim, so the response of the late call is the run as stored.
+- **Feedback.** `POST /reviews/:id/feedback` takes `entries` of `{ questionKey, verdict: accept | edit | reject, editedValue? }`. It stores one row per run, question and principal; a retried submission adds none and returns the stored rows. The first verdict is final: resubmitting a different verdict (or `editedValue`) for the same question does not overwrite it, and the response carries the stored verdict, so compare it with what you sent. `accept` or `edit` on a stale run returns `409 REVIEW_STALE` unless the body says `acknowledgeStale: true`, so a review is never silently applied to a different revision. For snapshot runs, send the current draft's `contentHash` to get the same check. `reject` is always accepted.
+- **Retention.** The hourly job deletes runs older than `DECISION_REVIEW_RETENTION_DAYS` (default 180), and their feedback with them. Profiles are kept.
+- **Pilot rollout (#516).** The `aiDecisions` setting has a `review` object: `{ enabled, pilotCollections, mode: 'baseline' | 'assisted' }`. It is off when absent or malformed. `POST /reviews` and new feedback need the collection in the pilot in `assisted` mode (which also needs `aiDecisions.enabled`); otherwise they return `403 DECISION_DISABLED` before any content is read. `GET /reviews/rollout?collection=` reports the mode (`ai:decide`). Turning the pilot off deletes nothing: runs, feedback and sessions stay readable.
+- **Flows (#517).** A flow node `ai:decision` runs one review with a pinned `profileVersion` on one item and returns `branch`: `true`/`false`/`unknown` for a `noul` question (`noulThreshold`), the option key or `unknown` for a `choice` question (`minConfidence`, abstention), or `error`. It needs the `aiDecisions` setting to have both `enabled: true` and `flows: true`; `flows` is off by default. When the node executes, the server re-resolves the principal that started the run, checks `ai:decide` on that live grant and re-reads both switches, so a revoked grant or a later kill switch stops queued runs too. Only manual runs (`POST /flows/:id/run`) carry a principal; event, schedule and webhook runs are refused (`FORBIDDEN`). A failure (forbidden, disabled, quota, timeout, cancel, provider error) takes the node's `error` branch when one is mapped and otherwise fails the node (`onError`); it is never `true`. The review idempotency key is `flow:<flowRunId>:<nodeId>`, so re-executing a run replays the stored decision with no second provider call. See [Flows](../features/flows-automation.md).
+- **Sessions.** `POST /reviews/sessions` (`ai:decide`, signed-in users only: API keys and the dev principal get `403 FORBIDDEN`) records `{ collection, itemId?, mode, runId?, viewedQuestions?, durationMs, locale? }`: one editor session from opening the editor to the first save. The mode must match the collection's current mode (`409 REVIEW_SESSION_MODE_MISMATCH`), the collection must be in the pilot (`403 DECISION_DISABLED`), and a `runId` must be the caller's own run on the same collection and item, with `viewedQuestions` it answered (`422 REVIEW_SESSION_RUN_INVALID`). No content is stored. The run retention purge sets `run_id` to null and keeps the session.
+- **Metrics.** `GET /reviews/metrics?from=&to=` (site admin, window at most 366 days, default the last 30) returns time per item (baseline vs assisted p50/p95), accept/edit/reject/no-action rates over **viewed** suggestions only with 95% Wilson intervals, coverage, abstention, error rate, latency p50/p95, tokens per run, splits by locale, provider and profile version, sample counts (with distinct editors and items per mode), and the pre-registered criteria of protocol `jev-pilot-v1` with `insufficientSample` flags. Only sessions and verdicts of `user` principals count. Run counts are operational denominators, never user value. See [Draft-review pilot](../features/jev-draft-review-pilot.md).
+- **Automation (#518).** Flow nodes `ai:apply-tags` and `editorial:route` read an upstream `ai:decision` and record one row per flow run, node and item in `lumibase_ai_automation_actions`. They are **shadow** by default: the proposal is recorded and nothing is written. A proposal is live only when `aiDecisions.automation` has `mode: 'live'`, a `gate` (`approvedBy`, `approvedAt`, `evidenceRef`) and a threshold for the item's locale and the action whose `provider`, `model`, `profileKey`, `profileVersion` and `questionKey` match the decision (read from the stored review run, which must be about the node's item), and the confidence is at or above its `minConfidence`; anything else (including a malformed block) is shadow. A live proposal goes through the governed harness (`updateItem`, agent `jev-automation`, `autonomyCap: 1`), so it becomes an approval or is refused at L0; automation never writes directly. The `updateItem` call carries `expect: { <field>: <value the proposal was computed from> }`, which the harness re-checks when the approved write runs; a field a human changed in between fails the approval with `ITEM_PRECONDITION_FAILED` and nothing is written (row `denied`, reason `stale_at_approval`). `expect` is an optional `updateItem` argument for any caller. Only the target field is proposed, never `status`, deletes or schema; the `submit_review` transition is proposed only. Stale decisions, decisions an editor overrode, pinned or unreadable fields are skipped and recorded. `/api/v1/ai/automation/*` is control plane (site admin). `POST /automation/actions/:id/revert` restores `previous` of an applied action through the caller's ItemService, and refuses with `409 AUTOMATION_REVERT_CONFLICT` when the field changed since. `GET /automation/metrics` reports precision and coverage in the auto-action zone with `insufficientSample` and `shadowRequired`; it switches nothing on. See [Jev automation](../features/jev-automation.md).
+
+```json
+POST /api/v1/ai/reviews
+{ "profile": "spam-check", "collection": "posts", "itemId": "itm_1", "idempotencyKey": "review-itm_1-0001" }
+```
+
+Errors: `403 FORBIDDEN`, `404 REVIEW_PROFILE_NOT_FOUND` / `REVIEW_ITEM_NOT_FOUND` / `REVIEW_RUN_NOT_FOUND`, `409 REVIEW_PROFILE_EXISTS` / `REVIEW_PROFILE_CONFLICT` / `REVIEW_STALE` / `REVIEW_NOT_COMPLETE`, `422 REVIEW_FIELD_NOT_ALLOWED` / `REVIEW_COLLECTION_MISMATCH` / `REVIEW_SESSION_RUN_INVALID`, `409 REVIEW_SESSION_MODE_MISMATCH`, `400 VALIDATION`, plus every decision error above.
+
 ### Agent API (Content OS)
 
 All routes mount under the authenticated chain; the token's roles are the capability set.
@@ -790,15 +1339,36 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `GET/POST` | `/api/v1/agent/goals` | List / create goals (`execution: 'async'` enqueues a queued run) |
 | `POST` | `/api/v1/agent/goals/:id/decompose` | Planner: create role-scoped sub-goals inheriting remaining budget |
 | `POST` | `/api/v1/agent/goals/:id/settle` | Settle a parent goal from its children's terminal states |
+| `POST` | `/api/v1/agent/runs/:id/retry` | Re-execute a `failed`/`cancelled` run as a new `queued` run (`retryOfRunId` → the original), enqueued on `agent-runs` under the requester's re-resolved rights. Only the goal's latest attempt, only while nothing on the goal is in flight — at most one new execution per request. `201` `{ goalId, runId, agentName, status, retryOfRunId }`; `404` unknown or other-tenant run; `409` not retryable, in flight, effect already recorded (`RUN_EFFECT_RECORDED`), superseded, goal closed or busy, intent not active, or task unrecoverable; `423` frozen; `400` no queue adapter; `503` enqueue failed. See [agent harness](../features/agent-harness-layer.md) |
 | `GET/POST/PATCH/DELETE` | `/api/v1/agent/roles[/:name]` | Agent role library CRUD (admin) — seeded with Planner, Writer, … |
 | `GET` | `/api/v1/agent/autonomy` | Trust ledger: grants + open incidents |
 | `GET/POST` | `/api/v1/agent/autonomy/promotions[...]` | Promotion proposals; `POST :id/decide` is the only path to a higher level (admin) |
+| `GET` | `/api/v1/agent/receipts` | Agent receipts (#713): read-only aggregation of runs (by status/agent, failure rate), tool calls by skill × outcome with p50 latency, approvals (status, approver, latency p50/p90/avg), vetoes, `askUser` questions, human overrides, token/USD cost, drift, incidents, autonomy grants and promotions, a daily series and the alert thresholds crossed. `?since&until` (ISO, default the last 30 days, at most 180 days; `400 VALIDATION` / `WINDOW_TOO_WIDE`). Admin (control plane). See [agent receipts](../features/agent-receipts.md) |
+| `GET` | `/api/v1/agent/receipts/export` | CSV (`text/csv`) of `?kind=runs` (default) \| `tool_calls` \| `approvals` over the same window, at most 10,000 rows (`X-Export-Rows`, `X-Export-Truncated`). Tool inputs/outputs are never exported; text cells that start with `= + - @` are prefixed with `'` |
+| `GET/PUT` | `/api/v1/agent/receipts/alerts` | Alert thresholds (`maxRunFailureRate`, `maxVetoRate`, `maxOverrideRate`, `maxApprovalLatencyP90Minutes`, `maxCostUsd`, `maxTokens`, `maxOpenDrift`, `maxIncidents`); an absent key is not checked. Stored in the `agent.receipts.alerts` setting; unknown keys or rates outside 0–1 → `400 VALIDATION` |
+| `POST` | `/api/v1/locale-generation/jobs` | One-shot translation generator for a new locale (#714). Body `{ locale, sourceLocale? = 'en', collections, includeUi? = true, provider? }`; adds the locale to the `locales` setting and queues a job that translates missing `translatable-text` values and `ui` strings (translation memory → glossary → MT) into the review queue. `202` with the job; `400` `VALIDATION` / `NO_TRANSLATABLE_FIELDS` / `PROVIDER_UNAVAILABLE`; `409 JOB_ACTIVE`. Control plane (site administrators). See [locale generator](../features/locale-generator.md) |
+| `GET` | `/api/v1/locale-generation/jobs[/:id]` | Jobs with `status`, `cursor`, `counters`; one job adds `review` (suggestions by state) |
+| `POST` | `/api/v1/locale-generation/jobs/:id/cancel` \| `/resume` | Cancel a queued/running job between chunks; re-queue a failed/cancelled job at its cursor (`409` otherwise) |
+| `GET` | `/api/v1/locale-generation/suggestions` | Review queue, `?locale&status&jobId&collection&limit&offset`, `{ data, meta: { total, limit, offset } }` |
+| `POST` | `/api/v1/locale-generation/suggestions/:id/decide` | `{ decision: 'approve', text? }` \| `{ decision: 'reject' }`. Approval writes through the reviewer's item service (RBAC, validation, revision); `{ status: 'stale' }` when the source changed or the locale was already written; `409 ALREADY_DECIDED`; `422` when the write is refused (the suggestion stays pending) |
+| `POST` | `/api/v1/locale-generation/suggestions/decide-bulk` | `{ decision, locale, ids?, jobId?, collection?, limit? ≤ 200 }` → `{ approved, rejected, stale, failed, processed, failures }` |
 | `GET/POST` | `/api/v1/agent/staged[...]` | Veto window: pending stagings enriched with `approvalId/collection/itemId/patch/agentRole` from the staging revision (null fields when the staging is gone); `POST :id/veto` discards a staging |
+| `GET` | `/api/v1/agent/approvals` | Approval inbox (`status` filter; defaults to `pending`) |
+| `POST` | `/api/v1/agent/approvals/:id/decide` | Human decision on a parked action. Body `{ decision: 'approved' \| 'rejected', reason? }`; needs `approvals:decide` (403 otherwise), `404` for an unknown or other-tenant id, `409` when the approval already left `pending`. On `approved` the harness owns the state transition, so execution and the status write happen once. Execution re-resolves **the requester's** current rights and runs with `requester ∩ decider`: an approval whose requester was since revoked, demoted or removed is denied, and one with no recorded requester (parked before provenance existed) is denied with `APPROVAL_PROVENANCE_MISSING`. An approval stored with `approvalPolicy: human_required` (every [external-action tool](../features/external-action-tools.md)) is released only by a signed-in user: an API key, a connector token or an agent gets `409 EXECUTION_FAILED` carrying `HUMAN_APPROVAL_REQUIRED`, and the approval stays `pending` |
+| `POST` | `/api/v1/agent/approvals/:id/reopen` | Return a `failed` approval to `pending` so it can be decided again. Body `{ reason }` is **required** and audited; needs `approvals:decide`. A skill that reached a service and then failed is parked rather than re-offered, because retrying could repeat a non-idempotent write — this is the deliberate way back. A `veto` approval whose staged patch is already live (a commit that died after applying it) answers `409 VETO_ALREADY_APPLIED` instead, since reopening would apply it twice |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Agent-as-reviewer decision (needs `review:<domain>`; self-review forbidden) |
+| `GET` | `/api/v1/agent/questions` | `askUser` clarification questions, newest first. `?status=pending` (default) \| `answered` \| `expired` \| `cancelled` \| `all`. Each item: `{ id, runId, goalId, toolCallId, agentName, question, options, allowFreeText, context, status, expiresAt, createdAt, answer, answeredAt, answeredBy }`. Questions are not listed by `/approvals`, and `/approvals/:id/decide` and `/reopen` answer `409 NOT_AN_APPROVAL` for a question id. See [agent harness](../features/agent-harness-layer.md#asking-a-human-askuser-710) |
+| `GET` | `/api/v1/agent/questions/:id` | One question; `404` for an unknown or other-tenant id |
+| `POST` | `/api/v1/agent/questions/:id/answer` | Answer a question and resume its `waiting_user` run. Body `{ answer }` (1–2000 chars, trimmed; one of `options` when `allowFreeText` is false). Only a signed-in user answers: any API key, site- or organization-scoped and whatever its capabilities, gets `403`. Allowed for a holder of `approvals:decide` (or control-plane admin) and for the run's requesting **user**; today only site administrators reach the route (control-plane guard), so the requester rule takes effect once backlog B207 moves it out of the control plane. The claim and the resume are one transaction. `200` with the answered question (run `succeeded`); `400` `VALIDATION` / `ANSWER_INVALID` / `ANSWER_NOT_AN_OPTION`; `403`; `404`; `409` `ALREADY_ANSWERED`, `EXPIRED`, `QUESTION_CLOSED`, `RUN_NOT_WAITING`, `REQUESTER_REVOKED` (the requester lost access; the run is failed); `423` `FROZEN` (the run is cancelled) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Versions, draft, `/compile` (NL→evaluators), `:id/dry-run`, `:id/activate` |
-| `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze` |
+| `*` | `/api/v1/agent/skills[...]` | Site Skills — playbooks injected into matching agent runs: CRUD by id or slug, `:id/activate\|archive\|draft`, `:id/versions`, `:id/versions/:version/restore`, `/import`, `/export`, `/match`. Every write needs a control-plane admin (`403 FORBIDDEN` otherwise; there is no delegated author and `riskClass` is a label only). `PATCH` takes `expectedVersion` and status actions take `version` (`409 VERSION_MISMATCH`); `DELETE` refuses a skill that was ever active (`409 SKILL_HAS_BEEN_ACTIVE`); `/import` refuses content changes to active skills unless `updateActive: true` (`ACTIVE_SKILL_CHANGE`). See [features/site-skills.md](../features/site-skills.md) |
+| `GET/PUT/DELETE` | `/api/v1/agent/tool-secrets[/:name]` | Secrets of external-action tools, per site. `GET` lists names, key version and timestamps; `PUT /:name` with `{ value }` (8 to 8192 characters) stores or replaces; `DELETE /:name` removes. No route returns a value. All need a signed-in site administrator: an API key or connector token gets `403 FORBIDDEN` even with administrative rights. `400` for an invalid name or value, `404` deleting an unknown name, `503 KEYS_UNAVAILABLE` when no `KeyProvider` is configured. See [features/external-action-tools.md](../features/external-action-tools.md) |
+| `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze`. Freezing a role or the site, pausing an intent and cancelling a run also cancel runs waiting on an `askUser` question in that scope (`stopReason: frozen`) and close their questions |
 | `*` | `/api/v1/agent/intents[...]` | Content intents CRUD, `:id/pause|resume|scan|drifts`, `/compile` |
-| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag |
+| `POST` | `/api/v1/intents/:id/scan` | One reconciliation cycle: `{ scan, reconcile, dispatch }`. `dispatch` advances each reconciler goal one step (draft → promote → verify) and reports `dispatched/completed/skipped/blocked` plus `queueUnavailable` on runtimes without a queue adapter. See [reconciler repair loop](../features/reconciler-repair-loop.md). When the intent has `semantic` rules, `scan.semantic` reports the separately budgeted semantic pass (`status` `ran`/`off`/`unavailable`, counts, `completed`, `cursor`), and `scan.semanticOrphansResolved` counts rows of removed semantic rules it resolved. Updating an intent so a stored semantic rule changes profile, question, context or fields without a `version` bump returns `422 SEMANTIC_RULE_VERSION_REQUIRED`; see [semantic drift](../features/jev-semantic-drift.md) |
+| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag. Besides `tools/*`, `prompts/list` and `prompts/get` expose the site's active skills to control-plane admins (empty for any other caller). A `tools/call` of `askUser` returns a normal tool result with `status: "waiting_user"`, `questionId` and `runId` |
+| `POST` | `/api/v1/mcp/sites/:siteId` | Same MCP server, site taken from the path (for hosted OAuth connectors that cannot send `X-Lumi-Site`) |
+| `GET` | `/.well-known/oauth-protected-resource/api/v1/mcp[/sites/:siteId]` | RFC 9728 Protected Resource Metadata (public; `404` unless MCP is on and a trusted issuer lists the resource URI in `audience`) — see [OAuth connector](../agent-setup/oauth-connector.md) |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Law Zero pins: list / release |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Public llms.txt index per site |
 
@@ -1133,6 +1703,14 @@ identifiers.
 limit? }`. `field` is required for non-`count` aggregates. A field outside the
 collection whitelist returns `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
 
+### Activation milestones
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/activation` | The active site's milestone funnel → `{ data: { siteId, milestones, reached, total } }`. Site admins only (`403 FORBIDDEN`). |
+
+Each entry of `milestones` is `{ key, reachedAt, source, secondsSinceSiteCreated }` with `key` one of `site_created`, `item_published`, `delivery_request`, `agent_run`. Milestones are write-once and site-scoped. See [Activation milestones and usage telemetry](../operations/usage-telemetry.md).
+
 ---
 
 ## 12c. Git Integration (GitHub / GitLab)
@@ -1218,6 +1796,11 @@ tombstones), `LUMIBASE_DELIVER_RATE_LIMIT` (req/min/IP, default `1200`,
 | `POST` | `/api/v1/utils/render-template` | Render a display template server-side |
 | `POST` | `/api/v1/utils/jsonata/test` | Evaluate JSONata expression |
 | `GET` | `/api/v1/metrics` | Prometheus metrics (Docker mode only) |
+| `GET` | `/api/v1/openapi.json` | Live OpenAPI 3.1 document for the caller's site and permissions — `404` until enabled |
+| `GET` | `/api/v1/openapi/config` | Read the live OpenAPI switch (site admin) |
+| `PUT` | `/api/v1/openapi/config` | `{ enabled, realms }` — enable it and choose realms (site admin, audited) |
+
+The live OpenAPI document is described in [Live OpenAPI document](live-openapi.md).
 
 **Health response:**
 ```json
@@ -1249,6 +1832,7 @@ tombstones), `LUMIBASE_DELIVER_RATE_LIMIT` (req/min/IP, default `1200`,
 | File upload | 100 req/min per user |
 | Realtime connections | 50 concurrent per site |
 | AI Chat | 60 req/min per user |
+| AI routes (`/api/v1/ai/*`), before auth | 300 req/min per client IP per site (`LUMIBASE_AI_IP_RATE_LIMIT`) |
 
 Rate limit headers:
 ```

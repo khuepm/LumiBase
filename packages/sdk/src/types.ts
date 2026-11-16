@@ -1,10 +1,52 @@
 export type DefaultSchema = Record<string, Record<string, unknown>>;
 
+/**
+ * Turn the output of `lumibase types` into a schema the client accepts.
+ *
+ * Typegen emits one `interface` per collection and a `LumibaseCollections`
+ * interface mapping names to them. Interfaces carry no implicit index
+ * signature, so `createLumiClient<LumibaseSchema>()` fails the
+ * `DefaultSchema` constraint. Mapping over the keys yields structurally
+ * identical anonymous object types, which do satisfy it:
+ *
+ * ```ts
+ * import type { LumibaseSchema } from './lumibase-types';
+ * const lumi = createLumiClient<SchemaOf<LumibaseSchema>>({ … });
+ * ```
+ */
+export type SchemaOf<T> = {
+  [Collection in keyof T & string]: { [Field in keyof T[Collection]]: T[Collection][Field] };
+};
+
 export type ID = string;
 export type Locale = string;
 export type Brand<TBrand extends string, TValue> = TValue & {
   readonly __brand: TBrand;
 };
+
+/**
+ * Value of a timezone-aware datetime field (`options.timezone: true`, #747).
+ * Write either `{ instant, tz }` or `{ local, tz }`; reads return all three.
+ */
+export interface ZonedDateTime {
+  /** ISO-8601 instant in UTC. */
+  instant: string;
+  /** IANA time zone the value was authored in. */
+  tz: string;
+  /** UTC offset of `tz` at `instant`, e.g. `-04:00`. */
+  offset: string;
+}
+
+/**
+ * One block of a `blocks` field (dynamic zone, #748). `type` is the block
+ * template's collection name and discriminates the union; generated types
+ * narrow it to a literal per template.
+ */
+export interface LumibaseBlock<TType extends string = string, TData = Record<string, unknown>> {
+  id: string;
+  type: TType;
+  data: TData;
+}
 
 export type AgentRiskLevel = "safe" | "review_required" | "dangerous" | "blocked";
 
@@ -436,13 +478,30 @@ export type ItemFilterOp =
   | "_json_contains"
   | "_has_key"
   | "_has_any_keys"
-  | "_has_all_keys";
+  | "_has_all_keys"
+  // geopoint fields: `{ lat, lng, radius }` (metres) / `[minLng, minLat, maxLng, maxLat]`.
+  | "_near"
+  | "_within_bbox";
+
+/** Value of a `geopoint` field: WGS 84 degrees. */
+export interface GeoPoint {
+  lat: number;
+  lng: number;
+}
 
 export interface ItemFilter {
   _and?: ItemFilter[];
   _or?: ItemFilter[];
   /** Field key; may be a dotted path into nested JSON, e.g. "meta.author.country". */
   [key: string]: { [op in ItemFilterOp]?: unknown } | ItemFilter[] | undefined;
+}
+
+/** Result of `items(name).tree.move()` (#749). */
+export interface TreeMoveResult {
+  id: string;
+  parentId: string | null;
+  path: string;
+  sort: number;
 }
 
 export interface ListItemsParams {
@@ -458,6 +517,72 @@ export interface ListItemsParams {
    * for a cheaper list (e.g. infinite scroll) and omits `meta.total`.
    */
   meta?: 'total_count' | 'none';
+  /**
+   * Publication cohort (#688): `live` (published, inside its window),
+   * `preview` (draft + published) or `all`. Anonymous callers always get `live`.
+   */
+  publicationState?: PublicationState;
+  /** Only items edited since their last publish (#687). */
+  modifiedSincePublish?: boolean;
+}
+
+export type PublicationState = 'live' | 'preview' | 'all';
+
+/** Options for `items(name).duplicate()` — `POST /items/:collection/:id/duplicate` (#689). */
+export interface DuplicateItemOptions {
+  /** `reference` (default) copies m2m links; `deep` also copies o2m children; `none` copies the item alone. */
+  relations?: 'none' | 'reference' | 'deep';
+  /** `false` keeps only `locale` of translatable fields. Default `true`. */
+  translations?: boolean;
+  locale?: string;
+  /** Field values to set on the copy. */
+  overrides?: Record<string, unknown>;
+}
+
+/** Options for `items(name).export()` — `GET /items/:collection/export` (#727). */
+export interface ExportItemsParams {
+  /** `csv` (default) or `json` (`{ collection, format, items: [...] }`). */
+  format?: 'csv' | 'json';
+  /** Data fields to include; structural columns are always written. */
+  fields?: string[];
+  /** Locales for translatable fields. CSV writes one `field.locale` column each. */
+  locales?: string[];
+  /** `id` (default) keeps foreign ids; `slug` swaps in the related slug; `embed` adds the related record. */
+  relations?: 'id' | 'slug' | 'embed';
+  filter?: ItemFilter;
+  sort?: string[];
+  status?: string;
+}
+
+export type ImportJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
+
+/** A background import job (`/api/v1/imports`, #726). The uploaded file is never returned. */
+export interface ImportJob {
+  id: string;
+  collection: string;
+  format: 'csv' | 'json';
+  mode: 'create' | 'upsert';
+  status: ImportJobStatus;
+  totalRows: number;
+  processedRows: number;
+  createdRows: number;
+  updatedRows: number;
+  failedRows: number;
+  /** Row errors beyond the stored cap, counted but not kept. */
+  errorsTruncated: number;
+  message: string | null;
+  createdBy: string | null;
+  cancelRequested: boolean;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface ImportRowError {
+  /** 1-based data row (CSV: line after the header; JSON: position in `items`). */
+  row: number;
+  id?: string;
+  message: string;
 }
 
 /** Reserved metadata attributes present on every search hit. */
@@ -509,11 +634,27 @@ export interface ItemRow<
   status: string;
   data: TData;
   sort: number;
+  /**
+   * Optimistic-concurrency counter, also sent as the `ETag` of the detail
+   * response. Pass it back as `ifMatch` on `patch`/`replace` to make the write
+   * fail with 412 if someone else changed the item first. Absent on servers
+   * older than this field.
+   */
+  version?: number;
   /** Content scheduling window (Publish_Window); null when not scheduled. */
   publishAt?: string | null;
   unpublishAt?: string | null;
   /** Editorial workflow state; null when the workflow is not in use. */
   editorialState?: string | null;
+  /** First publish; set once, never moves (#687). */
+  firstPublishedAt?: string | null;
+  /** Most recent publish; kept on unpublish (#687). */
+  publishedAt?: string | null;
+  /** Data edited since the last publish (#687). */
+  hasUnpublishedChanges?: boolean;
+  /** Tree collections (#749): parent item id (null = root) and materialised path `/root/…/self/`. */
+  parentId?: string | null;
+  path?: string | null;
   userCreated: string | null;
   userUpdated: string | null;
   createdAt: string;
@@ -952,6 +1093,45 @@ export interface ShareCreateInput {
 export interface ShareSecretResult extends ShareResource {
   token: string;
   url: string;
+}
+
+/** `POST /api/v1/preview/token` body (epic #667). Item (+ version) or release. */
+export interface PreviewTokenMintInput {
+  collection?: string;
+  itemId?: string;
+  versionKey?: string;
+  releaseId?: string;
+  locale?: string;
+  ttlSeconds?: number;
+}
+
+/** A preview secret row (never includes the token hash). */
+export interface PreviewTokenResource {
+  id: string;
+  siteId: string;
+  collection: string | null;
+  itemId: string | null;
+  versionKey: string | null;
+  releaseId: string | null;
+  locale: string | null;
+  createdBy: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  revokedBy: string | null;
+  useCount: number;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+/** Mint result: the token (shown once) and the URL built from the collection's `meta.previewUrl`. */
+export interface PreviewTokenSecretResult extends PreviewTokenResource {
+  token: string;
+  url: string | null;
+}
+
+export interface PreviewSettingsResource {
+  allowedOrigins: string[];
+  ttlSeconds: number;
 }
 
 export interface PresetResource {
@@ -1397,7 +1577,68 @@ export interface FileResource {
   folder: string | null;
   metadata: Record<string, unknown>;
   uploadedBy: string | null;
+  /** Full SHA-256 (hex) of the current binary; null until known (#706). */
+  contentHash?: string | null;
+  /** Binary revision; bumped by every in-place replace (#703). */
+  version?: number;
+  /** Malware scan state (#707): `skipped` | `pending` | `clean` | `infected` | `error`. */
+  scanStatus?: string;
   createdAt: string;
+  updatedAt?: string;
+}
+
+/** A previous binary of a file, kept for undo after a replace (#703). */
+export interface FileVersionResource {
+  id: string;
+  siteId: string;
+  fileId: string;
+  version: number;
+  filenameDisk: string;
+  filenameDownload: string;
+  mime: string;
+  filesize: number;
+  width: number | null;
+  height: number | null;
+  contentHash: string | null;
+  metadata: Record<string, unknown>;
+  replacedBy: string | null;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** Where a file is used (#706). */
+export type FileReferenceResource =
+  | { kind: "item"; collection: string; id: string; status: string; fields: string[] }
+  | { kind: "page"; id: string; slug: string; title: string };
+
+export interface FolderTreeNodeResource extends Omit<FolderResource, "siteId" | "createdAt"> {
+  path: string;
+  namePath: string;
+  depth: number;
+  children: FolderTreeNodeResource[];
+}
+
+/** Query for `files.list` — every key optional (media picker backend, #708). */
+export interface FileListQuery {
+  /** Folder id, or `"root"` for files outside any folder. */
+  folder?: string;
+  /** Widen `folder` to its whole subtree. */
+  subfolders?: boolean;
+  search?: string;
+  /** Exact MIME types or `type/*` prefixes. */
+  mime?: string[];
+  ids?: string[];
+  limit?: number;
+  offset?: number;
+}
+
+/** Per-site DAM settings (`files.dam`). */
+export interface DamSettingsResource {
+  deletePolicy: "confirm" | "block";
+  versionRetentionDays: number;
+  stripGpsOnPublic: boolean;
+  extractMetadata: boolean;
+  scan: { enabled: boolean; provider: "http"; onError: "quarantine" | "allow" };
 }
 
 export interface UploadTypeCatalogueEntry {
@@ -1685,10 +1926,62 @@ export interface DeploymentResource {
   commitMessage: string | null;
   url: string | null;
   triggeredBy: string | null;
-  triggerSource: "manual" | "auto" | "agent";
+  triggerSource: "manual" | "auto" | "agent" | "promote";
   errorMessage: string | null;
   logExcerpt: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+}
+
+/** Deployment environment (#743): preview / staging / production or any site-defined slug. */
+export interface DeploymentEnvironmentResource {
+  key: string;
+  name: string;
+  targetIds: string[];
+  requiresApproval: boolean;
+  promotesTo: string | null;
+}
+
+/** A parked deploy/promotion waiting for a human approver (#743). */
+export interface DeploymentApprovalResource {
+  id: string;
+  kind: "trigger" | "promote";
+  scope: "environment" | "target";
+  environment: string;
+  sourceEnvironment: string | null;
+  sourceDeploymentId: string | null;
+  targetIds: string[];
+  branch: string | null;
+  reason: string | null;
+  status: "pending" | "deciding" | "approved" | "rejected" | "expired" | "failed";
+  requestedBy: { type: string; id: string | null } | null;
+  createdAt: string;
+  expiresAt: string;
+  decidedAt: string | null;
+  decidedBy: string | null;
+  result: unknown;
+  /** Present on list responses: whether the caller may decide it. */
+  canDecide?: boolean;
+}
+
+export interface DeploymentDispatchResult {
+  targetId: string;
+  ok: boolean;
+  deployment: DeploymentResource | null;
+  mode?: "native" | "retrigger";
+  error?: { code: string; message: string };
+}
+
+/** Outcome of an environment deploy / promotion request. */
+export type DeploymentRequestOutcome =
+  | { status: "dispatched"; environment: string | null; results: DeploymentDispatchResult[] }
+  | { status: "pending_approval"; environment: string; approval: DeploymentApprovalResource };
+
+/** What the caller may do on the deployments page. */
+export interface DeploymentAccessResource {
+  admin: boolean;
+  capabilities: string[];
+  humanDecider: boolean;
+  environments: Array<{ key: string; canTrigger: boolean; canApprove: boolean }>;
 }

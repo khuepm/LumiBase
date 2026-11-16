@@ -27,6 +27,13 @@ import {
   type NotificationChannel,
   type PolicyPresetId,
 } from '../schemas/policy';
+import {
+  getEmailIdentityModeDraft,
+  getPolicyDraft,
+  setEmailIdentityModeDraft,
+  setPolicyDraft,
+  type EmailIdentityMode,
+} from '../setup-drafts';
 import { useSetupStore } from '../setup-store';
 
 /**
@@ -92,38 +99,19 @@ import { useSetupStore } from '../setup-store';
  * §5.5.
  */
 
-// ────────────────────────────────────────────────────────────────────────
-// In-memory policy draft
-//
-// Mirrors the pattern from `step-account.tsx` and `step-path.tsx`: the
-// persisted Zustand store deliberately holds only validity flags + the
-// post-completion `adminPath`, so we cache the chosen policy values
-// here in module memory until `useCompleteSetup` (task 6.5 consumer)
-// flushes them to `POST /api/v1/setup/complete`. Living only in heap
-// means a refresh resets the wizard cleanly without ever touching
-// `sessionStorage`.
-//
-// We hold the FULL `LockoutPolicyFormValues` shape (Phase C visible
-// fields + Phase D defaults from the chosen preset) so the recovery
-// step can submit a complete policy without having to know which
-// fields are exposed yet.
-// ────────────────────────────────────────────────────────────────────────
-
-let policyDraft: LockoutPolicyFormValues | null = null;
-
-/** Read the in-memory policy draft, or `null` if not yet captured. */
-export function getPolicyDraft(): LockoutPolicyFormValues | null {
-  return policyDraft;
-}
-
-/** Drop the draft. Call after `POST /setup/complete` succeeds. */
-export function clearPolicyDraft(): void {
-  policyDraft = null;
-}
-
-export function setPolicyDraft(value: LockoutPolicyFormValues): void {
-  policyDraft = value;
-}
+// In-memory policy + email identity mode drafts: live in `../setup-drafts`
+// (#757) so the boot path does not import this step. Re-exported here.
+export {
+  clearEmailIdentityModeDraft,
+  clearPolicyDraft,
+  DEFAULT_EMAIL_IDENTITY_MODE,
+  EMAIL_IDENTITY_MODES,
+  getEmailIdentityModeDraft,
+  getPolicyDraft,
+  setEmailIdentityModeDraft,
+  setPolicyDraft,
+  type EmailIdentityMode,
+} from '../setup-drafts';
 
 // ────────────────────────────────────────────────────────────────────────
 // Form values type
@@ -249,6 +237,16 @@ export interface StepSecurityProps {
 export function StepSecurity({ onSubmitted }: StepSecurityProps) {
   const setPolicyValid = useSetupStore((s) => s.setPolicyValid);
 
+  // Instance email identity mode (#794). Not part of the lockout policy
+  // schema — held in its own module draft and sent alongside it.
+  const [emailIdentityMode, setEmailIdentityModeState] = useState<EmailIdentityMode>(
+    getEmailIdentityModeDraft,
+  );
+  const handleEmailIdentityModeChange = useCallback((mode: EmailIdentityMode) => {
+    setEmailIdentityModeDraft(mode);
+    setEmailIdentityModeState(mode);
+  }, []);
+
   // ── Capabilities probe ────────────────────────────────────────────
   // The "Geographic Anomaly" group surfaces a warning when the
   // operator enables `geoAnomalyEnabled` AND the CMS reports
@@ -272,6 +270,7 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
   // the saved values. On a fresh mount with no draft we default to
   // 'standard' (Req 6.2).
   const initialPreset: PolicyPresetId = useMemo(() => {
+    const policyDraft = getPolicyDraft();
     if (policyDraft === null) return 'standard';
     return inferActivePreset(policyDraft) ?? 'standard';
   }, []);
@@ -283,7 +282,7 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
     mode: 'onBlur',
     reValidateMode: 'onChange',
     shouldUnregister: false,
-    defaultValues: buildDefaultValues(initialPreset, policyDraft),
+    defaultValues: buildDefaultValues(initialPreset, getPolicyDraft()),
   });
 
   const {
@@ -457,6 +456,12 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
         webhookSelected={webhookSelected}
       />
 
+      {/* ── Email identity (#794) ─────────────────────────────────── */}
+      <EmailIdentityGroup
+        value={emailIdentityMode}
+        onChange={handleEmailIdentityModeChange}
+      />
+
       {/* ── Submit ────────────────────────────────────────────────── */}
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
@@ -468,6 +473,91 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
         </button>
       </div>
     </form>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Email identity group (#794)
+// ────────────────────────────────────────────────────────────────────────
+
+interface EmailIdentityOption {
+  id: EmailIdentityMode;
+  label: string;
+  description: string;
+}
+
+/**
+ * Copy mirrors `setup.steps.security.groups.emailIdentity.*` in the locale
+ * bundles (inline for now, like the rest of this step — see module doc).
+ */
+export const EMAIL_IDENTITY_OPTIONS: ReadonlyArray<EmailIdentityOption> = [
+  {
+    id: 'exact',
+    label: 'Exact address (default)',
+    description:
+      'Every distinct address is its own account: test+a@gmail.com and test+b@gmail.com can register separately.',
+  },
+  {
+    id: 'root',
+    label: 'One account per mailbox',
+    description:
+      '+tag aliases (and, for Gmail, dots and googlemail.com) resolve to one account instance-wide. Signing in with any alias reaches that account.',
+  },
+];
+
+export interface EmailIdentityGroupProps {
+  value: EmailIdentityMode;
+  onChange: (mode: EmailIdentityMode) => void;
+}
+
+/**
+ * Instance-wide email identity mode radio group. Shared by the advanced
+ * Security step and the quick-setup review step.
+ */
+export function EmailIdentityGroup({ value, onChange }: EmailIdentityGroupProps) {
+  const name = useId();
+  return (
+    <fieldset
+      className="space-y-3 rounded-md border border-border p-4"
+      data-testid="email-identity-group"
+    >
+      <legend className="px-1 text-sm font-medium">Email identity</legend>
+      <p className="text-sm text-muted-foreground">
+        How email aliases map to accounts on this instance. Applies to
+        registration, invites and SCIM. Only the bootstrap admin can change it
+        later, and switching to one account per mailbox is refused while
+        existing accounts share a mailbox.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {EMAIL_IDENTITY_OPTIONS.map((option) => {
+          const selected = option.id === value;
+          return (
+            <label
+              key={option.id}
+              className={cn(
+                'flex cursor-pointer flex-col gap-1 rounded-md border p-3 text-sm transition',
+                selected
+                  ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                  : 'border-border hover:bg-muted',
+              )}
+            >
+              <span className="flex items-center gap-2 font-medium">
+                <input
+                  type="radio"
+                  name={name}
+                  value={option.id}
+                  checked={selected}
+                  onChange={() => onChange(option.id)}
+                  className="h-4 w-4"
+                />
+                {option.label}
+              </span>
+              <span className="text-muted-foreground">{option.description}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 

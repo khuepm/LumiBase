@@ -11,6 +11,8 @@
  *   items.update.after   — called with the updated item
  *   items.delete.before  — can cancel delete by throwing
  *   items.delete.after   — called after soft-delete
+ *   items.export.before  — called per exported row; may return `{ item }` to
+ *                          transform it (throwing aborts the export, #727)
  *
  * A hook that returns a plain object merges its result into the payload.
  * A hook that throws aborts the operation and re-throws (caller must catch).
@@ -35,7 +37,8 @@ export type HookEvent =
   | 'items.update.before'
   | 'items.update.after'
   | 'items.delete.before'
-  | 'items.delete.after';
+  | 'items.delete.after'
+  | 'items.export.before';
 
 /** Default wall-clock budget for a single hook handler invocation (ms). */
 const DEFAULT_HOOK_TIMEOUT_MS = 5000;
@@ -108,13 +111,36 @@ export class HookDispatcher {
     const enabled = this.extensions.filter((e) => e.enabled && e.type === 'hook');
     let current = { ...ctx };
 
-    for (const ext of enabled) {
-      const mod = await this.sandbox.load({
-        name: ext.name,
-        bundleUrl: ext.bundleUrl,
-        capabilities: (ext.capabilities as string[]) ?? [],
-        ...(this.verifyOptionsFor ? this.verifyOptionsFor(ext) : {}),
+    const targets: Array<{ name: string; load: () => ReturnType<ExtensionSandbox['load']> }> = enabled.map((ext) => ({
+      name: ext.name,
+      load: () =>
+        this.sandbox.load({
+          name: ext.name,
+          bundleUrl: ext.bundleUrl,
+          capabilities: (ext.capabilities as string[]) ?? [],
+          siteId: ctx.siteId ?? null,
+          ...(this.verifyOptionsFor ? this.verifyOptionsFor(ext) : {}),
+        }),
+    }));
+    // Local-dev hot reload (#754): hook extensions pushed by `lumibase-ext dev`
+    // run even before they are installed. Always empty outside development.
+    const installed = new Set(enabled.map((e) => e.name));
+    for (const build of this.sandbox.devHookBuilds?.(ctx.siteId) ?? []) {
+      if (installed.has(build.name)) continue;
+      targets.push({
+        name: build.name,
+        load: () =>
+          this.sandbox.load({
+            name: build.name,
+            bundleUrl: `lumibase-dev:${build.name}`,
+            capabilities: [...build.capabilities],
+            siteId: ctx.siteId ?? null,
+          }),
       });
+    }
+
+    for (const ext of targets) {
+      const mod = await ext.load();
 
       if (!mod?.hooks?.[event]) continue;
 

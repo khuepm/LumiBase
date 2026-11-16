@@ -50,4 +50,21 @@ describe('runSiteTransaction — RLS set_config ordering', () => {
     }
     expect(tx.execute).not.toHaveBeenCalled();
   });
+
+  it('does not skip set_config in development when LUMIBASE_DB_RLS=enforce (B130)', async () => {
+    for (const flag of ['enforce', 'bogus']) {
+      const tx = { execute: vi.fn() };
+      const db = {
+        transaction: vi.fn(async (fn: (inner: typeof tx) => Promise<unknown>) => fn(tx)),
+      } as unknown as Database;
+      vi.stubEnv('LUMIBASE_ENV', 'development');
+      vi.stubEnv('LUMIBASE_DB_RLS', flag);
+      try {
+        await runSiteTransaction(db, 'site-a', async () => 'ok');
+      } finally {
+        vi.unstubAllEnvs();
+      }
+      expect(tx.execute, flag).toHaveBeenCalledTimes(1);
+    }
+  });
 });

@@ -267,6 +267,18 @@ describe('AuditLogger.write — success (Req 15.1, 15.2)', () => {
     expect(errorSink).not.toHaveBeenCalled();
   });
 
+  it('assigns a uuidv7 id on the synchronous insert, like the queue path (B143)', async () => {
+    const { db, rows } = makeFakeDb();
+
+    await new AuditLogger({ db }).write({ event: 'login_success' });
+    await new AuditLogger({ db }).write({ event: 'login_success' });
+
+    const uuidv7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+    expect(rows[0]!.row.id).toMatch(uuidv7);
+    expect(rows[1]!.row.id).toMatch(uuidv7);
+    expect(rows[0]!.row.id).not.toBe(rows[1]!.row.id);
+  });
+
   it('null-coalesces absent optional columns and defaults metadata to {}', async () => {
     const { db, rows } = makeFakeDb();
     const logger = new AuditLogger({ db });

@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
 import { AlertTriangle, Clock } from 'lucide-react';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { IntentLink } from '@/components/intent-link';
 import { RevisionsDiff } from '@/modules/content/revisions-diff';
 import type { StagedVeto } from './api';
 import { useAdminBase } from './layout';
@@ -63,23 +63,26 @@ export function StagedDiff({ veto }: { veto: StagedVeto }) {
           by {String(veto.agentRole ?? 'agent')} — <Countdown deadline={veto.autoCommitAt} />
         </span>
         {collection && itemId && (
-          <Link
-            to={`${adminBase}/content/${collection}/${itemId}` as never}
+          // Edit intent (#759): lands on the first field the agent wants to change.
+          <IntentLink
+            adminBase={adminBase}
+            intent={{ action: 'edit', collection, id: itemId, field: Object.keys(patch)[0] }}
+            fallbackTo={`${adminBase}/content/${encodeURIComponent(collection)}/${encodeURIComponent(itemId)}`}
             className="text-xs text-primary hover:underline"
           >
             Open item →
-          </Link>
+          </IntentLink>
         )}
       </header>
 
       {itemQuery.isError && (
         <p className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
-          <AlertTriangle className="mr-1 inline h-3 w-3" />
+          <AlertTriangle className="me-1 inline h-3 w-3" />
           Could not load the current item — showing the staged values only.
         </p>
       )}
 
-      <div className="max-h-[55vh] overflow-y-auto pr-1">
+      <div className="max-h-[55vh] overflow-y-auto pe-1">
         <RevisionsDiff before={before} after={after} />
       </div>
     </div>

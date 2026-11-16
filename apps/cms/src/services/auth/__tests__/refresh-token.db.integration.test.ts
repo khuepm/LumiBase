@@ -39,7 +39,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Refresh-token flow — DB integration', (
     // Cascade from sites clears refresh_tokens + user_sites.
     await db.delete(sites).where(sql`${sites.id} = ${SITE}`);
     await db.delete(users).where(sql`${users.id} = ${USER}`);
-    await db.insert(sites).values({ id: SITE, name: 'Refresh IT' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'Refresh IT' });
     await db.insert(users).values({ id: USER, email: 'refresh-it@example.com', status: 'active' });
   });
 
@@ -57,7 +57,8 @@ describe.skipIf(!hasDbIntegrationUrl)('Refresh-token flow — DB integration', (
 
     // Re-presenting the FIRST (now revoked) token = reuse → family revoked.
     const reuse = await rotateRefreshToken(db, { rawToken: first.token, siteId: SITE }, undefined);
-    expect(reuse).toEqual({ ok: false, reason: 'reuse' });
+    // Reuse reports the token owner so the audit row can name them (#739).
+    expect(reuse).toEqual({ ok: false, reason: 'reuse', userId: USER });
 
     // After the family is revoked, even the latest token no longer works.
     const after = await rotateRefreshToken(db, { rawToken: (r2 as any).token, siteId: SITE }, undefined);
@@ -72,7 +73,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Refresh-token flow — DB integration', (
     let sessions = await listUserSessions(db, SITE, USER);
     expect(sessions).toHaveLength(2);
 
-    expect(await revokeSessionById(db, SITE, USER, sessions[0]!.id)).toBe(true);
+    expect(await revokeSessionById(db, SITE, USER, sessions[0]!.id)).toBe(sessions[0]!.sessionId);
     sessions = await listUserSessions(db, SITE, USER);
     expect(sessions).toHaveLength(1);
 

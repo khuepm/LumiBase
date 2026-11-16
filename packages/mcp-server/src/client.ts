@@ -1,7 +1,19 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { classifyTokenPrefix } from '@lumibase/contracts';
+
 export interface LumiBaseConfig {
   url: string;
-  siteId: string;
+  siteId?: string;
+  tokenKind?: 'site' | 'organization';
+  readOnly?: boolean;
   token: string;
+  /**
+   * Static operator secret for the read-only ops diagnostics plane
+   * (`/api/v1/ops/*`). Independent of `token`: with only this set the server
+   * runs in ops-only mode (diagnostics tools, no content tools).
+   */
+  opsToken?: string;
+  opsOnly?: boolean;
 }
 
 export interface ApiError {
@@ -20,25 +32,129 @@ export class LumiBaseApiError extends Error {
   }
 }
 
+/**
+ * The governed MCP endpoint exists but the site has not enabled it
+ * (`contentOs.mcp`, which defaults off). Distinct from a generic failure so the
+ * caller can decide between "fall back and say so" and "refuse".
+ */
+export class McpUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'McpUnavailableError';
+  }
+}
+
+/**
+ * POST endpoints that only read or preview, so `LUMIBASE_READ_ONLY` may call
+ * them. Everything else that is not a GET is refused by the client itself, not
+ * only hidden from `tools/list`: hiding is decided by tool name, and a tool
+ * whose name hides a write must still not be able to issue one.
+ */
+export const READ_ONLY_POST_PATHS: readonly RegExp[] = [
+  /^\/collections\/diff$/,
+  /^\/tm\/lookup$/,
+  /^\/dashboards\/[^/]+\/panels\/[^/]+\/data$/,
+  /^\/dashboards\/[^/]+\/panels\/preview$/,
+  /^\/permissions\/check$/,
+  /^\/access\/import\?dryRun=true$/,
+  /^\/access\/conflicts\/check$/,
+  /^\/agent\/intents\/compile$/,
+];
+
+/** Governed JSON-RPC tool calls that only read. */
+export const READ_ONLY_RPC_TOOLS: ReadonlySet<string> = new Set([
+  'org:get_organization',
+  'org:list_sites',
+  'org:list_org_members',
+]);
+
+export class ReadOnlyViolationError extends Error {
+  constructor(what: string) {
+    super(`Refused: LUMIBASE_READ_ONLY is set and ${what} can change state.`);
+    this.name = 'ReadOnlyViolationError';
+  }
+}
+
 export class LumiBaseClient {
   private readonly baseUrl: string;
   private readonly origin: string;
   private readonly headers: Record<string, string>;
+  readonly tokenKind: 'site' | 'organization';
+  readonly siteId?: string;
+  readonly readOnly: boolean;
+  private readonly opsToken?: string;
+  private readonly scope = new AsyncLocalStorage<{ siteId?: string }>();
+
+  get currentSiteId(): string | undefined {
+    return this.scope.getStore()?.siteId ?? this.siteId;
+  }
 
   constructor(config: LumiBaseConfig) {
+    this.tokenKind = config.tokenKind ?? (classifyTokenPrefix(config.token) === 'organization' ? 'organization' : 'site');
+    this.siteId = config.siteId;
+    this.readOnly = config.readOnly ?? false;
+    this.opsToken = config.opsToken;
     this.origin = config.url.replace(/\/$/, '');
     this.baseUrl = this.origin + '/api/v1';
     this.headers = {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.token}`,
-      'X-Lumi-Site': config.siteId,
     };
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  get hasOpsToken(): boolean {
+    return Boolean(this.opsToken);
+  }
+
+  /**
+   * GET an ops diagnostics route with the operator token. Never sends the site
+   * API key or a site header: the ops plane is not a tenant surface.
+   */
+  async opsGet<T>(path: string): Promise<T> {
+    if (!this.opsToken) throw new Error('LUMIBASE_OPS_TOKEN is not set for this MCP server.');
+    const res = await fetch(`${this.baseUrl}/ops${path}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${this.opsToken}` },
+    });
+    const json = (await res.json().catch(() => null)) as { data?: T; errors?: ApiError[] } | null;
+    if (!res.ok) {
+      const errors = json?.errors ?? [{ code: 'UNKNOWN', message: `HTTP ${res.status}` }];
+      if (res.status === 404 && errors[0]?.code === 'NOT_FOUND' && errors[0]?.message === 'Route not found.') {
+        throw new LumiBaseApiError(404, [
+          {
+            code: 'OPS_PLANE_UNAVAILABLE',
+            message:
+              'The ops plane answered 404: LUMIBASE_OPS_TOKEN is unset/shorter than 32 chars on the server, ' +
+              'the token does not match, or the deployed CMS predates the ops plane.',
+          },
+        ]);
+      }
+      throw new LumiBaseApiError(res.status, errors);
+    }
+    return json?.data as T;
+  }
+
+  /** Each concurrent tool invocation owns its site scope; the client is never mutated. */
+  withSite<T>(siteId: string, run: () => T): T {
+    return this.scope.run({ siteId }, run);
+  }
+
+  private requestHeaders(siteOverride?: string, organization = false): Record<string, string> {
+    const siteId = siteOverride ?? this.scope.getStore()?.siteId ?? this.siteId;
+    return { ...this.headers, ...(!organization && siteId ? { 'X-Lumi-Site': siteId } : {}) };
+  }
+
+  private assertReadOnlyAllows(method: string, path: string): void {
+    if (!this.readOnly || method === 'GET') return;
+    if (method === 'POST' && READ_ONLY_POST_PATHS.some((pattern) => pattern.test(path))) return;
+    throw new ReadOnlyViolationError(`${method} ${path}`);
+  }
+
+  private async request<T>(method: string, path: string, body?: unknown, siteOverride?: string): Promise<T> {
+    this.assertReadOnlyAllows(method, path);
     const res = await fetch(`${this.baseUrl}${path}`, {
       method,
-      headers: this.headers,
+      headers: this.requestHeaders(siteOverride, path === '/orgs' || path.startsWith('/orgs/')),
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
@@ -53,24 +169,74 @@ export class LumiBaseClient {
     return json.data as T;
   }
 
-  get<T>(path: string) {
-    return this.request<T>('GET', path);
+  get<T>(path: string, siteOverride?: string) {
+    return this.request<T>('GET', path, undefined, siteOverride);
   }
 
-  post<T>(path: string, body: unknown) {
-    return this.request<T>('POST', path, body);
+  post<T>(path: string, body: unknown, siteOverride?: string) {
+    return this.request<T>('POST', path, body, siteOverride);
   }
 
-  patch<T>(path: string, body: unknown) {
-    return this.request<T>('PATCH', path, body);
+  patch<T>(path: string, body: unknown, siteOverride?: string) {
+    return this.request<T>('PATCH', path, body, siteOverride);
   }
 
-  put<T>(path: string, body: unknown) {
-    return this.request<T>('PUT', path, body);
+  put<T>(path: string, body: unknown, siteOverride?: string) {
+    return this.request<T>('PUT', path, body, siteOverride);
   }
 
-  delete<T = void>(path: string) {
-    return this.request<T>('DELETE', path);
+  delete<T = void>(path: string, siteOverride?: string) {
+    return this.request<T>('DELETE', path, undefined, siteOverride);
+  }
+
+  /**
+   * Sends a JSON-RPC request to the governed MCP endpoint (`POST /api/v1/mcp`).
+   *
+   * Deliberately NOT built on `request()`. That helper returns `json.data`,
+   * which is the REST envelope — a JSON-RPC response carries `result` / `error`
+   * at the top level and has no `data` key at all, so routing this through
+   * `request()` would quietly resolve to `undefined` for every call. The bug
+   * would look like "governance returned nothing" rather than "we read the wrong
+   * field".
+   *
+   * @throws {McpUnavailableError} when the site has not enabled `contentOs.mcp`.
+   * @throws {LumiBaseApiError} for transport/HTTP failures and JSON-RPC errors.
+   */
+  async jsonRpc<T>(method: string, params?: Record<string, unknown>, options: { siteOverride?: string; organization?: boolean } = {}): Promise<T> {
+    if (this.readOnly && method === 'tools/call' && !READ_ONLY_RPC_TOOLS.has(String(params?.name))) {
+      throw new ReadOnlyViolationError(`tools/call ${String(params?.name)}`);
+    }
+    const res = await fetch(`${this.baseUrl}/mcp`, {
+      method: 'POST',
+      headers: this.requestHeaders(options.siteOverride, options.organization),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, ...(params ? { params } : {}) }),
+    });
+
+    const body = (await res.json().catch(() => null)) as
+      | {
+          result?: T;
+          error?: { code: number; message: string };
+          errors?: ApiError[];
+        }
+      | null;
+
+    if (!res.ok) {
+      const errors = body?.errors ?? [{ code: 'UNKNOWN', message: `HTTP ${res.status}` }];
+      // The route answers 404 MCP_DISABLED when the per-site flag is off. That
+      // is an operator-configuration state, not a failed call, and the caller
+      // needs to tell them apart to decide whether falling back is acceptable.
+      if (errors.some((e) => e.code === 'MCP_DISABLED')) {
+        throw new McpUnavailableError(errors[0]?.message ?? 'MCP endpoint disabled');
+      }
+      throw new LumiBaseApiError(res.status, errors);
+    }
+
+    if (body?.error) {
+      throw new LumiBaseApiError(res.status, [
+        { code: `JSONRPC_${body.error.code}`, message: body.error.message },
+      ]);
+    }
+    return body?.result as T;
   }
 
   /**
@@ -88,7 +254,7 @@ export class LumiBaseClient {
   }
 
   private async textRequest(url: string, method: string): Promise<string> {
-    const res = await fetch(url, { method, headers: this.headers });
+    const res = await fetch(url, { method, headers: this.requestHeaders() });
     const text = await res.text();
     if (!res.ok) {
       throw new LumiBaseApiError(res.status, [
@@ -103,9 +269,10 @@ export class LumiBaseClient {
    * `{data}` envelope from the JSON response (e.g. the NDJSON restore endpoint).
    */
   async postRaw<T>(path: string, body: string, contentType = 'application/x-ndjson'): Promise<T> {
+    this.assertReadOnlyAllows('POST', path);
     const res = await fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
-      headers: { ...this.headers, 'Content-Type': contentType },
+      headers: { ...this.requestHeaders(), 'Content-Type': contentType },
       body,
     });
     if (res.status === 204) return undefined as T;
@@ -121,12 +288,29 @@ export function configFromEnv(): LumiBaseConfig {
   const url = process.env['LUMIBASE_URL'];
   const siteId = process.env['LUMIBASE_SITE_ID'];
   const token = process.env['LUMIBASE_TOKEN'];
+  const opsToken = process.env['LUMIBASE_OPS_TOKEN'] || undefined;
 
-  if (!url || !siteId || !token) {
+  // Ops-only mode: diagnose a deployment without any tenant credential.
+  if (url && opsToken && !token) {
+    console.error('[lumibase-mcp] ops-only mode (LUMIBASE_OPS_TOKEN set, LUMIBASE_TOKEN unset)');
+    return { url, token: '', opsToken, opsOnly: true, readOnly: true };
+  }
+
+  const tokenKind = token && classifyTokenPrefix(token) === 'organization' ? 'organization' : 'site';
+  if (!url || !token || (tokenKind === 'site' && !siteId)) {
     throw new Error(
-      'Missing required env vars: LUMIBASE_URL, LUMIBASE_SITE_ID, LUMIBASE_TOKEN',
+      'Missing required env vars: LUMIBASE_URL, LUMIBASE_SITE_ID, LUMIBASE_TOKEN ' +
+        '(or LUMIBASE_URL + LUMIBASE_OPS_TOKEN for ops-only diagnostics)',
     );
   }
 
-  return { url, siteId, token };
+  if (tokenKind === 'organization' && siteId) console.error(`[lumibase-mcp] pinned to site ${siteId}`);
+  return {
+    url,
+    ...(siteId ? { siteId } : {}),
+    token,
+    tokenKind,
+    readOnly: process.env['LUMIBASE_READ_ONLY'] === 'true',
+    ...(opsToken ? { opsToken } : {}),
+  };
 }

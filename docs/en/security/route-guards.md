@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:09:21.814Z
+version: 6
+lastUpdated: 2026-10-17T16:36:21.044Z
 sourceLang: en
-contentHash: dcfa4f547e6476fb
-codeVerified: 2026-08-02T19:09:30.532Z
-codeVerifiedHash: dcfa4f547e6476fb
-codeVerifiedClaims: 20
+contentHash: 0a951ac2ef5f147c
+codeVerified: 2026-10-17T16:36:21.044Z
+codeVerifiedHash: 0a951ac2ef5f147c
+codeVerifiedClaims: 22
 ---
 
 # Route guards — the `/api/v1` security chain
@@ -26,8 +26,9 @@ Each layer answers one question, in order:
 | `withAuth` | Who is calling? (CF Access / custom JWT / API key / dev token) | 401 `UNAUTHENTICATED` |
 | `withSiteMembership` | Is this principal allowed on **that** site? (`user_sites` membership; API keys already site-matched by `withAuth`) | 403 `TENANT_FORBIDDEN` |
 | `withStudioAccess` | May this principal use the Studio surface? (`appAccess`, TFA) | 403 `APP_ACCESS_DENIED` / `TFA_REQUIRED` |
-| `withControlPlaneAccessGuard` | Is this a system-administration path? Then require an admin principal even if the route forgets its own check. | 403 `CONTROL_PLANE_FORBIDDEN` |
-| `withRls` | Postgres row-level security as the last line. | — |
+| `withControlPlaneAccessGuard` | Is this a system-administration path? Then require an admin principal even if the route forgets its own check. An admin principal is a role literally named `admin`/`administrator`, or a signed-in **user** whose role grants admin access in the active site (`access.admin`); API keys, anonymous and `frontend`-audience sessions never qualify through the bundle. One exception: `GET /api/v1/permissions/me` passes for any authenticated principal, because it only returns the caller's own permission bundle. | 403 `CONTROL_PLANE_FORBIDDEN` |
+| `withRls` | Assertion behind the Postgres RLS backstop: with `LUMIBASE_DB_RLS=enforce` it answers `503 RLS_UNAVAILABLE` when the request db is not scoped to the request site. The scope itself is applied by `withDb` (B130). | — |
+| `withSystemDb` | System-role db (BYPASSRLS, unscoped) for routers with no site scope: setup, recovery, `/scim/v2`, git OAuth callback (B130). | — |
 
 ## Rules when adding or changing routes
 
@@ -75,6 +76,8 @@ Behavioural companions:
 
 | Fix | Vulnerability |
 | --- | --- |
+| PR #495 | The backstop also covered `GET /api/v1/permissions/me`, the caller's own permission bundle. Every user without the literal `admin` role got 403, so Studio showed "no read permission" on collections their role could read. The exemption is GET-only and requires a principal; the rest of `/permissions` stays admin-only. |
+| PR #495 (B101) | The backstop recognised admins by role **name** only. Invited users carry their role **id**, so a user holding the Administrator role was refused by every control-plane route that `requireSiteAdmin` would have allowed. The backstop now also admits a signed-in user whose site permission bundle has `admin`; API keys are excluded pending #472. |
 | PR #184 (ported) | No membership check between `withAuth` and handlers: any authenticated principal could pick an arbitrary `X-Lumi-Site` and operate on another tenant. |
 | PR #152 (ported) | Refactor dropped `adminOnly` from `extensionsRouter.all('/:name/*')` — non-admins could execute endpoint bundles with host bindings. |
 | PR #153/#154 | `/api/v1/agent` missing from `CONTROL_PLANE_PATHS` — low-privilege tokens could read/mutate Agent Harness state. |

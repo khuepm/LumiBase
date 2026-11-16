@@ -98,6 +98,17 @@ export const netlifyProvider: DeploymentProvider = {
     };
   },
 
+  async promote(token, target, providerDeploymentId) {
+    // "Publish deploy": makes an existing deploy of this site the live one.
+    const res = await guardedFetch(
+      `${API}/sites/${encodeURIComponent(target.projectId)}/deploys/${encodeURIComponent(providerDeploymentId)}/restore`,
+      { method: 'POST', headers: bearer(token) },
+    );
+    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) throw new Error(`Netlify promote failed (${res.status}).`);
+    return toRef({ id: providerDeploymentId, ...json });
+  },
+
   async getStatus(token, target, providerDeploymentId) {
     const res = await guardedFetch(
       `${API}/sites/${encodeURIComponent(target.projectId)}/deploys/${encodeURIComponent(providerDeploymentId)}`,

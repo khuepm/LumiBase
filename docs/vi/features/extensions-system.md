@@ -1,12 +1,12 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 3
-lastUpdated: 2026-08-02T19:24:22.964Z
+version: 4
+lastUpdated: 2026-11-15T19:28:29.361Z
 sourceLang: vi
-contentHash: ffe9ae1d87df7293
-codeVerified: 2026-08-02T19:22:34.688Z
-codeVerifiedHash: ea702bc10561b02e
-codeVerifiedClaims: 2
+contentHash: 70cc0629da389101
+codeVerified: 2026-11-15T19:28:29.361Z
+codeVerifiedHash: 70cc0629da389101
+codeVerifiedClaims: 6
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -263,3 +263,58 @@ Before exposing observability as marketplace extensions, add an explicit operati
 - Treat provider/endpoint changes as restart-required until a safe hot-reload design exists.
 
 This keeps the current edge-safe extension sandbox intact while leaving a migration path from the built-in SkyWalking POC to a more general plugin architecture.
+
+## 10. MCP tools, prompts và resources (#715)
+
+Extension phía server (`hook`, `endpoint`) có thể thêm tool, prompt và resource vào MCP server của site. Phần được liệt kê đến từ khối `mcp` trong **manifest**, không phải từ bundle: liệt kê không chạy code extension, và admin duyệt đúng thứ sẽ được cung cấp.
+
+```json
+{
+  "capabilities": ["items:write:notes", "mcp:tools", "mcp:prompts", "mcp:resources"],
+  "mcp": {
+    "tools": [
+      {
+        "name": "appendNote",
+        "description": "Append an editorial note to an item.",
+        "capability": "items:write",
+        "riskClass": "low",
+        "inputSchema": { "type": "object", "properties": { "text": { "type": "string" } }, "required": ["text"] }
+      }
+    ],
+    "prompts": [{ "name": "note-style", "text": "Notes are one sentence." }],
+    "resources": [{ "name": "notes-guide", "mimeType": "text/markdown", "text": "# Notes" }]
+  }
+}
+```
+
+Bundle chỉ cung cấp handler, khớp theo tên:
+
+```ts
+import { defineMcp, defineTool, mcpManifest } from '@lumibase/extension-sdk';
+
+const appendNote = defineTool({ name: 'appendNote', capability: 'items:write', riskClass: 'low', /* … */
+  handler: async ({ text }, { siteId, runId }) => ({ ok: true }) });
+export default (ctx) => ({ mcp: defineMcp({ tools: [appendNote] }) });
+// mcpManifest({ tools: [appendNote] }) sinh khối `mcp` cho manifest lúc build.
+```
+
+**Cấp quyền.** Mỗi khối chỉ được cung cấp khi dòng extension đã cài được cấp capability tương ứng: `mcp:tools`, `mcp:prompts`, `mcp:resources`. Khối `mcp` sai định dạng bị từ chối lúc cài (`400`); dòng cũ sai định dạng bị bỏ qua lúc chạy, không làm sập endpoint MCP của site.
+
+**Tool đi qua harness có quản trị.** Tool được quảng bá với tên `ext_<extension key>__<tool>` (không thể che core skill) và được đăng ký như external-action tool: kill switch, validate tham số theo `inputSchema` đã khai, capability của caller, thang autonomy, approval chỉ người duyệt, audit run / tool call — không có code quyết định riêng cho extension.
+
+| `riskClass` | Chạy không cần người khi… |
+|---|---|
+| `read_only` | caller có `capability` (không xét autonomy) |
+| `low` | autonomy grant của agent ≥ L2 |
+| `medium` | autonomy grant của agent = L4 |
+| `high` | không bao giờ — mỗi lần gọi chờ một người đã đăng nhập duyệt |
+
+Quy tắc HITL: tool có `capability` `schema:write`, hoặc tên bắt đầu bằng `delete`, luôn là `high` bất kể khai báo; `reversible: false` cũng luôn cần người duyệt. Handler có ngân sách 10 giây và truy cập item qua sandbox với quyền của principal gọi.
+
+**Hai transport.** `POST /api/v1/mcp` liệt kê tool cho caller có capability của tool; `@lumibase/mcp-server` (stdio) phát hiện các tool `ext_*` từ `tools/list` của endpoint governed lúc khởi động và chuyển mọi lời gọi về đó — không có fallback REST. Không có ở chế độ read-only hoặc khi `contentOs.mcp` tắt. `GET /api/v1/agent/tools` liệt kê chúng với metadata `external`.
+
+**Prompts và resources** là văn bản tĩnh trong manifest, được cung cấp cho caller có `capability` của mục (mặc định `items:read`). Prompt có tên `ext:<key>:<name>` và `_meta['lumibase/extension']` (key + version); resource có URI `lumibase-ext://<key>/<name>` qua `resources/list` / `resources/read`.
+
+**Multi-tenancy.** Dòng extension được đọc theo `site_id` của request; tool, prompt, resource của site khác không bao giờ được liệt kê hay gọi. Approval của tool extension nằm trong `agent_approvals` của site. Kiểm bằng `mcp-extension-tools.db.integration.test.ts` (PostgreSQL thật, hai site).
+
+Ví dụ đầy đủ: `examples/extension-mcp-notes`.

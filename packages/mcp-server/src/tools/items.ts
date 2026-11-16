@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { type LumiBaseClient, LumiBaseApiError } from '../client.js';
 import { collectionNameSchema, encodePathSegment, idPathSegmentSchema } from './path.js';
+import { okAfter } from './_shared.js';
 
 function formatError(err: unknown): string {
   if (err instanceof LumiBaseApiError) {
@@ -89,8 +90,12 @@ export function registerItemTools(server: McpServer, client: LumiBaseClient) {
     },
     async ({ collection, data: itemData, status }) => {
       try {
+        // REST `createSchema` (apps/cms/src/routes/items.ts) đòi `data: record`.
+        // Trước đây handler spread field ra TOP LEVEL nên body thiếu envelope
+        // `data` và REST trả 400 VALIDATION — tool này chưa từng chạy được với
+        // payload thông thường. Regression: `R12` (CMS) + `S6` (stdio).
         const data = await client.post<unknown>(`/items/${encodePathSegment(collection)}`, {
-          ...itemData,
+          data: itemData,
           status,
         });
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
@@ -112,9 +117,12 @@ export function registerItemTools(server: McpServer, client: LumiBaseClient) {
     },
     async ({ collection, id, data: itemData }) => {
       try {
+        // REST `patchSchema` có mọi field optional và Zod **strip** key lạ, nên
+        // gửi bare `itemData` cho kết quả 200 OK với patch RỖNG — nội dung update
+        // bị bỏ qua âm thầm (success-shaped no-op). Regression: `R13` + `S6`.
         const data = await client.patch<unknown>(
           `/items/${encodePathSegment(collection)}/${encodePathSegment(id)}`,
-          itemData,
+          { data: itemData },
         );
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
       } catch (err) {
@@ -135,8 +143,10 @@ export function registerItemTools(server: McpServer, client: LumiBaseClient) {
     },
     async ({ collection, id }) => {
       try {
-        await client.delete(`/items/${encodePathSegment(collection)}/${encodePathSegment(id)}`);
-        return { content: [{ type: 'text', text: `Item "${id}" deleted from "${collection}".` }] };
+        const response = await client.delete(
+          `/items/${encodePathSegment(collection)}/${encodePathSegment(id)}`,
+        );
+        return okAfter(response, `Item "${id}" deleted from "${collection}".`);
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${formatError(err)}` }], isError: true };
       }

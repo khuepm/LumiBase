@@ -6,7 +6,7 @@ translatedFrom: en
 sourceHash: 2bc7ce42ef0ae829
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:21:09.252Z
+codeVerified: 2026-10-13T22:13:10.925Z
 codeVerifiedHash: 2bc7ce42ef0ae829
 codeVerifiedClaims: 8
 ---
@@ -79,7 +79,7 @@ SSH vào và chạy script setup (cài Docker Engine + compose plugin):
 gcloud compute ssh lumibase --zone=asia-southeast1-a
 
 # trên VM:
-git clone https://github.com/khuepm/LumiBase.git lumibase
+git clone https://github.com/khuepm/lumibase.git
 cd lumibase
 bash docker/scripts/gcp-vm-setup.sh
 # đăng nhập lại (hoặc `newgrp docker`) để user chạy docker không cần sudo
@@ -164,7 +164,7 @@ VM, rồi thêm overlay đó vào lệnh compose.
 ## Bằng chứng cho submission (Build with Gemini XPRIZE)
 
 Bản triển khai này tạo ra một số artifact mà ban giám khảo cần kiểm chứng (xem
-[`devpost-xprize-submission.md`](../../en/devpost-xprize-submission.md) — chỉ có bản tiếng Anh):
+[`devpost-xprize-submission.md`](../devpost-xprize-submission.md)):
 
 - **AI chạy trong production** — các row agent execution trong `agent_runs` /
   `agent_goals`, export được từ Postgres; screenshot Mission Control từ Studio.

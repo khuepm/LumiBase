@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { registerCrud } from './_crud.js';
-import { confirmDescription, okText, run } from './_shared.js';
+import { confirmDescription, okAfter, okText, run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 const presetSchema = z.object({
@@ -20,10 +20,13 @@ const presetSchema = z.object({
   refreshInterval: z.number().int().min(0).optional(),
 });
 
+// `min(1)` matches the canonical `createTranslation`/`updateTranslation`
+// contract these tools are governed through: advertising `""` as valid only
+// moved the refusal from the client to the harness (#716).
 const translationSchema = z.object({
-  language: z.string(),
-  namespace: z.string(),
-  key: z.string(),
+  language: z.string().min(1),
+  namespace: z.string().min(1),
+  key: z.string().min(1),
   value: z.string(),
   status: z.string().optional(),
 });
@@ -119,8 +122,8 @@ export function registerContentConfigTools(server: McpServer, client: LumiBaseCl
     },
     async ({ key }) =>
       run(async () => {
-        await client.delete(`/settings/${encodePathSegment(key)}`);
-        return okText(`Setting "${key}" deleted.`);
+        const response = await client.delete(`/settings/${encodePathSegment(key)}`);
+        return okAfter(response, `Setting "${key}" deleted.`);
       }),
   );
 }

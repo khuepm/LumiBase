@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { CdcReplaySchema, CdcSubscriptionPatchSchema } from '@lumibase/contracts';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { registerCrud } from './_crud.js';
@@ -16,7 +17,8 @@ import { encodePathSegment, idPathSegmentSchema } from './path.js';
 const subscriptionSchema = z.object({
   name: z.string().min(1).max(128),
   kind: z.enum(['pull', 'webhook', 'extension']),
-  collections: z.array(z.string()).optional().describe('Collections to include; empty = all.'),
+  // `min(1)` items: the REST `CdcSubscriptionCreateSchema` refuses `[""]` (#716 review).
+  collections: z.array(z.string().min(1)).optional().describe('Collections to include; empty = all.'),
   operations: z
     .array(z.enum(['create', 'update', 'delete']))
     .optional()
@@ -25,9 +27,22 @@ const subscriptionSchema = z.object({
     .enum(['reference', 'snapshot'])
     .optional()
     .describe('reference = ids only (consumer re-fetches); snapshot = masked data inline.'),
-  webhook_id: z.string().optional().describe('Required for kind=webhook (must have a secret).'),
-  extension_name: z.string().optional().describe('Required for kind=extension.'),
+  // `min(1)`: the canonical `createCdcSubscription` refuses an empty id (#716).
+  webhook_id: z.string().min(1).optional().describe('Required for kind=webhook (must have a secret).'),
+  extension_name: z.string().min(1).optional().describe('Required for kind=extension.'),
 });
+
+/**
+ * `PATCH /cdc/subscriptions/:id` validates with `CdcSubscriptionPatchSchema`;
+ * advertise exactly its keys. Deriving the update from the create schema
+ * advertised `kind`, `webhook_id` and `extension_name` (immutable: the PATCH
+ * strips them, so the call "succeeded" without effect) and lacked `status`, the
+ * only way to pause or resume a subscription (#716 review).
+ */
+const subscriptionPatchShape = {
+  ...CdcSubscriptionPatchSchema.shape,
+  status: CdcSubscriptionPatchSchema.shape.status.describe('active | paused — pause or resume delivery.'),
+};
 
 export function registerCdcTools(server: McpServer, client: LumiBaseClient) {
   registerCrud(server, client, {
@@ -35,7 +50,7 @@ export function registerCdcTools(server: McpServer, client: LumiBaseClient) {
     resource: 'CDC change-feed subscription',
     namePrefix: 'cdc_subscription',
     createSchema: subscriptionSchema.shape,
-    updateSchema: subscriptionSchema.partial().shape,
+    updateSchema: subscriptionPatchShape,
   });
 
   server.registerTool(
@@ -69,11 +84,13 @@ export function registerCdcTools(server: McpServer, client: LumiBaseClient) {
         'Rewind a subscription checkpoint inside the retention window (resets dead/stale back to active).',
       inputSchema: {
         subscription_id: idPathSegmentSchema.describe('Subscription id.'),
-        occurred_after: z
-          .string()
-          .optional()
-          .describe('ISO timestamp to rewind to (within retention).'),
-        cursor: z.string().optional().describe('Exact cursor token to rewind to.'),
+        // The route's `CdcReplaySchema` constraints JSON Schema can carry (ISO
+        // datetime; non-empty cursor). Two it cannot — exactly one of the two
+        // keys, and a cursor that decodes — are left to the route to report.
+        occurred_after: CdcReplaySchema.shape.occurred_after.describe(
+          'ISO timestamp to rewind to (within retention). Exactly one of occurred_after / cursor.',
+        ),
+        cursor: z.string().min(1).optional().describe('Exact cursor token to rewind to (from meta.nextCursor).'),
       },
     },
     async (args) => {

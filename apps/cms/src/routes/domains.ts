@@ -8,6 +8,7 @@ import {
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
+import { requireSiteAdmin } from '../middleware/site-admin';
 import {
   CloudflareSaaSClient,
   cloudflareSaaSConfig,
@@ -30,6 +31,7 @@ import { deleteHostMapping, putHostMapping } from '../services/domains/host-cach
  * calling Cloudflare.
  */
 export const domainsRouter = new Hono<AppEnv>();
+domainsRouter.use('*', requireSiteAdmin());
 
 type DomainRow = typeof siteDomains.$inferSelect;
 

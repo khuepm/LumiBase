@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import { teams, teamMembers } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -40,10 +41,12 @@ teamsRouter.get('/:id', async (c) => {
   return c.json({ data: row });
 });
 
-const teamSchema = z.object({
+export const teamSchema = z.object({
   name: z.string().min(1).max(128),
   description: z.string().nullable().optional(),
 });
+
+export const teamPatchSchema = patchSchema(teamSchema);
 
 // Create team
 teamsRouter.post('/', async (c) => {
@@ -70,7 +73,7 @@ teamsRouter.patch('/:id', async (c) => {
   const siteId = c.get('siteId');
   const db = c.get('db');
   const body = await c.req.json();
-  const input = teamSchema.partial().parse(body);
+  const input = teamPatchSchema.parse(body);
 
   const [row] = await db
     .update(teams)

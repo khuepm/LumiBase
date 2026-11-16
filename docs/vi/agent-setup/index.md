@@ -1,16 +1,19 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:11:28.854Z
+version: 3
+lastUpdated: 2026-11-12T18:31:27.268Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 9730149bdbd5cb5c
+sourceHash: 8a58ca3d5d214c3e
 mtEngine: manual
 syncStatus: human-translated
+codeVerified: 2026-11-12T18:31:27.268Z
+codeVerifiedHash: 8a58ca3d5d214c3e
+codeVerifiedClaims: 10
 ---
 
 # Agent Setup — LumiBase
 
-> **Dành cho AI agent:** Trang này cũng có sẵn ở dạng Markdown thuần. Nếu bạn đang đọc HTML, hãy yêu cầu `index.md` thay thế. Để xem chỉ mục đầy đủ của trang, xem [`llms.txt`](../llms.txt).
+> **Dành cho AI agent:** Trang này cũng có sẵn ở dạng Markdown thuần. Nếu bạn đang đọc HTML, hãy yêu cầu `index.md` thay thế. Để xem chỉ mục đầy đủ của trang, xem [`llms.txt`](../../en/llms.txt).
 
 LumiBase cung cấp một [prompt template](./prompt.md), các cấu hình MCP server, và các file ngữ cảnh có cấu trúc để AI coding agent có thể hiểu codebase, gọi API, và xây dựng tính năng đúng cách. Chọn agent của bạn bên dưới để bắt đầu.
 
@@ -44,6 +47,8 @@ Chọn agent của bạn để xem hướng dẫn từng bước về cách kế
 | [GitHub Copilot](./github-copilot.md) | Terminal · Cloud · Extension | [Xem hướng dẫn →](./github-copilot.md) |
 | [Windsurf](./windsurf.md) | IDE · Standalone | [Xem hướng dẫn →](./windsurf.md) |
 
+**MCP client được host** (Claude / ChatGPT connectors, remote MCP trong IDE) xác thực bằng OAuth 2.1 thay vì dán token — xem [Remote MCP connector (OAuth 2.1)](./oauth-connector.md).
+
 ---
 
 ## Docs thân thiện với agent
@@ -59,7 +64,7 @@ Thêm `/index.md` vào bất kỳ URL docs nào của LumiBase để lấy phiê
 Mỗi section cấp cao nhất đều có `llms.txt` riêng — một chỉ mục trang được chỉnh kích cỡ vừa với một context window:
 
 - [`docs/llms.txt`](../../llms.txt) — thư mục của toàn bộ docs LumiBase.
-- [`docs/en/llms.txt`](../llms.txt) — chỉ mục docs tiếng Anh đầy đủ.
+- [`docs/en/llms.txt`](../../en/llms.txt) — chỉ mục docs tiếng Anh đầy đủ.
 
 ### Prompt cho agent
 

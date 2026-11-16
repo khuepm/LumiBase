@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T00:16:10.051Z
+version: 20
+lastUpdated: 2026-11-15T19:28:47.967Z
 sourceLang: vi
-contentHash: b89a96b116de6e4f
-codeVerified: 2026-07-28T00:16:10.051Z
-codeVerifiedHash: b89a96b116de6e4f
-codeVerifiedClaims: 26
+contentHash: 0d43631475d2ecb0
+codeVerified: 2026-11-15T19:28:47.967Z
+codeVerifiedHash: 0d43631475d2ecb0
+codeVerifiedClaims: 40
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -14,7 +14,7 @@ codeVerifiedClaims: 26
 
 ## TL;DR
 
-LumiBase phơi bày **hai bề mặt MCP**, cùng chạy qua một codepath harness duy nhất nên quyết định của một tool gọi qua MCP **giống hệt** khi gọi trực tiếp Agent API (bất biến "MCP parity", Property 14):
+LumiBase phơi bày **hai bề mặt MCP**, các tool site có quản trị dùng cùng harness site với Agent API (bất biến "MCP parity", Property 14). Tool organization dùng harness organization và ranh giới phê duyệt của người dùng:
 
 | Bề mặt | Transport | Vị trí | Dùng cho |
 |---|---|---|---|
@@ -27,17 +27,21 @@ Nguồn: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`
 
 - **Transport:** Streamable HTTP — JSON-RPC 2.0 một request/một response. `GET /api/v1/mcp` trả `405 METHOD_NOT_ALLOWED` (không có server-initiated stream/SSE); client fallback plain request/response theo spec MCP.
 - **Protocol versions:** `2025-06-18` (default) và `2025-03-26`. `serverInfo = { name: 'lumibase-mcp', version: '1.0.0' }`.
-- **Auth → capability:** Bearer token; **roles của token trở thành capability set** truyền vào harness. ⇒ một MCP client **không bao giờ làm được nhiều hơn** cùng token đó qua Agent API. (`McpService(port).handle(body, auth.roles ?? [])`).
+- **Auth → capability:** Bearer token; capability set được **resolve từ RBAC bundle sống** của token (#472), không phải từ `auth.roles`. ⇒ một MCP client **không bao giờ làm được nhiều hơn** cùng token đó qua REST — và cũng không ít hơn, điều mà cách đọc `auth.roles` cũ làm sai (role id không bao giờ khớp `items:write`). Xem [`governed-tool-contract.md`](governed-tool-contract.md) mục 4.
+- **OAuth 2.1 (#346):** endpoint còn là một OAuth protected resource cho MCP client được host. `401` mang `WWW-Authenticate: Bearer resource_metadata=…`; `/.well-known/oauth-protected-resource[/api/v1/mcp[/sites/<siteId>]]` (RFC 9728) liệt kê các trusted external issuer có `audience` chứa resource URI. Trên endpoint MCP, token external-issuer phải có resource URI trong `aud`; scope (`mcp:read`/`mcp:write`/`mcp:delete`/`mcp:admin`) chỉ thu hẹp capability set, và backstop `CONTROL_PLANE_FORBIDDEN` giữ nguyên. Endpoint theo site `POST /api/v1/mcp/sites/<siteId>` dành cho client không gửi được `X-Lumi-Site`. Xem [`../agent-setup/oauth-connector.md`](../agent-setup/oauth-connector.md).
 - **Feature gate:** cờ per-site `contentOs.mcp` (mặc định **off**). Tắt → `404 MCP_DISABLED`. (`feature-flags.ts`).
 - **Methods (JSON-RPC):**
-  - `initialize` — thương lượng protocol version, trả `capabilities: { tools: { listChanged: false } }`.
+  - `initialize` — thương lượng protocol version, trả `capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }` (plane organization không có `prompts`).
   - `ping`.
-  - `tools/list` — liệt kê tool **đang enabled** từ `ToolRegistryService`; inputSchema rỗng mặc định `{ type: 'object' }`.
+  - `tools/list` — liệt kê tool **đang enabled** từ `ToolRegistryService`; inputSchema suy ra từ schema canonical trong `@lumibase/contracts` (chỉ skill chưa có schema mới rơi về `{ type: 'object' }`). Mỗi tool còn có `title` (tên dễ đọc) và `annotations` (`readOnlyHint`, `destructiveHint`) suy từ registry (`toolAnnotations` trong `apps/cms/src/services/mcp-service.ts`): read-only chỉ khi tool `safe` và mọi capability đều là `:read`; destructive khi `riskPolicy` là `dangerous`. Đây chỉ là gợi ý cho client (#346), không phải đầu vào phân quyền.
   - `tools/call` — chạy qua `AISecureHarness.execute(skillName, args, capabilities, contextMessage)`. Kết quả bọc `{ content, structuredContent, isError }`.
+  - `prompts/list`, `prompts/get` — các [Site Skills](../features/site-skills.md) đang `active` của site; `name` là slug, thân trả về dưới dạng một user message. Chỉ phục vụ cho người gọi đọc được skill qua REST, tức principal được resolve thành control-plane admin của site (`grant.allowed && grant.controlPlaneAdmin` trong `routes/mcp.ts`): member không phải admin hay site API key nhận `prompts/list` rỗng. Với admin, `surfaces`/`requiredCapabilities` của từng skill vẫn lọc thêm. Prompt không tồn tại và prompt không được phép thấy trả lời giống hệt nhau.
+  - Extension (#715): extension đã bật và được cấp `mcp:prompts` thêm prompt tĩnh `ext:<key>:<name>` (cho caller có capability của prompt, mặc định `items:read`, không cần admin; `_meta['lumibase/extension']` thay cho provenance site skill); được cấp `mcp:resources` thì `initialize` có thêm `resources: { listChanged: false }` và phục vụ `resources/list`, `resources/read` (URI `lumibase-ext://<key>/<name>`). Tool của extension (`ext_<key>__<tool>`, cần `mcp:tools`) đi qua harness như external-action tool. Xem [Extension System §10](../features/extensions-system.md).
   - `notifications/initialized`, `notifications/cancelled` → trả `null` ⇒ HTTP `202 Accepted` không body.
 - **Mapping quyết định → kết quả tool** (bất biến quan trọng):
   - `executed` → `isError: false`, data trong `structuredContent`.
   - `pending_approval` → `isError: false`, **`approvalId` nằm trong `structuredContent`**, KHÔNG phải lỗi protocol.
+  - `waiting_user` (tool `askUser`, #710) → `isError: false`, **`questionId` nằm trong `structuredContent`**; run đỗ tới khi một người trả lời, KHÔNG phải lỗi protocol.
   - `denied` → `isError: true`.
   - Lỗi protocol chỉ dùng cho lỗi JSON-RPC thật: `-32700` parse, `-32600` invalid request, `-32601` method not found, `-32602` invalid params.
 - **Guards kế thừa từ harness** (zero logic MCP riêng): kill switch, capability, autonomy (L0–L4), constitution pin, load guard, veto window. Xem [`docs/en/features/agent-harness-layer.md`](../features/agent-harness-layer.md).
@@ -52,14 +56,45 @@ Nguồn: [`apps/cms/src/services/tool-registry-service.ts`](../../../apps/cms/sr
 - `evaluatePolicy(tool, runId)` kiểm tra enabled/blocked + rate limit.
 - Audit: `agentToolCalls` (input/output/error/status/approvalId/cost/latency); approvals: `agentApprovals`.
 
+
 ## 2. Standalone MCP server — `@lumibase/mcp-server`
 
-Nguồn: [`packages/mcp-server/`](../../../packages/mcp-server/) (v0.6.0, `@modelcontextprotocol/sdk`).
+Nguồn: [`packages/mcp-server/`](../../../packages/mcp-server/) (dựng trên `@modelcontextprotocol/sdk`; version lấy ở `package.json` của chính package — không pin lại ở đây để tránh thêm một chỗ trôi lệch).
 
 - **Transport:** Stdio (`StdioServerTransport`). Dành cho tích hợp editor cục bộ.
 - **Entry:** `packages/mcp-server/src/index.ts` — `new McpServer({ name: 'lumibase', ... })`, đăng ký collection/field/item tools, `connect(StdioServerTransport)`.
 - **Client:** `LumiBaseClient` — HTTP tới `/api/v1` với Bearer token + site header.
-- **Config:** [`docs/en/agent-setup/mcp-config.json`](../agent-setup/mcp-config.json) — env `LUMIBASE_URL`, `LUMIBASE_SITE_ID`, `LUMIBASE_TOKEN`.
+- **Config:** [`docs/en/agent-setup/mcp-config.json`](../../en/agent-setup/mcp-config.json) — env `LUMIBASE_URL`, `LUMIBASE_SITE_ID`, `LUMIBASE_TOKEN`.
+- **Studio:** trang *Data model → Set up MCP for your IDE* (`/data-model/mcp-setup`) tạo API key riêng gắn role, sinh config cho Cursor/Claude Desktop/VS Code, và có mục **Try these prompts** — prompt mẫu copy được, chia nhóm Explore/Content/Schema/Operations, gắn nhãn `Read-only`/`Writes data`/`Admin role`, có bản tiếng Anh và tiếng Việt (nút chuyển ngôn ngữ, mặc định theo ngôn ngữ giao diện Studio). Danh sách ở [`apps/studio/src/modules/data-model/mcp-prompts.ts`](../../../apps/studio/src/modules/data-model/mcp-prompts.ts); mỗi prompt khai các tool nó dùng và test đối chiếu với tool mà server thật sự đăng ký.
+
+### Thông tin xác thực organization (ADR-013)
+
+Ví dụ key organization không ghim site. Mẫu chỉ đọc; đặt `LUMIBASE_READ_ONLY=false` để yêu cầu ghi, bật MCP organization trong Settings và duyệt yêu cầu bằng tài khoản người dùng.
+
+```json
+{
+  "mcpServers": {
+    "lumibase-organization": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@lumibase/mcp-server"
+      ],
+      "env": {
+        "LUMIBASE_URL": "http://localhost:1989",
+        "LUMIBASE_TOKEN": "lbo_<organization-key>",
+        "LUMIBASE_READ_ONLY": "true"
+      }
+    }
+  }
+}
+```
+
+
+
+Đặt `LUMIBASE_READ_ONLY=true` để chỉ công bố tool có annotation chỉ đọc. Ở chế độ này client cũng từ chối mọi request không phải GET, trừ một danh sách cố định endpoint xem trước/truy vấn (diff schema, tra cứu translation memory, panel insight, kiểm tra quyền và truy cập, compile intent), nên một tool không thể ghi dù tên của nó trông như chỉ đọc. Với key `lbk_`, `LUMIBASE_SITE_ID` vẫn bắt buộc và danh sách tool site hiện có không đổi. Với key `lbo_`, bỏ site để có tám tool organization (`get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) cùng các tool site bắt buộc truyền đối số `site`. Ghim một site sẽ công bố các tool site cũ và hai tool đọc organization đầu tiên. Các lời gọi song song không dùng chung header site.
+
+Tool ghi organization luôn đi qua HTTP endpoint có quản trị, kể cả khi `LUMIBASE_MCP_GOVERNED=off`; không fallback sang REST. Bật setting organization `contentOs.mcp.allowOrganizationTools`; biến toàn cục `LUMIBASE_MCP_ORG_TOOLS=off` có quyền tắt ưu tiên. Mọi thay đổi organization đều chờ người duyệt. Đối số `confirm` chỉ xác nhận ý định, không thay thế phê duyệt. Owner/admin đọc `/api/v1/orgs/:orgId/approvals`, mở `/:approvalId`, rồi gửi `{"decision":"approved"}` hoặc `{"decision":"rejected"}` tới `/:approvalId/decide`. Thao tác dành riêng cho owner vẫn cần owner; chuyển site cần cùng một người là owner ở cả hai organization. API key không được duyệt hay đọc biên nhận. Token organization mới chỉ hiện trong biên nhận dành cho người duyệt. Quyền hiện tại của bên yêu cầu được kiểm tra lại khi duyệt; thao tác và biên nhận được commit nguyên tử. Approval organization có cha organization thật (migration `0025`), kể cả organization không có site.
 
 ### Tool cố định (CRUD + insights read-only)
 
@@ -113,10 +148,13 @@ Versioning **không** nằm ở stdio server. Nó được phơi bày dưới d�
 - **MCP parity (Property 14):** quyết định `tools/call` khớp **byte-for-byte** với quyết định harness trực tiếp. Test: [`apps/cms/src/services/__tests__/mcp-parity.property.test.ts`](../../../apps/cms/src/services/__tests__/mcp-parity.property.test.ts).
 - **Không có bảng `mcp_servers`/`mcp_sessions` riêng** — MCP tái dùng hạ tầng agent (approvals, tool calls, permissions). Đây là quyết định kiến trúc cố ý (zero MCP-specific state).
 - **SDK không có MCP client** — MCP không phải mối quan tâm client của SDK REST.
-- **Permission floor:** capability = roles của token. Mọi mở rộng MCP phải tôn trọng sàn này.
+- **Permission floor:** capability = RBAC bundle của token (một mô hình dùng chung với REST). Mọi mở rộng MCP phải tôn trọng sàn này.
+- **Governed tool contract:** schema, validate, gate write, decision shape và tập tool stdio được governance kiểm soát — tất cả nằm ở [`governed-tool-contract.md`](governed-tool-contract.md).
+- **Độ trung thực của tool schema (#716):** mọi `inputSchema` của cả hai transport phải là JSON Schema hợp lệ (meta-schema + Ajv strict, cả draft-07 lẫn 2020-12), và `tools/list` của hai transport được chốt bằng golden (`name`, `description`, `inputSchema`); đổi có chủ đích thì cập nhật golden bằng `-u` rồi review diff. Mức khớp với server mà suite chứng minh tùy theo loại tool. Tool HTTP và tool stdio được governance kiểm soát được dò từng giá trị (kể cả mọi giá trị enum và phần tử mảng sai) so với contract canonical (`validateAgentToolInput`). 33 mutation stdio không qua governance có gửi body JSON, cùng `diff_schema`, được so với đúng Zod object mà route REST của chúng parse: tập key ở mọi độ sâu, kiểu, enum, key bắt buộc; handler phải gửi mọi key đã quảng bá tới đúng route; và body schema của route phải nhận mọi giá trị dò mà tool chấp nhận. Golden body REST được sinh trong `apps/cms` và được test ở đó chốt khớp với route thật. Không transport nào sinh schema từ định nghĩa field của collection — item tool nhận `data` là record mở — nên ma trận field type × nullable × localized × repeatable (cùng quan hệ m2o/o2m/m2m/m2a và file) được kiểm bằng **giá trị** đi qua `data`. Suite **không** chứng minh: các ràng buộc JSON Schema không diễn đạt được (refine liên field như `webhook_id` khi `kind` là `"webhook"`, giải mã cursor, transform), query param của tool đọc, tài liệu chuyển nguyên vẹn (`apply_access_import`, `restore_backup`), skill đọc HTTP chưa có schema canonical (B204), schema override theo site (B205) và từ vựng `type` của field (B206). Mỗi khoảng hở được chấp nhận đều nằm trong suite kèm lý do và làm test fail khi không còn đúng. Ngoài phần so schema, các request mà tool `apply_schema`, `diff_schema`, `create_cdc_subscription` và `update_cdc_subscription` đã đăng ký thực sự gửi đi được chốt trong một golden rồi phát lại nguyên vẹn vào route REST thật trên PostgreSQL: field `encrypted: true, classification: "pii"` được lưu ở dạng mã hóa và đúng phân loại, chỉ `migrationPlan` cũng qua được chốt chặn thay đổi rủi ro, và `status` tạm dừng rồi tiếp tục một subscription mà `kind` không đổi. Test: [`packages/mcp-server/src/__tests__/tool-schema-fidelity.test.ts`](../../../packages/mcp-server/src/__tests__/tool-schema-fidelity.test.ts), [`apps/cms/src/services/__tests__/mcp-tool-schema-golden.test.ts`](../../../apps/cms/src/services/__tests__/mcp-tool-schema-golden.test.ts), [`apps/cms/src/services/__tests__/mcp-rest-body-golden.test.ts`](../../../apps/cms/src/services/__tests__/mcp-rest-body-golden.test.ts) và [`apps/cms/src/routes/__tests__/mcp-recorded-requests.db.integration.test.ts`](../../../apps/cms/src/routes/__tests__/mcp-recorded-requests.db.integration.test.ts).
 
 ## 4. Trang liên quan
 
+- [`governed-tool-contract.md`](governed-tool-contract.md) — hợp đồng dùng chung cho hai transport: nguồn schema, thứ tự validate, gate autonomy, decision shape, và tập tool stdio được governance kiểm soát.
 - [`mcp-application-analysis.md`](mcp-application-analysis.md) — phân tích ứng dụng MCP cho 7 spec Directus-inspired.
 - [`docs/en/agent-setup/claude-code.md`](../agent-setup/claude-code.md) — hướng dẫn nối MCP server vào Claude Code.
 - [`docs/en/features/agent-harness-layer.md`](../features/agent-harness-layer.md) — guard của harness mà MCP kế thừa.
@@ -132,3 +170,4 @@ Versioning **không** nằm ở stdio server. Nó được phơi bày dưới d�
 | Standalone server + các tool | `packages/mcp-server/src/` |
 | Feature flag `contentOs.mcp` | `apps/cms/src/services/feature-flags.ts` |
 | Parity test | `apps/cms/src/services/__tests__/mcp-parity.property.test.ts` |
+| Golden `tools/list` + kiểm JSON Schema | `packages/mcp-server/src/__tests__/fidelity/` |

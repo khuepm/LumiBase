@@ -11,6 +11,7 @@ permissions:
 env:
   NODE_VERSION: 24
   REGISTRY: ghcr.io
+  LUMIBASE_RELEASE_CHANNEL: production
 
 jobs:
   verify:
@@ -62,10 +63,61 @@ jobs:
       - name: Build
         run: pnpm build
 
+  # The image vulnerability gate (#734) runs before anything is published.
+  # Every publishing job — the GitHub Release, the Worker and Pages deploys,
+  # the image push and npm — hangs off github-release, which needs this job,
+  # so a CRITICAL finding (or a scanner that cannot fetch its database) stops
+  # the whole release instead of leaving one without its Docker image.
+  scan-docker-image:
+    name: Scan Docker image (Trivy gate)
+    runs-on: ubuntu-latest
+    needs: verify
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Trivy
+        run: scripts/install-image-tools.sh trivy
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # amd64 only: the gate scans the OS layer and the shipped files, which
+      # are the same packages for both architectures. The cache it writes is
+      # what publish-docker-image builds from, so the pushed amd64 image is
+      # built from the layers scanned here.
+      - name: Build image for scanning (amd64)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: lumibase-cms:release-scan
+          build-args: |
+            LUMIBASE_GIT_SHA=${{ github.sha }}
+            LUMIBASE_RELEASE_CHANNEL=production
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Two legs, because the image alone cannot show everything: the server is
+      # an esbuild bundle, so its npm dependencies leave no package metadata in
+      # the image for a scanner to read. The image scan covers the OS layer and
+      # what ships unbundled (node-cron); the lockfile scan covers the bundled
+      # npm dependencies. Exceptions go in .trivyignore with a reason.
+      - name: Trivy gate — no CRITICAL vulnerabilities
+        run: |
+          set -euo pipefail
+          trivy image --scanners vuln --severity CRITICAL --exit-code 1 --no-progress lumibase-cms:release-scan
+          trivy fs --scanners vuln --severity CRITICAL --exit-code 1 --no-progress pnpm-lock.yaml
+
   github-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: verify
+    needs: [verify, scan-docker-image]
     timeout-minutes: 10
     permissions:
       contents: write
@@ -149,6 +201,13 @@ jobs:
             echo "can_deploy=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Skipping CMS Worker deployment because CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not configured."
           fi
+
+      - name: Ensure production flow queues
+        if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
+        run: node scripts/ensure-flow-queues.mjs production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Deploy CMS Worker
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
@@ -262,7 +321,14 @@ jobs:
         env:
           NEXT_PUBLIC_GA_ID: ${{ vars.NEXT_PUBLIC_GA_ID }}
           VITE_GA_ID: ${{ vars.VITE_GA_ID }}
-        run: pnpm --filter ${{ matrix.app.package }} build
+          VITE_API_URL: ${{ vars.LUMIBASE_CMS_PRODUCTION_URL }}
+          APP_NAME: ${{ matrix.app.name }}
+        run: |
+          if [ "$APP_NAME" = studio ] && [ -z "$VITE_API_URL" ]; then
+            echo "::error::LUMIBASE_CMS_PRODUCTION_URL is unset" >&2
+            exit 1
+          fi
+          pnpm --filter ${{ matrix.app.package }} build
 
       - name: Check Cloudflare credentials
         id: cloudflare-credentials
@@ -288,16 +354,28 @@ jobs:
     needs: github-release
     # arm64 is built via QEMU emulation, which is markedly slower than the
     # native amd64 build — allow extra headroom over the amd64-only budget.
-    timeout-minutes: 75
+    timeout-minutes: 90
     permissions:
-      contents: read
+      # contents: write only to attach the SBOMs to this tag's GitHub Release.
+      contents: write
       packages: write
+      # Keyless cosign signing (#734): the workflow's OIDC identity is the
+      # signing identity, so there is no long-lived signing key to store,
+      # rotate or leak.
+      id-token: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
     steps:
       - uses: actions/checkout@v7
 
       - name: Set IMAGE_NAME
         run: |
           echo "IMAGE_NAME=khuepm/lumibase-cms" >> "$GITHUB_ENV"
+
+      # Syft and cosign, each pinned by version and SHA-256. The Trivy gate
+      # already passed in scan-docker-image, before the release was created.
+      - name: Install image supply-chain tools
+        run: scripts/install-image-tools.sh syft cosign
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -324,6 +402,7 @@ jobs:
             type=sha,prefix=
 
       - name: Build and push Docker image
+        id: push
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -332,8 +411,34 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            LUMIBASE_GIT_SHA=${{ github.sha }}
+            LUMIBASE_RELEASE_CHANNEL=production
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Everything below addresses the image by digest, never by tag: a tag
+      # can be moved after signing, a digest cannot.
+      - name: Generate SBOMs
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          syft scan "registry:${IMAGE}" -o spdx-json=lumibase-cms-image.spdx.json
+          syft scan file:pnpm-lock.yaml -o spdx-json=lumibase-dependencies.spdx.json
+
+      - name: Sign image and attest SBOM (keyless)
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cosign sign --yes "$IMAGE"
+          cosign attest --yes --type spdxjson --predicate lumibase-cms-image.spdx.json "$IMAGE"
+
+      - name: Attach SBOMs to the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" lumibase-cms-image.spdx.json lumibase-dependencies.spdx.json --clobber
 
   # v1 release criteria §3: both deployment targets get smoke-tested on the
   # release itself. The Worker is verified post-deploy above; this job pulls
@@ -343,11 +448,16 @@ jobs:
     name: Smoke-test Docker image
     runs-on: ubuntu-latest
     needs: publish-docker-image
-    timeout-minutes: 10
+    timeout-minutes: 12
     permissions:
       contents: read
       packages: read
     steps:
+      - uses: actions/checkout@v7
+
+      - name: Install cosign
+        run: scripts/install-image-tools.sh cosign
+
       - name: Log in to Container Registry
         uses: docker/login-action@v4
         with:
@@ -355,22 +465,44 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Verify what an operator would verify: the signature was made by THIS
+      # repository's release workflow on a tag ref, through GitHub's OIDC
+      # issuer. Fails the release if signing silently did not happen.
+      - name: Verify image signature and SBOM attestation
+        env:
+          IMAGE: ${{ env.REGISTRY }}/khuepm/lumibase-cms@${{ needs.publish-docker-image.outputs.digest }}
+          IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+        run: |
+          set -euo pipefail
+          cosign verify "$IMAGE" \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+          cosign verify-attestation "$IMAGE" --type spdxjson \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+          echo "Signature and SBOM attestation verified for $IMAGE"
+
       - name: Run released image health check
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: |
           set -euo pipefail
           IMAGE="${{ env.REGISTRY }}/khuepm/lumibase-cms:${GITHUB_REF_NAME#v}"
 
           cleanup() {
             docker logs lumibase-release-smoke 2>/dev/null || true
-            docker rm -f lumibase-release-smoke 2>/dev/null || true
+            docker logs lumibase-release-smoke-worker 2>/dev/null || true
+            docker rm -f lumibase-release-smoke lumibase-release-smoke-worker 2>/dev/null || true
           }
           trap cleanup EXIT
 
           docker pull "$IMAGE"
           # Same boot env as the docker.yml health check: /health only needs
-          # the app up, not live backing services.
+          # the app up, not live backing services. Run exactly as the hardened
+          # compose profile does (#734): read-only root filesystem, no
+          # capabilities, no privilege escalation, /tmp as the only tmpfs.
           docker run -d --name lumibase-release-smoke \
+            --read-only --tmpfs /tmp:size=64m \
+            --cap-drop ALL --security-opt no-new-privileges:true \
             -p 1989:1989 \
             -e LUMIBASE_RUNTIME=docker \
             -e PORT=1989 \
@@ -403,6 +535,142 @@ jobs:
             sleep 5
           done
           echo "Released Docker image healthy."
+
+          # The image must report the version it was tagged with. Until
+          # 1.0.0-rc.5 every image answered "unknown", which broke the
+          # "determine your current version" step of the upgrade runbook
+          # and the Studio footer, and nothing noticed.
+          EXPECTED="${GITHUB_REF_NAME#v}"
+          ACTUAL="$(curl --max-time 5 -fsS http://localhost:1989/api/v1/system/version | jq -r .version)"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::/api/v1/system/version reports '$ACTUAL', expected '$EXPECTED'"
+            exit 1
+          fi
+
+          # The image must ship the Studio, not only the API: `/setup` is the
+          # first page a new operator opens.
+          if ! curl --max-time 5 -fsS http://localhost:1989/setup | grep -q '<title>LumiBase Studio</title>'; then
+            echo "::error::/setup did not serve the Studio shell"
+            exit 1
+          fi
+          echo "Image reports $ACTUAL and serves the Studio."
+
+          # Hardening invariants: a non-root user, and Docker's own HEALTHCHECK
+          # (the Node probe, since the image has no shell or curl) reporting
+          # healthy rather than merely "running".
+          USER_ID="$(docker inspect --format '{{.Config.User}}' "$IMAGE")"
+          case "$USER_ID" in
+            ""|0|0:*|root|root:*) echo "::error::image runs as root (User='$USER_ID')"; exit 1 ;;
+          esac
+          for _ in $(seq 1 12); do
+            STATUS="$(docker inspect --format '{{.State.Health.Status}}' lumibase-release-smoke)"
+            [ "$STATUS" = healthy ] && break
+            sleep 5
+          done
+          if [ "$STATUS" != healthy ]; then
+            echo "::error::container HEALTHCHECK reports '$STATUS'"
+            exit 1
+          fi
+          echo "Runs as $USER_ID with a read-only root filesystem; HEALTHCHECK healthy."
+
+          # Liveness vs readiness with every backing service down (none run
+          # here): /health/live answers at once, /health/ready answers 503.
+          # The HEALTHCHECK probes liveness, so the container is healthy
+          # although the database is unreachable (v2.1.0 failed on that).
+          LIVE="$(curl --max-time 2 -s -o /dev/null -w '%{http_code}' http://localhost:1989/health/live)"
+          READY="$(curl --max-time 8 -s -o /dev/null -w '%{http_code}' http://localhost:1989/health/ready || true)"
+          if [ "$LIVE" != 200 ] || [ "$READY" != 503 ]; then
+            echo "::error::with dependencies down expected /health/live 200 and /health/ready 503, got $LIVE and $READY"
+            exit 1
+          fi
+          echo "Dependencies down: /health/live 200, /health/ready 503."
+
+          # The worker role serves health on its own port; its HEALTHCHECK
+          # must turn healthy too, under the same hardened flags.
+          docker run -d --name lumibase-release-smoke-worker \
+            --read-only --tmpfs /tmp:size=64m \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            -e LUMIBASE_PROCESS_ROLE=worker \
+            -e LUMIBASE_RUNTIME=docker \
+            -e PORT=1989 \
+            -e DATABASE_URL=postgresql://localhost:5432/lumibase \
+            -e REDIS_URL=redis://localhost:6379 \
+            -e S3_ENDPOINT=http://localhost:9000 \
+            -e S3_ACCESS_KEY=minioadmin \
+            -e S3_SECRET_KEY=minioadmin \
+            -e S3_BUCKET=lumibase-media \
+            -e MEILISEARCH_HOST=http://localhost:7700 \
+            -e MEILISEARCH_API_KEY=test \
+            -e IMGPROXY_URL=http://localhost:8080 \
+            -e IMGPROXY_KEY=736563726574 \
+            -e IMGPROXY_SALT=736563726574 \
+            -e SKIP_MIGRATIONS=true \
+            "$IMAGE"
+          for _ in $(seq 1 12); do
+            WSTATUS="$(docker inspect --format '{{.State.Status}}/{{.State.Health.Status}}' lumibase-release-smoke-worker)"
+            [ "$WSTATUS" = running/healthy ] && break
+            sleep 5
+          done
+          if [ "$WSTATUS" != running/healthy ]; then
+            echo "::error::worker container reports '$WSTATUS'"
+            exit 1
+          fi
+          echo "Worker role: HEALTHCHECK healthy."
+
+  # Helm chart (#742) as an OCI artifact: oci://ghcr.io/khuepm/charts/lumibase.
+  # Runs only after the image it deploys by default was pushed AND passed its
+  # smoke test, and nothing depends on this job, so a chart problem can never
+  # hold back or fail the image, the GitHub Release, the deploys or npm.
+  # Refuses to push a chart whose Chart.yaml version/appVersion disagree with
+  # the tag (`pnpm version:sync` keeps them aligned), so the published chart
+  # always defaults to the image of the same release.
+  publish-helm-chart:
+    name: Publish Helm chart (OCI)
+    runs-on: ubuntu-latest
+    needs: [publish-docker-image, smoke-docker-image]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      # Keyless cosign signature of the chart artifact, as for the image.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Helm and cosign
+        run: scripts/install-image-tools.sh helm cosign
+
+      - name: Check chart version matches the tag
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          chart_version="$(awk '/^version:/ { print $2; exit }' deploy/helm/lumibase/Chart.yaml)"
+          app_version="$(awk -F'"' '/^appVersion:/ { print $2; exit }' deploy/helm/lumibase/Chart.yaml)"
+          if [ "$chart_version" != "$version" ] || [ "$app_version" != "$version" ]; then
+            echo "::error::Chart.yaml version=$chart_version appVersion=$app_version, expected $version (run pnpm version:sync)"
+            exit 1
+          fi
+
+      - name: Lint and package
+        run: |
+          set -euo pipefail
+          # Lint with a public URL: the chart refuses to render without one in production.
+          helm lint deploy/helm/lumibase --strict --set publicUrl=https://cms.example.com
+          helm package deploy/helm/lumibase --destination dist-chart
+
+      - name: Push to GHCR and sign
+        env:
+          HELM_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          echo "$HELM_REGISTRY_PASSWORD" | helm registry login "${{ env.REGISTRY }}" -u "${{ github.actor }}" --password-stdin
+          helm push "dist-chart/lumibase-${version}.tgz" "oci://${{ env.REGISTRY }}/khuepm/charts" 2>&1 | tee push.log
+          digest="$(awk '/^Digest:/ { print $2; exit }' push.log)"
+          [ -n "$digest" ] || { echo "::error::helm push printed no digest"; exit 1; }
+          echo "$HELM_REGISTRY_PASSWORD" | cosign login "${{ env.REGISTRY }}" -u "${{ github.actor }}" --password-stdin
+          cosign sign --yes "${{ env.REGISTRY }}/khuepm/charts/lumibase@${digest}"
+          echo "Published oci://${{ env.REGISTRY }}/khuepm/charts/lumibase:${version} (${digest})"
 
   publish-npm-packages:
     name: Publish npm packages

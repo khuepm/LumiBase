@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 4
-lastUpdated: 2026-08-30T08:11:17.536Z
+version: 22
+lastUpdated: 2026-11-15T15:10:13.708Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 476b4029000a09f2
+sourceHash: 00159aeddfcd4dc0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-30T08:11:17.536Z
-codeVerifiedHash: 476b4029000a09f2
-codeVerifiedClaims: 66
+codeVerified: 2026-11-15T15:10:13.708Z
+codeVerifiedHash: 00159aeddfcd4dc0
+codeVerifiedClaims: 98
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -31,8 +31,12 @@ Trang này liệt kê mọi biến môi trường và binding Cloudflare mà Lum
 |------|----------|----------|-------|
 | `LUMIBASE_ENV` | ✓ | — | Nhãn môi trường: `development`, `staging`, `production` |
 | `LUMIBASE_RUNTIME` | Chỉ Docker | `cloudflare` | `docker` cho Node.js/Docker; Cloudflare Workers tự suy ra từ binding |
+| `CORS_ALLOWED_ORIGINS` | ✓ ở production | — | Danh sách origin trình duyệt (phân cách bằng dấu phẩy) được phép gọi API; `*` bị từ chối ở production. Trên Docker, khi chưa đặt, entrypoint của image dùng chính origin của deployment này (`LUMIBASE_PUBLIC_URL`, rồi tới URL công khai của nền tảng) — Studio được phục vụ từ origin đó. Một giá trị không có host, như `https://`, được coi là chưa đặt |
+| `LUMIBASE_PUBLIC_URL` | ✗ | — | Origin công khai của deployment này, ví dụ `https://cms.example.com`. Entrypoint của image đọc nó để đặt mặc định cho `CORS_ALLOWED_ORIGINS` và để in URL của setup wizard. Khi không có, entrypoint dùng `RENDER_EXTERNAL_URL`, `RAILWAY_PUBLIC_DOMAIN` hoặc `FLY_APP_NAME` nếu nền tảng có đặt. Xem [Deploy một cú nhấp](./one-click.md). Server cũng dùng nó để dựng resource URI OAuth của MCP (`<origin>/api/v1/mcp…`) mà `aud` của token phải khớp. Khi không có, origin đó lấy từ request (nâng lên `https` theo `X-Forwarded-Proto`), nên **hãy đặt biến này khi đứng sau proxy terminate TLS** nếu dùng [remote MCP connector](../agent-setup/oauth-connector.md) |
 | `JWT_SECRET` | ✓ | — | Secret để ký/xác thực JWT ứng dụng. Tối thiểu 32 ký tự. **Với production Cloudflare, đặt bằng `wrangler secret put JWT_SECRET --env production`; không bao giờ commit hay đặt trong `[env.production.vars]`.** |
 | `LUMIBASE_DEV_AUTH` | Chỉ local dev | `false` | Đặt `true` để bỏ qua auth Logto trong local dev. **Không bao giờ bật ở production; `pnpm release:check` sẽ fail nếu production resolve thành `true`.** |
+| `LUMIBASE_ALLOW_ORG_SIGNUP` | Tuỳ chọn | không đặt | Đặt `true` để người dùng Studio đã xác thực được tạo organization. Bootstrap instance operator có thể tạo organization mà không cần cờ này. Tạo/xoá site dùng organization API; các route quản lý site admin cũ và cờ riêng cho test đã bị gỡ. |
+| `LUMIBASE_MCP_ORG_TOOLS` | Optional | `on` | Đặt `off` để tắt MCP organization toàn cục, bất kể `contentOs.mcp.allowOrganizationTools`. Giá trị khác giữ quyền quyết định ở setting từng organization; setting này mặc định `false`. Không tắt MCP site. |
 | `LUMIBASE_REALTIME_ENABLED` | ✗ | — | **Chưa implement.** Hiện không code nào đọc biến này; đặt nó không có tác dụng gì. Đang được theo dõi như mục tiêu "explicit enablement" trong [realtime implementation](../architecture/realtime-websocket-implementation.md). |
 | `VITE_LUMIBASE_ALLOW_ADMIN_PATH_REDIRECT` | Chỉ setup/debug | `false` | Opt-in phía client cho phép redirect tiện lợi tới admin path riêng tư. Giữ không đặt ở production, trừ một cửa sổ setup/debug tạm thời có kiểm soát. |
 
@@ -44,11 +48,44 @@ trong build artifact.
 
 ---
 
+## Setup lần đầu
+
+| Biến | Bắt buộc | Mặc định | Mô tả |
+|------|----------|----------|-------|
+| `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ (chỉ Node/Docker) | tắt | `true`, `1` hoặc `yes` khiến `POST /api/v1/setup/complete` đòi một setup token dùng một lần. Hãy bật cho mọi instance mà người khác ngoài bạn có thể truy cập trước khi setup xong — nếu không, ai chạm tới cổng trước sẽ tạo được tài khoản admin. |
+
+Khi cờ bật, mọi tiến trình phục vụ HTTP (`LUMIBASE_PROCESS_ROLE` là `web` hoặc
+`all`) sinh token ngay lúc khởi động, trước khi nhận request, và in ra đúng một lần:
+
+```text
+[lumibase-cms] SETUP_TOKEN=<token>
+```
+
+Dán nó vào setup wizard, hoặc gửi dưới dạng `setupToken` tới `/setup/complete`. Chỉ
+hash SHA-256 của nó được lưu, và hash bị xoá khi setup hoàn tất.
+
+Khởi động lại **không** in token mới: hash đã lưu được giữ nguyên để token bạn đang có
+vẫn dùng được, và log khởi động sẽ báo điều đó thay vì in token. Nếu bạn làm mất dòng
+đó, hãy xoá hash rồi khởi động lại — lần khởi động tiếp theo sẽ in một token mới:
+
+```sql
+UPDATE lumibase_system_state SET setup_token_hash = NULL WHERE id = 'singleton';
+```
+
+Nhiều replica khởi động cùng lúc chỉ in đúng một token cho cả nhóm, nên hãy đọc nó từ
+replica nào đã in ra.
+
+**Cloudflare Workers:** không hỗ trợ. Worker không có bước khởi động tiến trình để sinh
+token, nên khi cờ bật, `/setup/complete` trả `503 SETUP_TOKEN_NOT_ISSUED` kèm lời giải
+thích thay vì nhận token. Ở đó hãy để cờ tắt và hoàn tất setup ngay sau khi deploy.
+
+---
+
 ## Encryption
 
 | Biến | Bắt buộc | Mặc định | Mô tả |
 |------|----------|----------|-------|
-| `ENCRYPTION_KEY` | Trước lần dùng đầu tiên | — | Base64 của 32 byte ngẫu nhiên (`openssl rand -base64 32`). Bọc các field item được mã hoá và seed 2FA TOTP. Được hiểu là khoá version `v0`. **Đặt như một secret** (`wrangler secret put ENCRYPTION_KEY --env production`); không commit và không đặt trong `[env.production.vars]` |
+| `ENCRYPTION_KEY` | Trước lần dùng đầu tiên | — | Base64 của 32 byte ngẫu nhiên (`openssl rand -base64 32`). Bọc các field item được mã hoá và seed 2FA TOTP. Được hiểu là khoá version `v0`. Production yêu cầu base64 chuẩn, có padding, của 16, 24 hoặc 32 byte; giá trị được dùng đúng như được cung cấp (CDC suy ra khoá từ chính chuỗi đó), nên đừng bao giờ mã hóa lại một khoá đang dùng. **Đặt như một secret** (`wrangler secret put ENCRYPTION_KEY --env production`); không commit và không đặt trong `[env.production.vars]` |
 | `ENCRYPTION_KEY_<id>` | ✗ | — | Khoá có version, ví dụ `ENCRYPTION_KEY_v1`, dùng khi rotate |
 | `ENCRYPTION_ACTIVE_KEY_ID` | ✗ | khoá duy nhất đang cấu hình, nếu không thì `v0` | Version nào mã hoá dữ liệu mới |
 | `ENCRYPTION_KEY[_<id>]_FILE` | ✗ | — | Đường dẫn file để đọc khoá thay cho biến (Docker secrets). Biến trực tiếp thắng |
@@ -88,6 +125,9 @@ closed với `500` chứ không phải một lỗi có mã.
 | `DATABASE_POOL_MIN` | ✗ | Số kết nối pool DB tối thiểu (mặc định: `2`) |
 | `DATABASE_POOL_MAX` | ✗ | Số kết nối pool DB tối đa (mặc định: `10`) |
 | `DATABASE_SSL` | ✗ | `true` để bắt buộc SSL cho kết nối DB |
+| `LUMIBASE_DB_RLS` | ✗ | Scope RLS trên request path: `off` (mặc định) hoặc `enforce`. Giá trị khác thì fail closed (lỗi khởi động trên Docker, `503 RLS_MISCONFIGURED` trên Workers). Xem [Scope RLS trên request path](../features/rls-request-scope.md) |
+| `LUMIBASE_OPS_TOKEN` | ✗ | Secret bearer tĩnh (≥ 32 ký tự) cho mặt phẳng chẩn đoán vận hành chỉ-đọc `/api/v1/ops/*` và tra cứu lỗi đã ghi lại. Không đặt hoặc ngắn hơn: mặt phẳng trả 404 ở mọi nơi. Xem [Chẩn đoán vận hành](../features/ops-diagnostics.md) |
+| `DATABASE_SYSTEM_URL` | Khi `LUMIBASE_DB_RLS=enforce` (Docker) | Chuỗi kết nối của system role (`BYPASSRLS`) cho worker, cron và route hệ thống. Không đặt: các đường đó dùng `DATABASE_URL`. Cũng đọc được từ `DATABASE_SYSTEM_URL_FILE` |
 
 Với Cloudflare Workers, dùng binding `HYPERDRIVE` (xem [Binding Cloudflare](#binding-cloudflare)).
 
@@ -148,6 +188,32 @@ Với Cloudflare Workers, dùng binding `HYPERDRIVE` (xem [Binding Cloudflare](#
 
 > **Provider ↔ billing:** `nvidia` và `vertex` gọi các cloud *bên ngoài* — lần lượt là NVIDIA và Google Cloud — nên usage của chúng **không** được tính vào credit AWS. `nvidia` (hoặc NIM self-host qua `NVIDIA_BASE_URL`) và MeiliSearch là các phần ăn khớp tự nhiên với hạ tầng host trên AWS.
 
+### Decision model (TypeSafe Jev)
+
+Phục vụ `POST /api/v1/ai/decisions`: trả về câu trả lời có kiểu `noul` / `choice` / `score` kèm xác suất thay vì sinh văn bản. Độc lập với `LLM_PROVIDER`; không đặt thì endpoint trả `503 DECISION_NOT_CONFIGURED`.
+
+| Biến | Bắt buộc | Mô tả |
+|------|----------|-------|
+| `DECISION_PROVIDER` | ✗ | `typesafe` (TypeSafe Jev, gọi trực tiếp), `openrouter` (cùng System One API qua OpenRouter, tính phí vào OpenRouter), hoặc `llm` (dùng lại `LLM_PROVIDER` ở chế độ decision có cấu trúc, không có tools; câu trả lời được gắn `calibrated: false`). Đây là lựa chọn qua cấu hình, không phải tự động failover. Không đặt = tắt. |
+| `DECISION_MODEL` | ✗ | Override model. Mặc định `jev-latest` (`typesafe`) hoặc `~typesafe/jev-latest` (`openrouter`). |
+| `TYPESAFE_API_KEY` | Nếu provider `typesafe` | API key TypeSafe. |
+| `TYPESAFE_BASE_URL` | ✗ | Override endpoint TypeSafe. Mặc định `https://api.typesafe.ai/v1`. |
+| `OPENROUTER_API_KEY` | Nếu provider `openrouter` | API key OpenRouter. |
+| `DECISION_TIMEOUT_MS` | ✗ | Deadline tổng cho mỗi decision, tính bằng ms, gồm cả retry và backoff (mặc định `20000`, khoảng 1000–120000). |
+| `DECISION_ATTEMPT_TIMEOUT_MS` | ✗ | Timeout của một lần gọi upstream, tính bằng ms (mặc định `8000`, khoảng 500–120000), không vượt phần còn lại của deadline. |
+| `DECISION_MAX_RETRIES` | ✗ | Số lần retry sau lần gọi đầu, cho 429/503/529, lỗi mạng và timeout của lần gọi (mặc định `2`, khoảng 0–5). |
+| `DECISION_MAX_INPUT_BYTES` | ✗ | Giới hạn byte UTF-8 của state + questions sau khi serialize (mặc định `131072`). Vượt giới hạn → `413 DECISION_INPUT_TOO_LARGE` trước khi gọi provider. |
+| `DECISION_MAX_INPUT_TOKENS` | ✗ | Budget token ước lượng cho cùng payload đó (mặc định `24000`). Cách ước lượng: khoảng 4 ký tự ASCII hoặc 1 code point không phải ASCII cho một token; không phải tokenizer của provider. |
+| `DECISION_LLM_MAX_OUTPUT_TOKENS` | ✗ | Chỉ cho `llm`: trần kích thước ước lượng của câu trả lời đầy đủ (mặc định `4096`, khoảng 256–32768), giống nhau trên mọi provider. Vượt trần → `413 DECISION_INPUT_TOO_LARGE` trước khi gọi. Trần gửi lên upstream là ước lượng đó, tối thiểu 256 token. |
+| `DECISION_LLM_THINKING_TOKENS` | ✗ | Chỉ cho `llm` trên Gemini/Vertex: headroom thinking cộng vào trần gửi lên upstream, không tham gia kiểm 413 (mặc định `1024`, khoảng 0–32768). Nâng nó khi `DECISION_PARSE_FAILED` lặp lại trên Gemini/Vertex; giữ tổng hai biến dưới giới hạn output của model (lỗi `400` từ upstream là `422 DECISION_VALIDATION`). Headroom bằng 0 với OpenAI/NVIDIA/Anthropic/Workers AI, vì model mặc định của chúng không reasoning; một `LLM_MODEL` reasoning sẽ dùng chung trần đó và có thể lỗi `DECISION_PARSE_FAILED` — chưa được hỗ trợ trong bản này. |
+| `DECISION_SITE_REQUESTS_PER_HOUR` | ✗ | Mức trần của nền tảng cho số decision được nhận mỗi site mỗi giờ (mặc định `600`, khoảng 0–1000000). Vượt mức → `429 DECISION_QUOTA_EXCEEDED`. |
+| `DECISION_SITE_MAX_CONCURRENT` | ✗ | Mức trần của nền tảng cho số decision đang chạy cùng lúc mỗi site (mặc định `4`, khoảng 1–1000). Vượt mức → `429 DECISION_CONCURRENCY_LIMITED`. |
+| `DECISION_SITE_TOKENS_PER_DAY` | ✗ | Mức trần của nền tảng cho số token ước lượng mỗi site mỗi ngày UTC, tính cả mọi lần gọi (mặc định `2000000`, khoảng 0–1000000000). |
+| `DECISION_REVIEW_RETENTION_DAYS` | ✗ | Số ngày giữ một lần review bản nháp và feedback của nó trước khi job chạy mỗi giờ xoá (mặc định `180`, khoảng 1–3650; rỗng hoặc sai → mặc định). Review profile được giữ lại. |
+| `DECISION_REFUSAL_AUDIT_WINDOW_SECONDS` | ✗ | Cửa sổ gộp các request decision bị từ chối (`403 FORBIDDEN`) trong audit log (#564): một event `ai_decision` cho mỗi site, caller và lý do trong mỗi cửa sổ, rồi ghi lại khi đếm tới 10, 100, 1000 … (mặc định `300`, khoảng 0–86400; `0` = một event cho mỗi lần từ chối). Tổng chính xác nằm ở `lumibase_ai_decision_refusals_total`. Xem [Đặc tả Hono API — AI decisions](../api/hono-api-spec.md). |
+
+Giá trị không hợp lệ ở các biến này sẽ bị bỏ qua kèm cảnh báo và dùng giá trị mặc định. Site có thể siết ba mức trần `DECISION_SITE_*` qua setting `aiDecisions`, nhưng không thể nâng lên. Decision cũng bị tắt với một site cho tới khi site admin opt-in ở setting đó (xem [API spec → Governance](../api/hono-api-spec.md)).
+
 ---
 <!-- check-parity: allow inline-code -->
 
@@ -198,6 +264,7 @@ Import lớn có thể chạm ngân sách mặc định. Tăng `LUMIBASE_RATE_LI
 | `LUMIBASE_RATE_LIMIT_WINDOW_S` | ✗ | `60` | Độ dài cửa sổ, đơn vị giây. |
 | `LUMIBASE_RATE_LIMIT_DISABLED` | ✗ | (không đặt) | Đặt `true` để tắt hẳn throttle. |
 | `LUMIBASE_DELIVER_RATE_LIMIT` | ✗ | `1200` | Số request tối đa mỗi phút, theo IP client, trên Delivery API công khai (`/api/v1/deliver/*`). `0` là tắt. Xem [Caching — penetration](../features/caching.md). |
+| `LUMIBASE_AI_IP_RATE_LIMIT` | ✗ | `300` | Số request tối đa mỗi phút, theo IP client và theo site, trên `/api/v1/ai/*`, kiểm tra trước xác thực (#564). Vượt → `429 RATE_LIMITED` kèm `Retry-After`. `0` là tắt; bỏ qua khi không biết IP client. Kho lỗi thì theo `LUMIBASE_RATE_LIMIT_FAIL_CLOSED`. |
 | `LUMIBASE_NEGATIVE_CACHE_TTL` | ✗ | `30` | TTL tombstone (giây) cho các trường hợp xác nhận không tồn tại trên đường đọc công khai, trước khi cộng jitter ±20%. `0` là tắt. |
 
 ---
@@ -206,6 +273,19 @@ Import lớn có thể chạm ngân sách mặc định. Tăng `LUMIBASE_RATE_LI
 <!-- Lý do waiver: link tới `graphql-api-spec.md` mang anchor trong trang, và
      heading bên VI là "## Chống lạm dụng" nên slug bắt buộc khác EN
      (#abuse-guards). Trỏ về anchor EN sẽ thành link chết trong bản VI. -->
+
+## Imports
+
+Import collection chạy nền (`POST /api/v1/imports`, xem [Data import](../features/data-import.md#job-import-chạy-nền)). Các giá trị áp dụng như nhau trên Workers (binding) và Docker (biến môi trường).
+
+| Biến | Bắt buộc | Mặc định | Mô tả |
+|------|----------|----------|-------|
+| `IMPORT_TIMEOUT` | ✗ | `3600` | Số giây một job được chạy, tính từ bước đầu tiên. Quá mức này job kết thúc với `timed_out`; các dòng đã ghi vẫn được giữ. |
+| `IMPORT_MAX_CONCURRENCY` | ✗ | `20` | Số job chạy cùng lúc trên mỗi site. Job vượt quá giữ trạng thái `queued` cho tới khi có job xong. |
+| `IMPORT_MAX_BYTES` | ✗ | `52428800` | Kích thước upload lớn nhất, tính bằng byte (50 MiB). File lớn hơn nhận `413 PAYLOAD_TOO_LARGE`. |
+| `IMPORT_CHUNK_SIZE` | ✗ | `500` | Số dòng ghi trong mỗi bước (tối đa `5000`). Bước nhỏ phản hồi lệnh huỷ nhanh hơn; bước lớn xong sớm hơn. |
+
+---
 
 ## GraphQL
 
@@ -228,6 +308,17 @@ Mọi operation GraphQL đều được validate trước khi chạy, đối chi
 | `LOG_LEVEL` | ✗ | Mức log: `debug`, `info`, `warn`, `error` (mặc định: `info`) |
 | `LOG_FORMAT` | ✗ | `json` (mặc định) hoặc `pretty` (local dev) |
 
+### Telemetry sử dụng
+
+Telemetry sử dụng ẩn danh tắt theo mặc định và không có endpoint dựng sẵn. Xem [Mốc kích hoạt và telemetry sử dụng](../operations/usage-telemetry.md) để biết chính xác những gì được gửi.
+
+| Biến | Bắt buộc | Mặc định | Mô tả |
+|------|----------|----------|-------|
+| `LUMIBASE_TELEMETRY_ENABLED` | ✗ | (không đặt) | Đặt `true` để opt-in. Không gửi gì trừ khi `LUMIBASE_TELEMETRY_ENDPOINT` cũng được đặt. |
+| `LUMIBASE_TELEMETRY_ENDPOINT` | ✗ | (không đặt) | URL nhận các sự kiện. Chỉ `https:`, hoặc `http:` tới `localhost`. |
+| `LUMIBASE_TELEMETRY_DISABLED` | ✗ | (không đặt) | Đặt `true` để tắt telemetry. Thắng `LUMIBASE_TELEMETRY_ENABLED`. |
+| `DO_NOT_TRACK` | ✗ | (không đặt) | `1` tắt telemetry, giống `LUMIBASE_TELEMETRY_DISABLED`. |
+
 ---
 <!-- check-parity: allow inline-code -->
 
@@ -238,6 +329,7 @@ Cấu hình các binding này trong `apps/cms/wrangler.toml` (không phải bi�
 | Binding | Loại | Mục đích |
 |---------|------|----------|
 | `HYPERDRIVE` | Hyperdrive | Pool kết nối PostgreSQL |
+| `HYPERDRIVE_SYSTEM` | Hyperdrive (tuỳ chọn) | System role (`BYPASSRLS`) cho handler scheduled/queue và route hệ thống; bắt buộc khi `LUMIBASE_DB_RLS=enforce` |
 | `CONFIG_CACHE` | KV Namespace | Cache schema, permission và settings |
 | `MEDIA` | R2 Bucket | Lưu trữ object media/file |
 | `SITE_ROOM` | Durable Object | Điều phối WebSocket theo từng site (realtime) |
@@ -270,6 +362,7 @@ Trước khi deploy lên production, xác minh:
 
 - [ ] `JWT_SECRET` dài ít nhất 32 ký tự và lưu dưới dạng Wrangler Secret hoặc Docker secret
 - [ ] `LUMIBASE_DEV_AUTH` KHÔNG được đặt `true`
+- [ ] Chỉ bật `LUMIBASE_ALLOW_ORG_SIGNUP` khi chủ động cho phép đăng ký organization
 - [ ] Credential database lưu dưới dạng secret, không nằm trong file `.env` commit vào git
 - [ ] `S3_SECRET_ACCESS_KEY` lưu dưới dạng secret
 - [ ] `RESEND_API_KEY` lưu dưới dạng secret

@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-09-14T21:26:08.918Z
+version: 13
+lastUpdated: 2026-11-15T19:56:19.632Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: f2050885621cde26
+sourceHash: a13d2df6c1876273
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-14T21:26:08.918Z
-codeVerifiedHash: f2050885621cde26
+codeVerified: 2026-11-15T19:56:19.632Z
+codeVerifiedHash: a13d2df6c1876273
 codeVerifiedClaims: 4
 ---
 
@@ -21,7 +21,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
 
 ## Quick start
 
-- [getting-started.md](./getting-started.md) — Bootstrap a new LumiBase project with `npm create lumibase@latest` (the `create-lumibase` CLI): the preselected `nextjs` template builds a Next.js website with the CMS + Studio and seeded content behind it, while `default`/`cloudflare` build a Hono + Drizzle starter. The page also says when you need **no** scaffold at all — just `npm install lumibase`.
+- [getting-started.md](./getting-started.md) — Bootstrap a new LumiBase project with `npm create lumibase@next` (the `create-lumibase` CLI): the preselected `nextjs` template builds a Next.js website with the CMS + Studio and seeded content behind it, while `default`/`cloudflare` build a Hono + Drizzle starter. The page also says when you need **no** scaffold at all — just `npm install lumibase`.
 - [cli/index.md](./cli/index.md) — The `lumibase` CLI: `init` (scaffold a project), `types` (generate types from a running CMS), `doctor` (check configuration and connectivity).
 
 ## Tutorials
@@ -50,6 +50,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
 - **Core features** (`features/`)
   - [collections-builder.md](./features/collections-builder.md) — No-code Collection Builder.
   - [field-types-and-config.md](./features/field-types-and-config.md) — The field-types system & interface/display config.
+  - [dynamic-zones.md](./features/dynamic-zones.md) — Dynamic zones: the `blocks` field (ordered, typed blocks with per-block schemas).
   - [permissions-rbac.md](./features/permissions-rbac.md) — Roles, Policies, Permissions down to the field (a JSON rule engine).
   - [access-manifest-v1.md](./features/access-manifest-v1.md) — JSON schema contract `lumibase.access@v1` for access import/export.
   - [system-collections-access.md](./features/system-collections-access.md) — System/sensitive collection grouping for seeding and Permission Builder.
@@ -71,6 +72,10 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
 - **Advanced features (POST-GA / Dual-runtime)** (`features/`)
   - [ai-copilot.md](./features/ai-copilot.md) — AI Chat + Human-in-the-Loop approvals (Studio Copilot).
   - [agent-harness-layer.md](./features/agent-harness-layer.md) — Agent goals, runs, tools, memory, approvals, artifacts, evaluations, and app generation governance.
+  - [site-skills.md](./features/site-skills.md) — Site Skills: versioned playbooks injected into agent runs, skills-as-code CLI, MCP prompts.
+  - [agent-receipts.md](./features/agent-receipts.md) — Agent receipts: runs, approvals, overrides, cost, drift and autonomy over a window; alert thresholds and CSV export.
+  - [locale-generator.md](./features/locale-generator.md) — Locale generator: add a locale in one step; machine translations wait in a review queue.
+  - [external-action-tools.md](./features/external-action-tools.md) — Governed agent tools whose effect lands outside the CMS: declared risk, human-only approval, per-site secrets.
   - [runtime-abstraction.md](./features/runtime-abstraction.md) — The `@lumibase/runtime` layer that allows running on Cloudflare and Docker.
   - [flows-automation.md](./features/flows-automation.md) — The Flows / Operations engine (workflow automation).
   - [marketplace.md](./features/marketplace.md) — Marketplace extensions with digital signatures (signed bundles).
@@ -111,13 +116,20 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
   - [operations/encryption-keys.md](./operations/encryption-keys.md) — What `ENCRYPTION_KEY` protects, what rotation does and does not re-wrap, and how to respond to a lost or leaked key.
 - **Security** (`security/`)
   - [security/anti-abuse.md](./security/anti-abuse.md) — Anti-abuse mechanisms & best practices: defense-in-depth registry (rate-limiting, brute-force, anomaly, control-plane guard, RLS, body/upload limits, SSRF, AI load-guard, audit) + known gaps.
+  - [security/secure-defaults.md](./security/secure-defaults.md) — Secure-by-default `create-lumibase` templates (generated secrets, no default admin) and the `lumibase doctor --security` rule list.
   - [security/route-guards.md](./security/route-guards.md) — Route / control-plane guard catalogue.
   - [security/runtime-security-guards-plan.md](./security/runtime-security-guards-plan.md) — Runtime security foundation: guard responsibilities and pipeline mount points.
   - [security/cwe-top-100-audit.md](./security/cwe-top-100-audit.md) — CWE-mapped security audit.
   - [security/idor-testing.md](./security/idor-testing.md) — Cross-tenant (IDOR) testing guidelines.
   - [security/external-jwt-auth.md](./security/external-jwt-auth.md) — External JWT issuer authentication.
+  - [security/social-login.md](./security/social-login.md) — Social login for members (Google, Apple, GitHub) and account linking.
   - [security/user-management.md](./security/user-management.md) — User management & auth realms (ADR-010).
+  - [security/passkeys.md](./security/passkeys.md) — Passkeys (WebAuthn): passwordless staff sign-in and second factor, RP ID / origin config.
   - [security/dependency-overrides.md](./security/dependency-overrides.md) — Supply-chain / dependency-override hardening.
+  - [security/vulnerability-disclosure.md](./security/vulnerability-disclosure.md) — Vulnerability disclosure policy: reporting, supported versions, SLA by CVSS severity, GHSA/CVE, embargo, safe harbour, AI-generated report triage policy.
+  - [security/advisories.md](./security/advisories.md) — Security advisories: where they are published, subscribing, the machine-readable API feed, index table.
+  - [security/advisory-template.md](./security/advisory-template.md) — Advisory/CVE post template, CHANGELOG line and reporter replies.
+  - [security/advisory-runbook.md](./security/advisory-runbook.md) — Maintainer runbook from report to published advisory, with the dry run of the first advisory.
 - **Compliance & User Rights** (`compliance/`)
   - [compliance/README.md](./compliance/README.md) — Overview + rights × market matrix (EU/US/VN, Google/Apple) mapped to LumiBase. **Not legal advice.**
   - [compliance/user-rights-catalog.md](./compliance/user-rights-catalog.md) — Plain-language catalog of each right (right to be forgotten, access, portability, consent, unsubscribe, account deletion…).
@@ -146,7 +158,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
 - **`packages/sdk`** — The JS SDK (REST + WS + typegen).
 - **`packages/ui`** — shadcn components + CVA tokens.
 - **`packages/extension-sdk`** — Types and helpers for developers writing extensions.
-- **`packages/create-lumibase`** — The bootstrap CLI (`npm create lumibase@latest`) that generates a new LumiBase project from one of three templates: `nextjs` (a Next.js website plus the CMS and Studio in Docker — preselected), `default` (Docker), or `cloudflare` (Workers). See [getting-started.md](./getting-started.md).
+- **`packages/create-lumibase`** — The bootstrap CLI (`npm create lumibase@next`) that generates a new LumiBase project from one of three templates: `nextjs` (a Next.js website plus the CMS and Studio in Docker — preselected), `default` (Docker), or `cloudflare` (Workers). See [getting-started.md](./getting-started.md).
 - **`packages/mcp-server`** — The MCP stdio server (`@lumibase/mcp-server`) exposing tools for AI assistants to create/manage collections, fields, and items.
 
 ## Principles for reading the documentation

@@ -1,11 +1,11 @@
 ---
-version: 4
-lastUpdated: 2026-08-30T08:11:17.536Z
+version: 22
+lastUpdated: 2026-11-15T15:10:13.708Z
 sourceLang: en
-contentHash: 476b4029000a09f2
-codeVerified: 2026-08-30T08:11:17.536Z
-codeVerifiedHash: 476b4029000a09f2
-codeVerifiedClaims: 66
+contentHash: 00159aeddfcd4dc0
+codeVerified: 2026-11-15T15:10:13.708Z
+codeVerifiedHash: 00159aeddfcd4dc0
+codeVerifiedClaims: 98
 ---
 
 # Environment Variables Reference
@@ -24,8 +24,12 @@ This page documents every environment variable and Cloudflare binding used by Lu
 |----------|----------|---------|-------------|
 | `LUMIBASE_ENV` | ✓ | — | Environment label: `development`, `staging`, `production` |
 | `LUMIBASE_RUNTIME` | Docker only | `cloudflare` | `docker` for Node.js/Docker; Cloudflare Workers infers from bindings |
+| `CORS_ALLOWED_ORIGINS` | ✓ in production | — | Comma-separated browser origins allowed to call the API; `*` is rejected in production. On Docker, when unset, the image entrypoint uses this deployment's own origin (`LUMIBASE_PUBLIC_URL`, then the platform's public URL) — the Studio is served from that origin. A value with no host, such as `https://`, counts as unset |
+| `LUMIBASE_PUBLIC_URL` | ✗ | — | Public origin of this deployment, e.g. `https://cms.example.com`. Read by the image entrypoint to default `CORS_ALLOWED_ORIGINS` and to print the setup wizard URL. Without it the entrypoint uses `RENDER_EXTERNAL_URL`, `RAILWAY_PUBLIC_DOMAIN` or `FLY_APP_NAME` when the platform sets them. See [One-click deploys](./one-click.md). The server also uses it to build the MCP OAuth resource URI (`<origin>/api/v1/mcp…`) that a token's `aud` must match. Without it that origin comes from the request (upgraded to `https` by `X-Forwarded-Proto`), so **set it behind a TLS-terminating proxy** when you use the [remote MCP connector](../agent-setup/oauth-connector.md) |
 | `JWT_SECRET` | ✓ | — | Secret for signing/verifying application JWTs. Min 32 chars. **For Cloudflare production, set with `wrangler secret put JWT_SECRET --env production`; never commit or place in `[env.production.vars]`.** |
 | `LUMIBASE_DEV_AUTH` | Local dev only | `false` | Set to `true` to bypass Logto auth in local dev. **Never enable in production; `pnpm release:check` fails if production resolves to `true`.** |
+| `LUMIBASE_ALLOW_ORG_SIGNUP` | Optional | unset | Set to `true` to allow authenticated Studio users to create organizations. Bootstrap instance operators may create organizations without this flag. Site creation and deletion use the organization API; the legacy admin site-management routes and their test-only flag have been removed. |
+| `LUMIBASE_MCP_ORG_TOOLS` | Optional | `on` | Set to `off` to disable organization MCP globally, regardless of `contentOs.mcp.allowOrganizationTools`. Any other value leaves the per-organization setting authoritative; that setting defaults to `false`. This does not disable site MCP. |
 | `LUMIBASE_REALTIME_ENABLED` | ✗ | — | **Not implemented.** Nothing reads this yet; setting it has no effect. Tracked as the "explicit enablement" goal in [realtime implementation](../architecture/realtime-websocket-implementation.md). |
 | `VITE_LUMIBASE_ALLOW_ADMIN_PATH_REDIRECT` | Setup/debug only | `false` | Client-side opt-in that allows convenience redirects to the private admin path. Keep unset in production except for a temporary controlled setup/debug window. |
 
@@ -40,11 +44,45 @@ public/setup routes to it in production. See
 
 ---
 
+## First-run setup
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ (Node/Docker only) | off | `true`, `1` or `yes` makes `POST /api/v1/setup/complete` demand a one-time setup token. Turn it on for any instance that someone other than you can reach before setup is finished — otherwise whoever reaches the port first creates the admin account. |
+
+With the flag on, every process that serves HTTP (`LUMIBASE_PROCESS_ROLE` `web` or
+`all`) mints the token as it starts, before it accepts requests, and prints it once:
+
+```text
+[lumibase-cms] SETUP_TOKEN=<token>
+```
+
+Paste it into the setup wizard, or send it as `setupToken` to `/setup/complete`. Only
+its SHA-256 hash is stored, and the hash is cleared when setup completes.
+
+A restart does **not** print a new token: the stored hash is kept so a token you already
+have stays valid, and the startup log says so instead. If you lost the line, clear the
+hash and restart — the next start prints a fresh token:
+
+```sql
+UPDATE lumibase_system_state SET setup_token_hash = NULL WHERE id = 'singleton';
+```
+
+Several replicas starting at once print exactly one token between them, so read it
+from whichever replica printed it.
+
+**Cloudflare Workers:** not supported. A Worker has no process start to mint the token
+in, so with the flag on `/setup/complete` answers `503 SETUP_TOKEN_NOT_ISSUED` with an
+explanation instead of accepting a token. Leave the flag unset there and complete setup
+right after deploying.
+
+---
+
 ## Encryption
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ENCRYPTION_KEY` | Before first use | — | Base64 of 32 random bytes (`openssl rand -base64 32`). Wraps encrypted item fields and TOTP two-factor seeds. Resolved as key version `v0`. **Set as a secret** (`wrangler secret put ENCRYPTION_KEY --env production`); never commit it or place it in `[env.production.vars]` |
+| `ENCRYPTION_KEY` | Before first use | — | Base64 of 32 random bytes (`openssl rand -base64 32`). Wraps encrypted item fields and TOTP two-factor seeds. Resolved as key version `v0`. Production requires standard, padded base64 of 16, 24 or 32 bytes; the value is used exactly as supplied (CDC derives its key from the string), so never re-encode an existing key. **Set as a secret** (`wrangler secret put ENCRYPTION_KEY --env production`); never commit it or place it in `[env.production.vars]` |
 | `ENCRYPTION_KEY_<id>` | ✗ | — | Versioned key material, e.g. `ENCRYPTION_KEY_v1`, used for rotation |
 | `ENCRYPTION_ACTIVE_KEY_ID` | ✗ | only configured key, else `v0` | Which key version encrypts new data |
 | `ENCRYPTION_KEY[_<id>]_FILE` | ✗ | — | Path to read the key from instead of the variable (Docker secrets). The direct variable wins |
@@ -82,6 +120,9 @@ rather than a typed error.
 | `DATABASE_POOL_MIN` | ✗ | Minimum DB pool connections (default: `2`) |
 | `DATABASE_POOL_MAX` | ✗ | Maximum DB pool connections (default: `10`) |
 | `DATABASE_SSL` | ✗ | `true` to require SSL for DB connection |
+| `LUMIBASE_DB_RLS` | ✗ | Request-path RLS scope: `off` (default) or `enforce`. Any other value fails closed (startup error on Docker, `503 RLS_MISCONFIGURED` on Workers). See [Request-path RLS scope](../features/rls-request-scope.md) |
+| `LUMIBASE_OPS_TOKEN` | ✗ | Static bearer secret (≥ 32 chars) for the read-only ops diagnostics plane `/api/v1/ops/*` and error capture lookup. Unset or shorter: the plane answers 404 everywhere. See [Ops diagnostics](../features/ops-diagnostics.md) |
+| `DATABASE_SYSTEM_URL` | With `LUMIBASE_DB_RLS=enforce` (Docker) | Connection string of the system role (`BYPASSRLS`) used by workers, cron and system routes. Unset: those paths use `DATABASE_URL`. Also read from `DATABASE_SYSTEM_URL_FILE` |
 
 For Cloudflare Workers, use the `HYPERDRIVE` binding (see [Cloudflare Bindings](#cloudflare-bindings)).
 
@@ -141,6 +182,32 @@ For Cloudflare Workers, use the `HYPERDRIVE` binding (see [Cloudflare Bindings](
 > credit. `nvidia` (or a self-hosted NIM via `NVIDIA_BASE_URL`) and MeiliSearch
 > are the pieces that pair naturally with AWS-hosted infrastructure.
 
+### Decision model (TypeSafe Jev)
+
+Backs `POST /api/v1/ai/decisions`: typed `noul` / `choice` / `score` answers with probabilities instead of generated text. Independent of `LLM_PROVIDER`; unset means the endpoint answers `503 DECISION_NOT_CONFIGURED`.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DECISION_PROVIDER` | ✗ | `typesafe` (TypeSafe Jev, direct), `openrouter` (same System One API via OpenRouter, billed to OpenRouter), or `llm` (reuses `LLM_PROVIDER` in structured decision mode, no tools; answers are flagged `calibrated: false`). A configured choice, not an automatic failover. Unset = disabled. |
+| `DECISION_MODEL` | ✗ | Model override. Defaults to `jev-latest` (`typesafe`) or `~typesafe/jev-latest` (`openrouter`). |
+| `TYPESAFE_API_KEY` | If `typesafe` provider | TypeSafe API key. |
+| `TYPESAFE_BASE_URL` | ✗ | TypeSafe endpoint override. Defaults to `https://api.typesafe.ai/v1`. |
+| `OPENROUTER_API_KEY` | If `openrouter` provider | OpenRouter API key. |
+| `DECISION_TIMEOUT_MS` | ✗ | Total deadline per decision in ms, retries and backoff included (default `20000`, range 1000–120000). |
+| `DECISION_ATTEMPT_TIMEOUT_MS` | ✗ | Timeout of one upstream attempt in ms (default `8000`, range 500–120000), capped by what remains of the deadline. |
+| `DECISION_MAX_RETRIES` | ✗ | Retries after the first attempt for 429/503/529, network errors and attempt timeouts (default `2`, range 0–5). |
+| `DECISION_MAX_INPUT_BYTES` | ✗ | UTF-8 byte cap on the serialized state + questions (default `131072`). Over the cap → `413 DECISION_INPUT_TOO_LARGE` before any provider call. |
+| `DECISION_MAX_INPUT_TOKENS` | ✗ | Estimated token budget for the same payload (default `24000`). The estimate counts ~4 ASCII chars or 1 non-ASCII code point per token; it is not the provider's tokenizer. |
+| `DECISION_LLM_MAX_OUTPUT_TOKENS` | ✗ | `llm` only: cap on the estimated size of the complete answer (default `4096`, range 256–32768), the same on every provider. Over it → `413 DECISION_INPUT_TOO_LARGE` before the call. The cap sent upstream is that estimate, at least 256 tokens. |
+| `DECISION_LLM_THINKING_TOKENS` | ✗ | `llm` on Gemini/Vertex only: thinking headroom added to the cap sent upstream, not part of the 413 check (default `1024`, range 0–32768). Raise it when `DECISION_PARSE_FAILED` repeats on Gemini/Vertex; keep the sum of both variables below the model's output limit (an upstream `400` is `422 DECISION_VALIDATION`). Headroom is 0 for OpenAI/NVIDIA/Anthropic/Workers AI, whose default models do not reason; a reasoning `LLM_MODEL` shares the same cap and may fail with `DECISION_PARSE_FAILED` — not supported in this version. |
+| `DECISION_SITE_REQUESTS_PER_HOUR` | ✗ | Platform ceiling on admitted decisions per site per clock hour (default `600`, range 0–1000000). Over it → `429 DECISION_QUOTA_EXCEEDED`. |
+| `DECISION_SITE_MAX_CONCURRENT` | ✗ | Platform ceiling on decisions in flight per site (default `4`, range 1–1000). Over it → `429 DECISION_CONCURRENCY_LIMITED`. |
+| `DECISION_SITE_TOKENS_PER_DAY` | ✗ | Platform ceiling on estimated tokens per site per UTC day, every attempt included (default `2000000`, range 0–1000000000). |
+| `DECISION_REVIEW_RETENTION_DAYS` | ✗ | Days a draft review run and its feedback are kept before the hourly purge deletes them (default `180`, range 1–3650; empty or invalid → default). Review profiles are kept. |
+| `DECISION_REFUSAL_AUDIT_WINDOW_SECONDS` | ✗ | Window for aggregating refused (`403 FORBIDDEN`) decision requests in the audit log (#564): one `ai_decision` event per site, caller and reason per window, then at counts 10, 100, 1000 … (default `300`, range 0–86400; `0` = one event per refusal). The exact total is in `lumibase_ai_decision_refusals_total`. See [Hono API spec — AI decisions](../api/hono-api-spec.md). |
+
+Invalid values in these variables are ignored with a warning and the default applies. A site can tighten the three `DECISION_SITE_*` ceilings, never raise them, through its `aiDecisions` setting. Decisions are also off for a site until a site admin opts in there (see [API spec → Governance](../api/hono-api-spec.md)).
+
 ---
 
 ## Email (Resend)
@@ -187,7 +254,21 @@ Large imports can trip the default budget. Raise `LUMIBASE_RATE_LIMIT_MAX` and p
 | `LUMIBASE_RATE_LIMIT_WINDOW_S` | ✗ | `60` | Window length in seconds. |
 | `LUMIBASE_RATE_LIMIT_DISABLED` | ✗ | (unset) | Set to `true` to disable the throttle entirely. |
 | `LUMIBASE_DELIVER_RATE_LIMIT` | ✗ | `1200` | Max requests per minute per client IP on the public Delivery API (`/api/v1/deliver/*`). `0` disables. See [Caching — penetration](../features/caching.md). |
+| `LUMIBASE_AI_IP_RATE_LIMIT` | ✗ | `300` | Max requests per minute per client IP per site on `/api/v1/ai/*`, checked before authentication (#564). Over it → `429 RATE_LIMITED` with `Retry-After`. `0` disables; skipped when the client IP is unknown. Store failure follows `LUMIBASE_RATE_LIMIT_FAIL_CLOSED`. |
 | `LUMIBASE_NEGATIVE_CACHE_TTL` | ✗ | `30` | Tombstone TTL (seconds) for confirmed absences on public read paths, before ±20% jitter. `0` disables. |
+
+---
+
+## Imports
+
+Background collection imports (`POST /api/v1/imports`, see [Data import](../features/data-import.md#background-import-jobs)). The same values apply on Workers (bindings) and Docker (environment).
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `IMPORT_TIMEOUT` | ✗ | `3600` | Seconds a job may run, from its first step. Past it the job ends as `timed_out`; rows already written stay. |
+| `IMPORT_MAX_CONCURRENCY` | ✗ | `20` | Jobs running at once per site. Further jobs stay `queued` until one finishes. |
+| `IMPORT_MAX_BYTES` | ✗ | `52428800` | Largest accepted upload, in bytes (50 MiB). Larger files get `413 PAYLOAD_TOO_LARGE`. |
+| `IMPORT_CHUNK_SIZE` | ✗ | `500` | Rows written per step (max `5000`). Smaller steps react faster to cancel; larger ones finish sooner. |
 
 ---
 
@@ -211,6 +292,17 @@ Every GraphQL operation is validated before it runs against a depth limit and a 
 | `LOG_LEVEL` | ✗ | Log level: `debug`, `info`, `warn`, `error` (default: `info`) |
 | `LOG_FORMAT` | ✗ | `json` (default) or `pretty` (local dev) |
 
+### Usage telemetry
+
+Anonymous usage telemetry is off by default and has no built-in endpoint. See [Activation milestones and usage telemetry](../operations/usage-telemetry.md) for exactly what is sent.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `LUMIBASE_TELEMETRY_ENABLED` | ✗ | (unset) | Set `true` to opt in. Nothing is sent unless `LUMIBASE_TELEMETRY_ENDPOINT` is also set. |
+| `LUMIBASE_TELEMETRY_ENDPOINT` | ✗ | (unset) | URL that receives the events. `https:` only, or `http:` to `localhost`. |
+| `LUMIBASE_TELEMETRY_DISABLED` | ✗ | (unset) | Set `true` to turn telemetry off. Wins over `LUMIBASE_TELEMETRY_ENABLED`. |
+| `DO_NOT_TRACK` | ✗ | (unset) | `1` turns telemetry off, same as `LUMIBASE_TELEMETRY_DISABLED`. |
+
 ---
 
 ## Cloudflare Bindings
@@ -220,6 +312,7 @@ Configure these in `apps/cms/wrangler.toml` (not environment variables):
 | Binding | Type | Purpose |
 |---------|------|---------|
 | `HYPERDRIVE` | Hyperdrive | Pooled PostgreSQL connections |
+| `HYPERDRIVE_SYSTEM` | Hyperdrive (optional) | System role (`BYPASSRLS`) for scheduled/queue handlers and system routes; required with `LUMIBASE_DB_RLS=enforce` |
 | `CONFIG_CACHE` | KV Namespace | Schema, permission, and settings cache |
 | `MEDIA` | R2 Bucket | Media/file object storage |
 | `SITE_ROOM` | Durable Object | Per-site WebSocket coordination (realtime) |
@@ -251,6 +344,7 @@ Before deploying to production, verify:
 
 - [ ] `JWT_SECRET` is at least 32 characters and stored as a Wrangler Secret or Docker secret
 - [ ] `LUMIBASE_DEV_AUTH` is NOT set to `true`
+- [ ] `LUMIBASE_ALLOW_ORG_SIGNUP` is enabled only when organization signup is intended
 - [ ] Database credentials are stored as secrets, not in `.env` files committed to git
 - [ ] `S3_SECRET_ACCESS_KEY` is stored as a secret
 - [ ] `RESEND_API_KEY` is stored as a secret

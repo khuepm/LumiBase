@@ -54,7 +54,7 @@ function buildContentPlaneApp(db: Database, auth?: AuthPrincipal): Hono<AppEnv> 
     c.set('runtime', { cache: {} } as AppEnv['Variables']['runtime']);
     if (auth) {
       c.set('auth', auth);
-      mergeRequestContext(c, {
+      mergeRequestContext(c, { organizationRole: null,
         user: {
           id: USER_ID,
           externalId: null,

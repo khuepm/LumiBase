@@ -30,7 +30,7 @@ describe.skipIf(!hasDbIntegrationUrl)('DependentsService — DB integration', ()
 
   beforeEach(async () => {
     await db.delete(sites).where(eq(sites.id, SITE));
-    await db.insert(sites).values({ id: SITE, name: 'Deps IT' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'Deps IT' });
     articlesId = (await db.insert(collections).values({ siteId: SITE, name: 'articles', label: 'Articles' }).returning({ id: collections.id }))[0]!.id;
     commentsId = (await db.insert(collections).values({ siteId: SITE, name: 'comments', label: 'Comments' }).returning({ id: collections.id }))[0]!.id;
     await db.insert(fields).values([
@@ -131,7 +131,7 @@ describe.skipIf(!hasDbIntegrationUrl)('DependentsService — DB integration', ()
     // A second site with a comment referencing the SAME article id string.
     const SITE_B = `${SITE}_b`;
     await db.delete(sites).where(eq(sites.id, SITE_B));
-    await db.insert(sites).values({ id: SITE_B, name: 'Deps IT B' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_B, name: 'Deps IT B' });
     const bArticles = (await db.insert(collections).values({ siteId: SITE_B, name: 'articles', label: 'A' }).returning({ id: collections.id }))[0]!.id;
     const bComments = (await db.insert(collections).values({ siteId: SITE_B, name: 'comments', label: 'C' }).returning({ id: collections.id }))[0]!.id;
     await db.insert(fields).values([

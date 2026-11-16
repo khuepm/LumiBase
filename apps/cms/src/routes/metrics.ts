@@ -158,6 +158,29 @@ export const auditFallbackTotal = new Counter({
   registers: [register],
 });
 
+/**
+ * Every refused AI decision request (#564), whether or not it wrote an audit
+ * row. Refusal audit rows are aggregated per window, so this counter is the
+ * exact total. No site label, to keep cardinality bounded.
+ *   reason    bounded enum (`DECISION_REFUSAL_REASONS`)
+ *   principal anonymous | user | api_key | dev
+ *   audit     written (a row was written) | suppressed (counted only) |
+ *             unbounded (the dedup store was unavailable, so a row was written)
+ */
+export const aiDecisionRefusalsTotal = new Counter({
+  name: 'lumibase_ai_decision_refusals_total',
+  help: 'Refused AI decision requests (authorization refusals), by reason, principal type and audit disposition',
+  labelNames: ['reason', 'principal', 'audit'] as const,
+  registers: [register],
+});
+
+/** Requests answered 429 by the per-IP limiter on /api/v1/ai/* (#564). */
+export const aiIpRateLimitedTotal = new Counter({
+  name: 'lumibase_ai_ip_rate_limited_total',
+  help: 'Requests to /api/v1/ai/* refused by the per-client-IP rate limit',
+  registers: [register],
+});
+
 /** Database query duration histogram (per operation type). */
 export const dbQueryDuration = new Histogram({
   name: 'lumibase_db_query_duration_seconds',

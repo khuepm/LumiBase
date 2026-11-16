@@ -19,6 +19,7 @@
       { "label": "Tutorials", "to": "/docs/tutorials", "position": "left" },
       { "label": "API", "to": "/docs/api/hono-api-spec", "position": "left" },
       { "label": "Roadmap", "to": "/docs/roadmap/tasks", "position": "left" },
+      { "label": "Storybook", "to": "/storybook/", "position": "left" },
       { "label": "GitHub", "href": "https://github.com/khuepm/lumibase", "position": "right" }
     ]
   },
@@ -38,17 +39,17 @@
       {
         "type": "category",
         "label": "Tutorials",
-        "items": ["tutorials", "tutorials/nextjs-quickstart"]
+        "items": ["tutorials", "tutorials/nextjs-quickstart", "tutorials/astro-starter", "tutorials/sveltekit-starter"]
       },
       {
         "type": "category",
         "label": "CLI & SDK",
-        "items": ["cli", "sdk", "sdk/javascript", "sdk/typegen"]
+        "items": ["cli", "cli/typegen-config", "sdk", "sdk/javascript", "sdk/typegen", "sdk/frameworks"]
       },
       {
         "type": "category",
         "label": "Architecture",
-        "items": ["architecture/overview"]
+        "items": ["architecture/overview", "architecture/platform-extension-points"]
       },
       {
         "type": "category",
@@ -56,17 +57,33 @@
         "items": [
           "features/collections-builder",
           "features/field-types-and-config",
+          "features/timezone-aware-datetime",
           "features/permissions-rbac",
+          "features/organizations",
           "features/raw-data-editing",
+          "features/digital-asset-management",
           "features/typegen",
           "features/extensions-system",
-          "features/websockets-realtime"
+          "features/websockets-realtime",
+          "features/reconciler-repair-loop",
+          "features/site-skills",
+          "features/agent-receipts",
+          "features/locale-generator",
+          "features/visual-editing",
+          "features/external-action-tools",
+          "features/draft-review",
+          "features/studio-rtl-layout",
+          "features/jev-benchmark",
+          "features/jev-draft-review-pilot",
+          "features/jev-automation",
+          "features/jev-semantic-drift",
+          "features/rls-request-scope"
         ]
       },
       {
         "type": "category",
         "label": "API Reference",
-        "items": ["api/hono-api-spec"]
+        "items": ["api/hono-api-spec", "api/live-openapi"]
       },
       {
         "type": "category",
@@ -75,6 +92,9 @@
           "deployment/overview",
           "deployment/cloudflare",
           "deployment/docker",
+          "deployment/one-click",
+          "deployment/static-export-cloudflare-pages",
+          "deployment/kubernetes-helm",
           "deployment/google-cloud-vm",
           "deployment/environment-variables",
           "deployment/local-development"
@@ -83,7 +103,7 @@
       {
         "type": "category",
         "label": "Operations",
-        "items": ["operations/upgrades", "operations/encryption-keys"]
+        "items": ["operations/upgrades", "operations/encryption-keys", "operations/usage-telemetry"]
       },
       {
         "type": "category",
@@ -105,13 +125,23 @@
         "label": "Security",
         "items": [
           "security/anti-abuse",
+          "security/secure-defaults",
           "security/route-guards",
           "security/runtime-security-guards-plan",
           "security/cwe-top-100-audit",
           "security/idor-testing",
           "security/external-jwt-auth",
           "security/user-management",
-          "security/dependency-overrides"
+          "security/dependency-overrides",
+          "security/vulnerability-disclosure",
+          "security/advisories",
+          "security/advisory-template",
+          "security/advisory-runbook",
+          "security/password-policy",
+          "security/security-history",
+          "security/bootstrap-and-token-race-audit",
+          "security/filter-sanitisation-audit",
+          "security/upload-security"
         ]
       },
       {
@@ -133,6 +163,19 @@
       },
       {
         "type": "category",
+        "label": "Contributing",
+        "items": [
+          "contributing",
+          "contributing/versioning-policy",
+          "contributing/supported-runtimes",
+          "contributing/storybook",
+          "contributing/studio-performance",
+          "contributing/extension-hot-reload",
+          "contributing/docs-self-heal"
+        ]
+      },
+      {
+        "type": "category",
         "label": "Roadmap",
         "items": [
           "roadmap/tasks",
@@ -150,7 +193,8 @@
         "title": "Docs",
         "items": [
           { "label": "Getting Started", "to": "/docs/getting-started" },
-          { "label": "API Reference", "to": "/docs/api/hono-api-spec" }
+          { "label": "API Reference", "to": "/docs/api/hono-api-spec" },
+          { "label": "Storybook", "to": "/storybook/" }
         ]
       },
       {

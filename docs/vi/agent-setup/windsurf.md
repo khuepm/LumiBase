@@ -1,9 +1,9 @@
 ---
-version: 3
-lastUpdated: 2026-09-01T19:25:54.624Z
+version: 4
+lastUpdated: 2026-09-21T05:45:15.109Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 86d3fe673e599c75
+sourceHash: 7f7dc41de1deb23c
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -114,7 +114,7 @@ pnpm install                          # Install all workspace dependencies
 pnpm dev                              # Start CMS + Studio + Docs
 pnpm -F @lumibase/cms dev             # CMS API only (port 1989)
 pnpm -F @lumibase/studio dev          # Studio only (port 2026)
-pnpm -F @lumibase/database db:generate   # Regenerate Drizzle types
+pnpm db:generate   # Regenerate Drizzle types
 pnpm typecheck                        # Type-check all packages
 pnpm test                             # Run all tests
 ```

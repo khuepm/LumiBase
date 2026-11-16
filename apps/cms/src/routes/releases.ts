@@ -27,7 +27,7 @@ const itemInputSchema = z.object({
   revisionId: z.string().nullable().optional(),
 });
 
-const createSchema = z.object({
+export const createSchema = z.object({
   name: z.string().min(1),
   description: z.string().nullable().optional(),
   atomicityMode: z.enum(['all_or_nothing', 'best_effort']).optional(),
@@ -35,7 +35,7 @@ const createSchema = z.object({
   maintenanceWindow: z.unknown().optional(),
 });
 
-const patchSchema = z.object({
+export const patchSchema = z.object({
   name: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
   atomicityMode: z.enum(['all_or_nothing', 'best_effort']).optional(),
@@ -116,6 +116,21 @@ releasesRouter.patch('/:id', async (c) => {
       atomicityMode: parsed.data.atomicityMode as AtomicityMode | undefined,
     });
     return c.json({ data: updated });
+  } catch (err) {
+    const e = toError(err);
+    return c.json(e.body, e.status as 400);
+  }
+});
+
+/**
+ * GET /releases/:id/validate — pre-publish validation summary (#692). Every
+ * item the release would publish, validated in full; `items` lists only the
+ * ones with issues, each issue naming its field so Studio can jump to it.
+ */
+releasesRouter.get('/:id/validate', async (c) => {
+  try {
+    const data = await buildService(c).validate(c.req.param('id'));
+    return c.json({ data });
   } catch (err) {
     const e = toError(err);
     return c.json(e.body, e.status as 400);

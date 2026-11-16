@@ -1,11 +1,16 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:05:48.000Z
+version: 8
+lastUpdated: 2026-11-07T22:02:15.899Z
 sourceLang: vi
+contentHash: ecc8983d3122446b
+codeVerified: 2026-11-07T22:02:15.899Z
+codeVerifiedHash: 80e544c4c41dcb0c
+codeVerifiedClaims: 30
+
 translatedFrom: vi
-sourceHash: d3a62a6ea64bb371
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 80e544c4c41dcb0c
+mtEngine: manual
+syncStatus: human-translated
 ---
 
 # AI Copilot (HITL)
@@ -35,7 +40,7 @@ So the existing tables are seen as seeds:
 
 - `ai_approvals` → the precursor to a general approval gate for plan/tool/artifact.
 - `ai_conversations` + `ai_messages` → short-term context memory.
-- `ai_embeddings` → the RAG knowledge base by site/collection/item.
+- `ai_embeddings` → reserved for a RAG knowledge base by site/collection/item. Nothing reads or writes it yet (#581).
 - `CORE_SKILLS` → the precursor to a tool registry with an input schema, capability, rate limit, and risk policy.
 
 ## CORE_SKILLS registry
@@ -159,13 +164,25 @@ The system supports multiple LLM providers (configured via the `LLM_PROVIDER` en
 
 ### 2. Context Memory (Conversation history)
 The `ai_conversations` and `ai_messages` tables store the state of conversation threads:
-- Whenever a message is sent to `/api/v1/ai/chat`, the system loads up to the **20 most recent messages** as the context window passed to the LLM.
+- Whenever a message is sent to `/api/v1/ai/chat`, the system loads up to the **20 most recent messages** as the context window passed to the LLM. Since #582 the synchronous route and the `Prefer: respond-async` worker share `loadCopilotHistory` (`apps/cms/src/services/copilot-history.ts`); before, both read the **oldest** 20 messages, so from the 21st message on the turn the user had just sent was not in the request.
+- The window always opens on a user turn (an assistant message at the cut is dropped) and ends with the turn just sent. The Copilot system prompt is sent separately and is never cut.
+- Each chat message is limited to 2,000 characters. Model input and output follow the context policy below.
+- When the model returns several tool calls, only the first one runs. Arguments that are not valid JSON return `500` once, with no retry and nothing written.
 - Full management APIs are supported: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
+- A conversation belongs to the user who started it (#579). Another member of the site gets `404` on its messages, a `DELETE` removes nothing, and a `POST /chat` with that `conversationId` starts a new conversation for the caller. An API-key caller owns only the conversations recorded with its own key (`api_key_id`, migration `0023`), so one key cannot list, read, delete or append to another key's conversation. User-less conversations created before `0023` have no recorded key and no API key owns them.
 
-### 3. RAG Skills (`aiSuggestField` and `aiContentAssist`)
-Integrates a vector-embedding service (`embedding-service.ts`) supporting OpenAI `text-embedding-3-small` and Workers AI `@cf/baai/bge-base-en-v1.5`:
-- **`aiSuggestField`**: Analyzes the current schema and the admin's description, retrieves similar vectors from the database via cosine similarity to suggest an optimal field configuration.
-- **`aiContentAssist`**: Helps generate or revise field content based on RAG context from items already stored in the system.
+### Trust boundaries (#579)
+
+- **Instructions vs data.** Only the Copilot chat uses the Copilot system prompt and the tool list. Every other model call (generation skills, constitution compiler and judge, intent compiler, decisions) sends its own instructions in the provider's system slot with tools disabled (`completeWithInstructions`). The constitution judge sends the content under review as the only user turn, inside an `<untrusted>` block. A source-scan test fails when a new call skips this.
+- **One tool call per turn, no tool output in the prompt.** `POST /chat` executes at most the first tool call the model returns, and tool results go to the client, not back to the model. A multi-step attack therefore needs one user turn per step, and each turn is authorized on its own.
+- **The model grants no rights.** The harness checks capabilities, the canonical input schema, and the caller's row and field permissions on every tool call, whatever the model asked for. `apps/cms/eval/prompt-injection/dataset.v1.json` lists attacks and benign controls that are replayed as if the model followed the attacker.
+- **Redaction.** `listSettings` redacts secret-bearing fields with the same rule as `GET /api/v1/settings`.
+
+### 3. Generation skills with context (`aiSuggestField` and `aiContentAssist`)
+Neither skill runs a vector search today (#581). `embedding-service.ts` (OpenAI `text-embedding-3-small`, Workers AI `@cf/baai/bge-base-en-v1.5`) and the `ai_embeddings` table exist, but no code path calls or fills them.
+- **`aiSuggestField`**: sends the collection's existing field names and the admin's description to the model.
+- **`aiContentAssist`**: sends up to 3 sample items of the collection, the most recently updated items the caller may read. `ItemService` applies the tenant, row and field rules, so a hidden field, another site's item or an item outside the row rule never reaches the model. An update, a delete or a revoked permission takes effect on the next call. Only each sample's `status` and `data` are sent, not row metadata. The samples do not depend on the instruction. `apps/cms/eval/retrieval/dataset.v1.json` records the baseline on that dataset (Recall@3 0.5, MRR@3 0.46).
+- The embedding primitives throw `EMBEDDING_DIMENSION_MISMATCH` or `EMBEDDING_RESPONSE_INVALID` when vectors of different sizes are compared or a provider returns the wrong number or size of vectors.
 
 ## Property-based testing
 
@@ -175,3 +192,32 @@ The system has 15 property tests (fast-check, ≥100 iterations) fully listed in
 - `apps/cms/src/routes/__tests__/ai-*.property.test.ts` — Properties 9-12 (Module C).
 - `apps/studio/src/modules/settings/__tests__/` — Properties 13-14 (Module D).
 - `packages/database/src/__tests__/` — Property 15 (round-trip).
+
+
+## Context budgets and grounded extraction
+
+Set `LLM_CONTEXT_WINDOW_TOKENS` to the supported window of the deployed model.
+Known model configurations use a conservative application ceiling of 32,768 when
+no override is set. Custom model names require a configured window. A missing or
+invalid window makes each model call return `LLM_CONTEXT_LIMIT` before any network
+call; routes that never call a model (for example MCP `tools/list`) keep working. Before a
+network call, the provider counts serialized UTF-8 bytes as a conservative text
+token bound, reserves output (normally 1,024 tokens) and accounts for tool and
+message framing. Older history is removed first. System policy, tool definitions
+and the newest user request are preserved. An oversized request returns HTTP 413
+with `LLM_CONTEXT_LIMIT`. Rate limits, invalid responses and unavailable upstreams
+have actionable error codes and do not trigger a tool write or automatic repair.
+
+For extractive assistance pass `grounded: true` to `aiContentAssist`. Only current
+permitted sample fields enter the evidence set. Accepted text consists entirely
+of exact cited quotes. A citation identifies the sampled field and its item ID.
+Missing evidence produces an empty answer with `abstained: true`; fabricated,
+stale or uncited text fails validation. Exact quotes establish provenance, not
+the truth or relevance of a source. Conflicting or irrelevant samples should
+lead to abstention. The free-form writing mode remains available by default.
+
+Run `pnpm -F @lumibase/cms eval:grounding` for the versioned synthetic runtime
+contract baseline. v1 requires all 12 cases to pass, including English and
+Vietnamese excerpts, altered facts, stale and foreign sources, conflicting
+sources and abstention. The results measure the validator, not a model accuracy
+rate on editorial work.

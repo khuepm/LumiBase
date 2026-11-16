@@ -1,6 +1,8 @@
 import pc from "picocolors";
 import { doctorCommand } from "./commands/doctor.js";
 import { initCommand } from "./commands/init.js";
+import { migrateCommand } from "./commands/migrate.js";
+import { DEFAULT_SKILLS_DIR, skillsCommand } from "./commands/skills.js";
 import { typesCommand, DEFAULT_OUT } from "./commands/types.js";
 import { CliError } from "./errors.js";
 import { argvAfterCommand, boolFlag, parseArgs } from "./utils/args.js";
@@ -17,8 +19,11 @@ ${pc.bold("Usage")}
 
 ${pc.bold("Commands")}
   init [name]     Scaffold a new LumiBase project
-  types           Generate TypeScript types from a live schema
+  types           Generate TS / Zod / GraphQL SDL / OpenAPI from a schema
+  skills          Sync Site Skills (AI agent playbooks) with a site
   doctor          Check configuration and connectivity
+                  ${pc.dim("(--security: audit the project's config against the production checklist)")}
+  migrate <source>  Migrate content from another CMS ${pc.dim("(contentful)")}
 
 ${pc.bold("Connection")}
   Resolved with precedence flag > environment > ${pc.cyan("lumibase.config.json")}.
@@ -36,12 +41,55 @@ ${pc.bold("lumibase types")}
   --import-from <pkg>  Module the generated file imports from ${pc.dim('(default: lumibase)')}
   --check         Fail if the file is missing or stale ${pc.dim("(use in CI)")}
   --stdout        Print to stdout instead of writing a file
+  --watch         Regenerate whenever the schema changes ${pc.dim("(polls; Ctrl+C to stop)")}
+  --interval <ms> Poll interval for --watch ${pc.dim("(default: 2000)")}
+  --config <path> Typegen config ${pc.dim("(default: lumibase.typegen.config.{ts,mts,js,mjs,json})")}
+                  ${pc.dim("A config file holds one or more configs, each with targets:")}
+                  ${pc.dim("ts | zod | graphql-sdl | openapi | manifest. --check and --watch apply to all.")}
+
+${pc.bold("lumibase skills")} ${pc.dim("— Markdown playbooks (skills/*.skill.md) kept in git; needs an admin token")}
+  list            Show the skills on the site
+    --status <s>  Only draft | active | archived
+    --json        Print the raw JSON instead of a table
+  pull            Write every skill on the site to <dir>/<slug>.skill.md
+    --dir <dir>   Target directory      ${pc.dim(`(default: ${DEFAULT_SKILLS_DIR})`)}
+    --status <s>  Only draft | active | archived
+  push            Create or update skills from the *.md files in <dir> ${pc.dim("(updates active skills live)")}
+    --dir <dir>   Source directory      ${pc.dim(`(default: ${DEFAULT_SKILLS_DIR}; README.md is skipped)`)}
+    --activate    Activate the skills instead of leaving new ones as drafts
+    --dry-run     Show what would change without writing
+    --check       Dry run that fails if anything would change ${pc.dim("(use in CI)")}
+  install <src>   Add skills from a directory, a .md file, or an installed npm package
+                  ${pc.dim("(never changes a skill that is already active)")}
+                  ${pc.dim('(package dir: package.json "lumibase.skills", else skills/)')}
+    --activate    Activate on install ${pc.dim("(default: drafts, to review in Studio)")}
+    --dry-run     Show what would change without writing
+
+${pc.bold("lumibase migrate contentful")}
+  --file <path>   Output of ${pc.cyan("contentful space export --include-drafts")}
+  --apply         Write the schema and content ${pc.dim("(default: dry run)")}
+  --yes           Skip the confirmation prompt ${pc.dim("(required without a TTY)")}
+  --prefix <p>    Prefix for new collection names, e.g. cf_
+  --locale-map <a=b,…>  Map source locales, e.g. en-US=en
+  --skip-assets   Do not download/upload assets
+  --state <path>  Resume file ${pc.dim("(default: .lumibase/migrate-contentful-<space>-<site>-<hash>.json)")}
+  --json          Print the plan as JSON
+
+${pc.bold("lumibase doctor --security")} ${pc.dim("— reads .env, .env.local, .dev.vars, wrangler.toml, docker-compose.yml")}
+  --production    Apply the production checklist even if NODE_ENV is not production
+  --env-file <a,b> Read these dotenv files instead of the defaults
+  --json          Print the report as JSON
+  ${pc.dim("Exits 1 when any finding is critical.")}
 
 ${pc.bold("Examples")}
   ${pc.dim("$")} lumibase init my-site
   ${pc.dim("$")} lumibase types --out src/lumibase-types.d.ts
   ${pc.dim("$")} lumibase types --check
+  ${pc.dim("$")} lumibase skills pull
+  ${pc.dim("$")} lumibase skills push --check
+  ${pc.dim("$")} lumibase skills install @acme/lumibase-skills
   ${pc.dim("$")} lumibase doctor
+  ${pc.dim("$")} lumibase doctor --security --production
 
   Docs: ${pc.cyan("https://docs.lumibase.dev")}
 `;
@@ -67,8 +115,12 @@ export async function run(argv: string[]): Promise<number> {
       return initCommand(argvAfterCommand(argv));
     case "types":
       return typesCommand(args);
+    case "skills":
+      return skillsCommand(args);
     case "doctor":
       return doctorCommand(args);
+    case "migrate":
+      return migrateCommand(args);
     case "help":
       log.plain(HELP);
       return 0;

@@ -53,7 +53,7 @@ export function TranslationsPage() {
   });
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-4xl space-y-6 p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">{t('translations_title', 'Translations')}</h1>
         <div className="flex items-center gap-3">
@@ -98,12 +98,12 @@ export function TranslationsPage() {
       {/* List */}
       <div className="rounded-xl border bg-background shadow-sm">
         <table className="w-full text-sm">
-          <thead className="border-b bg-muted/20 text-left text-xs uppercase text-muted-foreground">
+          <thead className="border-b bg-muted/20 text-start text-xs uppercase text-muted-foreground">
             <tr>
               <th className="px-4 py-3">Key</th>
               <th className="px-4 py-3">Value</th>
               <th className="px-4 py-3">Status</th>
-              <th className="w-24 px-4 py-3 text-right">Actions</th>
+              <th className="w-24 px-4 py-3 text-end">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -122,11 +122,11 @@ export function TranslationsPage() {
                     {row.status}
                   </span>
                 </td>
-                <td className="px-4 py-2 text-right">
+                <td className="px-4 py-2 text-end">
                   <button
                     type="button"
                     onClick={() => setEditing(row)}
-                    className="text-primary hover:underline text-xs mr-3"
+                    className="text-primary hover:underline text-xs me-3"
                   >
                     Edit
                   </button>
@@ -222,7 +222,7 @@ function TranslationEditor({
             disabled={!key || !value || mutation.isPending}
             className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-50"
           >
-            <Save className="mr-2 h-4 w-4 inline" />
+            <Save className="me-2 h-4 w-4 inline" />
             {mutation.isPending ? 'Saving…' : 'Save'}
           </button>
         </div>

@@ -1,21 +1,24 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T00:11:35.763Z
+version: 24
+lastUpdated: 2026-11-15T23:40:59.736Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6edecac703c795d3
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T00:11:35.763Z
-codeVerifiedHash: 6edecac703c795d3
-codeVerifiedClaims: 14
+sourceHash: ef6fd16483d977a5
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-15T23:40:59.736Z
+codeVerifiedHash: ef6fd16483d977a5
+codeVerifiedClaims: 22
 ---
+
+<!-- check-parity: allow inline-code -->
+<!-- Recorded by stamp-pair --allow-structure-drift on 2026-10-14T15:33:47.070Z. See commit history for rationale. -->
 
 # Data Model (Drizzle / Postgres)
 
 Tài liệu mô tả các bảng đã được khai báo trong `packages/database/src/schema/`. Row nội bộ mặc định dùng text ID. No-code content collections còn có chiến lược logical item primary key riêng qua `collections.primaryKeyField` và `collections.primaryKeyType`.
 
-Mọi bảng domain theo tenant đều có `site_id`.
+Dòng domain thuộc site mang `site_id`; dòng thuộc organization mang `organization_id`.
 
 > **Tên bảng vật lý mang tiền tố `lumibase_`.** Mọi bảng hệ thống của LumiBase có tên
 > vật lý `lumibase_<tên>` (vd bảng logic `users` có tên vật lý `lumibase_users`), được
@@ -28,13 +31,17 @@ Các file schema được chia theo domain:
 
 | File | Bảng (vật lý) |
 |------|------|
-| `core.ts` | `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
+| `core.ts` | `lumibase_organizations`, `lumibase_organization_members`, `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
-| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
+| `social-auth.ts` | `lumibase_user_identities`, `lumibase_social_auth_providers` |
+| `imports.ts` | `lumibase_import_jobs` |
+| `locale-generation.ts` | `lumibase_locale_generation_jobs`, `lumibase_translation_suggestions` |
+| `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
 
 Migration nằm ở `packages/database/migrations/` và `packages/database/drizzle/`.
 
@@ -42,8 +49,16 @@ Migration nằm ở `packages/database/migrations/` và `packages/database/drizz
 
 ## 1. Core tenancy & identity (`core.ts`)
 
+### `organizations`
+- `id` text PK (nanoid), `slug` duy nhất, `name`, `settings` jsonb mặc định `{}`, `createdAt`, `updatedAt`.
+
+### `organization_members`
+- `userId`, `organizationId`, `role`, `createdAt`; PK ghép `(userId, organizationId)`. CHECK role: `owner`, `admin`, `billing`, `member`. Role dùng ma trận `canOrg` cố định, không dùng policy site. Bảng organization có RLS theo `lumibase.organization_id`.
+
 ### `sites`
+- `organizationId` là FK bắt buộc tới `organizations`, xóa RESTRICT. Migration `0024_organizations` backfill các site hiện có vào organization `default` trước khi áp NOT NULL. Setup tạo personal organization và bootstrap owner trước khi tạo site mặc định.
 - `id`, `name`, `domain`, `createdAt`, cùng các cột identity/branding/theme và `defaultLanguage`, `defaultAppearance`, `defaultSaveAction` (`stay`|`return`|`create_new`, mặc định `stay` — save action mặc định của Studio ở cấp site; override theo từng user nằm ở `users.preferences.saveAction`).
+- `emailIdentityStrict` boolean, mặc định `false` (migration `0027`) — tầng định danh email theo site: khi bật, mỗi hộp thư gốc chỉ có một membership (xem `user_sites.identityKey`).
 
 ### `users`
 | Column | Type | Note |
@@ -56,12 +71,17 @@ Migration nằm ở `packages/database/migrations/` và `packages/database/drizz
 | `preferences` | jsonb | UI prefs theo user: `{ language, theme, timezone, defaultPresets, saveAction }`. `saveAction` (`stay`/`return`/`create_new`) override `sites.default_save_action`. |
 | `lastSeenAt` | timestamp |
 | `passwordChangedAt` | timestamp | Được set ở mọi lần reset/change (migration `0006`). Token password-reset có `iat` sớm hơn mốc này sẽ bị từ chối → link reset dùng một lần. |
+| `emailCanonical` | text unique | Khoá tài khoản theo mode định danh email của instance: `lower(email)` (`exact`) hoặc hộp thư gốc (`root`). Do trigger ghi (migration `0027`), app không bao giờ ghi. Nullable trong một release; tra cứu fallback về `lower(email)` cho hàng null. |
+| `emailRoot` | text | Hộp thư gốc: bỏ `+tag` trên mọi domain; Gmail bỏ dấu chấm và `googlemail.com` → `gmail.com`. Tính bởi `lumibase_email_root()` trong cùng trigger. Index thường. |
 | `createdAt`, `updatedAt` | timestamp |
 
-Unique index: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, `is_bootstrap = true`), và `users_email_lower_unique` trên `lower(email)` (migration `0006`) — email là identity toàn cục, một account cho một địa chỉ. ⚠️ Migrate một instance đang chạy sẽ fail nếu instance đó đã có email trùng nhau khi bỏ qua hoa/thường; phải de-duplicate trước.
+Unique index: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, `is_bootstrap = true`), và `users_email_lower_unique` trên `lower(email)` (migration `0006`) — email là identity toàn cục, một account cho một địa chỉ. ⚠️ Migrate một instance đang chạy sẽ fail nếu instance đó đã có email trùng nhau khi bỏ qua hoa/thường; phải de-duplicate trước. Migration `0027` thêm `users_email_canonical_unique` trên `email_canonical` và `users_email_root_idx` trên `email_root`; dưới mode `root`, index canonical biến "một hộp thư gốc = một tài khoản" thành bảo đảm ở tầng database.
 
 ### `user_sites` (membership N-N)
-- `userId`, `siteId`, `roleId`, `joinedAt`. PK composite.
+- `userId`, `siteId`, `roleId`, `createdAt`. PK composite.
+- `identityKey` text (migration `0027`) — bằng `users.email_root` khi site strict, ngược lại là null. Unique index `user_sites_site_identity_unique` trên `(site_id, identity_key)` chỉ cho một membership mỗi hộp thư gốc trên site strict (null không bao giờ xung đột). Được trigger điền khi insert và cập nhật lại khi email của thành viên thay đổi.
+
+**Chính sách định danh email (migration `0027`).** Tầng instance nằm ở `system_state.email_identity_mode` (`exact` | `root`, mặc định `exact`; instance hiện có được backfill thành `exact`, nên nâng cấp không đổi hành vi). Mọi writer — route, SCIM, setup, seed, bản app cũ — đều có cùng giá trị cột dẫn xuất vì trigger tính chúng: `lumibase_users_email_identity()` trên `users` (đọc singleton `FOR SHARE`), `lumibase_user_sites_identity_key()` trên `user_sites` (đọc site `FOR SHARE`) và `lumibase_users_rekey_memberships()` sau khi đổi email. Endpoint đổi policy giữ `FOR UPDATE` trên cùng các hàng đó, nên không hàng nào bị gán khoá theo policy cũ. Xem [Quản lý người dùng](./security/user-management.md) và `/api/v1/admin/email-identity` trong API spec.
 
 ### `teams` / `team_members`
 - `teams`: `id`, `siteId`, `name`, `description`.
@@ -101,6 +121,8 @@ Chiến lược primary key:
 - `nanoid`: định danh chuỗi logic mặc định do LumiBase sinh.
 - `uuid`: chuỗi UUID do service sinh.
 - `string`: định danh chuỗi do caller cung cấp.
+
+Với mọi chiến lược, id của item là duy nhất **trong mỗi site**, trên tất cả collection của site đó: `items` có primary key `(siteId, id)` (migration `0035`). Hai site có thể dùng cùng một id; trong một site, id bị dùng lại, kể cả ở collection khác, bị từ chối với `409 ITEM_ID_EXISTS`.
 - `integer` / `bigInteger`: chiến lược dựa trên sequence, dành riêng cho storage materialized/physical; collection JSONB chặn các tổ hợp này.
 
 Storage mode được khai báo tường minh có chủ đích:
@@ -146,29 +168,35 @@ Compiled schema phơi ra các system field được sinh tự động, bên cạ
 ### `items`
 | Column | Type |
 |---|---|
-| `id` | text PK |
+| `id` | text | duy nhất trong mỗi site |
 | `siteId`, `collectionId` | text FK |
 | `status` | text | `draft`/`published`/`archived` |
 | `data` | jsonb | giá trị đánh key theo field.name |
+| `version` | integer, default 0 | Bộ đếm optimistic concurrency: tăng sau mỗi lần ghi làm đổi nội dung item (data, status, pin, xoá mềm kể cả cascade trong cây, crypto-shred, di chuyển item trong cây); rebase path của con cháu, đánh số lại sort của anh em và worker xoay khoá chỉ mã hoá lại thì không tăng. Được trả làm `ETag` của item; `If-Match` so sánh với nó. |
 | `sort` | integer |
 | `userCreated`, `userUpdated` | text FK users |
 | `publishAt`, `unpublishAt` | timestamp nullable | Khung thời gian scheduling (Req 7); worker reconcile đổi status, delivery filter theo khung này. |
 | `editorialState` | text nullable | Trạng thái human review (Req 9): `draft`/`in_review`/`approved`/`published`/`rejected`. Khác với veto-window của AI. |
+| `firstPublishedAt` | timestamp nullable | Lần xuất bản đầu tiên (#687, migration 0037). Gán một lần, xuất bản lại không làm đổi. |
+| `publishedAt` | timestamp nullable | Lần xuất bản gần nhất (#687). Giữ nguyên khi item bị gỡ xuất bản. |
+| `hasUnpublishedChanges` | boolean, default false | Dữ liệu đã bị sửa kể từ lần xuất bản gần nhất (#687); lần xuất bản kế tiếp xoá cờ. Index một phần `items_unpublished_changes_idx (siteId, collectionId) WHERE has_unpublished_changes AND deleted_at IS NULL`. |
 | `dekWrapped` | text nullable | Chế độ envelope (Req 4.5): DEK theo từng record, được bọc bởi KEK. Non-null ⇒ các field encrypted của record này dùng DEK riêng; null ⇒ chế độ shared-key. Việc đọc là tự-mô-tả từ cột này. |
 | `createdAt`, `updatedAt` | timestamp |
 | `deletedAt` | timestamp nullable |
 
-Index: `(siteId, collectionId, status)`, GIN trên `data`, `(siteId, status, publishAt)`, `(siteId, status, unpublishAt)`.
+Primary key `(siteId, id)`. Index: `(siteId, collectionId, status)`, GIN trên `data`, `(siteId, status, publishAt)`, `(siteId, status, unpublishAt)`.
 
 ### `revisions`
 - `id`, `siteId`, `itemId`, `collectionId`, `delta jsonb`, `parentId`, `userId`, `createdAt`.
+- `(siteId, itemId) → items (siteId, id)` (cascade): một revision luôn thuộc về một item của chính site đó.
+- `PATCH ?saveRevision=false` không ghi revision (#693); `meta.revisionRetention: { maxRevisions?, maxAgeDays? }` của collection cho phép lượt quét `revision-retention` mỗi giờ xoá dòng cũ (không bao giờ xoá revision mới nhất của một item, revision đang staged, revision được release ghim hay revision của agent).
 
 ### `releases` (Content Releases)
 - Một bundle publish xuyên collection. `id`, `siteId`, `name`, `description`, `status` (`draft`|`scheduled`|`published`|`failed`|`partially_failed`), `atomicityMode` (`all_or_nothing`|`best_effort`), `publishAt`, `publishedAt`, `maintenanceWindow jsonb`, `statusReason`, `createdBy → users.id (set null)`, `createdAt`, `updatedAt`.
 - Index: `releases_site_status_idx (siteId, status)`, `releases_publish_due_idx (siteId, status, publishAt)` (đối xứng với `items.publishDueIdx` cho vòng quét của scheduler).
 
 ### `release_items` (Content Releases)
-- Bảng junction release ↔ item, có thể ghim vào một revision cụ thể. `id`, `siteId`, `releaseId → releases.id (cascade)`, `collection`, `itemId → items.id (cascade)`, `targetStatus` (mặc định `published`), `revisionId → revisions.id (set null)`, `outcome` (`published`|`skipped`|`failed`), `outcomeReason`, `createdAt`.
+- Bảng junction release ↔ item, có thể ghim vào một revision cụ thể. `id`, `siteId`, `releaseId → releases.id (cascade)`, `collection`, `(siteId, itemId) → items (siteId, id)` (cascade), `targetStatus` (mặc định `published`), `revisionId → revisions.id (set null)`, `outcome` (`published`|`skipped`|`failed`), `outcomeReason`, `createdAt`.
 - Unique `(releaseId, collection, itemId)` (key cho upsert); index `(siteId, releaseId)`.
 
 ### `activity`
@@ -195,6 +223,15 @@ Index: `(siteId, collectionId, status)`, GIN trên `data`, `(siteId, status, pub
 ### `materialized_collections` (POST-GA6)
 - Định nghĩa các bảng đọc đã denormalize cho đường nóng.
 - `target`, `refreshStrategy` (`auto`/`cron`/`manual`), `refreshCron`, `projection jsonb`, `filter jsonb`, `lastRefreshedAt`, `rowCount`, `status`, `error`.
+
+### `import_jobs` (`imports.ts`, migration `0028`)
+- Một lần import chạy nền (#726): `collection`, `format` (`csv`/`json`), `mode` (`create`/`upsert`), `status` (`queued`/`running`/`succeeded`/`failed`/`cancelled`/`timed_out`), `principal` jsonb (được resolve lại ở mỗi bước), `created_by`.
+- Tiến độ: `total_rows`, `cursor` (dòng kế tiếp), `created_rows`, `updated_rows`, `failed_rows`, `errors` jsonb (`{ row, id?, message }[]`, có giới hạn) và `errors_truncated`.
+- Điều phối worker: `lease_owner`, `lease_until`, `timeout_ms`, `cancel_requested_at`, `started_at`, `finished_at`. `source` giữ file đã upload cho tới khi job kết thúc, sau đó được xoá. Cô lập theo site bằng RLS.
+
+### `activation_milestones` và `telemetry_state` (`activation.ts`, migration `0029`)
+- `activation_milestones`: mỗi `site_id` và `milestone` (`site_created`/`item_published`/`delivery_request`/`agent_run`) một dòng, kèm `reached_at` và `source` (`event`/`derived`). Ghi một lần, không bao giờ cập nhật. Cô lập theo site bằng RLS.
+- `telemetry_state`: singleton cấp instance (`id = 'singleton'`), không theo phạm vi site. Giữ `install_id` ngẫu nhiên và `sent` jsonb (tên sự kiện → ngày đã gửi). Dòng này chỉ được tạo sau khi người vận hành opt-in telemetry sử dụng.
 
 ### Runtime contract cho schema diff/apply
 
@@ -237,17 +274,30 @@ Quá trình sinh SDK dùng manifest này để phát ra interface collection cơ
 - `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — không bao giờ lưu plaintext), `familyId` (chuỗi rotation), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `createdAt`.
 - Token gia hạn session, có rotation và thu hồi được. Dùng lại một row đã revoke sẽ revoke toàn bộ `familyId` (phát hiện đánh cắp). Được quét dọn bởi cron mỗi giờ sau khi hết hạn. Xem [`security/user-management.md`](./security/user-management.md) §4d.
 
+### `user_passkeys` (migration `0031`, vật lý `lumibase_user_passkeys`)
+- `id` (nanoid), `userId`, `credentialId` (base64url, unique), `publicKey` (khóa công khai COSE), `counter`, `transports`, `aaguid`, `name`, `deviceType`, `backedUp`, `rpId`, `createdAt`, `lastUsedAt`, `updatedAt`.
+- Gắn với định danh như `lumibase_user_totp_credentials`: khóa theo `user_id`, không có `site_id`, không nằm trong RLS — passkey thuộc về một RP ID (tên miền), không thuộc site. Không lưu gì bí mật. Xem [`security/passkeys.md`](./security/passkeys.md).
+
 ### System collections cần seed permissions
 
 Khi seed local/staging/prod, phải seed permission cho system collection một cách tường minh. Các collection nhạy cảm như `system_state`, `audit_log`, `login_attempts`, `login_baselines`, `admin_backup_codes`, `scim_tokens` và các bảng API key trong tương lai chỉ dành cho admin/security. Xem [System Collections & Sensitive Access](./features/system-collections-access.md).
 
+### `api_keys`
+- `scope` là `site` (mặc định) hoặc `organization`. CHECK yêu cầu đúng một đích tương ứng: phạm vi site có `siteId` và không có `organizationId`; phạm vi organization có `organizationId` và không có `siteId`. Cả hai đích là khóa ngoại xóa CASCADE.
+- `prefix`, `tokenHash`, metadata tên/hết hạn/thu hồi/xoay; token rõ không được lưu trong bảng này. Site key giữ liên kết role/policy. Organization key có quyền admin cố định tại organization và kế thừa administrator trên các site của nó.
+
 ## 4. Files & Assets (`platform.ts`)
 
 ### `files`
-- `id`, `siteId`, `storage` (`r2`/`s3`/external), `filenameDisk`, `filenameDownload`, `mime`, `filesize`, `width`, `height`, `duration`, `folder`, `metadata jsonb`, `uploadedBy`, `createdAt`.
+- `id`, `siteId`, `storage` (`r2`/`s3`/external), `filenameDisk`, `filenameDownload`, `mime`, `filesize`, `width`, `height`, `duration`, `folder`, `metadata jsonb`, `uploadedBy`, `contentHash`, `version`, `scanStatus`, `createdAt`, `updatedAt`.
+- `contentHash` — SHA-256 đầy đủ (hex) của binary hiện tại, dùng để phát hiện trùng lặp; index `(siteId, contentHash)`. `version` — tăng sau mỗi lần thay tại chỗ (cùng id và `filenameDisk`). `scanStatus` — `skipped` (mặc định) / `pending` / `clean` / `infected` / `error`; chỉ `skipped` và `clean` được phân phối. `metadata.embedded` chứa EXIF/IPTC/XMP đã trích và `metadata.searchText` là bản tóm tắt để tìm kiếm. Migration `0038_dam_assets`.
+
+### `file_versions`
+- `id`, `siteId`, `fileId` (FK cascade), `version`, `filenameDisk` (archive key `sites/<site>/file-versions/<id>/v<n>`), `filenameDownload`, `mime`, `filesize`, `width`, `height`, `contentHash`, `metadata jsonb`, `replacedBy`, `createdAt`, `expiresAt`.
+- Trạng thái của file **trước** một lần thay, được giữ tới `expiresAt` để hoàn tác; sau đó bị dọn cùng object của nó. Xem [Quản lý tài sản số](./features/digital-asset-management.md).
 
 ### `folders`
-- `id`, `siteId`, `name`, `parent`.
+- `id`, `siteId`, `name`, `parent`. Path, cây con và kiểm tra vòng lặp được suy ra trong `apps/cms/src/services/files/folder-tree.ts`.
 
 ## 5. UX state (`platform.ts`)
 
@@ -308,8 +358,11 @@ contract phía người dùng và runtime.
 ### `ai_approvals`
 | Column | Type | Note |
 |---|---|---|
-| `id` | text PK | nanoid(21) |
-| `siteId` | text FK → sites CASCADE |
+| `id` | text PK | giữ ID hiện có; UUIDv7 cho approval organization |
+| `siteId` | text nullable FK → sites CASCADE | cha approval thuộc site |
+| `organizationId` | text nullable FK → organizations CASCADE | cha approval thuộc organization |
+| `organizationRequester` | jsonb nullable | danh tính user hoặc API key yêu cầu |
+| `result` | jsonb nullable | biên nhận người duyệt đã commit, có thể chứa key mới |
 | `agentName` | text | default `'lumibase-copilot'` |
 | `skillName` | text | từ `CORE_SKILLS` registry |
 | `arguments` | jsonb | đối số skill |
@@ -318,12 +371,16 @@ contract phía người dùng và runtime.
 | `createdAt`, `decidedAt` | timestamp |
 | `decidedBy` | text FK → users SET NULL |
 
-Index: `(siteId, status)`.
+Index: `(siteId, status)`, `(organizationId, status)`.
 
 Hành vi: Skill nguy hiểm (`schema:write` hoặc tên bắt đầu bằng `delete`) bắt buộc
 tạo `ai_approvals` row chờ duyệt thay vì execute trực tiếp. Xem
 [AI Copilot](./features/ai-copilot.md). Các hành vi harness nguy hiểm mới cũng ghi
 kèm record `agent_approvals` (dạng tổng quát, có liên kết) khi phù hợp.
+
+Migration `0025_organization_approvals` cho phép `siteId` nullable và thêm `organizationId`, `organizationRequester`, `result`. CHECK cho phép một cha site hoặc một cha organization; approval organization còn phải có thông tin bên yêu cầu. Cả hai cha đều xóa CASCADE. Cặp policy RLS restrictive/permissive cô lập biên nhận theo phạm vi site hoặc organization đang hoạt động.
+
+Thao tác ghi MCP organization luôn chờ người duyệt. Kiểm tra lại quyền bên yêu cầu, ghi domain và biên nhận lưu dùng cùng transaction. Chỉ người được phép mới đọc được biên nhận chứa key mới; phản hồi danh sách và kết quả agent không chứa bí mật đó. Request chỉ thuộc organization không mượn site mặc định. ID của approval organization này là UUIDv7; ID approval hiện có vẫn hợp lệ.
 
 ### Các bảng harness `agent_*`
 
@@ -347,26 +404,43 @@ Ghi chú vận hành:
 - `POST /api/v1/agent/generate-app` tạo artifact `page_spec`, `component_spec`, `seed_data`, `api_spec` và chạy evaluation cho từng artifact trước khi trả kết quả.
 - `agent_runs.metrics.stopReason` ghi lý do hoàn tất hoặc dừng theo budget, ví dụ `completed`, `error`, `max_tool_calls`.
 - `agent_tool_calls.cost` lưu token/cost estimate sau khi đã mask secret.
+- `agent_runs.status` `waiting_user` (#710): run đã hỏi một người bằng `askUser` và đang đỗ tới khi câu hỏi được trả lời (`succeeded`, `stopReason: answered`), hết hạn (`failed`, `stopReason: question_timeout`) hoặc bị huỷ. Không đổi schema: câu hỏi là một dòng `agent_approvals` (xem bên dưới).
 - Nếu cùng một goal fail ít nhất ba run và runtime có `QueueProvider`, run service enqueue `agent-dead-letter` với payload thất bại theo tenant.
+
+### Các bảng kiểm tra bản nháp (Jev)
+
+| Bảng | Mục đích |
+|---|---|
+| `lumibase_review_profiles` | Rubric kiểm tra có phiên bản; các dòng là bất biến, unique `(site_id, key, version)` |
+| `lumibase_review_runs` | Một lần chạy decision của profile trên item hoặc snapshot, kèm provider, model, content hash và câu trả lời; bị xoá sau `DECISION_REVIEW_RETENTION_DAYS` |
+| `lumibase_review_feedback` | Accept/edit/reject theo run, câu hỏi và principal; bị xoá cùng run |
+| `lumibase_review_sessions` | Đo thời gian pilot (#516): một phiên biên tập từ lúc mở trình soạn thảo tới lần lưu đầu tiên, `mode` `baseline`/`assisted`, `duration_ms`, `locale`, `run_id` đã xem và `viewed_questions`. Không lưu nội dung. `run_id` được set null khi run bị xoá |
+| `lumibase_ai_automation_actions` | Tự động hoá Jev (#518): một hành động metadata (`tag` / `route`) cho mỗi flow run, node và item, unique `(site_id, flow_run_id, node_id, item_id)`. `mode` `shadow`/`live`, `status`, `reason`, `proposed`, `previous`, `applied`, `approval_id`, `reverted_at`, cùng các id của chuỗi `revision_id`, `review_run_id` và `content_hash`. `review_run_id` được set null khi run bị xoá |
+
+Cả năm bảng đều có `site_id` (FK cascade) và mọi truy vấn đều theo site. Cả năm bảng cũng nằm trong danh sách RLS `site_isolation` của `packages/database/migrations/rls-policies.sql`. Việc xoá theo thời hạn lưu trữ của `lumibase_review_runs` chạy lần lượt theo từng site, mỗi site một transaction có set `app.site_id` (`apps/cms/src/services/review-run-retention.ts`), nên vẫn xoá được trên database đã áp các policy đó.
+Tắt pilot kiểm tra bản nháp không xoá dòng nào trong các bảng này.
 
 ### Các bảng Content OS (`content-os.ts`)
 
 | Collection | Mục đích |
 |---|---|
-| `content_intents` | Trạng thái mong muốn được khai báo (SLO) theo collection: rule, cron schedule, budget, mức autonomy tối đa, maintenance window |
-| `content_drifts` | Vi phạm rule đã phát hiện; unique `(siteId, fingerprint)` dedupe việc phát hiện giữa các lần scan |
+| `content_intents` | Trạng thái mong muốn được khai báo (SLO) theo collection: rule, cron schedule, budget, mức autonomy tối đa, maintenance window. `scan_cursor` để tiếp tục scan xác định; `semantic_scan_cursor` (migration 0022, J12) để tiếp tục [pass ngữ nghĩa](./features/jev-semantic-drift.md) có budget riêng |
+| `content_drifts` | Vi phạm rule đã phát hiện; unique `(siteId, fingerprint)` dedupe việc phát hiện giữa các lần scan. `status` là `open`/`assigned`/`resolved`/`stale`, hoặc `unevaluated` cho một rule ngữ nghĩa không đánh giá được (cột text thường, không có CHECK constraint). Hàng ngữ nghĩa dùng `rule_type = 'semantic'` và `rule_key = <key>@v<version>:<profileVersion>:<contentHash>` |
 | `agent_autonomy_grants` | Mức tin cậy đã đạt được theo (site, agentRole, capability): level 0–4, evidence, expiry |
 | `agent_incidents` | Bằng chứng để hạ cấp và nguồn cho exception inbox (`veto`, `eval_fail`, `load_guard`, …) |
 | `agent_freezes` | Kill-switch freeze (scope `site`/`role`); `liftedAt IS NULL` = đang active; đồng thời là audit trail |
 | `agent_roles` | Thư viện role multi-agent với tập capability tối thiểu; harness enforce role ∩ grant |
 | `constitutions` | Tập evaluator cho publish-gate, có version; định danh bằng hash sha256; mỗi site tối đa một bản `active` |
+| `site_skills` | Site Skills (`site-skills.ts`, migration 0026): playbook được chèn vào các agent run khớp. Unique `(siteId, slug)`; `status` `draft`/`active`/`archived`; `riskClass`; các cột phạm vi `surfaces`, `tools`, `collections`, `triggers`, `requiredCapabilities`; `body`, `version`, `hash` hiện tại |
+| `site_skill_versions` | Vết phiên bản bất biến của một site skill: unique `(skillId, version)`, `snapshot` nội dung, `hash` sha256, `source`/`sourceRef`, `changeNote`, tác giả. Cả hai bảng nằm trong danh sách RLS `site_isolation` |
+| `agent_tool_secrets` | Bí mật của external-action tool (`ai.ts`, migration 0030). Unique `(siteId, name)`; `ciphertext` là envelope của `KeyProvider` gắn với site và tên, `keyId` là phiên bản khoá, `updatedBy` là quản trị viên. Không API nào trả về. Nằm trong tập RLS `site_isolation`. Xem [external-action tools](features/external-action-tools.md) |
 
 Các cột Content OS thêm vào bảng có sẵn:
 
 - `revisions`: `authorType`, `createdByRunId`, `model`, `constitutionHash`, `sources`, `confidence`, `staged`, `autoCommitAt` (provenance + staging cho veto).
 - `items`: `pinnedFields` (Law Zero — các field mà một lần sửa của con người đã khoá lại, chặn agent ghi).
 - `agent_goals`: `parentGoalId` (cây goal), `origin` (`user/reconciler/planner/flow`), `intentId`, `driftFingerprint`, `agentRole`.
-- `agent_approvals`: `kind` (`approval`/`veto`), `autoCommitAt`, `approverType` (`human`/`agent`), `approverRunId`.
+- `agent_approvals`: `kind` (`approval`/`veto`/`promotion`/`question`), `autoCommitAt`, `approverType` (`human`/`agent`), `approverRunId`. Dòng `question` (`askUser`, #710) dùng các cột sẵn có: `subject_id` là tool call `askUser` (`input` của nó chứa câu hỏi, options và context), `status` là `pending`/`answered`/`expired`/`cancelled`, `expires_at` là hạn chót, còn `decision_reason`/`decided_by`/`decided_at` ghi câu trả lời và người trả lời.
 
 ### Các bảng lấy cảm hứng từ Directus (`cms.ts`)
 
@@ -396,6 +470,14 @@ Cả ba đều scope theo `site_id` với RLS `site_isolation`. Xem `docs/vi/fea
 ### `auth_external_issuers`
 - Issuer JWT ngoài được tin cậy, theo từng site. **Chỉ config public — không có secret** (chữ ký được verify dựa trên JWKS của issuer). `id`, `siteId` (FK sites, cascade), `issuer` (khớp claim `iss`), `jwksUri`/`discoveryUrl` (bắt buộc một trong hai), `audience` (jsonb: string|string[]), `algorithms` (jsonb: allowlist thuật toán bất đối xứng), `claimMapping` (jsonb: `{ email, roles, siteId?, externalId? }`), `roleMapping` (jsonb: `{ "<claim role>": { roleId|systemKey } }`), `defaultRoleId`, `jitProvisioning`, `clockSkewSeconds`, `enabled`, `createdAt`, `updatedAt`.
 - Unique `(siteId, issuer)`; index `(siteId, enabled)`. Migration: `0000_lumibase_init` (đã hợp nhất). Xem [security/external-jwt-auth.md](./security/external-jwt-auth.md).
+
+### `user_identities` (`social-auth.ts`, migration `0032`)
+- Danh tính đăng nhập ngoài liên kết với một tài khoản: `id`, `userId` (FK users, cascade), `issuer`, `subject`, `emailAtLink`, `createdAt`. Unique `(issuer, subject)`; index trên `user_id`.
+- **Identity-global** giống `users` — không có `site_id`, không chịu RLS; quyền truy cập site vẫn nằm ở `user_sites`. Migration `0032` backfill mọi `users.external_id` với issuer `urn:lumibase:external-id`. Xem [security/social-login.md](./security/social-login.md).
+
+### `social_auth_providers` (`social-auth.ts`, migration `0032`)
+- Cấu hình Google / Apple / GitHub theo site: `id`, `siteId` (FK sites, cascade), `provider`, `enabled`, `clientId`, `clientSecretCiphertext`, `appleTeamId`, `appleKeyId`, `applePrivateKeyCiphertext`, `allowedRedirectUris` (jsonb), `createdAt`, `updatedAt`. Unique `(siteId, provider)`; RLS `site_isolation`.
+- Secret là envelope AES-GCM của KeyProvider, ràng buộc theo site + provider, không bao giờ lưu plaintext và không bao giờ được API trả về.
 
 ### `lumibase_firebase_sync_pipelines`
 | Column | Type | Note |
@@ -460,7 +542,7 @@ Audit mọi lần đọc đã giải mã của field `pii`/`phi` (Req 6). Không
 Index: `(siteId, timestamp)`, `(actor, timestamp)`.
 
 ### `content_reviews`
-Record ký duyệt biên tập của con người (Req 9). `itemId` dùng `onDelete: set null` để lịch sử review vẫn tồn tại sau khi xoá dữ liệu (Req 11.3).
+Record ký duyệt biên tập của con người (Req 9). `(siteId, itemId) → items (siteId, id)` với `ON DELETE SET NULL (item_id)`: xoá item sẽ xoá `itemId` và giữ `siteId`, để lịch sử review vẫn tồn tại sau khi xoá dữ liệu (Req 11.3). Dạng có danh sách cột cần PostgreSQL 15+.
 | Column | Type | Note |
 |---|---|---|
 | `id` | text PK | nanoid |
@@ -514,4 +596,5 @@ buộc vào `{ siteId, integrationId, field }`); plaintext không bao giờ đư
 
 - Bắt buộc index `(siteId, …)` ở mọi bảng domain.
 - Áp dụng Drizzle helper `scopeSite(siteId)` ở tầng repo.
-- Postgres RLS được bật qua middleware `withRls()` (`apps/cms/src/middleware/rls.ts`) — set session var để defence-in-depth.
+- Defence-in-depth: với `LUMIBASE_DB_RLS=enforce`, `withDb()` (`apps/cms/src/middleware/db.ts`) chạy mỗi câu của request trong transaction riêng có set `app.site_id`, và `withRls()` (`apps/cms/src/middleware/rls.ts`) fail closed nếu db của request chưa được scope. Mặc định tắt (B130).
+- Các policy nằm ở `packages/database/migrations/rls-policies.sql`. Operator tự áp file này; `pnpm db:migrate` không áp. Mỗi bảng trong danh sách có hai policy cùng predicate: `site_isolation` (RESTRICTIVE) và `site_isolation_permit` (PERMISSIVE). Ngoại lệ là `lumibase_extensions`, các dòng global (`site_id IS NULL`) của bảng này vẫn hiện. Khi `app.site_id` chưa set thì không dòng nào của bảng có scope hiện ra.

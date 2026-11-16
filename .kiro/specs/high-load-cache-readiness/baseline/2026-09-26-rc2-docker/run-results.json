@@ -1,0 +1,14 @@
+[
+  {
+    "workload": "load-items",
+    "exitCode": 99
+  },
+  {
+    "workload": "load-realtime",
+    "exitCode": 99
+  },
+  {
+    "workload": "load-deliver",
+    "exitCode": 99
+  }
+]

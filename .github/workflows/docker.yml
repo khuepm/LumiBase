@@ -59,42 +59,31 @@ jobs:
             type=sha,prefix=
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push (main)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: docker/Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build only (PR)
-        if: github.event_name == 'pull_request'
+      # Build once, locally, for both events. Nothing is pushed until the
+      # Trivy gate and the health check below have passed on this image.
+      - name: Build image (local)
         uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
           push: false
-          # Load a local tag for PR health-checks (no GHCR push/pull on PRs).
-          tags: lumibase-health-check:pr
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
           load: true
-
-      - name: Load image for health check (main)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: docker/Dockerfile
-          push: false
           tags: lumibase-health-check:local
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          load: true
+          cache-to: type=gha,mode=max
+
+      # Same gate as the release (#734), on every PR, so a CRITICAL finding is
+      # seen when the change that introduces it is reviewed — not at tag time —
+      # and on main before the image is pushed.
+      - name: Install Trivy
+        run: scripts/install-image-tools.sh trivy
+
+      - name: Trivy gate — no CRITICAL vulnerabilities
+        run: |
+          set -euo pipefail
+          trivy image --scanners vuln --severity CRITICAL --exit-code 1 --no-progress lumibase-health-check:local
+          trivy fs --scanners vuln --severity CRITICAL --exit-code 1 --no-progress pnpm-lock.yaml
 
       - name: Run container health check
         timeout-minutes: 5
@@ -105,13 +94,12 @@ jobs:
           }
           trap cleanup EXIT
 
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            IMAGE_TAG="lumibase-health-check:pr"
-          else
-            IMAGE_TAG="lumibase-health-check:local"
-          fi
+          IMAGE_TAG="lumibase-health-check:local"
 
+          # Hardened runtime (#734): read-only root filesystem, no capabilities.
           docker run -d --name lumibase-health \
+            --read-only --tmpfs /tmp:size=64m \
+            --cap-drop ALL --security-opt no-new-privileges:true \
             -p 1989:1989 \
             -e LUMIBASE_RUNTIME=docker \
             -e PORT=1989 \
@@ -146,3 +134,17 @@ jobs:
           done
 
           echo "Health check passed!"
+
+      # Push exactly the image that was scanned and health-checked: re-tag the
+      # local build instead of building again.
+      - name: Push image (main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker tag lumibase-health-check:local "$tag"
+            docker push "$tag"
+          done <<< "$TAGS"

@@ -26,6 +26,7 @@ import {
   AlertCircle,
   AlertTriangle,
   Clock,
+  MessageCircleQuestion,
   PlusCircle,
   Pencil,
   ShieldAlert,
@@ -34,6 +35,7 @@ import {
 import { FillIcon } from '@/components/fill-icon';
 import { getActiveSite, getActiveToken } from '@/lib/api';
 import { getAdminBase } from '@/lib/admin-base';
+import { toWebSocketBase } from '@lumibase/sdk';
 import { getApiBaseUrl } from '@/lib/api-base';
 import { cn } from '@/lib/cn';
 import { disablePush, enablePush, getPushState, type PushState } from '@/lib/push';
@@ -47,40 +49,41 @@ import type { AgentNotification, RealtimeEvent } from '@/types/realtime';
 
 type Notification =
   | {
-      source: 'item';
-      id: string;
-      collection: string;
-      action: 'create' | 'update' | 'delete';
-      itemId: string;
-      timestamp: Date;
-      read: boolean;
-    }
+    source: 'item';
+    id: string;
+    collection: string;
+    action: 'create' | 'update' | 'delete';
+    itemId: string;
+    timestamp: Date;
+    read: boolean;
+  }
   | {
-      source: 'exception';
-      id: string;
-      entryId: string;
-      kind: InboxEntry['kind'];
-      label: string;
-      timestamp: Date;
-      read: boolean;
-    }
+    source: 'exception';
+    id: string;
+    entryId: string;
+    kind: InboxEntry['kind'];
+    label: string;
+    timestamp: Date;
+    read: boolean;
+  }
   | {
-      source: 'agent';
-      id: string;
-      kind: AgentNotification['kind'];
-      severity: AgentNotification['severity'];
-      title: string;
-      body: string;
-      deepLink?: string;
-      timestamp: Date;
-      read: boolean;
-    };
+    source: 'agent';
+    id: string;
+    kind: AgentNotification['kind'];
+    severity: AgentNotification['severity'];
+    title: string;
+    body: string;
+    deepLink?: string;
+    timestamp: Date;
+    read: boolean;
+  };
 
 const MAX_NOTIFICATIONS = 50;
 
 const EXCEPTION_ICONS = {
   veto: { icon: Clock, cls: 'text-amber-600' },
   approval: { icon: ShieldAlert, cls: 'text-sky-600' },
+  question: { icon: MessageCircleQuestion, cls: 'text-violet-600' },
   incident: { icon: AlertTriangle, cls: 'text-destructive' },
   intent_error: { icon: AlertTriangle, cls: 'text-destructive' },
 } as const;
@@ -88,6 +91,7 @@ const EXCEPTION_ICONS = {
 const AGENT_ICONS = {
   approval: { icon: ShieldAlert, cls: 'text-sky-600' },
   veto: { icon: Clock, cls: 'text-amber-600' },
+  question: { icon: MessageCircleQuestion, cls: 'text-violet-600' },
   incident: { icon: AlertTriangle, cls: 'text-destructive' },
   goal: { icon: CheckCheck, cls: 'text-emerald-600' },
   run: { icon: AlertCircle, cls: 'text-muted-foreground' },
@@ -212,7 +216,7 @@ export function NotificationsPanel() {
 
         if (!isMounted) return;
 
-        const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/api/v1/realtime?ticket=${encodeURIComponent(ticket)}&siteId=${encodeURIComponent(siteId)}`;
+        const wsUrl = `${toWebSocketBase(baseUrl)}/api/v1/realtime?ticket=${encodeURIComponent(ticket)}&siteId=${encodeURIComponent(siteId)}`;
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
@@ -326,7 +330,7 @@ export function NotificationsPanel() {
       >
         <Bell className="h-4 w-4" />
         {unreadCount > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+          <span className="absolute -end-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
@@ -338,7 +342,7 @@ export function NotificationsPanel() {
           role="dialog"
           aria-label="Notifications"
           className={cn(
-            'absolute right-0 top-full z-50 mt-2 w-80 rounded-lg border bg-background shadow-lg',
+            'absolute end-0 top-full z-50 mt-2 w-80 rounded-lg border bg-background shadow-lg',
             'animate-in fade-in-0 zoom-in-95',
           )}
         >

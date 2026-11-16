@@ -1,0 +1,609 @@
+{
+  "addTeamMember": {
+    "properties": [
+      "teamId",
+      "userId"
+    ],
+    "required": [
+      "teamId",
+      "userId"
+    ]
+  },
+  "aiContentAssist": {
+    "properties": [
+      "collection",
+      "currentContent",
+      "fieldName",
+      "grounded",
+      "instruction",
+      "itemId"
+    ],
+    "required": [
+      "collection"
+    ]
+  },
+  "applyContentMigrationSchema": {
+    "properties": [
+      "collectionPrefix",
+      "contentTypes",
+      "localeMap",
+      "locales",
+      "source"
+    ],
+    "required": [
+      "contentTypes",
+      "source"
+    ]
+  },
+  "askUser": {
+    "properties": [
+      "allowFreeText",
+      "context",
+      "options",
+      "question",
+      "timeoutMinutes"
+    ],
+    "required": [
+      "question"
+    ]
+  },
+  "createApiKey": {
+    "properties": [
+      "description",
+      "expiresAt",
+      "metadata",
+      "name"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "createCdcSubscription": {
+    "properties": [
+      "collections",
+      "extensionName",
+      "kind",
+      "name",
+      "operations",
+      "payload_mode",
+      "webhookId"
+    ],
+    "required": [
+      "kind",
+      "name"
+    ]
+  },
+  "createCollection": {
+    "properties": [
+      "name",
+      "singleton"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "createField": {
+    "properties": [
+      "collection",
+      "interface",
+      "name",
+      "note",
+      "required",
+      "type"
+    ],
+    "required": [
+      "collection",
+      "name",
+      "type"
+    ]
+  },
+  "createFlow": {
+    "properties": [
+      "description",
+      "graph",
+      "name",
+      "status",
+      "triggerOptions",
+      "triggerType"
+    ],
+    "required": [
+      "graph",
+      "name",
+      "triggerType"
+    ]
+  },
+  "createIntent": {
+    "properties": [
+      "autonomyCap",
+      "budget",
+      "collection",
+      "maintenanceWindow",
+      "name",
+      "rules",
+      "schedule"
+    ],
+    "required": [
+      "collection",
+      "name",
+      "rules",
+      "schedule"
+    ]
+  },
+  "createItem": {
+    "properties": [
+      "collection",
+      "data",
+      "status"
+    ],
+    "required": [
+      "collection",
+      "data"
+    ]
+  },
+  "createPolicy": {
+    "properties": [
+      "adminAccess",
+      "appAccess",
+      "description",
+      "icon",
+      "key",
+      "name",
+      "rules"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "createRelation": {
+    "properties": [
+      "aliasField",
+      "junctionCollection",
+      "junctionManyField",
+      "junctionOneField",
+      "manyCollection",
+      "manyField",
+      "meta",
+      "onDelete",
+      "oneCollection",
+      "oneField",
+      "relatedDisplayTemplate",
+      "sortField",
+      "type"
+    ],
+    "required": [
+      "manyCollection",
+      "manyField",
+      "oneCollection"
+    ]
+  },
+  "createRole": {
+    "properties": [
+      "adminAccess",
+      "appAccess",
+      "description",
+      "icon",
+      "key",
+      "name",
+      "parentId"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "createTeam": {
+    "properties": [
+      "description",
+      "name"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "createTranslation": {
+    "properties": [
+      "key",
+      "language",
+      "namespace",
+      "status",
+      "value"
+    ],
+    "required": [
+      "key",
+      "language",
+      "namespace",
+      "value"
+    ]
+  },
+  "createVersion": {
+    "properties": [
+      "collection",
+      "itemId",
+      "key",
+      "name"
+    ],
+    "required": [
+      "collection",
+      "itemId",
+      "key",
+      "name"
+    ]
+  },
+  "createWebhook": {
+    "properties": [
+      "actions",
+      "collections",
+      "headers",
+      "name",
+      "secret",
+      "status",
+      "url"
+    ],
+    "required": [
+      "name",
+      "url"
+    ]
+  },
+  "deleteCdcSubscription": {
+    "properties": [
+      "subscriptionId"
+    ],
+    "required": [
+      "subscriptionId"
+    ]
+  },
+  "deleteCollection": {
+    "properties": [
+      "name"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "deleteField": {
+    "properties": [
+      "collection",
+      "force",
+      "name"
+    ],
+    "required": [
+      "collection",
+      "name"
+    ]
+  },
+  "deleteFlow": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "deleteIntent": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "deleteItem": {
+    "properties": [
+      "collection",
+      "id"
+    ],
+    "required": [
+      "collection",
+      "id"
+    ]
+  },
+  "deletePolicy": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "deleteRelation": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "deleteRole": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "deleteSetting": {
+    "properties": [
+      "key"
+    ],
+    "required": [
+      "key"
+    ]
+  },
+  "deleteTeam": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "deleteTranslation": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "deleteVersion": {
+    "properties": [
+      "collection",
+      "itemId",
+      "key"
+    ],
+    "required": [
+      "collection",
+      "itemId",
+      "key"
+    ]
+  },
+  "deleteWebhook": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "getUserAnswer": {
+    "properties": [
+      "questionId"
+    ],
+    "required": [
+      "questionId"
+    ]
+  },
+  "installExtension": {
+    "properties": [
+      "bundleUrl",
+      "capabilities",
+      "enabled",
+      "key",
+      "manifest",
+      "name",
+      "type",
+      "version"
+    ],
+    "required": [
+      "bundleUrl",
+      "name",
+      "type",
+      "version"
+    ]
+  },
+  "inviteUser": {
+    "properties": [
+      "email",
+      "roleId"
+    ],
+    "required": [
+      "email"
+    ]
+  },
+  "planContentMigration": {
+    "properties": [
+      "collectionPrefix",
+      "contentTypes",
+      "localeMap",
+      "locales",
+      "source"
+    ],
+    "required": [
+      "contentTypes",
+      "source"
+    ]
+  },
+  "promoteVersion": {
+    "properties": [
+      "collection",
+      "itemId",
+      "key"
+    ],
+    "required": [
+      "collection",
+      "itemId",
+      "key"
+    ]
+  },
+  "removeTeamMember": {
+    "properties": [
+      "teamId",
+      "userId"
+    ],
+    "required": [
+      "teamId",
+      "userId"
+    ]
+  },
+  "removeUser": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "repairTranslation": {
+    "properties": [
+      "collection",
+      "field",
+      "itemId",
+      "locale",
+      "sourceLocale",
+      "versionKey"
+    ],
+    "required": [
+      "collection",
+      "field",
+      "itemId",
+      "locale",
+      "versionKey"
+    ]
+  },
+  "replayCdcSubscription": {
+    "properties": [
+      "occurredAfter",
+      "subscriptionId"
+    ],
+    "required": [
+      "occurredAfter",
+      "subscriptionId"
+    ]
+  },
+  "revokeApiKey": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "rotateApiKey": {
+    "properties": [
+      "expiresAt",
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "runFlow": {
+    "properties": [
+      "id",
+      "input"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "triggerDeployment": {
+    "properties": [
+      "branch",
+      "reason",
+      "targetId"
+    ],
+    "required": [
+      "targetId"
+    ]
+  },
+  "uninstallExtension": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "updateExtension": {
+    "properties": [
+      "bundleUrl",
+      "capabilities",
+      "enabled",
+      "id",
+      "key",
+      "manifest",
+      "name",
+      "type",
+      "version"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "updateItem": {
+    "properties": [
+      "collection",
+      "data",
+      "expect",
+      "id",
+      "status"
+    ],
+    "required": [
+      "collection",
+      "data",
+      "id"
+    ]
+  },
+  "updateTranslation": {
+    "properties": [
+      "id",
+      "key",
+      "language",
+      "namespace",
+      "status",
+      "value"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "updateUser": {
+    "properties": [
+      "id",
+      "roleId",
+      "status"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "updateVersion": {
+    "properties": [
+      "collection",
+      "data",
+      "itemId",
+      "key",
+      "name"
+    ],
+    "required": [
+      "collection",
+      "itemId",
+      "key"
+    ]
+  },
+  "updateWebhook": {
+    "properties": [
+      "actions",
+      "collections",
+      "headers",
+      "id",
+      "name",
+      "secret",
+      "status",
+      "url"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "upsertSetting": {
+    "properties": [
+      "key",
+      "scope",
+      "value"
+    ],
+    "required": [
+      "key",
+      "value"
+    ]
+  }
+}

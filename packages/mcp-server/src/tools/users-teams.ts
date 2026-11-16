@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
-import { confirmDescription, okText, run } from './_shared.js';
+import { confirmDescription, okAfter, okText, run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 export function registerUsersTeamsTools(server: McpServer, client: LumiBaseClient) {
@@ -51,8 +51,8 @@ export function registerUsersTeamsTools(server: McpServer, client: LumiBaseClien
     },
     async ({ id }) =>
       run(async () => {
-        await client.delete(`/users/${encodePathSegment(id)}`);
-        return okText(`User "${id}" removed from the site.`);
+        const response = await client.delete(`/users/${encodePathSegment(id)}`);
+        return okAfter(response, `User "${id}" removed from the site.`);
       }),
   );
 
@@ -99,8 +99,8 @@ export function registerUsersTeamsTools(server: McpServer, client: LumiBaseClien
     },
     async ({ id }) =>
       run(async () => {
-        await client.delete(`/teams/${encodePathSegment(id)}`);
-        return okText(`Team "${id}" deleted.`);
+        const response = await client.delete(`/teams/${encodePathSegment(id)}`);
+        return okAfter(response, `Team "${id}" deleted.`);
       }),
   );
 
@@ -131,8 +131,8 @@ export function registerUsersTeamsTools(server: McpServer, client: LumiBaseClien
     },
     async ({ id, userId }) =>
       run(async () => {
-        await client.delete(`/teams/${encodePathSegment(id)}/members/${encodePathSegment(userId)}`);
-        return okText(`User "${userId}" removed from team "${id}".`);
+        const response = await client.delete(`/teams/${encodePathSegment(id)}/members/${encodePathSegment(userId)}`);
+        return okAfter(response, `User "${userId}" removed from team "${id}".`);
       }),
   );
 }

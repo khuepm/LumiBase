@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { eq } from 'drizzle-orm';
@@ -56,7 +57,7 @@ describe.skipIf(!hasDbIntegrationUrl)('POST /admin/encryption/envelope — DB in
   beforeEach(async () => {
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.delete(users).where(eq(users.id, USER_ID));
-    await db.insert(sites).values({ id: SITE, name: 'Envelope Route IT' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'Envelope Route IT' });
     await db.insert(users).values({
       id: USER_ID,
       email: 'admin@test.local',

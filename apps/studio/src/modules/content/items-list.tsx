@@ -1,6 +1,6 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
-import { ArrowDown, ArrowUp, Bookmark, ChevronLeft, ChevronRight, Code2, Filter, Lock, RefreshCw, Save } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bookmark, ChevronLeft, ChevronRight, ClipboardCheck, Code2, Download, Filter, ListTree, Upload, Lock, Plus, RefreshCw, Save, Table2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FieldResource } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
@@ -11,8 +11,14 @@ import { deleteBookmark, getEffectivePreset, saveUserView, viewDiffers, type Sco
 import { BookmarkSwitcher } from '@/modules/presets/bookmark-switcher';
 import { SaveBookmarkDialog } from '@/modules/presets/save-bookmark-dialog';
 import { BulkRawEditor } from './bulk-raw-editor';
+import { ExportDialog } from './export-dialog';
+import { ImportDialog } from './import-dialog';
 import { resolveDisplay } from './displays/registry';
 import { FilterBuilder, compileFilter, type FilterCondition } from './filter-builder';
+import { MapLayout, geopointFields } from './geo/map-layout';
+import { ListLayoutToggle, type ListLayout } from './geo/list-layout-toggle';
+import { CollectionTreeView } from './tree-view';
+import { reorderTargetFor, type ReorderTarget } from './manual-order';
 
 const PAGE_SIZE = 25;
 
@@ -27,12 +33,14 @@ interface SortState {
  * Phase B `/api/v1/items/:collection` endpoints via the typed SDK.
  */
 export function ItemsListPage() {
-  const { collection } = useParams({ from: '/admin-layout/content/$collection' });
+  const { collection } = useParams({ strict: false }) as { collection: string };
   const client = getApiClient();
   const perms = usePermissions();
 
   const [filters, setFilters] = useState<FilterCondition[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  // "Modified since publish" (#687): published-once items edited since.
+  const [modifiedOnly, setModifiedOnly] = useState(false);
   const [sort, setSort] = useState<SortState>({ field: 'updated_at', dir: 'desc' });
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -40,6 +48,9 @@ export function ItemsListPage() {
   const [liveMode, setLiveMode] = useState(false);
   const [activeBookmarkId, setActiveBookmarkId] = useState<string | null>(null);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [layout, setLayout] = useState<ListLayout>('table');
   const queryClient = useQueryClient();
 
   useRealtimeSubscription(collection, () => {
@@ -52,6 +63,22 @@ export function ItemsListPage() {
     queryKey: ['fields', collection],
     queryFn: async () => (await client.schema.listFields(collection)).data,
   });
+
+  // Hierarchical collections (#749): `meta.tree.enabled` offers a tree view,
+  // which is the default for such collections.
+  const collectionQuery = useQuery({
+    queryKey: ['collection', collection],
+    queryFn: async () => (await client.schema.getCollection(collection)).data,
+  });
+  const treeEnabled =
+    (collectionQuery.data?.meta as { tree?: { enabled?: unknown } } | undefined)?.tree?.enabled === true;
+  const [viewMode, setViewMode] = useState<'tree' | 'table'>('tree');
+  // Manual ordering (#690): `meta.manualSort` collections list by `sort` and
+  // rows can be dragged while that order is shown.
+  const manualSort =
+    (collectionQuery.data?.meta as { manualSort?: unknown } | undefined)?.manualSort === true;
+  const [dragId, setDragId] = useState<string | null>(null);
+  const showTree = treeEnabled && viewMode === 'tree';
 
   const filterPayload = useMemo(() => compileFilter(filters), [filters]);
 
@@ -117,17 +144,20 @@ export function ItemsListPage() {
 
   const canRead = perms.can(collection, 'read');
   const canUpdate = perms.can(collection, 'update');
+  const canCreate = perms.can(collection, 'create');
 
   const itemsQuery = useQuery({
-    queryKey: ['items', collection, filterPayload, sort, page],
+    queryKey: ['items', collection, filterPayload, sort, page, modifiedOnly],
     queryFn: () =>
       client.items(collection as never).list({
+        ...(modifiedOnly ? { modifiedSincePublish: true } : {}),
         filter: filterPayload,
         sort: [`${sort.dir === 'desc' ? '-' : ''}${sort.field}`],
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       }),
-    enabled: !perms.isLoading && canRead,
+    // Wait for the collection so a tree collection does not also fetch the flat page.
+    enabled: !perms.isLoading && canRead && !collectionQuery.isLoading && !showTree,
   });
 
   const fields = fieldsQuery.data ?? [];
@@ -149,8 +179,30 @@ export function ItemsListPage() {
     [fields, perms, collection],
   );
 
+  // "Map" layout is offered only when the collection has a geopoint field (#746),
+  // and only in the table view (the tree view of #749 has no map).
+  const hasGeo = geopointFields(filterableFields).length > 0 && !showTree;
+  const showMap = hasGeo && layout === 'map';
+
   const total = itemsQuery.data?.meta?.total ?? 0;
   const rows = itemsQuery.data?.data ?? [];
+  const manualMode = manualSort && canUpdate && sort.field === 'sort' && sort.dir === 'asc';
+  useEffect(() => {
+    // Open a manual-sort collection in its editor-defined order.
+    if (manualSort && sort.field === 'updated_at') setSort({ field: 'sort', dir: 'asc' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manualSort]);
+  const reorderMutation = useMutation({
+    mutationFn: async ({ id, target }: { id: string; target: ReorderTarget }) =>
+      client.items(collection as never).reorder(id, target),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['items', collection] }),
+  });
+  const dropOn = (targetId: string) => {
+    if (!dragId || dragId === targetId) return;
+    const target = reorderTargetFor(rows.map((r) => r.id), dragId, targetId);
+    setDragId(null);
+    if (target) reorderMutation.mutate({ id: dragId, target });
+  };
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const toggleSort = (field: string) => {
@@ -174,8 +226,49 @@ export function ItemsListPage() {
           <h1 className="text-2xl font-semibold">{collection}</h1>
         </div>
         <div className="flex items-center gap-2">
+          {treeEnabled && (
+            <div className="inline-flex rounded-md border" role="group" aria-label="View">
+              <button
+                type="button"
+                aria-pressed={viewMode === 'tree'}
+                onClick={() => setViewMode('tree')}
+                className={cn('inline-flex items-center gap-1 px-2 py-1 text-xs', viewMode === 'tree' && 'bg-accent')}
+              >
+                <ListTree className="h-3.5 w-3.5" />
+                Tree
+              </button>
+              <button
+                type="button"
+                aria-pressed={viewMode === 'table'}
+                onClick={() => setViewMode('table')}
+                className={cn('inline-flex items-center gap-1 border-s px-2 py-1 text-xs', viewMode === 'table' && 'bg-accent')}
+              >
+                <Table2 className="h-3.5 w-3.5" />
+                Table
+              </button>
+            </div>
+          )}
+          <Link
+            to="/content/$collection/reviews"
+            params={{ collection }}
+            className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted"
+          >
+            <ClipboardCheck className="h-3.5 w-3.5" />
+            Reviews
+          </Link>
+          {canCreate && (
+            <Link
+              to="/content/$collection/$id"
+              params={{ collection, id: 'new' }}
+              className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New item
+            </Link>
+          )}
+          {hasGeo && <ListLayoutToggle value={layout} onChange={setLayout} />}
           {/* Live Mode Toggle */}
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground mr-2 cursor-pointer">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground me-2 cursor-pointer">
             <input
               type="checkbox"
               checked={liveMode}
@@ -221,6 +314,21 @@ export function ItemsListPage() {
             <Filter className="h-3.5 w-3.5" />
             Filters {filters.length > 0 && <span className="text-primary">({filters.length})</span>}
           </button>
+          <button
+            type="button"
+            aria-pressed={modifiedOnly}
+            onClick={() => {
+              setModifiedOnly((v) => !v);
+              setPage(0);
+            }}
+            title="Only items edited since they were last published"
+            className={cn(
+              'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs',
+              modifiedOnly && 'bg-accent',
+            )}
+          >
+            Modified since publish
+          </button>
           {selected.size > 0 && (
             <button
               type="button"
@@ -238,6 +346,26 @@ export function ItemsListPage() {
               Edit raw ({selected.size})
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setExportOpen(true)}
+            disabled={!canRead || !fieldsQuery.data}
+            title={canRead ? 'Export as CSV or JSON' : 'You do not have read permission on this collection.'}
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export
+          </button>
+          <button
+            type="button"
+            onClick={() => setImportOpen(true)}
+            disabled={!canCreate}
+            title={canCreate ? 'Import a CSV or JSON file' : 'You do not have create permission on this collection.'}
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Import
+          </button>
           <button
             type="button"
             onClick={() => itemsQuery.refetch()}
@@ -276,114 +404,139 @@ export function ItemsListPage() {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-lg border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
-            <tr>
-              <th className="w-8 px-3 py-2">
-                <input
-                  type="checkbox"
-                  checked={rows.length > 0 && rows.every((r) => selected.has(r.id))}
-                  onChange={(e) => {
-                    const next = new Set(selected);
-                    if (e.target.checked) rows.forEach((r) => next.add(r.id));
-                    else rows.forEach((r) => next.delete(r.id));
-                    setSelected(next);
-                  }}
-                />
-              </th>
-              <SortableTh label="id" field="id" sort={sort} onClick={toggleSort} />
-              <SortableTh label="status" field="status" sort={sort} onClick={toggleSort} />
-              {visibleFields.map((f) => (
-                <SortableTh
-                  key={f.id}
-                  label={f.name}
-                  field={f.name}
-                  sort={sort}
-                  onClick={toggleSort}
-                />
-              ))}
-              <SortableTh label="updated" field="updated_at" sort={sort} onClick={toggleSort} />
-            </tr>
-          </thead>
-          <tbody>
-            {itemsQuery.isLoading && (
-              <tr><td colSpan={visibleFields.length + 4} className="px-4 py-6 text-center text-muted-foreground">Loading…</td></tr>
-            )}
-            {!itemsQuery.isLoading && rows.length === 0 && (
-              <tr><td colSpan={visibleFields.length + 4} className="px-4 py-6 text-center text-muted-foreground">No items match.</td></tr>
-            )}
-            {rows.map((row) => (
-              <tr key={row.id} className="border-t hover:bg-muted/20">
-                <td className="px-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(row.id)}
-                    onChange={(e) => {
-                      const next = new Set(selected);
-                      if (e.target.checked) next.add(row.id);
-                      else next.delete(row.id);
-                      setSelected(next);
-                    }}
-                  />
-                </td>
-                <td className="px-4 py-2 font-mono text-xs">
-                  <Link
-                    to="/content/$collection/$id"
-                    params={{ collection, id: row.id }}
-                    className="text-primary hover:underline"
+      {showTree && canRead && (
+        <CollectionTreeView
+          collection={collection}
+          labelField={visibleFields[0]?.name}
+          canCreate={canCreate}
+          canUpdate={canUpdate}
+        />
+      )}
+
+      {showMap && (
+        <MapLayout collection={collection} fields={filterableFields} filter={filterPayload} enabled={!perms.isLoading && canRead} />
+      )}
+
+      {!showTree && (
+        <>
+          <div className={cn('overflow-hidden rounded-lg border', showMap && 'hidden')}>
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-start text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="w-8 px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={rows.length > 0 && rows.every((r) => selected.has(r.id))}
+                      onChange={(e) => {
+                        const next = new Set(selected);
+                        if (e.target.checked) rows.forEach((r) => next.add(r.id));
+                        else rows.forEach((r) => next.delete(r.id));
+                        setSelected(next);
+                      }}
+                    />
+                  </th>
+                  <SortableTh label="id" field="id" sort={sort} onClick={toggleSort} />
+                  <SortableTh label="status" field="status" sort={sort} onClick={toggleSort} />
+                  {visibleFields.map((f) => (
+                    <SortableTh
+                      key={f.id}
+                      label={f.name}
+                      field={f.name}
+                      sort={sort}
+                      onClick={toggleSort}
+                    />
+                  ))}
+                  <SortableTh label="updated" field="updated_at" sort={sort} onClick={toggleSort} />
+                </tr>
+              </thead>
+              <tbody>
+                {itemsQuery.isLoading && (
+                  <tr><td colSpan={visibleFields.length + 4} className="px-4 py-6 text-center text-muted-foreground">Loading…</td></tr>
+                )}
+                {!itemsQuery.isLoading && rows.length === 0 && (
+                  <tr><td colSpan={visibleFields.length + 4} className="px-4 py-6 text-center text-muted-foreground">No items match.</td></tr>
+                )}
+                {rows.map((row) => (
+                  <tr
+                    key={row.id}
+                    className={cn('border-t hover:bg-muted/20', manualMode && 'cursor-grab', dragId === row.id && 'opacity-50')}
+                    draggable={manualMode}
+                    onDragStart={manualMode ? () => setDragId(row.id) : undefined}
+                    onDragOver={manualMode ? (e) => e.preventDefault() : undefined}
+                    onDrop={manualMode ? () => dropOn(row.id) : undefined}
+                    data-testid={manualMode ? 'sortable-row' : undefined}
                   >
-                    {row.id.slice(0, 8)}…
-                  </Link>
-                </td>
-                <td className="px-4 py-2"><StatusBadge status={row.status} /></td>
-                {visibleFields.map((f) => {
-                  const Display = resolveDisplay(f);
-                  return (
-                    <td key={f.id} className="px-4 py-2 text-muted-foreground">
-                      <Display
-                        field={f}
-                        value={row.data?.[f.name]}
-                        row={row.data as Record<string, unknown> | undefined}
+                    <td className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(row.id)}
+                        onChange={(e) => {
+                          const next = new Set(selected);
+                          if (e.target.checked) next.add(row.id);
+                          else next.delete(row.id);
+                          setSelected(next);
+                        }}
                       />
                     </td>
-                  );
-                })}
-                <td className="px-4 py-2 text-xs text-muted-foreground">
-                  {new Date(row.updatedAt).toLocaleString()}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                    <td className="px-4 py-2 font-mono text-xs">
+                      <Link
+                        to="/content/$collection/$id"
+                        params={{ collection, id: row.id }}
+                        className="text-primary hover:underline"
+                      >
+                        {row.id.slice(0, 8)}…
+                      </Link>
+                    </td>
+                    <td className="px-4 py-2"><StatusBadge status={row.status} /></td>
+                    {visibleFields.map((f) => {
+                      const Display = resolveDisplay(f);
+                      return (
+                        <td key={f.id} className="px-4 py-2 text-muted-foreground">
+                          <Display
+                            field={f}
+                            value={row.data?.[f.name]}
+                            row={row.data as Record<string, unknown> | undefined}
+                          />
+                        </td>
+                      );
+                    })}
+                    <td className="px-4 py-2 text-xs text-muted-foreground">
+                      {new Date(row.updatedAt).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-      <footer className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>
-          {rows.length > 0
-            ? `Showing ${page * PAGE_SIZE + 1}-${page * PAGE_SIZE + rows.length} of ${total}`
-            : `0 of ${total}`}
-        </span>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-            disabled={page === 0}
-            className="rounded-md border px-2 py-1 disabled:opacity-40"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </button>
-          <span>{page + 1} / {totalPages}</span>
-          <button
-            type="button"
-            onClick={() => setPage((p) => p + 1)}
-            disabled={page + 1 >= totalPages}
-            className="rounded-md border px-2 py-1 disabled:opacity-40"
-          >
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </footer>
+          <footer className={cn('flex items-center justify-between text-xs text-muted-foreground', showMap && 'hidden')}>
+            <span>
+              {rows.length > 0
+                ? `Showing ${page * PAGE_SIZE + 1}-${page * PAGE_SIZE + rows.length} of ${total}`
+                : `0 of ${total}`}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="rounded-md border px-2 py-1 disabled:opacity-40"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <span>{page + 1} / {totalPages}</span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={page + 1 >= totalPages}
+                className="rounded-md border px-2 py-1 disabled:opacity-40"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </footer>
+        </>
+      )}
 
       {showBulk && (
         <BulkRawEditor
@@ -395,6 +548,17 @@ export function ItemsListPage() {
             setSelected(new Set());
             itemsQuery.refetch();
           }}
+        />
+      )}
+
+      {importOpen && <ImportDialog collection={collection} onClose={() => setImportOpen(false)} />}
+
+      {exportOpen && fieldsQuery.data && (
+        <ExportDialog
+          collection={collection}
+          fields={fieldsQuery.data}
+          filter={filterPayload}
+          onClose={() => setExportOpen(false)}
         />
       )}
 

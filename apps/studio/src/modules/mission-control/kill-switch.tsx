@@ -137,8 +137,8 @@ export function KillSwitchPanel() {
                 <span>
                   <strong>{freeze.scope}</strong>
                   {freeze.targetRole ? ` · ${freeze.targetRole}` : ''}
-                  {freeze.reason && <span className="ml-2 text-xs text-muted-foreground">{freeze.reason}</span>}
-                  <span className="ml-2 text-xs text-muted-foreground">
+                  {freeze.reason && <span className="ms-2 text-xs text-muted-foreground">{freeze.reason}</span>}
+                  <span className="ms-2 text-xs text-muted-foreground">
                     since {new Date(freeze.createdAt).toLocaleString()}
                   </span>
                 </span>

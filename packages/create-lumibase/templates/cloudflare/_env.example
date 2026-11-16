@@ -1,4 +1,0 @@
-# Wrangler dev secrets (not committed — use `wrangler secret put` for production)
-JWT_SECRET=change-me-in-production
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=change-me

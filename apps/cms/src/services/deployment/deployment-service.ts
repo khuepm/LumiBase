@@ -14,7 +14,8 @@ import '../deployment/providers/index';
  * outbound call and never logged or returned.
  */
 
-export type TriggerSource = 'manual' | 'auto' | 'agent';
+/** `promote` (#743): dispatched by an environment promotion. */
+export type TriggerSource = 'manual' | 'auto' | 'agent' | 'promote';
 
 export interface DeploymentServiceDeps {
   db: Database;
@@ -196,6 +197,8 @@ export class DeploymentService {
     targetId: string,
     opts: {
       branch?: string;
+      /** Build this exact commit where the provider supports it (#743). */
+      commitSha?: string;
       reason?: string;
       source?: TriggerSource;
       triggeredBy?: string;
@@ -252,26 +255,7 @@ export class DeploymentService {
     // a runaway flow or agent burns build minutes exactly like a runaway
     // script would. Auto triggers stay well under it via `coalesceWindowMs`.
     // Rejection happens before any insert — no `deployments` row is created.
-    const rate = await checkDeployTriggerRate(
-      this.deps.rateLimiter,
-      this.deps.siteId,
-      targetId,
-      this.deps.triggerRateLimit,
-    );
-    if (!rate.allowed) {
-      this.audit('deployment.trigger.rate_limited', {
-        targetId,
-        provider: target.provider,
-        source,
-        retryAfterSeconds: rate.retryAfterSeconds,
-      });
-      throw new DeploymentError(
-        'RATE_LIMITED',
-        'Too many deploy triggers for this target. Please try again later.',
-        undefined,
-        rate.retryAfterSeconds,
-      );
-    }
+    await this.enforceTriggerRate(target, source);
 
     let ref: DeploymentRef | null = null;
     let errorMessage: string | null = null;
@@ -280,6 +264,7 @@ export class DeploymentService {
       ref = await provider.trigger(token, providerTarget(target), {
         branch: opts.branch,
         reason: opts.reason,
+        ...(opts.commitSha ? { commitSha: opts.commitSha } : {}),
       });
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);
@@ -294,7 +279,7 @@ export class DeploymentService {
         providerDeploymentId: ref?.providerDeploymentId ?? null,
         status: ref ? ref.status : 'error',
         branch: opts.branch ?? target.defaultBranch ?? null,
-        commitSha: ref?.commitSha ?? null,
+        commitSha: ref?.commitSha ?? opts.commitSha ?? null,
         commitMessage: ref?.commitMessage ?? null,
         url: ref?.url ?? null,
         triggeredBy: opts.triggeredBy ?? null,
@@ -314,6 +299,125 @@ export class DeploymentService {
     return row!;
   }
 
+  /** Per-target trigger brake (Req 9.5), shared by trigger and promote. */
+  private async enforceTriggerRate(
+    target: typeof deploymentTargets.$inferSelect,
+    source: TriggerSource,
+  ): Promise<void> {
+    const rate = await checkDeployTriggerRate(
+      this.deps.rateLimiter,
+      this.deps.siteId,
+      target.id,
+      this.deps.triggerRateLimit,
+    );
+    if (rate.allowed) return;
+    this.audit('deployment.trigger.rate_limited', {
+      targetId: target.id,
+      provider: target.provider,
+      source,
+      retryAfterSeconds: rate.retryAfterSeconds,
+    });
+    throw new DeploymentError(
+      'RATE_LIMITED',
+      'Too many deploy triggers for this target. Please try again later.',
+      undefined,
+      rate.retryAfterSeconds,
+    );
+  }
+
+  // ── Promotion (#743) ─────────────────────────────────────────────────────
+
+  /**
+   * Promote an already-built deployment onto `targetId`.
+   *
+   * `native`: the destination is the same provider project and the adapter can
+   * promote, so the exact build that was verified upstream goes live with no
+   * rebuild. `retrigger`: anything else — a fresh build of the same commit
+   * (where the adapter can pin one) or else the same branch. The mode is
+   * recorded in the audit event, so a reviewer can tell which happened.
+   */
+  async promote(
+    sourceDeploymentId: string,
+    targetId: string,
+    opts: { reason?: string; triggeredBy?: string } = {},
+  ): Promise<{ deployment: typeof deployments.$inferSelect; mode: 'native' | 'retrigger' }> {
+    const source = await this.getDeployment(sourceDeploymentId);
+    if (!source) throw new DeploymentError('NOT_FOUND', 'Source deployment not found.');
+    if (source.status !== 'ready') {
+      throw new DeploymentError('SOURCE_NOT_READY', 'Only a ready deployment can be promoted.');
+    }
+    const target = await this.getTargetRow(targetId);
+    if (!target) throw new DeploymentError('NOT_FOUND', 'Deployment target not found.');
+    if (target.status !== 'active') throw new DeploymentError('TARGET_INACTIVE', 'Deployment target is inactive.');
+    const provider = getProvider(target.provider);
+    if (!provider) throw new DeploymentError('UNKNOWN_PROVIDER', `Unknown provider '${target.provider}'.`);
+
+    const sourceTarget = await this.getTargetRow(source.targetId);
+    const native =
+      Boolean(provider.promote) &&
+      Boolean(source.providerDeploymentId) &&
+      sourceTarget !== undefined &&
+      sourceTarget.provider === target.provider &&
+      sourceTarget.projectId === target.projectId;
+
+    if (!native) {
+      const deployment = await this.trigger(targetId, {
+        branch: source.branch ?? undefined,
+        commitSha: source.commitSha ?? undefined,
+        reason: opts.reason,
+        source: 'promote',
+        triggeredBy: opts.triggeredBy,
+      });
+      this.audit('deployment.promoted', {
+        targetId,
+        sourceDeploymentId,
+        deploymentId: deployment.id,
+        mode: 'retrigger',
+      });
+      return { deployment, mode: 'retrigger' };
+    }
+
+    await this.enforceTriggerRate(target, 'promote');
+    let ref: DeploymentRef | null = null;
+    let errorMessage: string | null = null;
+    try {
+      const token = await decryptToken(this.deps.keys, target.tokenCiphertext, this.deps.siteId);
+      ref = await provider.promote!(token, providerTarget(target), source.providerDeploymentId!);
+    } catch (err) {
+      errorMessage = err instanceof Error ? err.message : String(err);
+    }
+
+    const [row] = await this.deps.db
+      .insert(deployments)
+      .values({
+        siteId: this.deps.siteId,
+        targetId,
+        provider: target.provider,
+        providerDeploymentId: ref?.providerDeploymentId || source.providerDeploymentId,
+        status: ref ? ref.status : 'error',
+        branch: ref?.branch ?? source.branch,
+        commitSha: ref?.commitSha ?? source.commitSha,
+        commitMessage: ref?.commitMessage ?? source.commitMessage,
+        url: ref?.url ?? target.productionUrl ?? source.url,
+        triggeredBy: opts.triggeredBy ?? null,
+        triggerSource: 'promote',
+        errorMessage,
+        completedAt: errorMessage || (ref && TERMINAL_STATUSES.has(ref.status)) ? new Date() : null,
+      })
+      .returning();
+
+    this.audit('deployment.promoted', {
+      targetId,
+      provider: target.provider,
+      sourceDeploymentId,
+      deploymentId: row!.id,
+      mode: 'native',
+      ok: !errorMessage,
+    });
+    if (errorMessage) throw new DeploymentError('TRIGGER_FAILED', errorMessage, row);
+    return { deployment: row!, mode: 'native' };
+  }
+
   // ── Status sync ──────────────────────────────────────────────────────────
 
   async listDeployments(filter: { targetId?: string; status?: string; limit?: number } = {}) {
@@ -324,6 +428,10 @@ export class DeploymentService {
       .select()
       .from(deployments)
       .where(and(...conds))
+      // Newest first, deterministic: without an ORDER BY Postgres may return
+      // any rows, so `limit` would not mean "the most recent N" (B162). `id`
+      // breaks ties between rows created in the same instant.
+      .orderBy(desc(deployments.createdAt), desc(deployments.id))
       .limit(Math.min(200, filter.limit ?? 50));
   }
 

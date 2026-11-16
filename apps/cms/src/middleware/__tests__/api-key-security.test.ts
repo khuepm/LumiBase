@@ -51,8 +51,11 @@ function buildMiddlewareApp(db: Database): Hono<AppEnv> {
   return app;
 }
 
-function makeAuthDb(row: Record<string, unknown> | null): { db: Database; state: { updateCount: number; auditCount: number } } {
-  const state = { updateCount: 0, auditCount: 0 };
+function makeAuthDb(row: Record<string, unknown> | null): {
+  db: Database;
+  state: { updateCount: number; auditCount: number; auditValues: Array<Record<string, unknown>> };
+} {
+  const state = { updateCount: 0, auditCount: 0, auditValues: [] as Array<Record<string, unknown>> };
   const selectFluent = {
     from: () => selectFluent,
     where: () => selectFluent,
@@ -66,8 +69,9 @@ function makeAuthDb(row: Record<string, unknown> | null): { db: Database; state:
     },
   };
   const insertFluent = {
-    values: () => {
+    values: (val: Record<string, unknown>) => {
       state.auditCount += 1;
+      state.auditValues.push(val);
       return Promise.resolve([]);
     },
   };
@@ -141,6 +145,33 @@ describe('API key auth hardening', () => {
     });
     expect(state.updateCount).toBe(0);
     expect(state.auditCount).toBe(1);
+  });
+
+  it('returns 401 on site_mismatch and audits under the key owner siteId (#469)', async () => {
+    const ownerSiteId = 'site_owner';
+    const { db, state } = makeAuthDb(apiKeyRow({
+      siteId: ownerSiteId,
+      tokenHash: await sha256Hex(API_TOKEN),
+    }));
+    const app = buildMiddlewareApp(db);
+
+    const res = await appRequest(app, requestWithApiKey());
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({
+      errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }],
+    });
+    expect(state.updateCount).toBe(0);
+    expect(state.auditCount).toBe(1);
+    expect(state.auditValues[0]).toMatchObject({
+      siteId: ownerSiteId,
+      event: 'api_key_use_denied',
+      metadata: {
+        apiKeyId: API_KEY_ID,
+        siteId: ownerSiteId,
+        requestedSiteId: SITE_ID,
+        reason: 'site_mismatch',
+      },
+    });
   });
 });
 

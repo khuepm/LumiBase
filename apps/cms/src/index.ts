@@ -1,3 +1,4 @@
+import { orgsRouter } from './routes/orgs';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppEnv } from './env';
@@ -6,10 +7,11 @@ import { adminPathGuard } from './middleware/admin-path-guard';
 import { withAuditContext } from './middleware/audit-context';
 import { withJsonBodyLimit } from './middleware/body-limit';
 import { withAuth } from './middleware/auth';
-import { withDb } from './middleware/db';
+import { withDb, withSystemDb } from './middleware/db';
 import { withLogger } from './middleware/logger';
 import { withRateLimit } from './middleware/rate-limit';
 import { withDeliverRateLimit } from './middleware/deliver-rate-limit';
+import { withAiIpRateLimit } from './middleware/ai-ip-rate-limit';
 import { withRls } from './middleware/rls';
 import { withRuntime } from './middleware/runtime';
 import { requireSetupComplete } from './middleware/setup-required';
@@ -17,6 +19,8 @@ import { withSiteMembership } from './middleware/site-membership';
 import { withStudioAccess } from './middleware/studio-access';
 import { withControlPlaneAccessGuard } from './middleware/control-plane-access-guard';
 import { withFileUploadPolicy } from './middleware/file-upload-policy';
+import { apiSurface, withEntitlement } from './middleware/entitlement';
+import { withUsage } from './middleware/usage';
 import { withSecurityHeaders } from './middleware/security-headers';
 import { withTenant } from './middleware/tenant';
 import { withTenantExists } from './middleware/tenant-exists';
@@ -28,8 +32,13 @@ import { adminRouter } from './routes/admin';
 import { configRouter } from './routes/config';
 import { authRouter, meRouter } from './routes/auth';
 import { tfaAuthRouter, tfaMeRouter } from './routes/tfa';
+import { securityHistoryRouter } from './modules/security-history/routes';
+import { passkeyAuthRouter, passkeyMeRouter } from './routes/passkeys';
 import { adminSecurityRouter } from './routes/admin-security';
+import { adminEmailIdentityRouter } from './routes/admin-email-identity';
+import { adminPasswordPolicyRouter } from './routes/admin-password-policy';
 import { adminAuthIssuersRouter } from './routes/admin-auth-issuers';
+import { adminSocialProvidersRouter, socialAuthRouter, socialIdentitiesRouter } from './modules/social-auth/routes';
 import { adminEncryptionRouter } from './routes/admin-encryption';
 import { editorialRouter } from './routes/editorial';
 import { adminErasureRouter } from './routes/admin-erasure';
@@ -49,6 +58,7 @@ import { extensionsRouter } from './routes/extensions';
 import { filesRouter } from './routes/files';
 import { flowsRouter } from './routes/flows';
 import { itemsRouter } from './routes/items';
+import { importsRouter } from './routes/imports';
 import { handleGraphQL } from './graphql';
 import { permissionsRouter } from './routes/permissions';
 import { policiesRouter } from './routes/policies';
@@ -60,6 +70,8 @@ import { releasesRouter } from './routes/releases';
 import { rolesRouter } from './routes/roles';
 import { healthRouter } from './routes/health';
 import { insightsRouter } from './routes/insights';
+import { activationRouter } from './modules/activation/routes';
+import { apiKeySiteId, deliverPathSiteId, withDeliveryMilestone } from './modules/activation/delivery-mark';
 import { mediaRouter } from './routes/media';
 import { transformPresetsRouter } from './routes/transform-presets';
 import { uploadsRouter } from './routes/uploads';
@@ -74,19 +86,28 @@ import { domainsRouter } from './routes/domains';
 import { siteRouter } from './routes/site';
 import { systemRouter } from './routes/system';
 import { shareAdminRouter, sharePublicRouter } from './routes/shares';
+import { previewAdminRouter } from './routes/preview';
+import { previewDeliveryRouter } from './routes/preview-delivery';
 import { teamsRouter } from './routes/teams';
 import { translationsRouter } from './routes/translations';
 import { tmRouter } from './routes/translation-memory';
+import { localeGenerationRouter } from './routes/locale-generation';
 import { typegenRouter } from './routes/typegen';
+import { openApiRouter } from './routes/openapi';
 import { usersRouter } from './routes/users';
 import { utilsRouter, cacheUtilsRouter } from './routes/utils';
 import { pagesRouter } from './routes/pages';
 import { webhooksRouter } from './routes/webhooks';
 import { testAuthRouter } from './routes/test-auth';
 import { aiRouter } from './routes/ai';
+import { aiReviewRouter } from './routes/ai-review';
+import { aiAutomationRouter } from './routes/ai-automation';
 import { agentRouter } from './routes/agent';
 import { intentsRouter } from './routes/intents';
+import { siteSkillsRouter } from './routes/site-skills';
 import { mcpRouter } from './routes/mcp';
+import { protectedResourceRouter } from './routes/oauth-protected-resource';
+import { withMcpAuthChallenge } from './middleware/mcp-oauth';
 import { emailRouter } from './modules/email/routes';
 import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
@@ -100,6 +121,9 @@ import {
   gitPublicRouter,
 } from './modules/git-integration/routes';
 import { formatSafeError } from '@lumibase/contracts/utils';
+import { captureOpsError } from './modules/ops/capture';
+import { opsRouter } from './modules/ops/routes';
+import { ENTITLEMENT_DIMENSIONS } from '@lumibase/contracts/platform';
 
 const app = new Hono<AppEnv>();
 
@@ -111,13 +135,20 @@ app.use('*', withTracing());
 app.use('*', withSecurityHeaders());
 app.use('*', withMetrics());
 app.use('*', withRuntime());
+// Usage emitter seam: a pass-through unless a deployment registered an emitter.
+// Wraps everything below, so delivery and the authenticated chain are both
+// reported from this one point, after the response.
+app.use('*', withUsage());
 app.use(
   '*',
   cors({
     origin: (origin, c) => resolveCorsOrigin(origin, c.env),
     credentials: true,
-    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password', 'X-LumiBase-Refresh'],
-    exposeHeaders: ['X-Request-Id'],
+    // `If-Match` / `ETag`: optimistic concurrency on item writes
+    // (content-environments Phase A). Studio and the Tauri shell are
+    // cross-origin, so both must be listed or the browser hides them.
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password', 'X-LumiBase-Refresh', 'X-Confirm-Delete', 'If-Match'],
+    exposeHeaders: ['X-Request-Id', 'Retry-After', 'ETag'],
   }),
 );
 
@@ -162,6 +193,10 @@ app.route('/api/v1/utils', utilsRouter);
 app.route('/api/v1/system', systemRouter);
 // Prometheus metrics endpoint (public, no auth).
 app.route('/metrics', metricsRouter);
+// Read-only ops diagnostics plane (`.kiro/specs/ops-diagnostics`). Gated by the
+// static `LUMIBASE_OPS_TOKEN` inside the router (unset → 404); not a tenant
+// route, so it is mounted outside `api` (no withTenant/withAuth).
+app.route('/api/v1/ops', opsRouter);
 // Comprehensive health check — tests DB, cache, search, storage, queue connectivity.
 app.route('/health', healthRouter);
 // Serves interactive auth testing page
@@ -169,15 +204,15 @@ app.route('/test-auth', testAuthRouter);
 
 // Setup wizard surface (`/api/v1/setup/*`). Public — does not pass through
 // `withTenant`/`withAuth` because no user exists during first-time setup.
-// `withRuntime` already ran globally so the per-request `withDb()` inside
-// the router resolves the connection through the runtime's DatabaseProvider.
+// `withRuntime` already ran globally so the per-request `withSystemDb()` inside
+// the router (system connection, no site scope — B130) resolves the connection through the runtime's DatabaseProvider.
 app.route('/api/v1/setup', setupRouter);
 
 // Public recovery surface (admin-setup-wizard task 10.7; Req 14.4, 14.5,
 // 14.8; design §4.7, §4.8). PUBLIC / pre-auth on purpose: the operator
 // is locked out and CANNOT authenticate, so `/admin/security/recover`
 // and `/admin/security/forgot-path` must NOT pass through `withAuth` or
-// the `admin` role gate. The router applies only `withDb()` internally
+// the `admin` role gate. The router applies only `withSystemDb()` internally
 // (like `setupRouter`).
 //
 // Mounted at `/api/v1/admin/security` *before* `app.route('/api/v1', api)`
@@ -193,20 +228,25 @@ app.route('/api/v1/setup', setupRouter);
 app.route('/api/v1/admin/security', recoveryRouter);
 
 // SCIM 2.0 provisioning. Auth happens inside the router using SCIM_TOKEN.
-// Needs withDb() so it can write to the users/teams tables.
-app.use('/scim/v2/*', withDb());
+// Cross-site user provisioning with no site scope, so it runs on the system
+// connection (B130).
+app.use('/scim/v2/*', withSystemDb());
 app.route('/scim/v2', scimRouter);
 
 // Inbound deployment status webhook. PUBLIC / pre-auth on purpose: the
 // provider (Vercel/Netlify) authenticates via request signature, not a bearer
-// token. Needs `withTenant` (X-Lumi-Site → siteId) + `withDb` to update the
-// `deployments` row; `withRuntime` already ran globally for the KeyProvider.
-app.use('/api/v1/deployments/webhook/*', withTenant(), withDb());
+// token. `/:provider/:siteId` carries the tenant in the path so webhooks work
+// on the shared API host (`api.lumibase.dev`) where providers cannot send
+// custom headers (`X-Lumi-Site`); `/:provider` remains supported via
+// `withTenant` for per-site host mappings or callers that send `X-Lumi-Site`.
+// Both routes scope their DB handle with `scopedDbFor(c, siteId)` (#569, B130).
+app.use('/api/v1/deployments/webhook/*', withDb());
 app.route('/api/v1/deployments/webhook', deploymentsWebhookRouter);
 
 // Git integration public surface — OAuth callback + signature-verified webhook
 // receiver. PUBLIC on purpose: providers and OAuth redirects cannot carry a
-// session. The router applies only `withDb()` internally (like `setupRouter`).
+// session. The router applies `withSystemDb()` to the OAuth callback and
+// `withDb()` to the webhook, which scopes itself per site (B130).
 // Mounted BEFORE the authenticated `api` so its leaf paths
 // (`/oauth/:provider/callback`, `/webhook/:provider/:siteId/:integrationId`)
 // win; all other `/integrations/git/*` paths fall through to the authenticated
@@ -215,23 +255,46 @@ app.route('/api/v1/integrations/git', gitPublicRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
-api.use('*', withTenant(), withDb(), withTenantExists(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
+// `withAiIpRateLimit` (#564) sits after `withTenantExists` (only real sites get
+// counters) and before `withAuth` (a blocked /api/v1/ai/* request costs no JWT
+// or API-key work, no quota reservation, no provider call and no audit write).
+// It is a no-op outside /api/v1/ai.
+// RFC 9728 discovery challenge on MCP 401s (#346). Registered BEFORE the
+// authenticated chain so it wraps the 401s `withAuth` itself returns.
+api.use('/mcp', withMcpAuthChallenge());
+api.use('/mcp/*', withMcpAuthChallenge());
+api.use('*', withTenant(), withDb(), withTenantExists(), withAiIpRateLimit(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
+// Platform extension point: per-request entitlement check. A pass-through
+// unless a deployment entry registered a resolver (see platform/registry.ts).
+// Its own mount, after the guard chain: the principal is known, a request the
+// guards reject is never put to the resolver, and the chain line above stays
+// exactly as the security-guards wiring test pins it.
+api.use('*', withEntitlement({ dimension: ENTITLEMENT_DIMENSIONS.apiRequests, surface: apiSurface }));
 // Sub-routers must be attached to their parent BEFORE the parent is mounted
 // on `api`: Hono's `route()` copies the child's routes at call time, so
 // anything registered on `authRouter`/`meRouter` afterwards is invisible to
 // the composed app and answers 404.
 authRouter.route('/', tfaAuthRouter);
+authRouter.route('/', passkeyAuthRouter);
+// Social login (#736): public start / provider callback / code exchange.
+authRouter.route('/social', socialAuthRouter);
+api.route('/orgs', orgsRouter);
 api.route('/auth', authRouter);
 // `/me/*` — current-user endpoints kept outside `/auth` to honour the
 // URL contract from admin-setup-wizard design §7.3 (`GET /api/v1/me/admin-path`).
 // Mounted on the authenticated `api` Hono so `withAuth` already enforces
 // that the caller has a valid session before the handler runs.
 meRouter.route('/', tfaMeRouter);
+meRouter.route('/', passkeyMeRouter);
+// Linked social identities (#736): list / link / unlink.
+meRouter.route('/identities', socialIdentitiesRouter);
 api.route('/me', meRouter);
 // `/me/consents` — self-service consent management (GDPR Art. 7, PDPD).
 // Separate router from `meRouter`; mounted under the same authenticated `api`
 // chain so the caller can only read/write their own consent.
 api.route('/me/consents', consentRouter);
+// `/me/security-history` — the caller's own security timeline + export (#739).
+api.route('/me/security-history', securityHistoryRouter);
 // `/me/data-export` — self-service "download my data" (GDPR Art. 15/20).
 api.route('/me/data-export', dataExportRouter);
 // `/me/restriction` — self-service restriction of processing (GDPR Art. 18).
@@ -243,7 +306,12 @@ api.route('/retention', retentionRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/pages', pagesRouter);
+// Activation: an API-key content read marks the site's `delivery_request`
+// milestone (first hit only; see modules/activation/delivery-mark.ts).
+api.use('/items/*', withDeliveryMilestone(apiKeySiteId));
 api.route('/items', itemsRouter);
+// Background collection imports (#726).
+api.route('/imports', importsRouter);
 api.route('/releases', releasesRouter);
 api.route('/editorial', editorialRouter);
 // GraphQL surface (Yoga). Mounted inside the authenticated `api` sub-app so
@@ -251,6 +319,9 @@ api.route('/editorial', editorialRouter);
 // (operations) and GET (GraphiQL / introspection in non-prod).
 api.all('/graphql', (c) => handleGraphQL(c));
 api.route('/typegen', typegenRouter);
+// Live OpenAPI document + its admin switch (#745). Config-gated: 404 until a
+// site admin enables it for the caller's realm.
+api.route('/', openApiRouter);
 api.route('/roles', rolesRouter);
 api.route('/policies', policiesRouter);
 api.route('/permissions', permissionsRouter);
@@ -274,6 +345,8 @@ api.route('/settings', settingsRouter);
 api.route('/site', siteRouter);
 api.route('/domains', domainsRouter);
 api.route('/shares', shareAdminRouter);
+// Preview tokens (epic #667, V01): mint / list / revoke / rotate + settings.
+api.route('/preview', previewAdminRouter);
 api.route('/users', usersRouter);
 api.route('/teams', teamsRouter);
 api.route('/files', filesRouter);
@@ -292,6 +365,9 @@ api.route('/admin', adminRouter);
 // being populated. Sibling to `/admin` rather than nested so future
 // recovery routes (task 10.7) can mount alongside without reshuffling.
 api.route('/admin/security', adminSecurityRouter);
+// Email identity policy (#794): instance mode (bootstrap admin) + per-site strict.
+api.route('/admin/email-identity', adminEmailIdentityRouter);
+api.route('/admin/password-policy', adminPasswordPolicyRouter);
 // Admin Encryption surface (regulated-content-readiness task 3.4; Req 3.5).
 // Sibling to `/admin/security`, also under `withAuth` with an in-router
 // admin-role gate. Handles key-rotation metadata + key listing.
@@ -304,6 +380,8 @@ api.route('/admin/field-access-log', adminFieldAccessRouter);
 api.route('/admin/sar', adminSarRouter);
 // Trusted external JWT issuers (external-jwt-auth §5). Admin-only CRUD.
 api.route('/admin/auth/issuers', adminAuthIssuersRouter);
+// Per-site social login providers (#736), site-admin only.
+api.route('/admin/social-providers', adminSocialProvidersRouter);
 // Audit-log QUERY + EXPORT surface (admin-setup-wizard task 12.3; Req
 // 15.4, 15.6; design §4.9, §4.10, §10.3, §10.4). SIBLING mount alongside
 // `adminSecurityRouter` above, both under `withAuth`. The admin-role gate
@@ -321,14 +399,23 @@ api.route('/admin/auth/issuers', adminAuthIssuersRouter);
 // relies on.
 api.route('/admin/security', auditRouter);
 api.route('/tm', tmRouter);
+// One-shot translation generator for a new locale (#714) — control plane.
+api.route('/locale-generation', localeGenerationRouter);
 api.route('/flows', flowsRouter);
 api.route('/marketplace', marketplaceRouter);
 api.route('/materialize', materializeRouter);
 api.route('/utils/cache', cacheUtilsRouter);
 api.route('/dashboards', insightsRouter);
+api.route('/activation', activationRouter);
 api.route('/scim-tokens', scimAdminRouter);
 api.route('/ai', aiRouter);
+// Draft review profiles, runs and feedback (Jev J05, #512). Disjoint leaf paths.
+api.route('/ai', aiReviewRouter);
+// Jev metadata automation (J11, #518): control plane, admin-only. Disjoint leaf paths.
+api.route('/ai', aiAutomationRouter);
 api.route('/agent/intents', intentsRouter);
+// Site Skills (#712): playbooks for agents. Under /agent, so control-plane guarded.
+api.route('/agent/skills', siteSkillsRouter);
 api.route('/agent', agentRouter);
 // MCP server (content-os task 4; Req 4.1). Same authenticated chain as the
 // Agent API — the MCP adapter passes the token's roles to the harness, so
@@ -383,6 +470,18 @@ app.route('/api/v1/email', emailPublicRouter);
 // handlers first makes them win for their disjoint paths (same mechanism as
 // the shares/email mounts above).
 app.use('/api/v1/deliver/*', withDb(), withDeliverRateLimit());
+// Platform extension point, after the limiter: pass-through unless a resolver
+// is registered. Separate mount for the same reason as the one below.
+app.use('/api/v1/deliver/*', withEntitlement({
+  dimension: ENTITLEMENT_DIMENSIONS.deliveryRequests, surface: 'delivery', siteId: deliverPathSiteId,
+}));
+// Separate mount so the rate-limit wiring line above stays exactly as the
+// security-guards wiring test pins it. Runs after the limiter.
+app.use('/api/v1/deliver/*', withDeliveryMilestone(deliverPathSiteId));
+// Preview reads (epic #667): same public mount + limiter as delivery, site in
+// the path, token in the `x-lumibase-preview` header. Registered before
+// `deliverRouter` so its `/preview/*` leaf paths win.
+app.route('/api/v1/deliver/preview', previewDeliveryRouter);
 app.route('/api/v1/deliver', deliverRouter);
 
 // Public pageview beacon — tenancy in the URL, unauthenticated. `withRuntime`
@@ -393,6 +492,12 @@ app.route('/api/v1/deliver', deliverRouter);
 app.use('/api/v1/pageviews/:site_id/hit', withDb(), withRateLimit());
 app.route('/api/v1/pageviews', pageviewsPublicRouter);
 
+// RFC 9728 Protected Resource Metadata for the MCP endpoint (#346). Public
+// (discovery precedes the token) but tenant-resolved: the issuer list is per site.
+app.use('/.well-known/oauth-protected-resource', withTenant(), withDb(), withTenantExists());
+app.use('/.well-known/oauth-protected-resource/*', withTenant(), withDb(), withTenantExists());
+app.route('/.well-known/oauth-protected-resource', protectedResourceRouter);
+
 app.route('/api/v1', api);
 
 app.notFound((c) =>
@@ -401,6 +506,7 @@ app.notFound((c) =>
 app.onError((err, c) => {
   const requestId = c.get('requestId');
   console.error('[lumibase-cms] unhandled error', { requestId, err: formatSafeError(err) });
+  captureOpsError(c, { err, status: 500, errorCode: 'INTERNAL' });
   return c.json(
     { errors: [{ code: 'INTERNAL', message: 'Internal Server Error', requestId }] },
     500,

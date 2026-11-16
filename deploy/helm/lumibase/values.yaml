@@ -1,0 +1,439 @@
+# LumiBase Helm chart: default values.
+#
+# The chart runs the published image ghcr.io/khuepm/lumibase-cms, which serves
+# the CMS API and the Studio admin UI from one process on one origin (port
+# 1989). Every setting below maps to an environment variable that image reads;
+# docs/en/deployment/kubernetes-helm.md lists the mapping.
+#
+# Defaults are for a first install that reaches the setup wizard: bundled
+# PostgreSQL and Redis, generated secrets, setup gated by a one-time token.
+# For production, point `database` and `redis` at managed services and keep
+# the generated secrets somewhere safe (see `secrets` below).
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/khuepm/lumibase-cms
+  # Defaults to the chart's appVersion. Pin a release you have tested; the
+  # image migrates the database forward, so moving the tag upgrades the schema.
+  tag: ""
+  # Optional `sha256:...`. When set it is used instead of the tag.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# `production` sets NODE_ENV and LUMIBASE_ENV. In production the server
+# refuses to start without DATABASE_URL, REDIS_URL, JWT_SECRET, ENCRYPTION_KEY
+# and CORS_ALLOWED_ORIGINS, and the chart fails the render first when it can
+# tell one of them would be missing.
+environment: production
+
+# Public origin of this deployment, e.g. https://cms.example.com. Becomes
+# LUMIBASE_PUBLIC_URL, from which the image entrypoint derives
+# CORS_ALLOWED_ORIGINS when that is unset. Empty: derived from the first
+# ingress host (https when a TLS entry lists that host).
+publicUrl: ""
+
+# Comma-separated browser origins allowed to call the API. Empty: the public
+# origin above, which is all the bundled Studio needs (same origin).
+corsAllowedOrigins: ""
+
+setup:
+  # LUMIBASE_REQUIRE_SETUP_TOKEN. The instance is reachable before anyone has
+  # set it up; with the token on, `/setup` asks for the SETUP_TOKEN line the
+  # first web pod prints to its log. NOTES.txt shows the command.
+  requireToken: true
+
+studio:
+  # LUMIBASE_SERVE_STUDIO. Set false to run API-only when the Studio is
+  # hosted elsewhere (e.g. Cloudflare Pages); then add its origin to
+  # corsAllowedOrigins.
+  enabled: true
+
+# Extra non-secret environment variables, rendered into the ConfigMap.
+# Example: { LLM_PROVIDER: gemini, LUMIBASE_TRUSTED_PROXIES: "10.0.0.0/8" }
+config: {}
+
+# Extra container env entries (full EnvVar objects), e.g. a secretKeyRef for
+# an LLM provider key.
+extraEnv: []
+# Extra envFrom sources (Secrets/ConfigMaps) for the CMS containers.
+extraEnvFrom: []
+
+secrets:
+  # Name of an existing Secret holding JWT_SECRET and ENCRYPTION_KEY. When
+  # set, the chart neither generates nor stores those two values. Required
+  # for GitOps tools that render with `helm template` (Argo CD, Flux with
+  # post-rendering): `lookup` returns nothing there, so generated values
+  # would change on every sync.
+  existingSecret: ""
+  # Explicit values. Leave empty to generate them on first install; upgrades
+  # reuse what is stored in the release Secret (`lookup`). Do not commit real
+  # values to a values file.
+  jwtSecret: ""
+  # Standard padded base64 of 16, 24 or 32 bytes (`openssl rand -base64 32`).
+  # Back it up: data encrypted under it cannot be read without it.
+  encryptionKey: ""
+  # Keep the chart-managed Secret on `helm uninstall`, so a reinstall does not
+  # mint a new ENCRYPTION_KEY that cannot read the old data.
+  keepOnUninstall: true
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  # The CMS does not talk to the Kubernetes API.
+  automountServiceAccountToken: false
+
+# --- CMS (web) Deployment ---------------------------------------------------
+cms:
+  # Ignored while autoscaling.enabled. Realtime WebSocket events are
+  # delivered in-process on the Docker runtime, so a client only receives
+  # events published by the pod it is connected to; see the docs before
+  # running more than one web replica.
+  replicaCount: 1
+  # LUMIBASE_PROCESS_ROLE for this Deployment: `all` serves HTTP and runs the
+  # queue workers and scheduler. Forced to `web` when worker.enabled.
+  role: all
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    capabilities:
+      drop: [ALL]
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  # Size of the in-memory /tmp (the only writable path; the server itself
+  # writes nothing to disk).
+  tmpSizeLimit: 64Mi
+  # Readiness path. Empty = automatic: `/health/ready` when search and object
+  # storage are both configured, otherwise `/health`. `/health/ready` answers
+  # 503 while any of database, cache, search, storage or queue is unhealthy,
+  # so on an install without Meilisearch or S3 it would never turn ready.
+  readinessPath: ""
+  # Startup and liveness use /health/live, which probes no dependency: a
+  # database or Redis outage must not restart healthy pods (readiness takes
+  # them out of the Service instead). /health waits up to 3 s on a down
+  # dependency, the same as timeoutSeconds below.
+  startupProbe:
+    httpGet:
+      path: /health/live
+      port: http
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 60
+  livenessProbe:
+    httpGet:
+      path: /health/live
+      port: http
+    periodSeconds: 15
+    timeoutSeconds: 3
+    failureThreshold: 4
+  # Readiness waits on the dependency probes (up to 3 s each for the database
+  # and queue), so give it room to answer 503 instead of timing out.
+  readinessProbe:
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  # The server drains for up to 10 s on SIGTERM.
+  terminationGracePeriodSeconds: 30
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+
+# --- Optional separate worker Deployment --------------------------------------
+# Splits queue workers and the scheduler (LUMIBASE_PROCESS_ROLE=worker) from
+# the web pods, which then run as `web`. Scheduled jobs are leader-locked
+# through Redis, so more than one worker replica is safe.
+worker:
+  enabled: false
+  replicaCount: 1
+  podAnnotations: {}
+  podLabels: {}
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  # LUMIBASE_WORKER_HEALTH_PORT (the worker serves only /health and /health/ready).
+  healthPort: 1988
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# --- Migrations ---------------------------------------------------------------
+migrations:
+  # Every runner (`migrate.cjs apply`) holds a Postgres advisory lock for the
+  # whole apply, so runners started together queue: the first applies, the
+  # rest find nothing to apply and exit 0. Worker pods never migrate; in every
+  # mode but `none` they first run the read-only gate `migrate.cjs wait`,
+  # which exits once no migration this image bundles is pending.
+  #
+  # initContainer: each web pod first runs the image's migration preflight
+  #   (the entrypoint's own retry/backoff, MIGRATION_MODE=preflight), then
+  #   `migrate.cjs apply`; the server then starts with SKIP_MIGRATIONS=true.
+  #   A failed migration keeps the pod out of service instead of serving on a
+  #   half-migrated schema.
+  # job: one Job per release change (named by a hash of its pod spec) runs
+  #   the preflight and `migrate.cjs apply`; web and worker pods wait for it
+  #   with the gate. Not a Helm hook: see the docs (Migrations).
+  # entrypoint: no init containers on web pods; the image migrates on every
+  #   start (the Docker/one-click behaviour), under the same lock.
+  # none: SKIP_MIGRATIONS=true everywhere and no gate; you run migrations
+  #   yourself before rolling out.
+  mode: initContainer
+  # Seconds the gate waits before failing its init container (Kubernetes then
+  # restarts it with backoff).
+  waitTimeoutSeconds: 600
+  # Advanced: stop the migration history at this tag (MIGRATE_TARGET), e.g.
+  # 0029_activation_milestones, for runners and gates alike. For staged
+  # upgrades and the CI upgrade test; empty applies everything the image bundles.
+  target: ""
+  job:
+    # Retries of the migration Job (mode: job) before it is marked failed.
+    backoffLimit: 6
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+# --- Service / Ingress ----------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # Each host routes every path to the CMS service (API, Studio, WebSocket).
+  hosts:
+    - host: cms.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  # TLS is optional: [{ secretName: cms-tls, hosts: [cms.example.com] }]
+  tls: []
+
+# --- Scaling / availability -----------------------------------------------------
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 75
+  targetMemoryUtilizationPercentage: null
+
+podDisruptionBudget:
+  enabled: false
+  # Exactly one of the two.
+  minAvailable: 1
+  maxUnavailable: null
+
+# --- NetworkPolicy --------------------------------------------------------------
+networkPolicy:
+  enabled: false
+  # Peers allowed to reach the CMS HTTP port. Empty = any source (only the
+  # HTTP port is opened). Example for ingress-nginx:
+  # - namespaceSelector:
+  #     matchLabels:
+  #       kubernetes.io/metadata.name: ingress-nginx
+  ingressFrom: []
+  # Bundled PostgreSQL/Redis/Meilisearch always accept only the CMS pods
+  # (and the helm test pod) when the policy is enabled. Egress is not
+  # restricted: the CMS calls S3, LLM providers and webhooks.
+
+# --- Database ---------------------------------------------------------------------
+database:
+  # Used when postgresql.enabled is false.
+  external:
+    # Full connection string, e.g.
+    # postgresql://lumibase:pass@db.example.com:5432/lumibase?sslmode=require
+    url: ""
+    # Or read it from an existing Secret instead.
+    existingSecret: ""
+    existingSecretKey: DATABASE_URL
+  # DATABASE_SSL_MODE. In production DATABASE_URL must carry
+  # sslmode=require|verify-ca|verify-full unless this is `disable`. Forced to
+  # `disable` for the bundled PostgreSQL (same pod network, no TLS).
+  sslMode: ""
+  # LUMIBASE_DB_RLS: `off` or `enforce`. `enforce` also needs a system URL.
+  rls: "off"
+  systemUrl:
+    value: ""
+    existingSecret: ""
+    existingSecretKey: DATABASE_SYSTEM_URL
+
+# Bundled PostgreSQL: a single-instance StatefulSet for evaluation and small
+# installs. No replication, no backups. Use a managed database in production.
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: 16-alpine
+    pullPolicy: IfNotPresent
+  auth:
+    database: lumibase
+    username: lumibase
+    # Generated when empty (alphanumeric, URL-safe) and kept across upgrades.
+    password: ""
+    # Existing Secret with the password under `existingSecretKey`. The value
+    # is inserted into DATABASE_URL as is, so it must be URL-safe.
+    existingSecret: ""
+    existingSecretKey: postgres-password
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  # postgres:*-alpine runs as `postgres` (UID/GID 70).
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 70
+    runAsGroup: 70
+    fsGroup: 70
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# --- Redis (required: cache, queues, locks, rate limits) -------------------------
+redis:
+  # Used when redis.enabled is false.
+  external:
+    url: ""
+    existingSecret: ""
+    existingSecretKey: REDIS_URL
+  # Bundled Redis: a single-instance StatefulSet with AOF persistence and
+  # `noeviction` (BullMQ jobs must never be evicted). Password generated.
+  enabled: true
+  image:
+    repository: redis
+    tag: 7-alpine
+    pullPolicy: IfNotPresent
+  auth:
+    password: ""
+    existingSecret: ""
+    existingSecretKey: redis-password
+  persistence:
+    enabled: true
+    size: 2Gi
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 512Mi
+  # redis:*-alpine runs as `redis` (UID/GID 999).
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    fsGroup: 999
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# --- Meilisearch (optional: full-text search) --------------------------------------
+meilisearch:
+  # Used when meilisearch.enabled is false. Leave host empty for no search.
+  external:
+    host: ""
+    apiKey: ""
+    existingSecret: ""
+    existingSecretKey: MEILISEARCH_API_KEY
+  enabled: false
+  image:
+    repository: getmeili/meilisearch
+    tag: v1.7
+    pullPolicy: IfNotPresent
+  # Master key (MEILI_MASTER_KEY, also the CMS's MEILISEARCH_API_KEY).
+  # Generated when empty and kept across upgrades.
+  masterKey: ""
+  persistence:
+    enabled: true
+    size: 4Gi
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# --- Object storage (S3-compatible; media uploads) ---------------------------------
+# Not bundled: use AWS S3, R2, GCS (S3 interop), or a MinIO you operate.
+# Without it the instance boots and setup completes; uploads do not work.
+s3:
+  endpoint: ""
+  bucket: lumibase-media
+  accessKey: ""
+  secretKey: ""
+  # Existing Secret with S3_ACCESS_KEY and S3_SECRET_KEY.
+  existingSecret: ""
+
+# `helm test`: a pod that checks /health and that the Studio shell is served.
+tests:
+  enabled: true

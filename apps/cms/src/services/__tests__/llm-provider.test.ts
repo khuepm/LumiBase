@@ -6,8 +6,12 @@ import {
   NvidiaProvider,
   OpenAIProvider,
   VertexProvider,
+  WorkersAIProvider,
+  chatToolSkills,
   createLLMProvider,
 } from '../llm-provider';
+import { CORE_SKILLS as CORE_SKILL_DEFINITIONS } from '@lumibase/ai-skills';
+import { CORE_SKILLS as HARNESS_SKILLS } from '../ai-harness';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -251,5 +255,75 @@ describe('VertexProvider', () => {
     await provider.chat([{ role: 'user', content: 'hi' }]);
 
     expect(fetchMock.mock.calls[0]![0]).toContain('us-central1-aiplatform.googleapis.com');
+  });
+});
+
+describe('specialized LLM callers', () => {
+  it.each([
+    ['openai', () => new OpenAIProvider('key'), { choices: [{ message: { content: 'ok' } }] }],
+    ['nvidia', () => new NvidiaProvider('key'), { choices: [{ message: { content: 'ok' } }] }],
+    ['anthropic', () => new AnthropicProvider('key'), { content: [{ type: 'text', text: 'ok' }] }],
+    ['gemini', () => new GeminiProvider('key'), { candidates: [] }],
+    [
+      'vertex',
+      () => new VertexProvider({ accessToken: 'key', projectId: 'project' }),
+      { candidates: [] },
+    ],
+    [
+      'workers-ai',
+      () => new WorkersAIProvider({ accountId: 'account', apiToken: 'key' }),
+      { result: { response: 'ok' } },
+    ],
+  ] as const)('%s replaces the system prompt and omits tools', async (_name, create, response) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(response)));
+    vi.stubGlobal('fetch', fetchMock);
+    await create().chat([{ role: 'user', content: 'state' }], {
+      systemPrompt: 'Return decision JSON only.',
+      tools: false,
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    expect(body.tools).toBeUndefined();
+    expect(body.tool_choice).toBeUndefined();
+    expect(body.toolConfig).toBeUndefined();
+    const system =
+      body.system ?? body.systemInstruction?.parts[0]?.text ?? body.messages[0]?.content;
+    expect(system).toBe('Return decision JSON only.');
+    expect(JSON.stringify(body)).not.toContain('LumiBase AI Copilot');
+  });
+});
+
+describe('Copilot chat tool list (#710 review)', () => {
+  const parked = ['askUser', 'getUserAnswer'];
+
+  it('never offers the clarification skills to the chat', () => {
+    const names = chatToolSkills().map((skill) => skill.name);
+    for (const name of parked) expect(names).not.toContain(name);
+    expect(names).toContain('createCollection');
+  });
+
+  it.each([
+    ['openai', () => new OpenAIProvider('key'), { choices: [{ message: { content: 'ok' } }] }],
+    ['anthropic', () => new AnthropicProvider('key'), { content: [{ type: 'text', text: 'ok' }] }],
+    ['gemini', () => new GeminiProvider('key'), { candidates: [] }],
+    [
+      'workers-ai',
+      () => new WorkersAIProvider({ accountId: 'account', apiToken: 'key' }),
+      { result: { response: 'ok' } },
+    ],
+  ] as const)('%s sends no clarification tool in the request body', async (_name, create, response) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(response)));
+    vi.stubGlobal('fetch', fetchMock);
+    await create().chat([{ role: 'user', content: 'hi' }]);
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as { tools?: unknown };
+    const serialized = JSON.stringify(body.tools);
+    expect(serialized).toContain('createCollection');
+    for (const name of parked) expect(serialized).not.toContain(`"${name}"`);
+  });
+
+  it('keeps both skills in the harness registry', () => {
+    for (const name of parked) {
+      expect(Object.hasOwn(HARNESS_SKILLS, name)).toBe(true);
+      expect(Object.hasOwn(CORE_SKILL_DEFINITIONS, name)).toBe(true);
+    }
   });
 });

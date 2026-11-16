@@ -16,7 +16,9 @@
 //
 //   1. language      — the target side must actually read as the target language
 //   2. headings      — same count, same level sequence (text differs, shape does not)
-//   3. code fences   — same count, and each body byte-identical: code is never translated
+//   3. code fences   — same count, and each code body identical once comments
+//                      (whole-line, plus trailing `  # …` in shell/YAML-like
+//                      fences) are removed: code is never translated, comments are
 //   4. inline code   — same multiset of spans (`siteId`, `LUMIBASE_X`, paths…)
 //   5. link targets  — same multiset of URLs/paths (link text differs, destinations do not)
 //   6. tables        — same table count and same row count per table
@@ -66,6 +68,137 @@ const CODE_LANGS = new Set([
   'sql', 'graphql', 'gql', 'http', 'html', 'css', 'diff', 'dockerfile', 'docker',
   'python', 'py', 'go', 'rust', 'rs', 'java', 'kotlin', 'swift', 'php', 'ruby',
 ]);
+
+/**
+ * Fence languages where `#` starts a comment that may follow code on the same
+ * line (`gh secret set X  # paste the token`, `submodules: false   # …`). Only
+ * these get trailing comments stripped; in `ts`/`json`/`css`… a `#` is a private
+ * field, a colour or a fragment, never a comment. Mirrors the shell-like set of
+ * `scripts/check-docs-commands.mjs` (`SHELL_FENCES`) plus the other `#`-comment
+ * config formats in CODE_LANGS.
+ */
+const HASH_COMMENT_LANGS = new Set([
+  'bash', 'sh', 'shell', 'zsh', 'console',
+  'yaml', 'yml', 'toml', 'env', 'dotenv',
+  // Not `dockerfile`/`docker`: a Dockerfile only treats a LEADING `#` as a
+  // comment; mid-line it is an argument (`COPY a b # x`), so stripping it
+  // would hide real drift.
+]);
+
+/**
+ * Index where a trailing `#` comment starts in `line`, or -1. The `#` must sit
+ * outside single/double quotes with whitespace before it and whitespace (or the
+ * end of the line) after it — so `https://x/#anchor`, `"#fff"`, `"a # b"`,
+ * `${#arr}` and `color:#fff` are code, not comments. This is a conservative
+ * subset of the shell/YAML rule: a missed comment only means a false positive
+ * (the old behaviour). An escaped space (`foo\ # bar`) is part of the word, so
+ * the `#` after it is code.
+ *
+ * Known over-strip (B169): quote state is per line, so a ` # ` inside the
+ * continuation of a multi-line quoted string, a heredoc body or a TOML `"""`
+ * block is cut as if it were a comment. Hiding a real difference this way needs
+ * both locales to differ ONLY after that `#`; no such fence exists today.
+ */
+function trailingCommentStart(line) {
+  let quote = null;
+  let escaped = -1; // index of the last backslash-escaped character
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (quote) {
+      if (ch === '\\' && quote === '"') i += 1;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '\\') { i += 1; escaped = i; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (
+      ch === '#' &&
+      i > 0 && /\s/.test(line[i - 1]) && escaped !== i - 1 &&
+      (i + 1 === line.length || /\s/.test(line[i + 1]))
+    ) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Fence body with its comments removed, for comparing code across locales.
+ * Comments are prose and are meant to be translated. Whole-line `#`, `//` and
+ * `--` comments are dropped for every code language; for HASH_COMMENT_LANGS a
+ * trailing `  # …` is cut as well (B111 — translated trailing comments used to
+ * read as code drift and needed a blanket `allow code-fences` waiver). For
+ * C_COMMENT_LANGS, trailing `// …` and `/* … *\/` blocks (JSDoc and JSX
+ * `{/* … *\/}` included) are cut the same way, and lines are compared without
+ * trailing whitespace or blank lines, since a translated JSDoc block may wrap
+ * onto a different number of lines.
+ */
+export function stripCodeComments(body, lang = '') {
+  const l = lang.toLowerCase();
+  const trailing = HASH_COMMENT_LANGS.has(l);
+  if (C_COMMENT_LANGS.has(l)) {
+    return stripCStyleComments(body)
+      .split('\n')
+      .map((line) => line.trimEnd())
+      .filter((line) => line.trim() !== '')
+      .join('\n')
+      .trim();
+  }
+  return body
+    .split('\n')
+    .filter((l) => !/^\s*(#|\/\/|--)/.test(l))
+    .map((l) => {
+      if (!trailing) return l;
+      const at = trailingCommentStart(l);
+      return at === -1 ? l : l.slice(0, at).trimEnd();
+    })
+    .join('\n')
+    .trim();
+}
+
+/**
+ * Fence languages with C-style comments: `// …` to end of line and `/* … *\/`
+ * blocks. A `#` is never a comment here (private field, colour, fragment).
+ */
+const C_COMMENT_LANGS = new Set([
+  'ts', 'tsx', 'typescript', 'js', 'jsx', 'javascript', 'mjs', 'cjs', 'jsonc',
+]);
+
+/**
+ * Remove `// …` and `/* … *\/` comments from JS/TS/JSONC source. Quote-aware:
+ * a `//` or `/*` inside '…', "…" or `…` is code (`'https://x'`, `'src/**\/*.ts'`).
+ * '…' and "…" cannot span lines in JS, so their state resets at a newline — an
+ * apostrophe in JSX text then cannot swallow the rest of the fence. A regex
+ * literal containing `//` is not recognised (none exists in docs today); the
+ * failure mode is a missed or over-cut comment on that one line.
+ */
+function stripCStyleComments(src) {
+  let out = '';
+  let quote = null;
+  for (let i = 0; i < src.length; i += 1) {
+    const ch = src[i];
+    if (quote) {
+      out += ch;
+      if (ch === '\\') { out += src[i + 1] ?? ''; i += 1; }
+      else if (ch === quote) quote = null;
+      else if (ch === '\n' && quote !== '`') quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; out += ch; continue; }
+    if (ch === '/' && src[i + 1] === '/') {
+      while (i < src.length && src[i] !== '\n') i += 1;
+      out += '\n';
+      continue;
+    }
+    if (ch === '/' && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2);
+      i = end === -1 ? src.length : end + 1;
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
 
 /** A doc can waive a specific check when the divergence is deliberate. */
 const WAIVER = /<!--\s*check-parity:\s*allow\s+([^>]+?)\s*-->/g;
@@ -122,8 +255,25 @@ function inlineCode(body) {
  * links follow the same rule because the target heading is translated; compare
  * their file paths while preserving fragments on external URLs. Everything else
  * must match exactly: a translated file path is a broken link.
+ *
+ * With `from` ({ rel, locale }), a relative link is compared by the file it
+ * actually RESOLVES to, not by its literal text. Two locales legitimately write
+ * a different path for the same target: `docs/vi/README.md` has to say
+ * `../en/llms.txt` for a file that exists only under `docs/en/`, while
+ * `docs/en/README.md` says `./llms.txt`. Comparing the literal strings called
+ * that a mismatch and — worse — called the *broken* VI link (`./llms.txt`,
+ * pointing at a `docs/vi/llms.txt` that does not exist) a perfect match. So:
+ * resolve both sides, then collapse the locale segment only for a link that
+ * stays inside the linking doc's own locale tree and whose target exists in
+ * both trees, which is what makes an ordinary cross-doc link compare equal
+ * while a single-locale target still has to agree on one real file. A link
+ * into the OTHER locale's tree always stays locale-specific: a VI page that
+ * sends readers to the English copy (`../en/getting-started.md`) of a page
+ * that has a Vietnamese one is reported, not matched against the EN page's
+ * `./getting-started.md`. Backlog B67, the false positive B37(d) recorded, and
+ * the own-tree rule B168.
  */
-export function linkTargets(body) {
+export function linkTargets(body, from = null) {
   const files = [];
   let anchors = 0;
   const re = /\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
@@ -132,10 +282,47 @@ export function linkTargets(body) {
     if (m[1].startsWith('#')) anchors += 1;
     else {
       const localMarkdown = !/^[a-z][a-z0-9+.-]*:/i.test(m[1]) && !m[1].startsWith('//');
-      files.push(localMarkdown ? m[1].replace(/(?<=\.md)#[^#]*$/i, '') : m[1]);
+      if (!localMarkdown) {
+        files.push(m[1]);
+        continue;
+      }
+      const withoutFragment = m[1].replace(/(?<=\.md)#[^#]*$/i, '');
+      files.push(from ? resolveDocLink(withoutFragment, from) : withoutFragment);
     }
   }
   return { files, anchors };
+}
+
+/**
+ * A relative link reduced to the file it points at, locale-collapsed when it
+ * stays in the linking doc's own locale tree and both locales have that file. Absolute-looking targets (`/api/...`) and anything
+ * that escapes the docs tree are returned untouched, so they still compare
+ * literally.
+ */
+export function resolveDocLink(target, { rel, locale }) {
+  if (target.startsWith('/')) return target;
+  const [pathPart, ...rest] = target.split('#');
+  const fragment = rest.length > 0 ? `#${rest.join('#')}` : '';
+  const fromDir = path.posix.dirname(path.posix.join('docs', locale, rel));
+  const resolved = path.posix.normalize(path.posix.join(fromDir, pathPart));
+  const match = /^docs\/([a-z-]+)\/(.*)$/.exec(resolved);
+  if (!match) return resolved + fragment;
+  const [, targetLocale, inner] = match;
+  if (!LOCALES.includes(targetLocale)) return resolved + fragment;
+  // Extensionless slug links (`../features/foo`) name `foo.md`.
+  const exists = (l) =>
+    [inner, `${inner}.md`].some((candidate) => fs.existsSync(path.join(DOCS_ROOT, l, candidate)));
+  const present = LOCALES.filter(exists).length;
+  // Present in every locale: an ordinary cross-doc link, compare equal. Present
+  // in none: parity is not a dead-link check, and a link that is dead in both
+  // trees is not a locale mismatch either — collapse it so the two sides compare
+  // as they did before resolution, instead of reporting a misleading mismatch.
+  // Present in only some: each side has to agree on one real file (B67).
+  // Only inside the linking doc's own locale tree: a link that crosses into
+  // the other locale stays locale-specific, so `../en/x.md` from a VI page
+  // never compares equal to `./x.md` from the EN page (B168).
+  const collapse = targetLocale === locale && (present === LOCALES.length || present === 0);
+  return (collapse ? `docs/*/${inner}` : resolved) + fragment;
 }
 
 /** Row counts of each pipe table, in document order. */
@@ -227,24 +414,20 @@ export function checkPair(rel) {
     add('code-fences', `en has ${fences.en.length} fenced blocks, vi has ${fences.vi.length}`);
   } else {
     // Comments inside a fence are prose and are meant to be translated, so they
-    // are stripped before comparing. Prose-shaped fences (diagrams, trees,
-    // sample output, untagged blocks) are compared by count only — translating
-    // an ASCII architecture diagram's labels is correct, not drift.
-    const stripComments = (s) =>
-      s
-        .split('\n')
-        .filter((l) => !/^\s*(#|\/\/|--)/.test(l))
-        .join('\n')
-        .trim();
+    // are stripped before comparing (stripCodeComments). Prose-shaped fences
+    // (diagrams, trees, sample output, untagged blocks) are compared by count
+    // only — translating an ASCII architecture diagram's labels is correct, not
+    // drift.
     const real = [];
     for (let i = 0; i < fences.en.length; i += 1) {
-      if (!CODE_LANGS.has(fences.en[i].lang.toLowerCase())) continue;
-      if (stripComments(fences.en[i].body) !== stripComments(fences.vi[i].body)) {
+      const lang = fences.en[i].lang.toLowerCase();
+      if (!CODE_LANGS.has(lang)) continue;
+      if (stripCodeComments(fences.en[i].body, lang) !== stripCodeComments(fences.vi[i].body, lang)) {
         real.push(`#${i + 1} (${fences.en[i].lang})`);
       }
     }
     if (real.length) {
-      add('code-fences', `code differs (ignoring comment lines) in block(s) ${real.join(', ')}`);
+      add('code-fences', `code differs (ignoring comments) in block(s) ${real.join(', ')}`);
     }
   }
 
@@ -258,8 +441,8 @@ export function checkPair(rel) {
   }
 
   // 5. link targets
-  const lEn = linkTargets(parts.en.body);
-  const lVi = linkTargets(parts.vi.body);
+  const lEn = linkTargets(parts.en.body, { rel, locale: 'en' });
+  const lVi = linkTargets(parts.vi.body, { rel, locale: 'vi' });
   const lt = multisetDiff(lEn.files, lVi.files);
   if (lt.missing.length || lt.extra.length) {
     const bits = [];
@@ -293,7 +476,7 @@ export function checkPair(rel) {
       add(
         'bulk',
         `target/source length ratio ${ratio.toFixed(2)} outside [${MIN_RATIO}, ${MAX_RATIO}] ` +
-          `(${lenTgt} vs ${lenSrc} chars) — likely dropped or duplicated content`,
+        `(${lenTgt} vs ${lenSrc} chars) — likely dropped or duplicated content`,
       );
     }
   }
@@ -350,7 +533,7 @@ if (invokedDirectly) {
   } else {
     console.log(
       `[check-parity] pairs=${results.length - skipped.length} single-sided=${skipped.length} ` +
-        `problems=${total} in ${failed.length} pair(s)`,
+      `problems=${total} in ${failed.length} pair(s)`,
     );
     for (const r of failed) {
       console.log(`\n  ${r.rel}`);

@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { registerCrud } from './_crud.js';
-import { confirmDescription, okText, run } from './_shared.js';
+import { confirmDescription, okAfter, okText, run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 const roleSchema = z.object({
@@ -76,8 +76,8 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
     },
     async ({ id, policyId }) =>
       run(async () => {
-        await client.delete(`/roles/${encodePathSegment(id)}/policies/${encodePathSegment(policyId)}`);
-        return okText(`Policy "${policyId}" detached from role "${id}".`);
+        const response = await client.delete(`/roles/${encodePathSegment(id)}/policies/${encodePathSegment(policyId)}`);
+        return okAfter(response, `Policy "${policyId}" detached from role "${id}".`);
       }),
   );
 
@@ -102,8 +102,8 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
     },
     async ({ id, userId }) =>
       run(async () => {
-        await client.delete(`/roles/${encodePathSegment(id)}/users/${encodePathSegment(userId)}`);
-        return okText(`User "${userId}" removed from role "${id}".`);
+        const response = await client.delete(`/roles/${encodePathSegment(id)}/users/${encodePathSegment(userId)}`);
+        return okAfter(response, `User "${userId}" removed from role "${id}".`);
       }),
   );
 
@@ -152,8 +152,8 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
     },
     async ({ id, permId }) =>
       run(async () => {
-        await client.delete(`/policies/${encodePathSegment(id)}/permissions/${encodePathSegment(permId)}`);
-        return okText(`Permission "${permId}" deleted from policy "${id}".`);
+        const response = await client.delete(`/policies/${encodePathSegment(id)}/permissions/${encodePathSegment(permId)}`);
+        return okAfter(response, `Permission "${permId}" deleted from policy "${id}".`);
       }),
   );
 
@@ -183,8 +183,8 @@ export function registerAccessTools(server: McpServer, client: LumiBaseClient) {
     },
     async ({ id, userId }) =>
       run(async () => {
-        await client.delete(`/policies/${encodePathSegment(id)}/users/${encodePathSegment(userId)}`);
-        return okText(`Policy "${id}" detached from user "${userId}".`);
+        const response = await client.delete(`/policies/${encodePathSegment(id)}/users/${encodePathSegment(userId)}`);
+        return okAfter(response, `Policy "${id}" detached from user "${userId}".`);
       }),
   );
 

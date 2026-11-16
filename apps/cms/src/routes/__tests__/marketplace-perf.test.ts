@@ -74,7 +74,7 @@ describe('marketplace publish performance', () => {
     }
 
     // Publisher site + an admin-bypass role for the acting publisher.
-    await db.insert(sites).values({ id: PUBLISHER_SITE, name: 'Publisher' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: PUBLISHER_SITE, name: 'Publisher' });
     const [pubRole] = await db
       .insert(roles)
       .values({ siteId: PUBLISHER_SITE, name: 'Publisher Admin', adminAccess: true })
@@ -104,7 +104,7 @@ describe('marketplace publish performance', () => {
     // outdated (1.0.0) install of the same slug.
     for (let i = 0; i < NUM_SITES; i++) {
       const siteId = `site_${i}`;
-      await db.insert(sites).values({ id: siteId, name: `Site ${i}` });
+      await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: siteId, name: `Site ${i}` });
       const [role] = await db
         .insert(roles)
         .values({ siteId, name: 'Site Admin', adminAccess: true })

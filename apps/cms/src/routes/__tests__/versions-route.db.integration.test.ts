@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { and, eq } from 'drizzle-orm';
@@ -56,7 +57,7 @@ describe.skipIf(!hasDbIntegrationUrl)('items versions routes — DB integration'
   beforeEach(async () => {
     currentAuth = adminAuth;
     await db.delete(sites).where(eq(sites.id, SITE));
-    await db.insert(sites).values({ id: SITE, name: 'Versions Route IT' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'Versions Route IT' });
     // Admin with bypass; viewer is a member with a no-grant role (RBAC denies).
     await db
       .insert(users)

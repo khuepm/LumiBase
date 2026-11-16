@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:08:20.200Z
+version: 3
+lastUpdated: 2026-10-17T16:36:17.525Z
 sourceLang: en
 translatedFrom: en
-sourceHash: b4c3cb49368f85ba
+sourceHash: 31f3830b261b11ef
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:08:20.200Z
-codeVerifiedHash: b4c3cb49368f85ba
-codeVerifiedClaims: 4
+codeVerified: 2026-10-17T16:36:17.525Z
+codeVerifiedHash: 31f3830b261b11ef
+codeVerifiedClaims: 2
 ---
 
 # Data Residency & Cross-Border Transfers
@@ -59,7 +59,7 @@ codeVerifiedClaims: 4
 
 ## 5. Trạng thái trong LumiBase
 
-- ✅ Cô lập đa tenant (`apps/cms/src/middleware/rls.ts`) tách biệt tenant nhưng tự nó
+- ✅ Cô lập đa tenant (lọc `site_id` mức ứng dụng; RLS backstop opt-in, `LUMIBASE_DB_RLS=enforce`) tách biệt tenant nhưng tự nó
   **không** ghim khu vực.
 - ⚠️ Ghim khu vực là lựa chọn **vận hành/triển khai**, không phải setting ứng dụng hiện
   nay. Chưa có routing khu vực theo bản ghi. `[Inference]` Để lưu trú đa khu vực, chạy

@@ -1,3 +1,4 @@
+import { OrganizationSwitcher } from '@/modules/organization/switcher';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   Database,
@@ -12,30 +13,30 @@ import {
   Radar,
   BarChart3,
   Search,
+  PanelLeftClose,
+  PanelLeftOpen,
+  GripVertical,
 } from 'lucide-react';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { NotificationsPanel } from '@/components/notifications-panel';
 import { ReleaseUpdateNotice } from '@/components/release-update-notice';
 import { ConnectionStatusDot } from '@/components/connection-status-dot';
-import { CommandPalette } from '@/components/command-palette';
+import { MissionControlBadge, ModuleNavItem, type ModuleDef } from '@/components/module-nav-item';
 import { SearchPalette } from '@/components/search-palette';
 import { clearActiveToken, getApiClient, hasActiveToken, logout } from '@/lib/api';
 import { VersionInfoFooter } from '@/components/version-info-footer';
+import { SiteLanguageSync } from '@/components/site-language';
+import { UiLanguagePicker } from '@/components/ui-language-picker';
 import { getAdminBase } from '@/lib/admin-base';
-import { useInboxData } from '@/modules/mission-control/use-inbox';
+import { getEnvironmentBadge } from '@/lib/environment-badge';
 import { useGlobalShortcuts } from '@/lib/keybindings/use-keybindings';
 import { useKeybindingsStore } from '@/lib/keybindings/store';
+import { useDisplayTimezoneStore } from '@/lib/display-timezone';
 import { withAdminBase } from '@/lib/keybindings/commands';
-
-interface ModuleDef {
-  id: string;
-  label: string;
-  icon: typeof FileText;
-  to: string;
-}
+import { mePreferencesQueryOptions, permissionsQueryOptions } from '@/lib/me-queries';
 
 const MODULES: ModuleDef[] = [
   { id: 'content', label: 'Content', icon: FileText, to: '/' },
@@ -50,30 +51,38 @@ const MODULES: ModuleDef[] = [
   { id: 'settings', label: 'Settings', icon: Settings, to: '/settings' },
 ];
 
+const DEFAULT_MODULE_ORDER = MODULES.map((module) => module.id);
+
+function orderedModules(order: string[]): ModuleDef[] {
+  const byId = new Map(MODULES.map((module) => [module.id, module]));
+  const seen = new Set<string>();
+  const result: ModuleDef[] = [];
+  for (const id of order) {
+    const module = byId.get(id);
+    if (module && !seen.has(id)) {
+      result.push(module);
+      seen.add(id);
+    }
+  }
+  return [...result, ...MODULES.filter((module) => !seen.has(module.id))];
+}
+
+// Heavy, interaction-only chrome is split out of the boot chunk (#757):
+// `@dnd-kit/*` loads only while an admin reorders the sidebar, `cmdk` only
+// once the command palette is opened. The read-only sidebar renders plain
+// links (`ModuleNavItem`), which is also the Suspense fallback while the
+// sortable list loads, so the sidebar never blanks.
+const SortableModuleNav = lazy(() => import('@/components/sortable-module-nav').then((m) => ({ default: m.SortableModuleNav })));
+const CommandPalette = lazy(() => import('@/components/command-palette').then((m) => ({ default: m.CommandPalette })));
+
 /**
  * The modules surfaced directly in the mobile Bottom Nav (app-shell spec
  * §1.2). Everything else lives behind the "More" sheet.
  */
-const MOBILE_PRIMARY_IDS = ['content', 'files', 'automation', 'settings'] as const;
+/** Resolved once per bundle: the build mode/channel cannot change at runtime. */
+const environmentBadge = getEnvironmentBadge();
 
-/**
- * Exception count on the Mission Control icon (content-os-ui task 7; Req
- * 6.1-6.4). Editors working in other modules must not miss a ticking veto
- * window. Shares the inbox query cache with Mission Control, hides itself
- * entirely at zero or when the data is unavailable.
- */
-function MissionControlBadge() {
-  const { counts } = useInboxData();
-  if (counts.total === 0) return null;
-  return (
-    <span
-      aria-label={`${counts.total} exceptions awaiting attention`}
-      className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
-    >
-      {counts.total > 9 ? '9+' : counts.total}
-    </span>
-  );
-}
+const MOBILE_PRIMARY_IDS = ['content', 'files', 'automation', 'settings'] as const;
 
 interface AppShellProps {
   children: ReactNode;
@@ -120,18 +129,43 @@ export function AppShell({ children }: AppShellProps) {
 
   // Load the user's stored keybindings once, then merge over defaults. The
   // dispatcher reads `resolvedKeymap` from the store, so it picks these up.
-  const prefsQuery = useQuery({
-    queryKey: ['me', 'preferences'],
-    queryFn: () => getApiClient().me.getPreferences(),
-    enabled: hasActiveToken(),
-    staleTime: 5 * 60_000,
-  });
+  // Shared keys (lib/me-queries): the language sync, `usePermissions` and
+  // the save-action hook read the same cache entries, so boot makes one
+  // request per endpoint (#757).
+  const prefsQuery = useQuery({ ...mePreferencesQueryOptions(), enabled: hasActiveToken() });
+  const permissionsQuery = useQuery({ ...permissionsQueryOptions(), enabled: hasActiveToken() });
+  const [moduleOrder, setModuleOrder] = useState(DEFAULT_MODULE_ORDER);
+  const [expandedNav, setExpandedNav] = useState(false);
+  const [editingNav, setEditingNav] = useState(false);
+  const [navigationError, setNavigationError] = useState('');
+  const navigationSave = useRef(Promise.resolve());
   useEffect(() => {
     if (!prefsQuery.data) return;
-    const keybindings = (prefsQuery.data.data?.keybindings ?? {}) as Record<string, string>;
+    const keybindings = (prefsQuery.data.keybindings ?? {}) as Record<string, string>;
     setOverrides(keybindings);
     setLoaded(true);
+    const order = prefsQuery.data.navigationOrder;
+    if (Array.isArray(order)) setModuleOrder(order.filter((id): id is string => typeof id === 'string'));
+    setExpandedNav(prefsQuery.data.navigationExpanded === true);
+    const tz = prefsQuery.data.timezone;
+    useDisplayTimezoneStore.getState().setPreference(typeof tz === 'string' ? tz : null);
   }, [prefsQuery.data, setOverrides, setLoaded]);
+
+  function saveNavigation(patch: { navigationOrder?: string[]; navigationExpanded?: boolean }) {
+    setNavigationError('');
+    navigationSave.current = navigationSave.current.then(async () => {
+      try {
+        await getApiClient().me.updatePreferences(patch);
+      } catch {
+        setNavigationError('Could not save navigation preferences.');
+      }
+    });
+  }
+
+  function onModuleReorder(next: string[]) {
+    setModuleOrder(next);
+    saveNavigation({ navigationOrder: next });
+  }
 
   const onAction = useCallback(
     (actionId: string) => {
@@ -182,14 +216,20 @@ export function AppShell({ children }: AppShellProps) {
       window.location.assign(adminBase ? `${adminBase}/login` : '/');
     });
   };
+  const isAdmin = permissionsQuery.data?.admin === true;
+  const sidebarModules = orderedModules(moduleOrder);
+  const staticSidebar = sidebarModules.map((module) => (
+    <ModuleNavItem key={module.id} module={module} active={activeModule === module.id} adminBase={adminBase} expanded={expandedNav} editing={false} />
+  ));
 
   return (
     <div className="flex h-screen w-screen">
+      <SiteLanguageSync />
       {/* Skip-to-content link — visible on focus, hidden otherwise */}
       <a
         href="#main-content"
         className={cn(
-          'absolute left-2 top-2 z-50 rounded bg-primary px-3 py-1.5 text-sm font-medium',
+          'absolute start-2 top-2 z-50 rounded bg-primary px-3 py-1.5 text-sm font-medium',
           'text-primary-foreground shadow-md',
           'translate-y-[-200%] transition-transform focus:translate-y-0',
         )}
@@ -201,47 +241,45 @@ export function AppShell({ children }: AppShellProps) {
           Bottom Nav — app-shell spec §1.2) */}
       <nav
         aria-label="Module navigation"
-        className="hidden w-16 flex-col items-center gap-2 border-r bg-muted/30 py-4 md:flex"
+        className={cn('hidden shrink-0 flex-col border-e bg-muted/30 py-4 md:flex', expandedNav ? 'w-56' : 'w-16')}
       >
-        {MODULES.map(({ id, label, icon: Icon, to }) => {
-          const isActive = activeModule === id;
-          return (
-            <Link
-              key={id}
-              to={`${adminBase}${to === '/' ? '' : to}` || '/'}
-              aria-label={label}
-              aria-current={isActive ? 'page' : undefined}
-              title={label}
-              className={cn(
-                'relative flex h-10 w-10 items-center justify-center rounded-md transition',
-                'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
-                isActive
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent',
-              )}
-            >
-              <Icon className="h-5 w-5" aria-hidden="true" />
-              {id === 'mission-control' && <MissionControlBadge />}
-            </Link>
-          );
-        })}
-        <div className="mt-auto" aria-hidden="true" />
+        <div className={cn('flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3', !expandedNav && 'items-center')}>
+          {editingNav ? (
+            <Suspense fallback={staticSidebar}>
+              <SortableModuleNav modules={sidebarModules} activeModule={activeModule} adminBase={adminBase} expanded={expandedNav} onReorder={onModuleReorder} />
+            </Suspense>
+          ) : staticSidebar}
+        </div>
+        {navigationError && <p role="alert" className="px-2 text-xs text-destructive">{navigationError}</p>}
+        <div className={cn('mt-2 flex flex-col gap-1 border-t px-3 pt-2', !expandedNav && 'items-center')}>
+          {isAdmin && (
+            <button type="button" onClick={() => setEditingNav((value) => !value)} aria-label={editingNav ? 'Finish reordering modules' : 'Reorder modules'} aria-pressed={editingNav} className={cn('flex h-9 items-center rounded-md text-muted-foreground hover:bg-accent', expandedNav ? 'gap-3 px-2' : 'w-9 justify-center')}>
+              <GripVertical className="h-4 w-4" />{expandedNav && <span className="text-xs">{editingNav ? 'Done reordering' : 'Reorder modules'}</span>}
+            </button>
+          )}
+          <button type="button" onClick={() => { const next = !expandedNav; setExpandedNav(next); saveNavigation({ navigationExpanded: next }); }} disabled={prefsQuery.isLoading} aria-label={expandedNav ? 'Collapse module navigation' : 'Expand module navigation'} aria-expanded={expandedNav} className={cn('flex h-9 items-center rounded-md text-muted-foreground hover:bg-accent disabled:opacity-50', expandedNav ? 'gap-3 px-2' : 'w-9 justify-center')}>
+            {expandedNav ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}{expandedNav && <span className="text-xs">Collapse menu</span>}
+          </button>
+        </div>
       </nav>
 
-      <div className="flex flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <header
           aria-label="LumiBase Studio header"
-          className="flex h-14 items-center justify-between border-b px-4"
+          className="flex min-h-14 flex-wrap items-center justify-between gap-y-2 border-b px-4 py-2 sm:h-14 sm:flex-nowrap sm:py-0"
         >
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold">LumiBase Studio</span>
-            <span
-              aria-label="Environment: development"
-              className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-            >
-              dev
-            </span>
+            {environmentBadge && (
+              <span
+                aria-label={`Environment: ${environmentBadge}`}
+                className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+              >
+                {environmentBadge}
+              </span>
+            )}
           </div>
+          <OrganizationSwitcher />
           {/* Right-side topbar actions */}
           <div className="flex items-center gap-2">
             <button
@@ -256,6 +294,7 @@ export function AppShell({ children }: AppShellProps) {
                 ⌘P
               </kbd>
             </button>
+            <UiLanguagePicker />
             <ConnectionStatusDot />
             <ReleaseUpdateNotice compact />
             <NotificationsPanel />
@@ -284,11 +323,15 @@ export function AppShell({ children }: AppShellProps) {
       {/* Mobile Bottom Nav — replaces the sidebar on small screens */}
       <BottomNav activeModule={activeModule} adminBase={adminBase} />
 
-      <CommandPalette
-        open={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
-        adminBase={adminBase}
-      />
+      {paletteOpen && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            open
+            onClose={() => setPaletteOpen(false)}
+            adminBase={adminBase}
+          />
+        </Suspense>
+      )}
 
       <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>

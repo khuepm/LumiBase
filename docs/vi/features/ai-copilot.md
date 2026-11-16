@@ -1,8 +1,16 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:05:48.000Z
+version: 8
+lastUpdated: 2026-11-07T22:02:15.899Z
 sourceLang: vi
-contentHash: d3a62a6ea64bb371
+translatedFrom: en
+sourceHash: ecc8983d3122446b
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-07T22:02:15.899Z
+codeVerifiedHash: 80e544c4c41dcb0c
+codeVerifiedClaims: 30
+
+contentHash: 80e544c4c41dcb0c
 ---
 
 # AI Copilot (HITL)
@@ -32,7 +40,7 @@ Vì vậy các bảng hiện có được xem như seed:
 
 - `ai_approvals` → tiền thân của approval gate tổng quát cho plan/tool/artifact.
 - `ai_conversations` + `ai_messages` → context memory ngắn hạn.
-- `ai_embeddings` → RAG knowledge base theo site/collection/item.
+- `ai_embeddings` → dành cho RAG knowledge base theo site/collection/item. Hiện chưa có code nào đọc hoặc ghi bảng này (#581).
 - `CORE_SKILLS` → tiền thân của tool registry có input schema, capability, rate limit và risk policy.
 
 ## CORE_SKILLS registry
@@ -156,13 +164,25 @@ Hệ thống hỗ trợ nhiều LLM providers (cấu hình qua `LLM_PROVIDER` en
 
 ### 2. Context Memory (Lịch sử hội thoại)
 Bảng `ai_conversations` và `ai_messages` được dùng để lưu trữ trạng thái các luồng trò chuyện:
-- Mỗi khi gửi message lên `/api/v1/ai/chat`, hệ thống sẽ load tối đa **20 messages gần nhất** để làm ngữ cảnh (context window) truyền vào LLM.
+- Mỗi khi gửi message lên `/api/v1/ai/chat`, hệ thống sẽ load tối đa **20 messages gần nhất** để làm ngữ cảnh (context window) truyền vào LLM. Từ #582 cả route đồng bộ lẫn worker `Prefer: respond-async` đều dùng chung `loadCopilotHistory` (`apps/cms/src/services/copilot-history.ts`); trước đó cả hai đọc 20 message **cũ nhất**, nên từ message thứ 21 trở đi lượt user vừa gửi không có trong request.
+- Cửa sổ luôn mở đầu bằng một lượt user (nếu cắt rơi vào message assistant thì bỏ message đó) và kết thúc bằng lượt user vừa gửi. System prompt của Copilot gửi riêng nên không bao giờ bị cắt.
+- Mỗi tin nhắn chat tối đa 2.000 ký tự. Đầu vào và đầu ra mô hình tuân theo chính sách ngữ cảnh bên dưới.
+- Model trả nhiều tool call thì chỉ call đầu tiên được thực thi. Arguments không phải JSON hợp lệ trả `500` một lần, không retry và không ghi gì.
 - Hỗ trợ đầy đủ các API quản lý: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
+- Một hội thoại thuộc về user đã tạo nó (#579). Thành viên khác của site nhận `404` khi đọc messages, `DELETE` không xoá gì, và `POST /chat` với `conversationId` đó sẽ mở một hội thoại mới cho người gọi. Caller dùng API key chỉ sở hữu các hội thoại được ghi với chính key đó (`api_key_id`, migration `0023`), nên key này không list, đọc, xoá hay nối vào hội thoại của key khác được. Hội thoại không có user id tạo trước `0023` không ghi key nào nên không API key nào sở hữu chúng.
 
-### 3. RAG Skills (`aiSuggestField` và `aiContentAssist`)
-Tích hợp dịch vụ sinh vector embeddings (`embedding-service.ts`) hỗ trợ OpenAI `text-embedding-3-small` và Workers AI `@cf/baai/bge-base-en-v1.5`:
-- **`aiSuggestField`**: Phân tích schema hiện tại và mô tả của admin, truy xuất vector tương tự từ database thông qua cosine similarity để gợi ý cấu hình field tối ưu.
-- **`aiContentAssist`**: Hỗ trợ sinh hoặc hiệu chỉnh nội dung field dựa trên RAG context từ các item đã lưu trong hệ thống.
+### Ranh giới tin cậy (#579)
+
+- **Chỉ dẫn và dữ liệu.** Chỉ Copilot chat dùng system prompt của Copilot và danh sách tool. Mọi lời gọi model khác (skill sinh nội dung, constitution compiler và judge, intent compiler, decisions) gửi chỉ dẫn riêng vào system slot của provider và tắt tool (`completeWithInstructions`). Constitution judge gửi nội dung cần chấm làm user turn duy nhất, trong một khối `<untrusted>`. Một test source-scan sẽ fail khi có lời gọi mới bỏ qua quy tắc này.
+- **Mỗi lượt một tool call, output của tool không vào prompt.** `POST /chat` chỉ thực thi tool call đầu tiên mà model trả về, và kết quả tool trả cho client chứ không quay lại model. Một tấn công nhiều bước vì vậy cần một lượt user cho mỗi bước, và mỗi lượt được phân quyền riêng.
+- **Model không cấp quyền.** Harness kiểm capability, input schema chuẩn, và quyền theo row và field của người gọi ở mọi tool call, bất kể model yêu cầu gì. `apps/cms/eval/prompt-injection/dataset.v1.json` liệt kê các tấn công và benign control, được chạy lại như thể model làm theo kẻ tấn công.
+- **Redaction.** `listSettings` che các field chứa secret theo cùng quy tắc với `GET /api/v1/settings`.
+
+### 3. Skill sinh nội dung có context (`aiSuggestField` và `aiContentAssist`)
+Hiện cả hai skill đều không chạy vector search (#581). `embedding-service.ts` (OpenAI `text-embedding-3-small`, Workers AI `@cf/baai/bge-base-en-v1.5`) và bảng `ai_embeddings` có tồn tại, nhưng chưa có đường code nào gọi hoặc ghi vào chúng.
+- **`aiSuggestField`**: gửi cho model tên các field hiện có của collection và mô tả của admin.
+- **`aiContentAssist`**: gửi tối đa 3 item mẫu của collection, là các item cập nhật gần nhất mà caller được đọc. `ItemService` áp quy tắc tenant, row và field, nên field bị ẩn, item của site khác hay item ngoài row rule không bao giờ tới model. Một lần cập nhật, xoá hay thu hồi quyền có hiệu lực ngay ở lần gọi kế tiếp. Chỉ `status` và `data` của từng mẫu được gửi, không gửi metadata của row. Các mẫu không phụ thuộc vào instruction. `apps/cms/eval/retrieval/dataset.v1.json` ghi baseline trên dataset đó (Recall@3 0.5, MRR@3 0.46).
+- Các primitive embedding throw `EMBEDDING_DIMENSION_MISMATCH` hoặc `EMBEDDING_RESPONSE_INVALID` khi so sánh vector khác kích thước hoặc khi provider trả sai số lượng hay kích thước vector.
 
 ## Property-based testing
 
@@ -172,3 +192,30 @@ Hệ thống có 15 property tests (fast-check, ≥100 iterations) được li�
 - `apps/cms/src/routes/__tests__/ai-*.property.test.ts` — Properties 9-12 (Module C).
 - `apps/studio/src/modules/settings/__tests__/` — Properties 13-14 (Module D).
 - `packages/database/src/__tests__/` — Property 15 (round-trip).
+
+
+## Ngân sách ngữ cảnh và trích dẫn nguồn
+
+Đặt `LLM_CONTEXT_WINDOW_TOKENS` theo cửa sổ mà mô hình triển khai hỗ trợ.
+Nếu chưa đặt, mô hình đã biết dùng mức trần ứng dụng 32.768. Tên mô hình tùy
+chỉnh cần khai báo cửa sổ. Thiếu cửa sổ hoặc giá trị không hợp lệ thì mỗi lần
+gọi mô hình trả `LLM_CONTEXT_LIMIT` trước khi gọi mạng; route không gọi mô hình
+(ví dụ MCP `tools/list`) vẫn chạy bình thường. Trước khi gọi mạng, provider tính byte UTF-8 sau
+serialize làm cận trên thận trọng cho token văn bản, chừa đầu ra (thường 1.024
+token) và tính cả công cụ, phần đóng gói message. Hệ thống bỏ lịch sử cũ trước,
+giữ chính sách hệ thống, định nghĩa công cụ và yêu cầu mới nhất. Yêu cầu quá dài
+trả HTTP 413 với `LLM_CONTEXT_LIMIT`. Giới hạn tần suất, phản hồi không hợp lệ và
+mất kết nối đều có mã lỗi để xử lý; không tự ghi hoặc tự sửa bằng lần gọi mới.
+
+Để yêu cầu trích dẫn, truyền `grounded: true` cho `aiContentAssist`. Chỉ trường
+mẫu hiện tại được phép đọc mới đi vào tập bằng chứng. Nội dung chấp nhận được
+gồm toàn bộ các đoạn trích đúng nguyên văn; trích dẫn chỉ ra trường và mã item.
+Khi thiếu bằng chứng, trả nội dung rỗng và `abstained: true`; nội dung bịa, cũ
+hoặc thiếu nguồn bị từ chối. Trích dẫn nguyên văn xác định xuất xứ; độ đúng của
+nguồn và mức phù hợp vẫn cần đánh giá. Nên từ chối trả lời khi nguồn mâu thuẫn
+hoặc không liên quan. Mặc định vẫn cho phép viết tự do.
+
+Chạy `pnpm -F @lumibase/cms eval:grounding` để tái lập baseline tổng hợp cho
+hợp đồng thực thi. v1 cần đạt 12/12 trường hợp, bao gồm trích đoạn Anh/Việt,
+số liệu bị sửa, nguồn cũ hoặc khác tenant, nguồn mâu thuẫn và từ chối trả lời.
+Kết quả đo bộ xác thực; độ chính xác trên công việc biên tập cần dữ liệu riêng.

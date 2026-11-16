@@ -1,0 +1,15 @@
+-- 0022_semantic_drift_cursor — resume point of the semantic drift pass
+-- (Jev J12, #519).
+--
+-- Additive only: one nullable column, no backfill, no data rewrite, no index.
+-- IF NOT EXISTS lets the migration re-run safely.
+--
+-- Why a second cursor. Semantic intent rules are judged by a governed provider
+-- call per item, so the drift scan runs them in a separate pass with a much
+-- smaller item budget than the deterministic rules. Sharing `scan_cursor`
+-- would let one pass skip items the other never judged.
+--
+-- No status migration: `lumibase_content_drifts.status` is a plain text column
+-- with no CHECK constraint (see 0000_lumibase_init), so the new
+-- `unevaluated` value needs no DDL.
+ALTER TABLE "lumibase_content_intents" ADD COLUMN IF NOT EXISTS "semantic_scan_cursor" text;

@@ -23,8 +23,10 @@ on:
         required: true
         type: string
 
+# Read-only: the job checks out a tag and deploys with the Cloudflare token; it
+# never writes to this repository (OpenSSF Scorecard TokenPermissions, alert #160).
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: pages-deploy-${{ inputs.tag || github.ref_name }}
@@ -32,6 +34,7 @@ concurrency:
 
 env:
   NODE_VERSION: 24
+  LUMIBASE_RELEASE_CHANNEL: production
   WRANGLER_SEND_METRICS: "false"
   RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
@@ -134,11 +137,18 @@ jobs:
             echo "::notice::Skipping Cloudflare Pages deployment because CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not configured."
           fi
 
+      # Storybook (#755) is published inside the docs site at /storybook/:
+      # the docs build copies apps/storybook/storybook-static into dist/.
+      - name: Build Storybook
+        run: pnpm storybook:build
+
       - name: Build docs
         # VITE_GA_ID is inlined at build time, same contract as the landing app's
         # NEXT_PUBLIC_GA_ID below. Unset means no GA tag and no cookie banner.
+        # STORYBOOK_REQUIRED=1 fails the build if /storybook/ would be missing.
         env:
           VITE_GA_ID: ${{ vars.VITE_GA_ID }}
+          STORYBOOK_REQUIRED: "1"
         run: pnpm docs:build
 
       - name: Deploy docs to Cloudflare Pages
@@ -192,6 +202,10 @@ jobs:
             exit 1
           fi
           echo "SPA 404 shell fallback OK ($probe -> $status, shell served)."
+
+          # 3. The published Storybook (#755) must be served under /storybook/.
+          curl --fail --silent --show-error --location --retry 5 --retry-delay 5 \
+            --max-time 20 "$base/storybook/index.json" --output /dev/null
 
       - name: Build landing
         # NEXT_PUBLIC_GA_ID is inlined at build time (static export). Leave the
@@ -255,10 +269,12 @@ jobs:
           # Cloudflare Pages, so it must call the CMS cross-origin. Point it
           # at the deployed CMS origin (the same repo variable the CMS deploy
           # verifies against). The CMS must allow this Studio origin via
-          # CORS_ALLOWED_ORIGINS. If unset, the build falls back to
-          # same-origin and the Studio will fail to reach the API.
+          # CORS_ALLOWED_ORIGINS. Refuse an unset origin rather than publish
+          # a same-origin build that cannot reach the API.
           VITE_API_URL: ${{ vars.LUMIBASE_CMS_PRODUCTION_URL }}
-        run: pnpm --filter @lumibase/studio build
+        run: |
+          test -n "$VITE_API_URL" || { echo "::error::LUMIBASE_CMS_PRODUCTION_URL is unset" >&2; exit 1; }
+          pnpm --filter @lumibase/studio build
 
       - name: Deploy studio to Cloudflare Pages
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
@@ -291,49 +307,19 @@ jobs:
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
         run: curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --max-time 20 "${{ steps.deploy_studio.outputs.url }}" --output /dev/null
 
-      - name: Add deployment URLs to GitHub Release notes
+      - name: Summarize deployment URLs
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
           DOCS_URL: ${{ steps.deploy_docs.outputs.url }}
           LANDING_URL: ${{ steps.deploy_landing.outputs.url }}
           MARKETPLACE_URL: ${{ steps.deploy_marketplace.outputs.url }}
           STUDIO_URL: ${{ steps.deploy_studio.outputs.url }}
         run: |
-          cat > deployment-notes.md <<EOF_NOTES
-          <!-- lumibase-pages-deployments:start -->
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF_NOTES
           ## Cloudflare Pages deployments
 
           - Docs: ${DOCS_URL}
           - Landing: ${LANDING_URL}
           - Marketplace: ${MARKETPLACE_URL}
           - Studio: ${STUDIO_URL}
-          <!-- lumibase-pages-deployments:end -->
           EOF_NOTES
-
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release view "$RELEASE_TAG" --json body --jq .body > current-release-notes.md
-            python3 <<'PY'
-          from pathlib import Path
-          import re
-
-          current = Path("current-release-notes.md").read_text().rstrip()
-          block = Path("deployment-notes.md").read_text().strip()
-          pattern = re.compile(
-              r"<!-- lumibase-pages-deployments:start -->.*?<!-- lumibase-pages-deployments:end -->",
-              re.S,
-          )
-
-          if pattern.search(current):
-              updated = pattern.sub(block, current)
-          elif current:
-              updated = f"{current}\n\n{block}"
-          else:
-              updated = block
-
-          Path("updated-release-notes.md").write_text(updated + "\n")
-          PY
-            gh release edit "$RELEASE_TAG" --notes-file updated-release-notes.md
-          else
-            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file deployment-notes.md
-          fi

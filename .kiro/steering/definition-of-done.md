@@ -10,6 +10,14 @@ Checklist bắt buộc trước khi đánh dấu một feature spec là hoàn th
 - [ ] `pnpm test` pass; feature có unit test cho logic chính
 - [ ] Tuân thủ non-negotiable rules trong `CLAUDE.md` (nanoid/uuidv7, `site_id`, runtime abstraction, HITL, response format)
 
+> Jev #508: missing numeric answers previously became zero-valued decisions. AI output validation must fail explicitly before any caller can treat a malformed response as evidence.
+
+- [ ] **AI upstream output:** validate required own fields, finite/ranged values and complete probability distributions at the shared provider boundary. Invalid answers must return an explicit error; no default/clamp into a decision. Add provider and route regressions plus probability boundary/property tests.
+- [ ] PATCH chỉ giữ field caller gửi: dùng `patchSchema` trong routes/services;
+  không gọi `.partial()` trực tiếp trên schema tạo mới. Zod 4 vẫn áp default cho
+  field bị bỏ qua (B85/B86), từng nới autonomy và reset cấu hình. Gate:
+  `utils/__tests__/patch-schema.test.ts` + `routes/__tests__/patch-omission.test.ts`.
+
 ## 2. Setup impact — BẮT BUỘC RÀ SOÁT
 
 > Đây là bước hay bị bỏ sót nhất. Admin setup wizard đã từng tụt hậu nhiều phiên bản so với tính năng mới.
@@ -28,8 +36,13 @@ Checklist bắt buộc trước khi đánh dấu một feature spec là hoàn th
 Với MỌI feature đụng tới dữ liệu, hàng đợi, cache, realtime, background job, file/asset, hoặc tài nguyên ngoài:
 
 - [ ] **Phân loại tài nguyên**: ghi rõ cái gì **dùng chung toàn deployment** (vd: VAPID key, KEK env, SMTP transport) và cái gì **cô lập theo tenant** (mọi bảng có `site_id`, index search, DO/queue key, cache key). Tài nguyên dùng chung phải có lý do (định danh server, không phải dữ liệu tenant) — nếu là dữ liệu tenant thì PHẢI cô lập.
-- [ ] **Mọi query mang `site_id`**: đọc/ghi/đếm/xoá đều `where(eq(table.siteId, siteId))`; bảng mới được thêm vào `rls-policies.sql` (`site_isolation`).
+- [ ] **Mọi query mang `site_id`**: đọc/ghi/đếm/xoá đều `where(eq(table.siteId, siteId))`; bảng mới được thêm vào `rls-policies.sql` (`site_isolation`). Thêm vào mảng `tables` là đủ: `rls-policies.db.integration.test.ts` tự phủ bảng mới (đúng cặp policy, role ứng dụng thấy dòng của chính site). Không tạo policy RLS lẻ ngoài cặp `site_isolation` / `site_isolation_permit`.
+
+  > Sinh sau B125: mọi `site_isolation` từng là RESTRICTIVE và không có policy PERMISSIVE nào, nên role non-superuser mà file yêu cầu thấy 0 dòng trên mọi bảng. Backstop trông đúng nhưng không bao giờ cho phép gì, và mọi suite DB đều kết nối bằng superuser (bypass RLS) nên không suite nào thấy.
 - [ ] **Khoá hạ tầng có tiền tố tenant**: cache key, search index name, Durable Object name, queue dedup key, lock key — đều chứa `siteId`. Không có khoá "trần" dùng chung giữa tenant.
+- [ ] **Cache dữ liệu phân quyền mang đủ đầu vào của phép tính**: key phải nêu mọi định danh mà giá trị được tính từ đó (API key, user, role), và giá trị phụ thuộc request (ip, đồng hồ) thì không được phục vụ lại cho request khác. Kiểm bằng test hành vi với hai principal dùng chung một cache thật.
+
+  > #583: key bundle quyền chỉ mang role khi context có cả user lẫn role, nên hai thành viên cùng role dùng chung bundle (kể cả policy admin cấp riêng cho một người) trên mọi đường AI governed; policy có IP guard bị phục vụ cho địa chỉ bị chặn tới 60 s. Gate: `permission-cache-principal-scope.db.integration.test.ts`.
 - [ ] **Ghi dữ liệu được cache theo tag**: feature có đường ghi làm dữ liệu tenant được cache (theo tag hoặc version pointer) → PHẢI gọi `invalidateByTag` / `bumpVersion` / `forgetNegative` tương ứng sau commit **và** có test hành vi chứng minh entry cũ không còn được phục vụ (không chỉ unit test hàm invalidate).
 
   > Sinh sau sự cố high-load-cache-readiness: `PermissionService.invalidate()` là dead code — đổi quyền chỉ có hiệu lực sau TTL 60s; CDC `CacheInvalidator` viết nhưng không wire. Cơ giới hóa bằng integration test (vd `permission-cache-revocation.integration.test.ts`, Properties P6/P9) — test hành vi fail nếu ai tháo lời gọi bump/purge sau mutation.
@@ -37,6 +50,12 @@ Với MỌI feature đụng tới dữ liệu, hàng đợi, cache, realtime, ba
 - [ ] **Two-site smoke test**: với site A và site B, thao tác trên A KHÔNG xuất hiện/ảnh hưởng B (list, count, realtime broadcast, notification, search, file). Ghi lại cách đã kiểm (test tự động ưu tiên; nếu thủ công thì nêu các bước).
 - [ ] **Background/cron/queue context**: job chạy ngoài request vẫn resolve đúng `siteId` từ payload (không "rò" site của request gần nhất, không quét toàn bộ tenant ngoài ý muốn).
 - [ ] **Parity runtime provider giữa request path và worker**: worker/cron/queue chạy **cùng service** với request path phải nhận **đủ** provider mà service đó cần (`keys`, `cache`, `search`, `queue`, `storage`) — deps của worker thiếu một provider thì cả một họ tính năng **fail closed âm thầm**, chỉ trên đường async. Đã xảy ra: `AgentRunWorkerDeps` không có `KeyProvider` ⇒ mọi deployment skill trả `DEPLOYMENTS_NOT_CONFIGURED` khi chạy qua queue (và hoá ra cả 4 call site `new AISecureHarness` đều thiếu). Cùng class "quên, không phải sai" như §2c — khoá bằng source-scan tripwire (mẫu: `apps/cms/src/__tests__/ai-harness-keys-context.test.ts`), đừng chỉ sửa call site vừa phát hiện.
+- [ ] **Parity consumer queue giữa hai entrypoint**: mọi consumer mà `serve.ts` đăng ký (`register*Worker` / `register*Poller`) phải được `cloudflare.ts` tiêu thụ (`processCloudflareQueue` → `WORKER_QUEUE_CONSUMERS`, kèm producer + consumer + `-dlq` trong mọi profile `wrangler.toml`), hoặc nằm trong allow-list `DOCKER_ONLY_CONSUMERS` kèm ID backlog — gate: `apps/cms/src/__tests__/worker-queue-consumers.wiring.test.ts`.
+
+  > Hai lần một queue chỉ có consumer ở Docker: `agent-runs` (B10) và `flow-runs` / `flow-events` (B118). Job vào queue trên Workers rồi không ai chạy — build, typecheck, dry-run đều xanh.
+- [ ] **Db của request phải scoped**: chỉ dựng db qua `withDb` / `scopedDbFor` / `withSystemDb` / `systemDbFor` (`apps/cms/src/middleware/db.ts`). Mọi `drizzle(` / `createDb(` / `getConnection()` / `getSystemConnection()` mới trong `apps/cms/src` phải được phân loại trong `DB_CONSTRUCTION_ALLOWLIST` của `apps/cms/src/__tests__/rls-scope.wiring.test.ts` (T2), mount mới trong `index.ts` cần một lớp trong `ROUTER_DB_CLASS`, và không có `set_config('app.site_id'` nào ngoài `scoped-sql.ts` / `rls-transaction.ts` (T1). Worker/cron/queue dùng system connection (T3).
+
+  > B130: `withRls` chạy `set_config('app.site_id', …, true)` như một câu autocommit trên pool, nên setting hết hiệu lực trước câu kế tiếp và không có câu nào của request được scope — trong khi smoke test `BEGIN; set_config; count; COMMIT` trong checklist vẫn pass. Hành vi được chứng minh bằng `rls-request-scope.db.integration.test.ts` (role NOBYPASSRLS thật).
 - [ ] **Tài liệu**: mục Multi-tenancy trong `docs/en/features/<feature>.md` nêu rõ shared-vs-isolated + cách verify (xem `push-notifications.md` làm mẫu).
 
 ## 2c. Route-guard security — BẮT BUỘC khi thêm/đổi route hoặc middleware
@@ -47,6 +66,19 @@ Với MỌI feature đụng tới dữ liệu, hàng đợi, cache, realtime, ba
 - [ ] **Không thêm path vào bypass/public list** (`withAuth`, `PUBLIC_AUTH_PATHS` của `site-membership`/`studio-access`) nếu không kèm test chứng minh handler an toàn khi `auth === undefined`.
 - [ ] **Route thực thi code động hoặc mutate agent state** (extensions, agent harness, flows) → control-plane, admin-only trước khi handler chạy.
 - [ ] **Service request-path ủy quyền cho ItemService (hoặc ghi trực tiếp bảng content)** PHẢI mang permission context của caller: dựng qua `itemServiceForRequest(c)` / `permissionServiceForRequest(c)`, KHÔNG `itemServiceForSystem` trên đường request. Ghi raw SQL vào `items` (batch update/delete) phải tự gate `canAccess(collection, action)` + áp `whereFor()` row-scope. Đây là class lỗi "quên carry RBAC context" (đã lặp: AI `updateItem`, MCP endpoint, dependents resolve) — khoá bằng behavioural test dạng `dependents-service-rbac.test.ts` (deny → throw trước khi query/mutate).
+- [ ] **Lời gọi AI decision trả phí** trên mọi đường request/worker đi qua `authorizeDecision` + `runGovernedDecision` (không bao giờ gọi thẳng `createDecisionProvider(...).provider.decide`). Đường hệ thống không có principal (vd drift scan J12) không có grant để `authorizeDecision` kiểm, nên được gate bằng switch của site đọc lúc gọi — nhưng vẫn PHẢI qua `runGovernedDecision` và phải được khai trong `SYSTEM_ENTRY_POINTS` kèm lý do; khoá bằng `apps/cms/src/__tests__/decision-governance.wiring.test.ts`.
+- [ ] **Credential nằm ở client** (publishable API key `lbk_pub_…`, session audience `frontend`) không bao giờ dùng capability trả phí/đặc quyền của content plane (vd `ai:decide`), kể cả khi role/policy cấp nó, trừ khi có quyết định tường minh của owner. Từ chối **trong hàm authorization dùng chung** dựa trên `callerClass` mà resolver capability đặt (`resolveRequestCapabilities` / `resolvePrincipalCapabilities`), không từ chối theo từng route và không để entry point tự đặt `callerClass`; khoá bằng `decision-governance.wiring.test.ts`.
+
+  > B144/#562: publishable key hoặc session frontend được cấp `create` trên `lumibase_ai_decisions` (hoặc bundle admin từ policy) gọi được provider trả phí, vì `authorizeDecision` chỉ xét capability.
+- [ ] **Đường từ chối có ghi audit cho caller không tin được** (credential công khai/rẻ, chưa xác thực) phải bị chặn biên: gộp theo cửa sổ + metric đếm mọi lần + rate limit trước `withAuth`; không ghi một row mỗi request. Store gộp lỗi thì vẫn ghi row (không bỏ bằng chứng). Với AI decisions: dựng audit context bằng `decisionAuditContextForRequest(c)`, không tự dựng.
+
+  > B147/#564: mỗi request `ai:decide` bị từ chối ghi một row `ai_decision`, nên một publishable key hay session frontend biến request miễn phí thành ghi vào bảng audit trên Postgres dùng chung. Cơ chế: `apps/cms/src/services/decision-refusal-audit.ts`; khoá bằng `decision-governance.wiring.test.ts` (chỉ `decision-governance.ts` ghi event `ai_decision`, entry point request dùng context chung) và `security-guards.wiring.test.ts` (`withAiIpRateLimit` trước `withAuth`).
+- [ ] **Agent tool có tác động ngoài CMS** (gọi API bên thứ ba, gửi tin, deploy) PHẢI đăng ký là external-action tool (`apps/cms/src/services/external-action-tools.ts`) với bản khai `risk`/`reversibility`/`blastRadius`/`capability`/`secrets`, KHÔNG thêm vào `buildCoreSkills` như một skill thường. Bí mật của tool đọc qua `context.secret(name)`, không qua tham số, env hay settings. Đường gọi `executeApproved` mới phải truyền người quyết định (`approvalDeciderFromAuth`); thiếu thì approval `human_required` bị từ chối (mặc định fail-closed).
+
+  > Skill thường được phân loại theo tên và capability, và phần lớn hoàn tác được từ revision. Một lời gọi ra ngoài thì harness không thấy và không hoàn tác được, nên nó phải tự khai rủi ro và chỉ người mới duyệt được. Gate: `external-action-tools.db.integration.test.ts` (không mức autonomy nào bỏ qua approval; API key và agent không duyệt được; bí mật không xuất hiện ở bảng nào).
+- [ ] **Preview / visual-editing bridge** (`/api/v1/preview/*`, `/api/v1/deliver/preview/*`, `preview-pane.tsx`, `@lumibase/visual-editing`) giữ đủ checklist bảo mật của ADR-014 (`docs/en/architecture/decisions/adr-014-preview-bridge-threat-model.md` §"Security review checklist"): query chạy trên `scopedDbFor(c, siteId)` với site lấy từ URL; mọi lỗi token trả **một** body `401`; không `postMessage(…, '*')`, mọi handler inbound đi qua `acceptPreviewMessage`; giá trị message không bao giờ tới `innerHTML`/`eval`/`location`/`src`; không `unsafe-eval` trong CSP, Studio giữ `frame-ancestors 'none'`; bundle overlay ≤ 15 kB gzip.
+
+  > Sanity #12794 (preview secret dùng được ở workspace khác) và Builder.io #4501 (postMessage không kiểm origin → chạy code cross-origin). Gate: `preview.db.integration.test.ts` (token site A bị từ chối ở site B, revoke/expired → 401 + audit), `visual-editing` protocol fuzz + bundle-size test, `security-headers.test.ts`, e2e `packages/visual-editing/e2e/bridge.e2e.mjs`.
 - [ ] Tripwire test `apps/cms/src/__tests__/security-guards.wiring.test.ts` vẫn pass; nếu tái cấu trúc guard thì cập nhật assertion CÙNG với behavioural test mới, không xoá.
 
 ## 2d. Desktop/mobile shell impact — RÀ SOÁT khi đổi Studio SPA hoặc auth/CORS

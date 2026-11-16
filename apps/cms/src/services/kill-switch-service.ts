@@ -15,6 +15,10 @@ import { AgentRunService } from './agent-run-service';
  * - **freeze site** — same, for every agent role on the site. New goal/run
  *   creation is rejected with FROZEN; reads keep working (Req 14.4).
  *
+ * Runs parked on an `askUser` question (`waiting_user`, #710) have no tool-call
+ * boundary left to meet, so freezing a role/site and pausing an intent cancel
+ * the waiting runs in that scope directly (`stopReason: 'frozen'`).
+ *
  * `agent_freezes` rows are the audit trail (actor, scope, reason,
  * timestamps); lifting sets `liftedAt`/`liftedBy` instead of deleting.
  */
@@ -110,7 +114,10 @@ export class KillSwitchService {
     const existing = active.find(
       (row) => row.scope === scope && (scope === 'site' || row.targetRole === options.targetRole),
     );
-    if (existing) return existing;
+    if (existing) {
+      await this.cancelWaitingRuns(scope === 'site' ? { kind: 'site' } : { kind: 'role', role: options.targetRole! });
+      return existing;
+    }
 
     const [freeze] = await this.deps.db
       .insert(agentFreezes)
@@ -129,7 +136,25 @@ export class KillSwitchService {
       targetRole: freeze!.targetRole,
       reason: options.reason ?? null,
     }, options.actor ?? null);
+    await this.cancelWaitingRuns(scope === 'site' ? { kind: 'site' } : { kind: 'role', role: options.targetRole! });
     return freeze!;
+  }
+
+  /**
+   * Ends runs parked on an `askUser` question inside a frozen scope (#710).
+   *
+   * A running agent meets a freeze at its next tool-call boundary; a run
+   * waiting on a question has no boundary left, so without this the question
+   * stays answerable and an answer would resume work the operator stopped.
+   * Each run is cancelled with `stopReason: 'frozen'`, which closes its
+   * question. The freeze row is written first, so an answer racing this loop
+   * is refused by the same check in `AgentQuestionService.answer`.
+   */
+  private async cancelWaitingRuns(
+    scope: { kind: 'site' } | { kind: 'role'; role: string } | { kind: 'intent'; intentId: string },
+  ): Promise<string[]> {
+    const { AgentQuestionService } = await import('./agent-question-service');
+    return new AgentQuestionService({ db: this.deps.db, siteId: this.deps.siteId }).cancelWaitingRuns(scope);
   }
 
   async lift(
@@ -178,7 +203,14 @@ export class KillSwitchService {
         const { IntentService } = await import('./intent-service');
         const intents = new IntentService({ db: this.deps.db, siteId: this.deps.siteId });
         const intent = await intents.pause(input.targetId);
-        await this.audit('kill_switch.pause_intent', { intentId: input.targetId, reason: input.reason ?? null }, actor);
+        // A paused intent spawns nothing new; a run of it parked on a question
+        // must not resume either (#710).
+        const cancelledWaitingRuns = await this.cancelWaitingRuns({ kind: 'intent', intentId: intent.id });
+        await this.audit('kill_switch.pause_intent', {
+          intentId: input.targetId,
+          reason: input.reason ?? null,
+          cancelledWaitingRuns,
+        }, actor);
         return { scope: 'intent', intentId: intent.id, status: intent.status };
       }
       case 'role': {

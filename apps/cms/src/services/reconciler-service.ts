@@ -32,6 +32,8 @@ export const RULE_ROLE_ROUTING: Record<string, string> = {
   link_health: 'librarian',
   field_constraint: 'writer',
   glossary_compliance: 'taxonomist',
+  // Semantic drift (J12) suggests a human review; no repair skill is wired.
+  semantic: 'writer',
 };
 
 export function routeRole(ruleType: string): string {
@@ -46,6 +48,36 @@ export interface ReconcilableDrift {
   itemId: string;
   status: string;
   goalId: string | null;
+  detail?: unknown;
+}
+
+/**
+ * Provenance a semantic drift (J12, #519) carries onto its review goal: the
+ * rule and profile versions, the review run, model and content hash. Only
+ * what the scan recorded; nothing is inferred or explained.
+ */
+export function semanticGoalProvenance(detail: unknown): Record<string, unknown> {
+  if (!detail || typeof detail !== 'object') return {};
+  const d = detail as Record<string, unknown>;
+  const keys = [
+    'rule',
+    'ruleVersion',
+    'profileKey',
+    'profileVersion',
+    'questionKey',
+    'threshold',
+    'contextSource',
+    'contentHash',
+    'revisionId',
+    'runId',
+    'provider',
+    'model',
+    'calibrated',
+    'noul',
+  ] as const;
+  const out: Record<string, unknown> = {};
+  for (const key of keys) if (d[key] !== undefined) out[key] = d[key];
+  return out;
 }
 
 export interface ReconciliationPlan {
@@ -172,12 +204,19 @@ export class ReconcilerService {
     let goalsCreated = 0;
     for (const drift of plan.selected) {
       const role = routeRole(drift.ruleType);
+      // Semantic drift (J12) opens a review goal: the MVP detects and suggests
+      // review; editing content or publishing needs its own task and gate.
+      const semantic = drift.ruleType === 'semantic' ? semanticGoalProvenance(drift.detail) : null;
       const [goal] = await this.deps.db
         .insert(agentGoals)
         .values({
           siteId: this.deps.siteId,
-          title: `Fix ${drift.ruleType} on ${intent.collection}/${drift.itemId}`,
-          description: `Drift ${drift.ruleKey} detected by intent "${intent.name}".`,
+          title: semantic
+            ? `Review semantic drift "${String(semantic['rule'] ?? drift.ruleKey)}" on ${intent.collection}/${drift.itemId}`
+            : `Fix ${drift.ruleType} on ${intent.collection}/${drift.itemId}`,
+          description: semantic
+            ? `Semantic rule ${String(semantic['rule'] ?? '')} v${String(semantic['ruleVersion'] ?? '?')} of intent "${intent.name}" flagged this item (review profile ${String(semantic['profileKey'] ?? '')} v${String(semantic['profileVersion'] ?? '?')}). Review it; nothing is changed automatically.`
+            : `Drift ${drift.ruleKey} detected by intent "${intent.name}".`,
           source: 'reconciler',
           assigneeAgent: role,
           priority: 'normal',
@@ -200,6 +239,7 @@ export class ReconcilerService {
             // Effective autonomy at execution = min(cap, grant) via the
             // resolver; the cap travels with the goal (Req 7.2).
             autonomyCap: intent.autonomyCap,
+            ...(semantic ? { reviewOnly: true, semantic } : {}),
           },
         })
         .returning();

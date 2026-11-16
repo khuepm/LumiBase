@@ -11,6 +11,7 @@
  *   3. The key cannot write.
  *   4. The key cannot read another tenant's content (set
  *      LUMIBASE_VERIFY_OTHER_SITE to a second existing site id).
+ *   5. A made-up site id is refused, and the CMS is still healthy afterwards.
  *
  * (2) is the one worth keeping. `GET /api/v1/items` has no implicit
  * published-only filter, so a read grant made without `publishedOnly` would
@@ -31,7 +32,7 @@
  * folded into "all checks passed".
  */
 
-import { api, requireEnv, waitForCms, CmsError, COLLECTION } from './lumibase.mjs';
+import { api, requireEnv, waitForCms, CmsError, COLLECTION, CMS_URL } from './lumibase.mjs';
 
 const PUBLIC_ORIGIN = process.env.LUMIBASE_PUBLIC_ORIGIN || 'http://localhost:3000';
 
@@ -127,6 +128,52 @@ async function expectDenied(name, run, accepted = DENIED) {
     }
     check(name, true, `denied with ${err.status}`);
   }
+}
+
+/**
+ * A site id that does not exist must be refused, and refusing it must not hurt
+ * the server.
+ *
+ * 404 is accepted here ONLY with the `TENANT_NOT_FOUND` code: that is the CMS
+ * rejecting the site itself, before any route runs. A bare 404 could just as
+ * well be a wrong path, which proves nothing — the same reason the cross-site
+ * probe above refuses a plain 404.
+ */
+async function expectUnknownSiteRefused(key) {
+  const name = 'a non-existent site id is refused';
+  try {
+    await api(`/api/v1/items/${COLLECTION}?limit=1`, {
+      token: key,
+      headers: { origin: PUBLIC_ORIGIN, 'x-lumi-site': 'lumibase-verify-no-such-site' },
+    });
+    check(name, false, 'the request SUCCEEDED — the guard is missing');
+  } catch (err) {
+    if (!(err instanceof CmsError)) {
+      check(name, false, `unexpected error: ${err.message}`);
+    } else if (DENIED.has(err.status)) {
+      check(name, true, `denied with ${err.status}`);
+    } else if (
+      err.status === 404 &&
+      err.body?.errors?.some?.((e) => e?.code === 'TENANT_NOT_FOUND')
+    ) {
+      check(name, true, 'denied with 404 TENANT_NOT_FOUND');
+    } else {
+      check(
+        name,
+        false,
+        `expected 401/403 or 404 TENANT_NOT_FOUND but got ${err.status} — this is not ` +
+          'a denial, and a broken server must never read as a passing security check',
+      );
+    }
+  }
+
+  let healthy = false;
+  try {
+    healthy = (await fetch(`${CMS_URL}/health`)).ok;
+  } catch {
+    // connection refused: the probe took the server down
+  }
+  check('the CMS is still healthy after that probe', healthy, healthy ? '' : 'health check failed');
 }
 
 async function main() {
@@ -231,21 +278,18 @@ async function main() {
 
   // 4 — cannot cross tenants.
   //
-  // Two different probes, because they exercise different things and only one
-  // of them is dangerous:
+  // Two different probes, because they ask different questions:
   //
   //   (a) an EXISTING other site — the real isolation question: does a key
-  //       bound to site A read site B? Safe to run, and on by default. Point
-  //       LUMIBASE_VERIFY_OTHER_SITE at a second site id to enable it.
+  //       bound to site A read site B? Point LUMIBASE_VERIFY_OTHER_SITE at a
+  //       second site id to enable it.
   //
-  //   (b) a NON-EXISTENT site id — this crashes the published CMS (#469): the
-  //       denial is audited under a site id no row matches, the insert violates
-  //       a foreign key, and the rethrow lands in a fire-and-forget flush. One
-  //       request is enough, so it stays opt-in.
-  //
-  // Verified against a live instance: with a real second site the request is
-  // refused with 401 and the server stays up (health 200 across repeats); with
-  // a made-up id the process dies. That difference is why these are separate.
+  //   (b) a NON-EXISTENT site id — always run. v1.0.0-rc.1 crashed on this
+  //       (#469): the denial was audited under a site id no row matches and
+  //       the foreign-key failure took the process down. The CMS this starter
+  //       pins answers 404 TENANT_NOT_FOUND before authentication, so the
+  //       probe also re-checks health: a refusal from a server that then died
+  //       is not a pass.
   const otherSite = process.env.LUMIBASE_VERIFY_OTHER_SITE;
   if (otherSite) {
     // Strictly 401/403 — NOT the relaxed set used for the draft-by-id read.
@@ -271,14 +315,7 @@ async function main() {
     );
   }
 
-  if (process.env.LUMIBASE_VERIFY_CROSS_TENANT === '1') {
-    await expectDenied('a non-existent site id is refused', () =>
-      api(`/api/v1/items/${COLLECTION}?limit=1`, {
-        token: key,
-        headers: { origin: PUBLIC_ORIGIN, 'x-lumi-site': 'some-other-site' },
-      }),
-    );
-  }
+  await expectUnknownSiteRefused(key);
 
   if (failures > 0) {
     console.error(`\n✖ ${failures} check(s) failed.\n`);

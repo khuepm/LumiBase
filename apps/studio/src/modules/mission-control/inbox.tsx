@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle, Clock, ShieldAlert, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, MessageCircleQuestion, ShieldAlert, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/cn';
 import { missionControlApi } from './api';
+import { QuestionAnswerForm } from './question-answer';
 import { useInboxData, type InboxEntry } from './use-inbox';
 
 /**
@@ -24,6 +25,7 @@ export function invalidateInboxQueries(queryClient: ReturnType<typeof useQueryCl
   queryClient.invalidateQueries({ queryKey: ['mc-staged'] });
   queryClient.invalidateQueries({ queryKey: ['mc-autonomy'] });
   queryClient.invalidateQueries({ queryKey: ['mc-intents'] });
+  queryClient.invalidateQueries({ queryKey: ['mc-questions'] });
 }
 
 function Countdown({ deadline }: { deadline: string }) {
@@ -81,7 +83,7 @@ export function ExceptionInbox({ limit, onOpenEntry }: ExceptionInboxProps) {
   if (entries.length === 0) {
     return (
       <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-800">
-        <CheckCircle className="mr-2 inline h-4 w-4" />
+        <CheckCircle className="me-2 inline h-4 w-4" />
         Inbox zero — no exceptions need a human right now.
       </div>
     );
@@ -141,10 +143,10 @@ export function ExceptionInbox({ limit, onOpenEntry }: ExceptionInboxProps) {
           {entry.kind === 'approval' && (
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm">
-                <ShieldAlert className="mr-1 inline h-4 w-4 text-sky-600" />
+                <ShieldAlert className="me-1 inline h-4 w-4 text-sky-600" />
                 Approval pending: <strong>{entry.approval.subjectType}</strong> from{' '}
                 {entry.approval.requestedByAgent}
-                <span className="ml-2 text-xs text-muted-foreground">
+                <span className="ms-2 text-xs text-muted-foreground">
                   {new Date(entry.approval.createdAt).toLocaleString()}
                 </span>
               </span>
@@ -170,19 +172,37 @@ export function ExceptionInbox({ limit, onOpenEntry }: ExceptionInboxProps) {
             </div>
           )}
 
+          {entry.kind === 'question' && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm">
+                  <MessageCircleQuestion className="me-1 inline h-4 w-4 text-violet-600" />
+                  <strong>{entry.question.agentName}</strong> asks: {entry.question.question}
+                  {entry.question.expiresAt && (
+                    <span className="ms-2 text-xs">
+                      <Countdown deadline={entry.question.expiresAt} />
+                    </span>
+                  )}
+                </span>
+                {openButton(entry)}
+              </div>
+              <QuestionAnswerForm question={entry.question} compact onAnswered={invalidate} />
+            </div>
+          )}
+
           {entry.kind === 'incident' && (
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm">
                 <AlertTriangle
                   className={cn(
-                    'mr-1 inline h-4 w-4',
+                    'me-1 inline h-4 w-4',
                     entry.incident.severity === 'high' ? 'text-destructive' : 'text-amber-600',
                   )}
                 />
                 Incident ({entry.incident.severity}): {entry.incident.source} —{' '}
                 {entry.incident.agentRole}
                 {entry.incident.capability ? ` / ${entry.incident.capability}` : ''}
-                <span className="ml-2 text-xs text-muted-foreground">
+                <span className="ms-2 text-xs text-muted-foreground">
                   {new Date(entry.incident.createdAt).toLocaleString()}
                 </span>
               </span>
@@ -193,10 +213,10 @@ export function ExceptionInbox({ limit, onOpenEntry }: ExceptionInboxProps) {
           {entry.kind === 'intent_error' && (
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm">
-                <AlertTriangle className="mr-1 inline h-4 w-4 text-destructive" />
+                <AlertTriangle className="me-1 inline h-4 w-4 text-destructive" />
                 Intent in error: <strong>{entry.intent.name}</strong>
                 {entry.intent.statusReason && (
-                  <span className="ml-2 text-xs text-muted-foreground">{entry.intent.statusReason}</span>
+                  <span className="ms-2 text-xs text-muted-foreground">{entry.intent.statusReason}</span>
                 )}
               </span>
               <span className="flex gap-2">

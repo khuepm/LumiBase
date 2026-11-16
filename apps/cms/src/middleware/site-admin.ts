@@ -1,4 +1,5 @@
-import type { MiddlewareHandler } from 'hono';
+import { resolveSiteAdminAccess } from '../services/site-admin-access';
+import type { Context, MiddlewareHandler } from 'hono';
 import type { AppEnv } from '../env';
 import { PermissionService } from '../services/permission-service';
 
@@ -11,41 +12,27 @@ function collectHeaders(headers: Headers): Record<string, string> {
 }
 
 /**
- * Require administrative access for the active tenant.
- *
- * The generic API stack authenticates the bearer token and resolves `siteId`,
- * but sensitive tenant-management APIs must additionally prove that the
- * principal has admin access in that specific site. This prevents callers from
- * selecting an arbitrary `X-Lumi-Site` value and operating on that tenant with
- * only a valid low-privilege token.
+ * Whether the request's principal has administrative access for the active
+ * tenant. The decision behind {@link requireSiteAdmin}, exposed so a router
+ * that is not admin-only as a whole (deployments, #743) can ask the same
+ * question without answering the request. `false` when no site is selected.
  */
-export const requireSiteAdmin = (): MiddlewareHandler<AppEnv> => async (c, next) => {
+export async function isSiteAdmin(c: Context<AppEnv>): Promise<boolean> {
   const auth = c.get('auth');
   const siteId = c.get('siteId');
-
-  if (!siteId) {
-    return c.json(
-      { errors: [{ code: 'TENANT_REQUIRED', message: 'X-Lumi-Site header is required.' }] },
-      400,
-    );
-  }
+  if (!siteId) return false;
 
   // An anonymous principal can never be a site admin. Rejected explicitly so
   // the `public` role is never evaluated against the checks below — the
   // CF-Access carve-out at the end of this function keys off "no userId and no
   // apiKeyId", which an anonymous principal also satisfies.
-  if (auth?.type === 'anonymous') {
-    return c.json(
-      { errors: [{ code: 'FORBIDDEN', message: 'Admin access for the requested site is required.' }] },
-      403,
-    );
-  }
+  if (auth?.type === 'anonymous') return false;
 
   // Preserve the existing local-development escape hatch for explicit admin
   // dev tokens while keeping non-admin dev tokens subject to the tenant gate.
-  if (auth?.raw?.dev === true && auth.roles?.includes('admin')) {
-    return next();
-  }
+  if (auth?.raw?.dev === true && auth.roles?.includes('admin')) return true;
+
+  if ((auth?.userId || auth?.apiKeyId) && (await resolveSiteAdminAccess(c)).allowed) return true;
 
   if (auth?.userId || auth?.apiKeyId) {
     const bundle = await new PermissionService({
@@ -66,17 +53,35 @@ export const requireSiteAdmin = (): MiddlewareHandler<AppEnv> => async (c, next)
       },
     }).bundle();
 
-    if (bundle.admin) {
-      return next();
-    }
+    if (bundle.admin) return true;
   }
 
   // Cloudflare Access principals are trusted administrator sessions in the
   // current auth model but may not have an internal users.id to resolve through
   // PermissionService. Keep them working while rejecting all non-admin roles.
-  if (!auth?.userId && !auth?.apiKeyId && auth?.roles?.includes('admin')) {
-    return next();
+  if (!auth?.userId && !auth?.apiKeyId && auth?.roles?.includes('admin')) return true;
+
+  return false;
+}
+
+/**
+ * Require administrative access for the active tenant.
+ *
+ * The generic API stack authenticates the bearer token and resolves `siteId`,
+ * but sensitive tenant-management APIs must additionally prove that the
+ * principal has admin access in that specific site. This prevents callers from
+ * selecting an arbitrary `X-Lumi-Site` value and operating on that tenant with
+ * only a valid low-privilege token.
+ */
+export const requireSiteAdmin = (): MiddlewareHandler<AppEnv> => async (c, next) => {
+  if (!c.get('siteId')) {
+    return c.json(
+      { errors: [{ code: 'TENANT_REQUIRED', message: 'X-Lumi-Site header is required.' }] },
+      400,
+    );
   }
+
+  if (await isSiteAdmin(c)) return next();
 
   return c.json(
     { errors: [{ code: 'FORBIDDEN', message: 'Admin access for the requested site is required.' }] },

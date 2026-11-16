@@ -107,6 +107,12 @@ export const contentIntents = pgTable(
      * drift scan completed a full pass (Req 6.5).
      */
     scanCursor: text('scan_cursor'),
+    /**
+     * Resume point of the semantic pass (Jev J12, #519): last item id judged
+     * by semantic rules. Separate from `scanCursor` because that pass has its
+     * own, smaller budget. Null when the last semantic pass completed.
+     */
+    semanticScanCursor: text('semantic_scan_cursor'),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -140,7 +146,12 @@ export const contentDrifts = pgTable(
     ruleKey: text('rule_key').notNull(),
     /** `${intentId}:${itemId}:${ruleType}:${ruleKey}` — unique per site. */
     fingerprint: text('fingerprint').notNull(),
-    /** `open` | `assigned` | `resolved` | `stale` */
+    /**
+     * `open` | `assigned` | `resolved` | `stale` | `unevaluated`.
+     * `unevaluated` (J12, #519): a semantic rule could not be judged (provider
+     * outage, unknown answer). It never resolves an earlier drift and never
+     * creates a goal.
+     */
     status: text('status').default('open').notNull(),
     goalId: text('goal_id').references(() => agentGoals.id, { onDelete: 'set null' }),
     detail: jsonb('detail').default({}).notNull(),

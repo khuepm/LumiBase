@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { isControlPlanePath } from '../middleware/control-plane-access-guard';
+import { isStudioAccessPath } from '../middleware/studio-access';
 
 /**
  * Security-guard wiring tripwires.
@@ -36,7 +37,7 @@ describe('security guard wiring — /api/v1 middleware chain (index.ts)', () => 
 
   it('mounts the full guard chain on the authenticated api sub-app', () => {
     expect(source).toMatch(
-      /api\.use\('\*',\s*withTenant\(\),\s*withDb\(\),\s*withTenantExists\(\),\s*withAuth\(\),\s*withSiteMembership\(\),\s*withRateLimit\(\),\s*requireSetupComplete\(\),\s*withStudioAccess\(\),\s*withControlPlaneAccessGuard\(\),/,
+      /api\.use\('\*',\s*withTenant\(\),\s*withDb\(\),\s*withTenantExists\(\),\s*withAiIpRateLimit\(\),\s*withAuth\(\),\s*withSiteMembership\(\),\s*withRateLimit\(\),\s*requireSetupComplete\(\),\s*withStudioAccess\(\),\s*withControlPlaneAccessGuard\(\),/,
     );
   });
 
@@ -55,6 +56,19 @@ describe('security guard wiring — /api/v1 middleware chain (index.ts)', () => 
     expect(dbIdx).toBeGreaterThan(-1);
     expect(existsIdx).toBeGreaterThan(dbIdx);
     expect(authIdx).toBeGreaterThan(existsIdx);
+  });
+
+  it('keeps withAiIpRateLimit after withTenantExists and before withAuth (#564)', () => {
+    // After the site check so only real sites get counters; before auth so a
+    // blocked /api/v1/ai/* flood costs no JWT/API-key work, no quota, no
+    // provider call and no audit write. Behaviour: ai-ip-rate-limit.test.ts.
+    const chain = source.match(/api\.use\('\*',[^\n]*\);/)?.[0] ?? '';
+    const existsIdx = chain.indexOf('withTenantExists()');
+    const limitIdx = chain.indexOf('withAiIpRateLimit()');
+    const authIdx = chain.indexOf('withAuth()');
+    expect(existsIdx).toBeGreaterThan(-1);
+    expect(limitIdx).toBeGreaterThan(existsIdx);
+    expect(authIdx).toBeGreaterThan(limitIdx);
   });
 
   it('mounts a dedicated IP rate limiter on the public deliver surface', () => {
@@ -88,6 +102,8 @@ describe('security guard wiring — withAuth bypass list (middleware/auth.ts)', 
       '/api/v1/auth/verify-email',
       '/api/v1/auth/forgot-password',
       '/api/v1/auth/reset-password',
+      // #733: read-only public rule set (no secret; needed pre-session).
+      '/api/v1/auth/password-policy',
       '/api/v1/auth/refresh',
       '/api/v1/auth/logout',
     ]) {
@@ -113,7 +129,21 @@ describe('security guard wiring — public register is safe by construction (rou
   });
 
   it('rate-limits registration before hashing', () => {
-    expect(source).toMatch(/checkRegistrationRate\(/);
+    // #732: the brake goes through the atomic runtime limiter when present.
+    const handler = source.slice(source.indexOf("authRouter.post('/register'"));
+    const brake = handler.search(/checkAuthFlowRate\(\s*c\.get\('runtime'\),\s*'reg-rate'/);
+    expect(brake).toBeGreaterThan(-1);
+    expect(brake).toBeLessThan(handler.indexOf('hashPassword('));
+  });
+
+  it.each([
+    ['/verify-email', 'verify-rate'],
+    ['/reset-password', 'reset-rate'],
+  ])('rate-limits %s before any token work (#732)', (path, scope) => {
+    const handler = source.slice(source.indexOf(`authRouter.post('${path}'`));
+    const brake = handler.search(new RegExp(`checkAuthFlowRate\\(c\\.get\\('runtime'\\), '${scope}'`));
+    expect(brake).toBeGreaterThan(-1);
+    expect(brake).toBeLessThan(handler.indexOf('c.req.json('));
   });
 });
 
@@ -131,7 +161,9 @@ describe('security guard wiring — control-plane path coverage', () => {
     '/api/v1/api-keys',
     '/api/v1/admin',
     '/api/v1/agent',
+    '/api/v1/ai/automation',
     '/api/v1/cdc',
+    '/api/v1/domains',
     '/api/v1/flows',
     '/api/v1/integrations/git',
     '/api/v1/permissions',
@@ -145,6 +177,29 @@ describe('security guard wiring — control-plane path coverage', () => {
 
   it('does not classify the content surface as control-plane', () => {
     expect(isControlPlanePath('/api/v1/items/posts')).toBe(false);
+    // Draft review stays content plane (ai:decide), only automation is control plane.
+    expect(isControlPlanePath('/api/v1/ai/reviews')).toBe(false);
+    expect(isControlPlanePath('/api/v1/ai/automationx')).toBe(false);
+  });
+
+  // #511: the decision endpoint is content plane on purpose (editors via
+  // Studio + secret API keys via the SDK; publishable keys and frontend
+  // sessions are refused in authorizeDecision, #562). Its gate is the `ai:decide` capability
+  // (`create` on `lumibase_ai_decisions`) + site opt-in + quota inside
+  // authorizeDecision / runGovernedDecision — pinned by
+  // decision-governance.wiring.test.ts.
+  // Pins only this path, not the /api/v1/ai prefix, so sibling routes stay
+  // free to be reclassified as control plane.
+  it('keeps /api/v1/ai/decisions on the content plane (capability-gated in DecisionGovernanceService)', () => {
+    expect(isControlPlanePath('/api/v1/ai/decisions')).toBe(false);
+    expect(isStudioAccessPath('/api/v1/ai/decisions')).toBe(false);
+  });
+
+  it('gates /api/v1/domains and /api/v1/pages behind Studio access, and /domains + PATCH /site behind requireSiteAdmin', () => {
+    expect(isStudioAccessPath('/api/v1/domains')).toBe(true);
+    expect(isStudioAccessPath('/api/v1/pages')).toBe(true);
+    expect(read('routes/domains.ts')).toMatch(/domainsRouter\.use\('\*',\s*requireSiteAdmin\(\)\)/);
+    expect(read('routes/site.ts')).toMatch(/siteRouter\.patch\('\/',\s*requireSiteAdmin\(\),/);
   });
 });
 

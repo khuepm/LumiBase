@@ -1,0 +1,8 @@
+// Compiles the consumer examples against the public entry `@lumibase/sdk`,
+// resolved through the package's own `exports` (self-reference) like any
+// consumer. Examples must not import from src/.
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "noEmit": true, "lib": ["ES2022", "DOM"] },
+  "include": ["examples/**/*.ts"]
+}

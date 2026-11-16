@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-09-14T21:26:07.815Z
+version: 11
+lastUpdated: 2026-11-15T18:05:23.927Z
 sourceLang: en
-contentHash: 99526fe6886264cb
-codeVerified: 2026-09-14T21:26:07.815Z
-codeVerifiedHash: 99526fe6886264cb
+contentHash: 7f3f8abe9f146aab
+codeVerified: 2026-11-15T18:05:23.927Z
+codeVerifiedHash: 7f3f8abe9f146aab
 codeVerifiedClaims: 8
 ---
 
@@ -36,7 +36,9 @@ npm install -D lumibase     # ❌ the import disappears in production installs
 ```
 
 The same package carries the CLI, so there is nothing extra to add for
-`lumibase types` or `lumibase doctor`.
+`lumibase types` or `lumibase doctor`. The one case where `-D` is right is a
+repository that installs it *purely* to run `lumibase types --check` in CI and
+never imports the client — there the CLI is build tooling, not runtime code.
 
 > **Package:** [`create-lumibase`](../../packages/create-lumibase) ·
 > **Published as:** `create-lumibase` on npm ·
@@ -46,27 +48,41 @@ The same package carries the CLI, so there is nothing extra to add for
 
 ```bash
 # any of these work — npx resolves the create-* convention
-npm create lumibase@latest my-project
-npx create-lumibase@latest my-project
-pnpm create lumibase my-project
+npm create lumibase@next my-project
+npx create-lumibase@next my-project
+pnpm create lumibase@next my-project
 ```
+
+> **Use `@next` during the 1.0 release candidates.** npm's `latest` tag still
+> points at the 0.x scaffolder, which has no Next.js template and pins no CMS.
+> `@next` is the current release candidate. The commands move back to `@latest`
+> when 1.0.0 ships.
 
 With no arguments, the CLI runs interactively and asks for everything it needs.
 The first prompt is the one that matters most — it chooses your template, and
 the Next.js option is preselected.
 
+If a project already has the `lumibase` CLI, `lumibase init` is the same
+scaffold, not a second one: it runs `create-lumibase` and forwards your
+arguments verbatim, so the two entry points cannot offer different templates or
+drift apart. Use whichever is at hand — `npm create lumibase@next` needs
+nothing installed. See [`lumibase init`](./cli/index.md#lumibase-init) for how
+the delegation works and why the scaffolder is not a dependency of `lumibase`.
+
 ## What happens, step by step
 
 ```
-npx create-lumibase@latest my-blog
+npx create-lumibase@next my-blog
 │
 ├─ 1. npx downloads the create-lumibase package from npm
 │
 ├─ 2. Interactive prompts (skipped when flags are passed)
 │     ? Project name          my-blog
-│     ? Deployment target      › Next.js website  + CMS, Studio and seed content (recommended)
-│                                Docker           Node.js + PostgreSQL
-│                                Cloudflare Workers  Edge + D1
+│     ? Template               › Next.js website  + CMS, Studio and seed content (recommended)
+│                                Astro static site  build-time content, static export to Cloudflare Pages
+│                                SvelteKit site     server loads + draft preview on Cloudflare Pages
+│                                Docker starter     Hono + Node.js + PostgreSQL (no CMS)
+│                                Cloudflare Workers starter  Hono + Edge + D1 (no CMS)
 │     ? Package manager        › pnpm / npm / yarn / bun  (auto-detected)
 │     ? Install dependencies   › Yes
 │     ? Initialize git         › Yes
@@ -93,6 +109,8 @@ npx create-lumibase@latest my-blog
 | Template | Flag | Stack | Best for |
 | --- | --- | --- | --- |
 | **Next.js website + CMS** (preselected) | `--template nextjs` | Next.js 15 + React 19, the `lumibase` client, and the CMS image (Studio included) + PostgreSQL + Redis via `docker-compose.yml` | Publishing a real site: editors get Studio, the browser gets a read-only key |
+| **Astro static site** | `--template astro` | Astro 7 static output, content read at build time through the `lumibase` client, `wrangler pages deploy dist` | A fast static site on Cloudflare Pages, rebuilt by a deploy hook — see [Astro starter](./tutorials/astro-starter.md) |
+| **SvelteKit site** | `--template sveltekit` | SvelteKit 3 + `@sveltejs/adapter-cloudflare`, server-side loads, signed-cookie draft preview | A Pages site that shows publishes without a rebuild — see [SvelteKit starter](./tutorials/sveltekit-starter.md) |
 | **Docker starter** | `--template default` | Hono + `@hono/node-server`, Drizzle ORM, PostgreSQL, Redis, `docker-compose.yml` | Building your own API with LumiBase conventions |
 | **Cloudflare Workers starter** | `--template cloudflare` | Hono, Drizzle ORM, D1, `wrangler.toml` | The same starter, deployed at the edge |
 
@@ -159,7 +177,7 @@ request validation.
 Pass flags to skip prompts entirely:
 
 ```bash
-npx create-lumibase@latest my-blog \
+npx create-lumibase@next my-blog \
   --template nextjs \
   --pm pnpm \
   --no-install \
@@ -168,7 +186,7 @@ npx create-lumibase@latest my-blog \
 
 | Flag | Description |
 | --- | --- |
-| `--template <nextjs\|default\|cloudflare>` | Project template. An unknown name is rejected up front, naming the value you passed. |
+| `--template <nextjs\|astro\|sveltekit\|default\|cloudflare>` | Project template. An unknown name is rejected up front, naming the value you passed. |
 | `--pm <pnpm\|npm\|yarn\|bun>` | Package manager used for install. Auto-detected from `npm_config_user_agent` when omitted. |
 | `--install` / `--no-install` | Force-enable or skip dependency install. |
 | `--git` / `--no-git` | Force-enable or skip `git init` + first commit. |
@@ -186,8 +204,7 @@ are equivalent.
 ### Next.js template
 
 ```bash
-cd my-blog
-cp .env.example .env       # fill in secrets
+cd my-blog                 # .env already holds generated secrets (see security/secure-defaults)
 npm install                # only if you used --no-install
 npm run cms:up             # CMS + Studio + Postgres + Redis
 npm run cms:bootstrap      # first admin, public read grant, publishable key
@@ -217,18 +234,21 @@ npm run cms:verify
 
 It uses the publishable key — never the admin token — to show that it can read
 published posts, **cannot** see the seeded draft (by list, by direct id, and by
-asking for `status=draft`), and cannot write. The seed deliberately leaves one
-post unpublished so the check has something real to catch. Checks that cannot
-run are reported as SKIPPED rather than folded into the pass count.
+asking for `status=draft`), cannot write, and is refused for a site id that does
+not exist — after which it re-checks that the CMS is still healthy. The seed
+deliberately leaves one post unpublished so the check has something real to
+catch. Checks that cannot run are reported as SKIPPED rather than folded into
+the pass count. Tenant isolation against a *real* second site runs when
+`LUMIBASE_VERIFY_OTHER_SITE` is set.
 
-Two upstream CMS issues shape this template, both documented in the generated
-`README.md`: the setup-token gate demands a token the server never prints
-([#470](https://github.com/khuepm/lumibase/issues/470)), so the compose file
-leaves it off and binds every published port to `127.0.0.1` instead; and an
-`X-Lumi-Site` header naming a site that does not exist can take the CMS process
-down ([#469](https://github.com/khuepm/lumibase/issues/469)), so that probe sits
-behind `LUMIBASE_VERIFY_CROSS_TENANT=1`. Tenant isolation against a *real*
-second site is checked normally, with `LUMIBASE_VERIFY_OTHER_SITE`.
+The generated project pins the `lumibase` client and the CMS image to
+**exactly** the `create-lumibase` version that created it, so the API, Studio
+and the client always come from one release. The pin is exact rather than a `^`
+range: npm resolves a range to the newest version tagged `latest` that satisfies
+it, which during a prerelease line can be an older release candidate. The
+compose file leaves the setup-token gate off and binds every published port to
+`127.0.0.1`; the generated `README.md` shows how to turn the gate on (the CMS
+prints `SETUP_TOKEN=…` once at startup).
 
 #### Pointing it at a CMS you already run
 
@@ -252,8 +272,7 @@ covers each of these; `npm run cms:verify` checks the result.
 ### Docker starter
 
 ```bash
-cd my-blog
-cp .env.example .env       # fill in secrets
+cd my-blog                 # .env already holds generated secrets (see security/secure-defaults)
 pnpm install               # only if you used --no-install
 docker compose up -d       # Postgres + Redis
 pnpm run db:generate       # generate the first migration from schema.ts

@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MessageCircle, Send, X, Loader2, Plus, ChevronDown, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { getActiveSite, getActiveToken } from '@/lib/api';
 import { getApiBaseUrl } from '@/lib/api-base';
 
 interface ChatMessage {
@@ -48,9 +49,10 @@ interface ChatApiResponse {
 const MAX_MESSAGES = 50;
 
 function getApiHeaders(): Record<string, string> {
-  const token = localStorage.getItem('lumibase_dev_token') ?? '';
+  const token = getActiveToken();
   return {
     'Content-Type': 'application/json',
+    'X-Lumi-Site': getActiveSite(),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 }
@@ -242,7 +244,7 @@ export function AIAssistant() {
           'bg-primary text-primary-foreground hover:bg-primary/90',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         )}
-        style={{ bottom: 24, right: 24 }}
+        style={{ bottom: 24, insetInlineEnd: 24 }}
       >
         {open ? (
           <X className="h-5 w-5" aria-hidden="true" />
@@ -261,7 +263,7 @@ export function AIAssistant() {
             'bg-background/80 backdrop-blur-xl',
             'animate-in fade-in-0 slide-in-from-bottom-2',
           )}
-          style={{ bottom: 84, right: 24, width: 320, height: 480 }}
+          style={{ bottom: 84, insetInlineEnd: 24, width: 320, height: 480 }}
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b px-4 py-3">
@@ -278,7 +280,7 @@ export function AIAssistant() {
                   <ChevronDown className="h-3 w-3" aria-hidden="true" />
                 </button>
                 {showConvDropdown && (
-                  <div className="absolute left-0 top-7 z-50 w-56 rounded-md border bg-background shadow-lg">
+                  <div className="absolute start-0 top-7 z-50 w-56 rounded-md border bg-background shadow-lg">
                     <button
                       type="button"
                       onClick={startNewConversation}
@@ -297,7 +299,7 @@ export function AIAssistant() {
                         >
                           <button
                             type="button"
-                            className="flex-1 truncate text-left"
+                            className="flex-1 truncate text-start"
                             onClick={() => {
                               void loadConversationMessages(conv.id);
                               setShowConvDropdown(false);
@@ -312,7 +314,7 @@ export function AIAssistant() {
                               e.stopPropagation();
                               void deleteConversation(conv.id);
                             }}
-                            className="ml-1 flex-shrink-0 text-muted-foreground hover:text-destructive"
+                            className="ms-1 flex-shrink-0 text-muted-foreground hover:text-destructive"
                           >
                             <Trash2 className="h-3 w-3" />
                           </button>
@@ -362,8 +364,8 @@ export function AIAssistant() {
                     className={cn(
                       'max-w-[85%] rounded-lg px-3 py-2 text-xs leading-relaxed',
                       msg.role === 'user'
-                        ? 'ml-auto bg-primary text-primary-foreground'
-                        : 'mr-auto bg-muted text-foreground',
+                        ? 'ms-auto bg-primary text-primary-foreground'
+                        : 'me-auto bg-muted text-foreground',
                     )}
                   >
                     <p className="whitespace-pre-wrap break-words">{msg.text}</p>
@@ -375,7 +377,7 @@ export function AIAssistant() {
                   </div>
                 ))}
                 {loading && (
-                  <div className="mr-auto flex items-center gap-1.5 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+                  <div className="me-auto flex items-center gap-1.5 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
                     <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
                     <span>Thinking…</span>
                   </div>

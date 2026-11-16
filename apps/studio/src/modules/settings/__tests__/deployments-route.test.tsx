@@ -33,7 +33,8 @@ const emptyResult = { data: [] };
 const apiClient = new Proxy(
   {},
   {
-    get: (): unknown =>
+    get: (_target, property): unknown =>
+      property === 'orgs' ? { list: async () => [] } :
       new Proxy(vi.fn().mockResolvedValue(emptyResult), {
         get: (target, prop) =>
           prop in target
@@ -46,6 +47,7 @@ const apiClient = new Proxy(
 vi.mock('@/lib/api', () => ({
   getApiClient: () => apiClient,
   getActiveToken: () => 'token',
+  getSessionGeneration: () => 0,
   getActiveSite: () => 'site_1',
   hasActiveToken: () => true,
   clearActiveToken: vi.fn(),
@@ -111,5 +113,22 @@ describe('/settings/deployments route', () => {
       },
       { timeout: 5000 },
     );
+  });
+});
+
+describe('custom admin path settings routes', () => {
+  it.each([
+    ['change-feed', 'Change Feed'],
+    ['encryption', 'Encryption'],
+  ])('resolves %s to the settings page', async (segment, heading) => {
+    renderAt(`/lumi-admin/settings/${segment}`);
+
+    await waitFor(
+      () => {
+        expect(screen.getByRole('heading', { name: heading, level: 1 })).toBeInTheDocument();
+      },
+      { timeout: 5000 },
+    );
+    expect(screen.getByRole('complementary', { name: 'Settings navigation' })).toBeInTheDocument();
   });
 });

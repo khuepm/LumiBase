@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 2
-lastUpdated: 2026-09-01T19:24:40.830Z
+version: 7
+lastUpdated: 2026-11-14T02:15:35.397Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a549172ced3a3d26
+sourceHash: 40ce7652d5196dc5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-01T19:24:40.830Z
-codeVerifiedHash: a549172ced3a3d26
-codeVerifiedClaims: 34
+codeVerified: 2026-11-14T02:15:35.397Z
+codeVerifiedHash: 40ce7652d5196dc5
+codeVerifiedClaims: 36
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -64,10 +64,13 @@ Chuẩn bị nền bảo mật runtime rõ ràng trước khi AI Harness đượ
    picker; `PUT` gated `requireSiteAdmin`, lưu vào row `settings` key
    `upload_policy`, chỉ nhận MIME trong catalogue).
 
-   **Hardening lúc serve (`routes/media.ts`):** file tải về trả kèm
-   `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff`, nên
-   object HTML/SVG đã lưu không thể render (và chạy script) dưới origin app khi
-   mở top-level. Kết hợp với CSP toàn cục (`script-src 'self'`, không
+   **Hardening lúc serve (`routes/media.ts`):** `Content-Disposition` là
+   `inline` chỉ cho allow-list các loại raster/video thụ động và `attachment`
+   cho mọi thứ khác (SVG, PDF, HTML, văn bản, không rõ), luôn kèm
+   `X-Content-Type-Options: nosniff` và CSP `sandbox`, còn SVG được làm sạch lại
+   khi trả ra — nên object HTML/SVG đã lưu không thể render (và chạy script)
+   dưới origin app khi mở top-level. Chi tiết đầy đủ, gồm dò magic bytes,
+   corpus polyglot và bộ làm sạch SVG: [upload-security.md](./upload-security.md). Kết hợp với CSP toàn cục (`script-src 'self'`, không
    `unsafe-inline`) như phòng thủ nhiều lớp. Storage adapter map `contentType`
    sang field native R2 `httpMetadata` / S3 `ContentType` để `Content-Type` khi
    serve round-trip đúng (trước đây chỉ ghi vào custom metadata nên trả về undefined).
@@ -107,7 +110,8 @@ Chuẩn bị nền bảo mật runtime rõ ràng trước khi AI Harness đượ
   MIME ngoài allowlist, sai đuôi/nội dung so với khai báo, hoặc SVG có mã động
   đều bị từ chối trước khi ghi storage — trên mọi surface được phủ, gồm cả
   `POST /api/v1/media/:key`.
-- File media tải về được serve dạng attachment kèm `nosniff`, và `Content-Type`
+- Media chỉ được serve inline cho ảnh/video thụ động, còn lại dạng attachment,
+  luôn kèm `nosniff` và CSP sandbox, và `Content-Type`
   round-trip đúng qua cả hai storage adapter.
 - Mọi response có CSP và các security headers nền tảng.
 - Outbound URL guard có test cho localhost, private IP, link-local metadata IP và protocol nguy hiểm.
@@ -138,7 +142,7 @@ Mọi khởi tạo `ItemService` đi qua hai helper tường minh trong
   `permissionCtx` áp cuối cùng nên `overrides` không thể vô tình gỡ enforcement.
 - **`itemServiceForSystem(deps, reason)`** — dùng cho flow hệ thống/nền. Bắt buộc
   truyền `SystemContextReason` (`'scheduler'` | `'background-worker'` |
-  `'compliance-erasure'`) để tác giả phải **nêu lý do** tại sao fail-open an toàn.
+  `'compliance-erasure'` | `'semantic-drift-scan'`) để tác giả phải **nêu lý do** tại sao fail-open an toàn.
 
 Test hồi quy `apps/cms/src/__tests__/item-service-rbac-context.test.ts` quét source
 và **fail CI** nếu có `new ItemService(...)` trực tiếp ngoài factory (trừ allowlist
@@ -155,8 +159,9 @@ và **fail CI** nếu có `new ItemService(...)` trực tiếp ngoài factory (t
 | `graphql/context.ts` | request | GraphQL kế thừa nguyên governance của REST |
 | `services/scheduler-worker.ts` | system `scheduler` | cron retention sweep, không có user principal |
 | `services/veto-commit-worker.ts` | system `background-worker` | commit sau khi veto window đã chốt quyết định human |
-| `services/agent-run-worker.ts` | system `background-worker` | governed agent run — HITL/autonomy gate ở harness, không phải RBAC user |
+| `services/agent-run-worker.ts` | principal (`itemServiceForPrincipal`) khi job mang principal user hoặc API key; nếu không thì system `background-worker` | job có principal user hoặc API key áp RBAC row/field của principal đó, giống đường request (#580); job reconciler (agent-role) và job legacy chỉ có snapshot capability không có principal và được harness chặn (HITL/autonomy, agent role); principal `dev` (chỉ ở runtime development + role `admin`) resolve thành bundle admin đầy đủ, không có role lưu trong DB, nên giữ posture system |
 | `services/erasure-service.ts` | system `compliance-erasure` | erasure/SAR gated admin + dual-control ở tầng service |
+| `services/review-content-access.ts` (`reviewContentAccessForDriftScan`) | system `semantic-drift-scan` | pass drift ngữ nghĩa (J12): chỉ đọc các field của rule trừ field đã ghim, không ghi item nào; việc gửi nội dung bị chặn bởi `aiDecisions.enabled` + `aiDecisions.drift` |
 
 ### Checklist khi thêm ItemService mới
 
@@ -170,3 +175,15 @@ và **fail CI** nếu có `new ItemService(...)` trực tiếp ngoài factory (t
 - Không file production nào (ngoài factory + allowlist) gọi `new ItemService(...)` trực tiếp — bảo đảm bằng test source-scan.
 - Endpoint AI và MCP enforce row/field RBAC đúng như `/items` (skill LLM không leo quyền vượt token).
 - Mọi system context khai báo `reason` tường minh, greppable, có mặt trong bảng audit.
+
+
+### Hoàn tất đối chiếu phân quyền (#580)
+
+Ma trận thực thi bao gồm Copilot, Agent API qua hàng đợi, MCP có quản trị và các
+lời gọi REST chuyển tiếp của MCP độc lập. Kiểm thử PostgreSQL bao phủ sao lưu/khôi
+phục theo quyền quản trị site, cài đặt marketplace và quyền đọc/tạo/xóa media riêng
+biệt. Các ca kiểm tra thu hồi quyền trước thực thi, cô lập tenant, bảo toàn byte
+nhị phân và không ghi dữ liệu khi bị từ chối. Kiểm thử công cụ độc lập xác nhận mã
+tenant và thông tin bearer gốc được chuyển tới REST, đồng thời trả từ chối mà
+không tự thử lại. Báo cáo phân quyền và phạm vi từng kiểm thử được ghi tại
+`docs/review-agent/2026-11-01-ai-audit-580-authz-parity.md`.

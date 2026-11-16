@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-09-07T03:34:14.317Z
+version: 5
+lastUpdated: 2026-11-15T08:51:17.806Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1767648d90471727
+sourceHash: 4ceb3ca031f5fcc3
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-07T03:34:14.317Z
-codeVerifiedHash: 1767648d90471727
+codeVerified: 2026-11-15T08:51:17.806Z
+codeVerifiedHash: 4ceb3ca031f5fcc3
 codeVerifiedClaims: 10
 ---
 
@@ -19,6 +19,14 @@ LumiBase hỗ trợ hai chế độ triển khai từ cùng một codebase CMS:
 - **Docker tự vận hành (self-hosting)** cho các nhóm muốn vận hành toàn bộ stack trong các container.
 
 Để tự vận hành trên cloud quản lý, xem [Google Cloud (single VM)](./google-cloud-vm.md) — cách rẻ nhất để chạy toàn bộ stack Docker trên Google Cloud với Gemini làm nhà cung cấp LLM, trong khi vẫn giữ cho các background job dài hạn của CMS hoạt động.
+
+Để có CMS và Studio chạy trên Render, Railway hoặc Fly.io cùng PostgreSQL, Redis
+và secret được sinh sẵn, xem [Deploy một cú nhấp](./one-click.md); trang đó cũng
+giải thích vì sao Cloudflare chưa có nút deploy.
+
+Để chạy cùng image đó trên Kubernetes, xem [Kubernetes (Helm chart)](./kubernetes-helm.md):
+chart chính thức với PostgreSQL và Redis kèm sẵn hoặc bên ngoài, Meilisearch tuỳ
+chọn, ingress, autoscaling và secret sinh sẵn được giữ nguyên qua các lần upgrade.
 
 Trang web tài liệu công khai là một ứng dụng Vite tĩnh được triển khai riêng biệt trên **Cloudflare Pages**.
 Trang web Marketplace công khai cũng được triển khai trên **Cloudflare Pages** và đọc danh mục marketplace của CMS tại thời điểm build/revalidation runtime.
@@ -52,7 +60,7 @@ Vì Studio sau đó gọi CMS từ một origin khác, CMS phải cho phép orig
 
 | Target | Package | Output | Deploy command |
 | --- | --- | --- | --- |
-| CMS API Worker | `@lumibase/cms` | Worker bundle | `pnpm --filter @lumibase/cms deploy` |
+| CMS API Worker | `@lumibase/cms` | Worker bundle | `pnpm --filter @lumibase/cms run deploy` |
 | Documentation site | `@lumibase/docs` | `apps/docs/dist` | `pnpm docs:deploy` |
 | Landing site | `@lumibase/landing` | `apps/landing/out` | `pnpm landing:deploy` |
 | Marketplace site | `@lumibase/marketplace` | `apps/marketplace/out` | `pnpm marketplace:deploy` |
@@ -85,7 +93,7 @@ Các secret như `JWT_SECRET`, các giá trị Cloudflare Access và chứng th�
 2. Chạy `pnpm --filter @lumibase/docs build` cho trang tài liệu.
 3. Chạy `pnpm --filter @lumibase/cms build` để dry-run gói Worker.
 4. Triển khai tài liệu với `pnpm docs:deploy`.
-5. Triển khai CMS Worker với `pnpm --filter @lumibase/cms deploy` sau khi các binding và secret production được cấu hình.
+5. Triển khai CMS Worker với `pnpm --filter @lumibase/cms run deploy` sau khi các binding và secret production được cấu hình.
 
 Xem [Cloudflare deployment](./cloudflare.md) để biết các lệnh Worker và Pages chi tiết.
 Xem [Private admin path](./private-admin-path.md) để biết chính sách không chuyển hướng ở production giúp giữ bí mật điểm truy cập Studio.

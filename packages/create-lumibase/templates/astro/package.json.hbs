@@ -1,0 +1,27 @@
+{
+  "name": "{{projectName}}",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "typecheck": "astro check",
+    "types": "node --env-file-if-exists=.env node_modules/lumibase/bin/lumibase.js types",
+    "types:check": "node --env-file-if-exists=.env node_modules/lumibase/bin/lumibase.js types --check",
+    "deploy": "wrangler pages deploy dist"
+  },
+  "dependencies": {
+    "astro": "^7.4.12",
+    "lumibase": "{{lumibaseVersion}}"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12",
+    "typescript": "^6.0.3",
+    "wrangler": "^4.162.0"
+  },
+  "engines": {
+    "node": ">=22.23.4"
+  }
+}

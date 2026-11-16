@@ -4,7 +4,8 @@
  * Mounted in `apps/cms/src/index.ts` *outside* the authenticated tenant
  * stack — these endpoints answer before any user exists. The wizard
  * needs them to be reachable on a fresh instance, so the router only
- * relies on `withDb()` for the Drizzle client. The CORS layer is
+ * relies on `withSystemDb()` for the Drizzle client (system connection, no
+ * site scope — B130). The CORS layer is
  * inherited from the global stack.
  *
  * Routes (design §4.1–4.3):
@@ -19,11 +20,16 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { PasswordSchema } from '@lumibase/contracts/schemas';
+import { DEFAULT_PASSWORD_POLICY } from '@lumibase/contracts/schemas';
+import {
+  NewPasswordInputSchema,
+  checkNewPassword,
+  passwordPolicyErrorBody,
+} from '../../services/auth/password-policy';
 import type { RateLimiterProvider } from '@lumibase/runtime';
 import { MemoryRateLimiter, collectKeys } from '@lumibase/runtime';
 import type { AppEnv } from '../../env';
-import { withDb } from '../../middleware/db';
+import { withSystemDb } from '../../middleware/db';
 import { consumeRateLimit } from '../../middleware/rate-limit-helper';
 import {
   SetupService,
@@ -32,6 +38,7 @@ import {
 } from './service';
 import { STANDARD_LOCKOUT_POLICY, lockoutPolicySchema } from './policy-codec';
 import { OFFICIAL_KEY_ID } from './official-extensions';
+import { REQUIRE_SETUP_TOKEN_ENV, isSetupTokenRequired } from './setup-token';
 
 // ── input schema ────────────────────────────────────────────────────────
 
@@ -41,9 +48,9 @@ export const completeBodySchema = z.object({
   setupToken: z.string().min(1).max(256).optional(),
   account: z.object({
     email: z.string().email().max(254),
-    // Shared strength policy (min 12 + complexity) — consistent with register
-    // and recovery (CWE-521).
-    password: PasswordSchema,
+    // Bounded string; the password policy (#733) is enforced in the handler
+    // with the same service as register / reset / change (CWE-521).
+    password: NewPasswordInputSchema,
     firstName: z.string().min(1).max(100),
     lastName: z.string().min(1).max(100),
   }),
@@ -51,7 +58,11 @@ export const completeBodySchema = z.object({
   // Optional: omit to apply the "Standard" lockout preset. A fresh mutable copy
   // (incl. a fresh notifyChannels array) is passed so Zod's default never holds
   // a reference to the frozen preset.
-  policy: lockoutPolicySchema.default(() => ({
+  // `loginStallMs` has no wizard control yet, so the Studio omits it; the codec
+  // owns its default rather than failing the whole setup.
+  policy: lockoutPolicySchema.extend({
+    loginStallMs: lockoutPolicySchema.shape.loginStallMs.default(STANDARD_LOCKOUT_POLICY.loginStallMs),
+  }).default(() => ({
     ...STANDARD_LOCKOUT_POLICY,
     notifyChannels: [...STANDARD_LOCKOUT_POLICY.notifyChannels],
   })),
@@ -76,6 +87,10 @@ export const completeBodySchema = z.object({
     )
     .max(20)
     .optional(),
+  // #794 — instance email identity mode. `exact` (default): every distinct
+  // address is its own account. `root`: +tag / Gmail-dot aliases resolve to
+  // one account instance-wide.
+  emailIdentityMode: z.enum(['exact', 'root']).optional(),
 });
 
 // ── rate limit (distributed via RateLimiterProvider) ───────────────────
@@ -152,9 +167,14 @@ function buildService(c: {
   get: <K extends keyof AppEnv['Variables']>(k: K) => AppEnv['Variables'][K];
 }): SetupService {
   const db = c.get('db');
-  const requireSetupToken = readBoolEnv(c.env, 'LUMIBASE_REQUIRE_SETUP_TOKEN');
+  // Same parser the startup mint uses (`startup.ts`), so the side that checks
+  // a token and the side that prints one can never disagree about the flag.
+  const requireSetupToken = isSetupTokenRequired(
+    c.env as unknown as Readonly<Record<string, unknown>>,
+  );
   const smtpAvailable = !!readStringEnv(c.env, 'LUMIBASE_SMTP_URL');
   return new SetupService({
+    env: c.env, runtime: c.get('runtime'),
     db,
     requireSetupToken,
     smtpAvailable,
@@ -184,20 +204,15 @@ function resolveOfficialPublisherKey(
 }
 
 /**
- * Env lookups go through these tiny helpers so the unsafe index access
+ * Env lookups go through this tiny helper so the unsafe index access
  * is contained. `AppEnv['Bindings']` declares only the *known* fields;
- * the setup wizard reads operator-supplied keys (`LUMIBASE_REQUIRE_SETUP_TOKEN`,
- * `LUMIBASE_SMTP_URL`) that aren't in that interface yet, so we widen
- * to `Record<string, unknown>` in one place rather than scattering
- * casts at every call site. When those keys land in `env.ts`, this
- * cast can collapse to a typed property read.
+ * the setup wizard reads operator-supplied keys (`LUMIBASE_SMTP_URL`)
+ * that aren't in that interface yet, so we widen to
+ * `Record<string, unknown>` in one place rather than scattering casts
+ * at every call site. When those keys land in `env.ts`, this cast can
+ * collapse to a typed property read. `LUMIBASE_REQUIRE_SETUP_TOKEN` is
+ * parsed by `isSetupTokenRequired` instead, shared with the startup mint.
  */
-function readBoolEnv(env: AppEnv['Bindings'], key: string): boolean {
-  const v = (env as unknown as Record<string, unknown>)[key];
-  if (typeof v !== 'string') return false;
-  return v === 'true' || v === '1' || v === 'yes';
-}
-
 function readStringEnv(env: AppEnv['Bindings'], key: string): string | undefined {
   const v = (env as unknown as Record<string, unknown>)[key];
   return typeof v === 'string' && v.length > 0 ? v : undefined;
@@ -225,6 +240,21 @@ function errorToHttp(error: SetupServiceError): { status: number; body: { errors
         status: 404,
         body: { errors: [{ code: 'NOT_FOUND' }] },
       };
+    case 'SETUP_RACE_LOST':
+      // A concurrent request created the bootstrap admin while this one was
+      // in flight (#732). Only callers that arrived before setup finished
+      // can see this; later ones get the indistinguishable 404 above.
+      return {
+        status: 409,
+        body: {
+          errors: [
+            {
+              code: 'SETUP_ALREADY_COMPLETED',
+              message: 'Setup was completed by a concurrent request.',
+            },
+          ],
+        },
+      };
     case 'SETUP_IN_PROGRESS':
       return {
         status: 409,
@@ -243,6 +273,26 @@ function errorToHttp(error: SetupServiceError): { status: number; body: { errors
       return {
         status: 401,
         body: { errors: [{ code: 'SETUP_TOKEN_INVALID' }] },
+      };
+    case 'SETUP_TOKEN_NOT_ISSUED':
+      // Not a client mistake: the gate is on and no token exists to match,
+      // so no request can succeed until the operator acts. The message is
+      // the actionable part — Studio's wizard shows `errors[0].message`.
+      return {
+        status: 503,
+        body: {
+          errors: [
+            {
+              code: 'SETUP_TOKEN_NOT_ISSUED',
+              message:
+                `${REQUIRE_SETUP_TOKEN_ENV} is on, but no setup token has been issued. ` +
+                'The Node/Docker CMS mints one when it starts and prints it as a ' +
+                '"[lumibase-cms] SETUP_TOKEN=" line: restart the CMS and read its startup ' +
+                'logs. Cloudflare Workers have no startup step, so the flag is not supported ' +
+                'there: unset it and complete setup right after deploying.',
+            },
+          ],
+        },
       };
     case 'VALIDATION_ERROR':
       return {
@@ -284,7 +334,8 @@ function errorToHttp(error: SetupServiceError): { status: number; body: { errors
 export const setupRouter = new Hono<AppEnv>();
 
 // All setup routes need the per-request Drizzle client.
-setupRouter.use('*', withDb());
+// System connection (B130): setup runs before any site exists, with no scope.
+setupRouter.use('*', withSystemDb());
 
 setupRouter.get('/state', async (c) => {
   const ip = extractClientIp(c.req.raw);
@@ -315,6 +366,10 @@ setupRouter.get('/capabilities', async (c) => {
 });
 
 setupRouter.post('/complete', async (c) => {
+  // Arrival time, taken before any wait (rate limiter, connection pool, the
+  // singleton row lock): it is what tells a request that raced the winning
+  // setup (409) from one that arrived after it (404) — #732.
+  const receivedAt = new Date();
   // Rate-brake *before* parsing the body or hashing a password, so a
   // blocked request costs nothing (CWE-770; analog of Strapi #26494).
   const ip = extractClientIp(c.req.raw);
@@ -356,6 +411,17 @@ setupRouter.post('/complete', async (c) => {
     );
   }
 
+  // Password policy (#733). Setup runs before any operator could have stored
+  // a policy, so the default policy applies — through the same service as
+  // every other password path. The admin's own e-mail / name count against
+  // the strength score.
+  const { account } = parsed.data;
+  const policyFailure = await checkNewPassword(c, account.password, {
+    policy: DEFAULT_PASSWORD_POLICY,
+    userInputs: [account.email, account.firstName, account.lastName],
+  });
+  if (policyFailure) return c.json(passwordPolicyErrorBody(policyFailure), 400);
+
   // Honor the test-only injection seam (mirrors recoveryServiceOverride);
   // falls back to a real SetupService bound to the request db.
   const svc = c.get('setupServiceOverride') ?? buildService(c);
@@ -363,6 +429,7 @@ setupRouter.post('/complete', async (c) => {
     requestId: c.get('requestId'),
     ip, // reuse the IP computed for the rate brake
     userAgent: c.req.header('user-agent') ?? undefined,
+    receivedAt,
   };
 
   const outcome = await svc.complete(parsed.data, ctx);
@@ -372,7 +439,7 @@ setupRouter.post('/complete', async (c) => {
     // override seam types it as `unknown`, so narrow at this one call site.
     const mapped = errorToHttp(outcome.error as SetupServiceError);
     // mapped.status is 4xx/5xx in our taxonomy.
-    return c.json(mapped.body, mapped.status as 400 | 401 | 404 | 409 | 422 | 500);
+    return c.json(mapped.body, mapped.status as 400 | 401 | 404 | 409 | 422 | 500 | 503);
   }
 
   return c.json(outcome.value, 201);

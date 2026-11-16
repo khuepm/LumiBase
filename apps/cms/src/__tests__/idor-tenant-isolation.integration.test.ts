@@ -71,8 +71,8 @@ describe('IDOR / Tenant Isolation for items', () => {
       await db.delete(sites).where(eq(sites.id, site));
     }
     await db.insert(sites).values([
-      { id: SITE_A, name: 'IDOR tenant A' },
-      { id: SITE_B, name: 'IDOR tenant B' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_A, name: 'IDOR tenant A' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_B, name: 'IDOR tenant B' },
     ]);
     const [collA] = await db
       .insert(collections)

@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-09-07T15:23:17.206Z
+version: 5
+lastUpdated: 2026-10-17T16:36:20.390Z
 sourceLang: en
-contentHash: 6029fc9470a0c3a9
-codeVerified: 2026-09-10T02:17:10.994Z
-codeVerifiedHash: 6029fc9470a0c3a9
+contentHash: 59729a48912c6d74
+codeVerified: 2026-10-17T16:36:20.390Z
+codeVerifiedHash: 59729a48912c6d74
 codeVerifiedClaims: 72
 ---
 
@@ -152,9 +152,23 @@ its own role check still cannot be reached by a non-admin.
 **Best practice:** do not rely only on application-level `site_id` filters —
 enforce isolation in the database so a missing `.where()` cannot leak data.
 
-- `packages/database/migrations/rls-policies.sql` applies RESTRICTIVE
-  row-level-security policies (`site_id = app_site_id()`) with `WITH CHECK` on
-  writes. The request binds `SET LOCAL app.site_id` per request.
+- `packages/database/migrations/rls-policies.sql` gives every scoped table a
+  pair of row-level-security policies with the same predicate
+  (`site_id = app_site_id()`) and `WITH CHECK` on writes: `site_isolation`
+  (RESTRICTIVE) and `site_isolation_permit` (PERMISSIVE). Postgres shows a
+  role without BYPASSRLS no rows unless a permissive policy passes; the
+  restrictive half stops any other permissive policy from widening access.
+  With `app.site_id` unset or empty, no row is visible and every write fails.
+  With `LUMIBASE_DB_RLS=enforce`, `withDb()` sets `app.site_id` inside the
+  transaction of every request statement, and workers use a `BYPASSRLS`
+  system connection (B130). With the flag off (default) the app must connect
+  with a role that bypasses RLS. See
+  [Request-path RLS scope](../features/rls-request-scope.md).
+- Apply the file as the database owner (not the app role), and re-apply it
+  after every upgrade: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1
+  --single-transaction -f packages/database/migrations/rls-policies.sql`.
+  `pnpm db:migrate` does not apply it. Before B125 the file created only
+  restrictive policies, so the non-superuser app role saw and wrote nothing.
 - The application layer additionally scopes every query by `siteId`
   (`CLAUDE.md` non-negotiable rule #2) — defense-in-depth on top of RLS.
 - See **[idor-testing.md](./idor-testing.md)** for the cross-tenant (IDOR) test

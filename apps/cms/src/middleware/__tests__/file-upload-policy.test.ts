@@ -91,6 +91,9 @@ describe('file upload policy helpers', () => {
     expect(classifyUploadSurface('/api/v1/files', 'POST')).toMatchObject({ isMetadataCreate: true });
     expect(classifyUploadSurface('/api/v1/files/upload/key.png', 'PUT')).toMatchObject({ isSignedUpload: true });
     expect(classifyUploadSurface('/api/v1/media/key.png', 'POST')).toMatchObject({ isMediaUpload: true });
+    expect(classifyUploadSurface('/api/v1/files/abc123/content', 'PUT')).toMatchObject({ isReplaceUpload: true });
+    expect(classifyUploadSurface('/api/v1/files/abc123/content', 'GET')).toBeNull();
+    expect(classifyUploadSurface('/api/v1/files/upload/content', 'PUT')).toMatchObject({ isSignedUpload: true, isReplaceUpload: false });
     // Non-upload traffic is left untouched.
     expect(classifyUploadSurface('/api/v1/media/key.png', 'GET')).toBeNull();
     expect(classifyUploadSurface('/api/v1/items', 'POST')).toBeNull();
@@ -162,7 +165,9 @@ describe('file upload policy middleware', () => {
     const res = await app.request('/api/v1/files', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ filenameDisk: 'payload.exe', filenameDownload: 'payload.exe', mime: 'image/png' }),
+      // A harmless-but-wrong extension. (`payload.exe` is now refused one step
+      // earlier as UPLOAD_UNSAFE_FILENAME — see file-upload-polyglot-corpus.test.ts.)
+      body: JSON.stringify({ filenameDisk: 'payload.gif', filenameDownload: 'payload.gif', mime: 'image/png' }),
     });
 
     expect(res.status).toBe(415);

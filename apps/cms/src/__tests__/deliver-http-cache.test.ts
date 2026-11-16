@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { deliverRouter } from '../routes/deliver';
-import type { EdgeCacheProvider } from '@lumibase/runtime';
+import { edgeUrlIndexKey, purgeEdgeByTag, type CacheProvider, type EdgeCacheProvider } from '@lumibase/runtime';
 
 /**
  * Route-level tests for Delivery API HTTP caching
@@ -195,5 +195,167 @@ describe('GET /deliver/page — HTTP caching', () => {
     const stored = put.mock.calls[0]?.[1];
     expect(stored).toBeInstanceOf(Response);
     expect((stored as Response).status).toBe(200);
+  });
+
+  /** URL-keyed store — request headers are not part of the key, as with the Cache API. */
+  function urlKeyedEdge() {
+    const store = new Map<string, Response>();
+    const edgeCache: EdgeCacheProvider = {
+      async match(req) {
+        const hit = store.get(req.url);
+        return hit ? hit.clone() : null;
+      },
+      async put(req, res) {
+        store.set(req.url, res.clone());
+      },
+      async purge() {
+        return 0;
+      },
+    };
+    return { edgeCache, store };
+  }
+
+  /** #622 B1 — a 304 must never become the edge copy of the page. */
+  it('never stores a 304, so a client without a cached copy still gets the page', async () => {
+    const etag = (
+      await appWith(fakeDb([[PAGE_ROW], [FINGERPRINT_ROW], [COLLECTION_ROW], [ITEM_ROW]])).request(URL)
+    ).headers.get('etag')!;
+    const { edgeCache, store } = urlKeyedEdge();
+
+    const revalidated = await appWith(fakeDb([[PAGE_ROW], [FINGERPRINT_ROW]]), edgeCache).request(URL, {
+      headers: { 'If-None-Match': etag },
+    });
+    expect(revalidated.status).toBe(304);
+    expect(store.size).toBe(0);
+
+    const fresh = await appWith(
+      fakeDb([[PAGE_ROW], [FINGERPRINT_ROW], [COLLECTION_ROW], [ITEM_ROW]]),
+      edgeCache,
+    ).request(URL);
+    expect(fresh.status).toBe(200);
+    expect(((await fresh.json()) as { sections: unknown[] }).sections).toHaveLength(1);
+  });
+
+  it('answers If-None-Match from an edge hit with 304, and a plain request with the full page', async () => {
+    const { edgeCache } = urlKeyedEdge();
+    const first = await appWith(
+      fakeDb([[PAGE_ROW], [FINGERPRINT_ROW], [COLLECTION_ROW], [ITEM_ROW]]),
+      edgeCache,
+    ).request(URL);
+    const etag = first.headers.get('etag')!;
+
+    // No DB rows queued: both answers must come from the edge copy.
+    const conditional = await appWith(fakeDb([]), edgeCache).request(URL, {
+      headers: { 'If-None-Match': etag },
+    });
+    expect(conditional.status).toBe(304);
+    expect(await conditional.text()).toBe('');
+    expect(conditional.headers.get('etag')).toBe(etag);
+
+    const plain = await appWith(fakeDb([]), edgeCache).request(URL);
+    expect(plain.status).toBe(200);
+  });
+
+  /** #622 B2 — query noise must not mint edge entries or index URLs. */
+  it('keys the edge on the canonical URL, ignoring unrelated query parameters', async () => {
+    const { edgeCache, store } = urlKeyedEdge();
+    for (const noise of ['?r=1', '?r=2&utm_source=x', '?r=3']) {
+      await appWith(
+        fakeDb([[PAGE_ROW], [FINGERPRINT_ROW], [COLLECTION_ROW], [ITEM_ROW]]),
+        edgeCache,
+      ).request(URL + noise);
+    }
+    expect([...store.keys()]).toEqual([`http://localhost${URL}`]);
+  });
+
+  /** Map-backed CacheProvider: JSON in, parsed JSON out, like the real adapters. */
+  function memoryAppCache() {
+    const store = new Map<string, string>();
+    const parse = (raw: string): unknown => {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return raw;
+      }
+    };
+    const cache = {
+      async get(key: string) {
+        const raw = store.get(key);
+        return raw === undefined ? null : parse(raw);
+      },
+      async set(key: string, value: string) {
+        store.set(key, value);
+      },
+      async delete(key: string) {
+        store.delete(key);
+      },
+      async invalidateByTag() {},
+      async getEntry(key: string) {
+        const raw = store.get(key);
+        return raw === undefined ? { state: 'miss' as const } : { state: 'hit' as const, value: parse(raw) };
+      },
+      async setNegative() {},
+    } as unknown as CacheProvider;
+    return { cache, store };
+  }
+
+  function appWithRuntime(db: ReturnType<typeof fakeDb>, runtime: { cache?: CacheProvider; edgeCache?: EdgeCacheProvider }) {
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('db', db as never);
+      c.set('runtime', runtime as AppEnv['Variables']['runtime']);
+      await next();
+    });
+    app.route('/api/v1/deliver', deliverRouter);
+    return app;
+  }
+
+  /** #622 B1, application-cache-hit branch (review on #623). */
+  it('answers a conditional app-cache hit with 304 without DB or edge writes, then serves 200 to a plain request', async () => {
+    const { cache } = memoryAppCache();
+    // Warm the app cache through the fresh path, with no edge in the way.
+    const warm = await appWithRuntime(
+      fakeDb([[PAGE_ROW], [FINGERPRINT_ROW], [COLLECTION_ROW], [ITEM_ROW]]),
+      { cache },
+    ).request(URL);
+    const etag = warm.headers.get('etag')!;
+
+    const put = vi.fn(async (_req: Request, _res: Response) => undefined);
+    const edgeCache: EdgeCacheProvider = { match: async () => null, put, purge: async () => 0 };
+
+    const conditionalDb = fakeDb([]);
+    const conditional = await appWithRuntime(conditionalDb, { cache, edgeCache }).request(URL, {
+      headers: { 'If-None-Match': etag },
+    });
+    expect(conditional.status).toBe(304);
+    expect(await conditional.text()).toBe('');
+    expect(conditionalDb.selectCount()).toBe(0);
+    expect(put).not.toHaveBeenCalled();
+
+    const plainDb = fakeDb([]);
+    const plain = await appWithRuntime(plainDb, { cache, edgeCache }).request(URL);
+    expect(plain.status).toBe(200);
+    expect(((await plain.json()) as { sections: unknown[] }).sections).toHaveLength(1);
+    expect(plainDb.selectCount()).toBe(0);
+    expect(put).toHaveBeenCalledOnce();
+    expect((put.mock.calls[0]?.[1] as Response).status).toBe(200);
+  });
+
+  /** #622 B2, purge index side (review on #623). */
+  it('records only the canonical URL in the purge index and hands it to the URL fallback', async () => {
+    const { cache } = memoryAppCache();
+    for (const noise of ['?r=1', '?r=2&utm_source=x', '?r=3']) {
+      // Fresh edge each time so every request reaches the indexing code.
+      await appWithRuntime(
+        fakeDb([[PAGE_ROW], [FINGERPRINT_ROW], [COLLECTION_ROW], [ITEM_ROW]]),
+        { cache, edgeCache: urlKeyedEdge().edgeCache },
+      ).request(URL + noise);
+    }
+    const canonical = `http://localhost${URL}`;
+    expect(await cache.get(edgeUrlIndexKey('deliver:site-a'))).toEqual([canonical]);
+
+    const purge = vi.fn(async (_target: { urls: string[]; tags?: string[] }) => 1);
+    await purgeEdgeByTag(cache, { match: async () => null, put: async () => undefined, purge }, 'deliver:site-a');
+    expect(purge).toHaveBeenCalledWith({ urls: [canonical], tags: ['deliver:site-a'] });
   });
 });

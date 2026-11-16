@@ -1,9 +1,9 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:09:06.260Z
+version: 3
+lastUpdated: 2026-10-17T16:36:17.769Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 08226320da529409
+sourceHash: 42059f4b40b82ca0
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -46,7 +46,8 @@ Nhân sự được phép xử lý dữ liệu bị ràng buộc nghĩa vụ b�
 
 ## 6. Biện pháp an ninh (Điều 32)
 Tham chiếu các biện pháp kỹ thuật LumiBase cung cấp: mã hoá AES-256-GCM theo field
-(`crypto-service.ts`), cô lập tenant row-level (`rls.ts`), RBAC (`schema/access.ts`),
+(`crypto-service.ts`), cô lập tenant bằng lọc `site_id` mức ứng dụng (cộng RLS backstop ở
+database khi `LUMIBASE_DB_RLS=enforce`), RBAC (`schema/access.ts`),
 audit log append-only có mask secret, và kiểm soát retention. Bổ sung mã hoá truyền tải
 (TLS) và làm cứng host.
 

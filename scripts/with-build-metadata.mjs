@@ -57,6 +57,13 @@ if (command === 'wrangler' && args[0] === 'deploy') {
     args.push('--var', `${key}:${value}`);
   }
 }
+// The Node bundle (Docker image) has no build-time bindings: `serve.cjs`
+// reads process.env at runtime, and nothing sets LUMIBASE_VERSION there.
+// Bake the metadata in so `/api/v1/system/version` reports the real build.
+// Read by `apps/cms/src/routes/system.ts`; runtime env still overrides it.
+if (command === 'esbuild') {
+  args.push(`--define:__LUMIBASE_BUILD_METADATA__=${JSON.stringify(metadata)}`);
+}
 
 const child = spawn(command, args, {
   cwd: process.cwd(),

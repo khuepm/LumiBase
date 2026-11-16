@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T00:16:10.051Z
+version: 20
+lastUpdated: 2026-11-15T19:28:47.967Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: b89a96b116de6e4f
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T00:16:10.051Z
-codeVerifiedHash: b89a96b116de6e4f
-codeVerifiedClaims: 26
+sourceHash: 0d43631475d2ecb0
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-15T19:28:47.967Z
+codeVerifiedHash: 0d43631475d2ecb0
+codeVerifiedClaims: 40
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -17,7 +17,7 @@ codeVerifiedClaims: 26
 
 ## TL;DR
 
-LumiBase exposes **two MCP surfaces**. Both run through a single harness codepath, so the decision for a tool called via MCP is **identical** to calling the Agent API directly (the "MCP parity" invariant, Property 14):
+LumiBase exposes **two MCP surfaces**. Governed site tools use the same site harness as the Agent API (the "MCP parity" invariant, Property 14). Organization tools use the organization harness and its human approval boundary:
 
 | Surface | Transport | Location | Used for |
 |---|---|---|---|
@@ -30,17 +30,21 @@ Source: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`a
 
 - **Transport:** Streamable HTTP — JSON-RPC 2.0, one request/one response. `GET /api/v1/mcp` returns `405 METHOD_NOT_ALLOWED` (there is no server-initiated stream/SSE); clients fall back to plain request/response per the MCP spec.
 - **Protocol versions:** `2025-06-18` (default) and `2025-03-26`. `serverInfo = { name: 'lumibase-mcp', version: '1.0.0' }`.
-- **Auth → capability:** Bearer token; **the token's roles become the capability set** passed into the harness. ⇒ an MCP client can **never do more** than that same token can through the Agent API. (`McpService(port).handle(body, auth.roles ?? [])`).
+- **Auth → capability:** Bearer token; the capability set is **resolved from the token's live RBAC bundle** (#472), not from `auth.roles`. ⇒ an MCP client can **never do more** than that same token can through REST — and never less either, which is what reading `auth.roles` got wrong (a role id can never match `items:write`). See [`governed-tool-contract.md`](governed-tool-contract.md) section 4.
+- **OAuth 2.1 (#346):** the endpoint is also an OAuth protected resource for hosted MCP clients. A `401` carries `WWW-Authenticate: Bearer resource_metadata=…`; `/.well-known/oauth-protected-resource[/api/v1/mcp[/sites/<siteId>]]` (RFC 9728) lists the trusted external issuers whose `audience` contains the resource URI. On the MCP endpoint an external-issuer token must carry the resource URI in `aud`; scopes (`mcp:read`/`mcp:write`/`mcp:delete`/`mcp:admin`) only narrow the capability set, and the `CONTROL_PLANE_FORBIDDEN` backstop is unchanged. The site-addressed endpoint `POST /api/v1/mcp/sites/<siteId>` is for clients that cannot send `X-Lumi-Site`. See [`../agent-setup/oauth-connector.md`](../agent-setup/oauth-connector.md).
 - **Feature gate:** the per-site `contentOs.mcp` flag (default **off**). Off → `404 MCP_DISABLED`. (`feature-flags.ts`).
 - **Methods (JSON-RPC):**
-  - `initialize` — negotiates the protocol version, returns `capabilities: { tools: { listChanged: false } }`.
+  - `initialize` — negotiates the protocol version, returns `capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }` (the organization plane has no `prompts`).
   - `ping`.
-  - `tools/list` — lists the **currently enabled** tools from `ToolRegistryService`; an empty inputSchema defaults to `{ type: 'object' }`.
+  - `tools/list` — lists the **currently enabled** tools from `ToolRegistryService`; the inputSchema is derived from the canonical schemas in `@lumibase/contracts` (only a skill with no schema still falls back to `{ type: 'object' }`). Each tool also carries a `title` (human-readable name) and `annotations` (`readOnlyHint`, `destructiveHint`) derived from the registry (`toolAnnotations` in `apps/cms/src/services/mcp-service.ts`): read-only only when the tool is `safe` and every capability is `:read`; destructive when its `riskPolicy` is `dangerous`. These are client hints (#346), never an authorization input.
   - `tools/call` — runs through `AISecureHarness.execute(skillName, args, capabilities, contextMessage)`. The result is wrapped as `{ content, structuredContent, isError }`.
+  - `prompts/list`, `prompts/get` — the site's `active` [Site Skills](../features/site-skills.md); `name` is the slug and the body comes back as a single user message. Served only to callers that can read skills over REST, i.e. a principal that resolves to a control-plane admin for the site (`grant.allowed && grant.controlPlaneAdmin` in `routes/mcp.ts`): a non-admin member or a site API key gets an empty `prompts/list`. For an admin, each skill's `surfaces`/`requiredCapabilities` still filter further. A prompt that does not exist and one the caller may not see answer identically.
+  - Extensions (#715): an enabled extension granted `mcp:prompts` adds static prompts named `ext:<key>:<name>` (offered to callers holding the prompt's capability, default `items:read`, no admin needed; `_meta['lumibase/extension']` replaces the site-skill provenance); one granted `mcp:resources` makes `initialize` also return `resources: { listChanged: false }` and serves `resources/list`, `resources/read` (URI `lumibase-ext://<key>/<name>`). Extension tools (`ext_<key>__<tool>`, need `mcp:tools`) go through the harness as external-action tools. See [Extension System §10](../features/extensions-system.md).
   - `notifications/initialized`, `notifications/cancelled` → return `null` ⇒ HTTP `202 Accepted` with no body.
 - **Mapping decision → tool result** (an important invariant):
   - `executed` → `isError: false`, data in `structuredContent`.
   - `pending_approval` → `isError: false`, with **`approvalId` inside `structuredContent`**; this is NOT a protocol error.
+  - `waiting_user` (the `askUser` tool, #710) → `isError: false`, with **`questionId` inside `structuredContent`**; the run is parked until a human answers. This is NOT a protocol error.
   - `denied` → `isError: true`.
   - Protocol errors are reserved for genuine JSON-RPC failures: `-32700` parse, `-32600` invalid request, `-32601` method not found, `-32602` invalid params.
 - **Guards inherited from the harness** (zero MCP-specific logic): kill switch, capability, autonomy (L0–L4), constitution pin, load guard, veto window. See [`docs/en/features/agent-harness-layer.md`](../features/agent-harness-layer.md).
@@ -57,12 +61,43 @@ Source: [`apps/cms/src/services/tool-registry-service.ts`](../../../apps/cms/src
 
 ## 2. The standalone MCP server — `@lumibase/mcp-server`
 
-Source: [`packages/mcp-server/`](../../../packages/mcp-server/) (v0.6.0, `@modelcontextprotocol/sdk`).
+Source: [`packages/mcp-server/`](../../../packages/mcp-server/) (built on `@modelcontextprotocol/sdk`; the version lives in that package's own `package.json` and is deliberately not pinned here, to avoid adding another place that can drift).
 
 - **Transport:** Stdio (`StdioServerTransport`). Intended for local editor integration.
 - **Entry:** `packages/mcp-server/src/index.ts` — `new McpServer({ name: 'lumibase', ... })`, registers the collection/field/item tools, then `connect(StdioServerTransport)`.
 - **Client:** `LumiBaseClient` — HTTP to `/api/v1` with a Bearer token + site header.
 - **Config:** [`docs/en/agent-setup/mcp-config.json`](../agent-setup/mcp-config.json) — env `LUMIBASE_URL`, `LUMIBASE_SITE_ID`, `LUMIBASE_TOKEN`.
+- **Studio:** the *Data model → Set up MCP for your IDE* page (`/data-model/mcp-setup`) creates a dedicated role-scoped API key, generates the Cursor/Claude Desktop/VS Code config, and has a **Try these prompts** section — copy-ready starter prompts grouped as Explore/Content/Schema/Operations and labelled `Read-only`/`Writes data`/`Admin role`, in English and Vietnamese (a language toggle that defaults to the Studio UI language). The list lives in [`apps/studio/src/modules/data-model/mcp-prompts.ts`](../../../apps/studio/src/modules/data-model/mcp-prompts.ts); each prompt declares the tools it uses and a test checks them against the tools the server actually registers.
+
+
+### Organization credentials (ADR-013)
+
+Example for an unpinned organization key. Keep the sample read-only; set `LUMIBASE_READ_ONLY=false` to request writes, enable organization MCP in Settings, and approve requests as a human.
+
+```json
+{
+  "mcpServers": {
+    "lumibase-organization": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@lumibase/mcp-server"
+      ],
+      "env": {
+        "LUMIBASE_URL": "http://localhost:1989",
+        "LUMIBASE_TOKEN": "lbo_<organization-key>",
+        "LUMIBASE_READ_ONLY": "true"
+      }
+    }
+  }
+}
+```
+
+
+
+Set `LUMIBASE_READ_ONLY=true` to publish only tools annotated as read-only. The client also refuses any non-GET request in this mode except a fixed list of preview/query endpoints (schema diff, translation-memory lookup, insight panels, permission and access checks, intent compile), so a tool cannot write even if its name looks like a read. With an `lbk_` key, `LUMIBASE_SITE_ID` remains required and the existing site tool list is unchanged. With an `lbo_` key, omit the site to expose eight organization tools (`get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) plus site tools requiring a `site` argument. Pinning a site exposes the original site tools and the first two organization reads. Parallel calls cannot share site headers.
+
+Organization writes always use the governed HTTP endpoint, including when `LUMIBASE_MCP_GOVERNED=off`; there is no REST fallback. Enable organization setting `contentOs.mcp.allowOrganizationTools`; global `LUMIBASE_MCP_ORG_TOOLS=off` overrides it. Every organization mutation waits for human approval. The `confirm` argument is an acknowledgement, not an approval. An owner/admin reads `/api/v1/orgs/:orgId/approvals`, opens `/:approvalId`, and posts `{"decision":"approved"}` or `{"decision":"rejected"}` to `/:approvalId/decide`. Owner-only operations still require an owner; transfers require the same human owner in both organizations. API keys cannot decide or read receipts. New organization key plaintext appears only in the human receipt. The requester must still hold live authority when approved; execution and the receipt commit atomically. Organization approvals use a real organization parent (migration `0025`), including organizations with zero sites.
 
 ### The fixed tools (CRUD + read-only insights)
 
@@ -116,10 +151,13 @@ Versioning is **not** in the stdio server. It is exposed as **governed skills** 
 - **MCP parity (Property 14):** a `tools/call` decision matches a direct harness decision **byte for byte**. Test: [`apps/cms/src/services/__tests__/mcp-parity.property.test.ts`](../../../apps/cms/src/services/__tests__/mcp-parity.property.test.ts).
 - **No separate `mcp_servers`/`mcp_sessions` tables** — MCP reuses the agent infrastructure (approvals, tool calls, permissions). This is a deliberate architectural decision (zero MCP-specific state).
 - **The SDK has no MCP client** — MCP is not a concern of the REST SDK's clients.
-- **Permission floor:** capability = the token's roles. Every MCP extension must respect this floor.
+- **Permission floor:** capability = the token's RBAC bundle (one model shared with REST). Every MCP extension must respect this floor.
+- **Governed tool contract:** schemas, validation, the write gate, the decision shape, and which stdio tools are governed all live in [`governed-tool-contract.md`](governed-tool-contract.md).
+- **Tool-schema fidelity (#716):** every `inputSchema` on both transports must be a valid JSON Schema (meta-schema + Ajv strict, in both draft-07 and 2020-12), and both transports' `tools/list` output is pinned by a golden (`name`, `description`, `inputSchema`); for an intended change, regenerate the golden with `-u` and review the diff. How much agreement with the server the suite proves depends on the kind of tool. HTTP tools and governed stdio tools are probed value by value (including every enum value and invalid array elements) against the canonical contract (`validateAgentToolInput`). The 33 ungoverned stdio mutations that send a JSON body, plus `diff_schema`, are compared with the exact Zod object their REST route parses: key set at every depth, types, enums, required keys; the handler must send every advertised key to the right route; and the route's body schema must accept every probed value the tool accepts. The REST body golden is generated in `apps/cms`, where a test pins it to the live routes. Neither transport generates schemas from collection field definitions — item tools take `data` as an open record — so the field type × nullable × localized × repeatable matrix (plus m2o/o2m/m2m/m2a relations and files) is checked through **values** carried in `data`. The suite does **not** prove: constraints JSON Schema cannot express (cross-field refinements such as `webhook_id` when `kind` is `"webhook"`, cursor decoding, transforms), query parameters of read tools, documents forwarded verbatim (`apply_access_import`, `restore_backup`), HTTP read skills without a canonical schema (B204), per-site schema overrides (B205) and the field `type` vocabulary (B206). Every accepted gap is listed in the suite with its reason and fails the test once it no longer holds. On top of the schema comparison, the requests the registered `apply_schema`, `diff_schema`, `create_cdc_subscription` and `update_cdc_subscription` tools actually send are pinned in a golden and replayed, unmodified, against the real REST routes over PostgreSQL: an `encrypted: true, classification: "pii"` field is stored encrypted and classified, `migrationPlan` alone passes the risky-change guard, and `status` pauses and resumes a subscription whose `kind` does not change. Tests: [`packages/mcp-server/src/__tests__/tool-schema-fidelity.test.ts`](../../../packages/mcp-server/src/__tests__/tool-schema-fidelity.test.ts), [`apps/cms/src/services/__tests__/mcp-tool-schema-golden.test.ts`](../../../apps/cms/src/services/__tests__/mcp-tool-schema-golden.test.ts), [`apps/cms/src/services/__tests__/mcp-rest-body-golden.test.ts`](../../../apps/cms/src/services/__tests__/mcp-rest-body-golden.test.ts) and [`apps/cms/src/routes/__tests__/mcp-recorded-requests.db.integration.test.ts`](../../../apps/cms/src/routes/__tests__/mcp-recorded-requests.db.integration.test.ts).
 
 ## 4. Related pages
 
+- [`governed-tool-contract.md`](governed-tool-contract.md) — the contract shared by both transports: schema source, validation order, autonomy gate, decision shape, and which stdio tools are governed.
 - [`mcp-application-analysis.md`](mcp-application-analysis.md) — analysis of how MCP applies to the 7 Directus-inspired specs.
 - [`docs/en/agent-setup/claude-code.md`](../agent-setup/claude-code.md) — how to wire the MCP server into Claude Code.
 - [`docs/en/features/agent-harness-layer.md`](../features/agent-harness-layer.md) — the harness guards MCP inherits.
@@ -135,3 +173,4 @@ Versioning is **not** in the stdio server. It is exposed as **governed skills** 
 | Standalone server + its tools | `packages/mcp-server/src/` |
 | The `contentOs.mcp` feature flag | `apps/cms/src/services/feature-flags.ts` |
 | Parity test | `apps/cms/src/services/__tests__/mcp-parity.property.test.ts` |
+| Golden `tools/list` + JSON Schema checks | `packages/mcp-server/src/__tests__/fidelity/` |

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { AuthPrincipal } from '../../env';
 import {
   EffectiveCapabilityService,
+  callerClassFromAuth,
   capabilitiesFromPermissionBundle,
   principalRefFromAuth,
 } from '../effective-capability-service';
@@ -119,6 +120,51 @@ describe('principalRefFromAuth', () => {
   });
 });
 
+describe('callerClassFromAuth (#562)', () => {
+  it('classifies an API key by its stored publishable prefix', () => {
+    expect(
+      callerClassFromAuth({
+        type: 'api_key',
+        apiKeyId: 'key_pub',
+        apiKey: { prefix: 'lbk_pub_abcd1234' },
+        roles: [],
+        raw: {},
+      }),
+    ).toBe('publishable_api_key');
+    expect(
+      callerClassFromAuth({
+        type: 'api_key',
+        apiKeyId: 'key_sec',
+        apiKey: { prefix: 'lbk_abcdefgh1234' },
+        roles: [],
+        raw: {},
+      }),
+    ).toBe('standard');
+    // No snapshot: the DB-derived class (EffectiveCapabilityService) decides.
+    expect(callerClassFromAuth({ type: 'api_key', apiKeyId: 'key_x', roles: [], raw: {} })).toBe('standard');
+  });
+
+  it('classifies a frontend-audience session from the verified token', () => {
+    expect(
+      callerClassFromAuth({ userId: 'usr_sub', isFrontendUser: true, roles: [], raw: { aud: 'frontend' } }),
+    ).toBe('frontend_session');
+    expect(callerClassFromAuth({ userId: 'usr_sub', roles: [], raw: { aud: ['studio', 'frontend'] } })).toBe(
+      'frontend_session',
+    );
+    expect(callerClassFromAuth({ userId: 'usr_sub', isFrontendUser: true, roles: [], raw: {} })).toBe(
+      'frontend_session',
+    );
+  });
+
+  it('leaves Studio, dev and missing principals standard', () => {
+    expect(
+      callerClassFromAuth({ userId: 'usr_ed', isFrontendUser: false, roles: ['role_ed'], raw: { aud: 'studio' } }),
+    ).toBe('standard');
+    expect(callerClassFromAuth({ roles: ['admin'], raw: { dev: true } })).toBe('standard');
+    expect(callerClassFromAuth(undefined)).toBe('standard');
+  });
+});
+
 describe('EffectiveCapabilityService fail-closed boundaries', () => {
   const noDb = {} as Database;
 
@@ -155,6 +201,7 @@ describe('EffectiveCapabilityService fail-closed boundaries', () => {
       allowed: true,
       capabilities: ['admin'],
       controlPlaneAdmin: true,
+      callerClass: 'standard',
     });
   });
 });

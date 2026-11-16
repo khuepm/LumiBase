@@ -4,6 +4,13 @@ import { AISecureHarness, CORE_SKILLS } from '../ai-harness';
 import type { SkillDefinition } from '../ai-harness';
 import type { Database } from '@lumibase/database';
 import { vi } from 'vitest';
+// The subject here is error propagation, not input shape. Since #454 the harness
+// refuses arguments that violate a skill's canonical schema, so generated
+// dictionaries would be denied before the throwing handler is ever called —
+// `argsForProperty` hands schema-bearing skills a valid set and leaves the rest
+// on the generated args.
+import { argsForProperty } from '../../test-utils/agent-tool-args';
+import { runErrorMessage } from '../agent-run-service';
 
 /**
  * Feature: ai-first-cms-engine, Property 4: Execution error handling
@@ -20,7 +27,12 @@ const SAFE_SKILL_NAMES = Object.entries(CORE_SKILLS)
   .filter(([name, skill]) => {
     const requiresSchemaWrite = skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read');
     const startsWithDelete = name.startsWith('delete');
-    return !requiresSchemaWrite && !startsWithDelete && !skill.dangerous;
+    // `updateItem` is not unconditionally safe since #578: its risk depends on
+    // the target item's status, and this mock DB cannot answer that read, so
+    // the harness fails closed and parks it. Impact-aware escalation has its
+    // own suite (`ai-harness-item-impact.test.ts`).
+    const stateDependent = name === 'updateItem';
+    return !requiresSchemaWrite && !startsWithDelete && !skill.dangerous && !stateDependent;
   })
   .map(([name]) => name);
 
@@ -102,14 +114,17 @@ describe('Feature: ai-first-cms-engine, Property 4: Execution error handling', (
           const harness = new AISecureHarness({ db, siteId: 'test-site' });
 
           // Act
-          const result = await harness.execute(skillName, args, userCapabilities);
+          const result = await harness.execute(skillName, argsForProperty(skillName, args), userCapabilities);
 
           // Assert: status must be 'denied'
           expect(result.status).toBe('denied');
 
           // Assert: message must describe the error
           expect(result.message).toBeDefined();
-          expect(result.message).toBe(errorMsg);
+          // The harness records thrown errors through `runErrorMessage`, which masks
+          // emails / `token=...`-style secrets and strips query params — so the
+          // contract is "the redacted error message", not the raw one.
+          expect(result.message).toBe(runErrorMessage(new Error(errorMsg)));
 
           // Assert: no database changes (insert should not be called)
           expect(insertFn).not.toHaveBeenCalled();
@@ -139,7 +154,7 @@ describe('Feature: ai-first-cms-engine, Property 4: Execution error handling', (
           const harness = new AISecureHarness({ db, siteId: 'test-site' });
 
           // Act
-          const result = await harness.execute(skillName, args, userCapabilities);
+          const result = await harness.execute(skillName, argsForProperty(skillName, args), userCapabilities);
 
           // Assert: status must be 'denied'
           expect(result.status).toBe('denied');
@@ -179,13 +194,16 @@ describe('Feature: ai-first-cms-engine, Property 4: Execution error handling', (
           const harness = new AISecureHarness({ db, siteId: 'test-site' });
 
           // Act
-          const result = await harness.execute(skillName, args, userCapabilities);
+          const result = await harness.execute(skillName, argsForProperty(skillName, args), userCapabilities);
 
           // Assert: status must be 'denied' even with wildcard
           expect(result.status).toBe('denied');
 
           // Assert: message describes the error
-          expect(result.message).toBe(errorMsg);
+          // The harness records thrown errors through `runErrorMessage`, which masks
+          // emails / `token=...`-style secrets and strips query params — so the
+          // contract is "the redacted error message", not the raw one.
+          expect(result.message).toBe(runErrorMessage(new Error(errorMsg)));
 
           // Assert: no database changes
           expect(insertFn).not.toHaveBeenCalled();
@@ -193,5 +211,23 @@ describe('Feature: ai-first-cms-engine, Property 4: Execution error handling', (
       ),
       { numRuns: 100 },
     );
+  });
+
+  // Regression: fast-check seed -299950008 produced the email-shaped message
+  // "0@-.AA", which the harness masks. Pin that the secret never reaches the caller.
+  it('masks secret-looking content in a thrown error message', async () => {
+    const skillName = SAFE_SKILL_NAMES[0]!;
+    const skill = CORE_SKILLS[skillName]!;
+    skill.handler = async () => {
+      throw new Error('0@-.AA failed; token=abc123');
+    };
+
+    const { db, insertFn } = createMockDb();
+    const harness = new AISecureHarness({ db, siteId: 'test-site' });
+    const result = await harness.execute(skillName, argsForProperty(skillName, {}), [...skill.requiredCapabilities]);
+
+    expect(result.status).toBe('denied');
+    expect(result.message).toBe('[masked] failed; token=[masked]');
+    expect(insertFn).not.toHaveBeenCalled();
   });
 });

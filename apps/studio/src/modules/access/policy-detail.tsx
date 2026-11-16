@@ -1,4 +1,4 @@
-import Editor from '@monaco-editor/react';
+import Editor from '@/components/lazy-monaco-editor';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
@@ -22,7 +22,7 @@ const ACTION_OPTIONS: PermissionAction[] = ['create', 'read', 'update', 'delete'
  * `permissions` (the row-level rule DSL), `validation`, and `presets`.
  */
 export function PolicyDetailPage() {
-  const { id } = useParams({ from: '/admin-layout/access/policies/$id' });
+  const { id } = useParams({ strict: false }) as { id: string };
   const client = getApiClient();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -276,7 +276,7 @@ function GuardsSection({
       )}
 
       {mode === 'json' && (
-        <div className="overflow-hidden rounded-md border">
+        <div className="overflow-hidden rounded-md border" dir="ltr">
           <Editor
             height="180px"
             defaultLanguage="json"

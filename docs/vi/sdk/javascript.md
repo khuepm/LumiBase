@@ -1,15 +1,18 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T11:42:32.541Z
+version: 7
+lastUpdated: 2026-11-12T10:11:46.996Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f4cef639eade1ebc
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T11:42:32.541Z
-codeVerifiedHash: f4cef639eade1ebc
-codeVerifiedClaims: 4
+sourceHash: 88e0270e2e7e332c
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-12T10:11:46.996Z
+codeVerifiedHash: 88e0270e2e7e332c
+codeVerifiedClaims: 8
 ---
+
+<!-- check-parity: allow code-fences -->
+<!-- Recorded by stamp-pair --allow-structure-drift on 2026-10-10T09:01:07.711Z. See commit history for rationale. -->
 
 # LumiBase JavaScript SDK
 
@@ -181,6 +184,33 @@ await client.items('articles').delete('art_abc123')
 await client.items('articles').bulk('create', [{ title: 'A' }, { title: 'B' }])
 ```
 
+### Export
+
+```typescript
+// Xuất CSV hoặc JSON theo luồng; xem docs/vi/features/data-export.md
+const res = await client.items('articles').export({
+  format: 'csv',
+  fields: ['title', 'slug'],
+  locales: ['en', 'vi'],
+  relations: 'slug',
+  filter: { status: { _eq: 'published' } },
+})
+const csv = await res.text()
+```
+
+### Import
+
+```typescript
+// Upload bản export CSV/JSON thành job chạy nền; xem docs/vi/features/data-import.md
+const { data: job } = await client.imports.create('articles', file, { mode: 'upsert' })
+let current = job
+while (!['succeeded', 'failed', 'cancelled', 'timed_out'].includes(current.status)) {
+  await new Promise((r) => setTimeout(r, 2000))
+  current = (await client.imports.get(job.id)).data
+}
+if (current.failedRows > 0) console.table((await client.imports.errors(job.id)).data.errors)
+```
+
 ### Revision và pin
 
 ```typescript
@@ -240,6 +270,112 @@ Các command agent khác: `createAgentGoal`, `listAgentGoals`, `retryAgentRun`,
 `listAgentTools`, `listAgentApprovals`, `decideAgentApproval`,
 `createAgentArtifact`, `listAgentArtifacts`, `evaluateAgentArtifact`,
 `readAgentMemoryContext`, `writeAgentMemory`.
+
+---
+
+## Decisions
+
+`decide` gọi `POST /api/v1/ai/decisions`: các câu hỏi có kiểu `noul` / `choice` / `score`, được TypeSafe Jev hoặc AI tương đương đã cấu hình trả lời kèm xác suất. Key của provider nằm ở CMS; client chỉ gửi bearer và header `X-Lumi-Site` như thường lệ, nên không bao giờ đặt key TypeSafe hay OpenRouter trong code chạy trên trình duyệt. Hãy gọi `decide` và các command review từ Studio hoặc từ server dùng secret API key: publishable API key (`lbk_pub_…`) hay session frontend nhận `403 FORBIDDEN`, kể cả khi role của nó cấp `ai:decide`.
+
+```typescript
+import { decide, LumiError } from '@lumibase/sdk'
+
+const controller = new AbortController()
+try {
+  const result = await client.request(
+    decide(
+      {
+        state: { title: 'Summer sale', body: 'Buy now!!!' },
+        questions: {
+          spam: {
+            type: 'noul',
+            instructions: 'Is this post spam?',
+            criteria: { true: 'spam', false: 'legitimate' },
+          },
+          topic: {
+            type: 'choice',
+            instructions: 'Pick the topic',
+            criteria: { promo: 'Promotion', news: null },
+          },
+        },
+      },
+      { signal: controller.signal },
+    ),
+  )
+  result.answers.spam // { type: 'noul', noul: 0.12 }
+} catch (err) {
+  if (err instanceof LumiError && err.body.errors[0]?.code === 'DECISION_NOT_CONFIGURED') {
+    // CMS chưa đặt DECISION_PROVIDER
+  }
+}
+```
+
+`calibrated` là `false` khi CMS trả lời bằng `DECISION_PROVIDER=llm`. Mã lỗi có kiểu `DecisionErrorCode`; xem [đặc tả API](../api/hono-api-spec.md) để biết giới hạn và status.
+
+### Kiểm tra bản nháp
+
+Kiểm tra bản nháp chạy một review profile có phiên bản, lưu trên CMS, trên một item đã lưu hoặc một bản nháp chưa lưu. Các lệnh dưới đây gọi các endpoint `/api/v1/ai/review-profiles` và `/api/v1/ai/reviews`:
+
+- `listReviewProfiles({ collection? })` và `getReviewProfile(key, { version? })` đọc profile. Profile do admin tạo.
+- `reviewDraft(request)` kiểm tra một item (`itemId`) hoặc một bản nháp (`snapshot`).
+- `getReview(id)` và `listReviews({ collection, itemId })` đọc các lần chạy, kèm `stale` và `staleReason`.
+- `submitReviewFeedback(runId, { entries })` ghi nhận `accept`, `edit` hoặc `reject` cho từng câu hỏi.
+- `reviewContentHash(values)` tính content hash `sha256:<hex>` của một bản nháp theo đúng cách CMS tính. Hàm dùng WebCrypto và không gửi request nào.
+
+Mọi lệnh đều nhận `{ signal }` ở tham số cuối. Review chỉ gợi ý: không lệnh nào ghi vào item.
+
+```typescript
+import {
+  decisionErrorCode,
+  listReviewProfiles,
+  LumiError,
+  reviewContentHash,
+  reviewDraft,
+  submitReviewFeedback,
+} from '@lumibase/sdk'
+
+const [profile] = await client.request(listReviewProfiles({ collection: 'posts' }))
+const draft = { title: 'Summer sale', body: 'Buy now!!!' }
+try {
+  const hash = await reviewContentHash(draft) // 'sha256:<64 hex>', giống hệt cách CMS tính
+  const run = await client.request(
+    reviewDraft(
+      {
+        profile: profile.key,
+        profileVersion: profile.version,
+        collection: 'posts',
+        snapshot: draft,
+        // đổi theo bản nháp và phiên bản profile; tối đa 116 ký tự
+        idempotencyKey: `${profile.key}@${profile.version}:${hash.slice(7, 47)}`,
+      },
+      { signal: controller.signal },
+    ),
+  )
+  run.status     // 'success' | 'abstained' ("chưa đủ thông tin") | …
+  run.calibrated // false khi xác suất do LLM tự báo
+  run.usage      // { inputTokens: 120, outputTokens: null } — null nghĩa là không rõ, không phải 0
+
+  // Sau đó, khi biên tập viên chấp nhận: hash bản nháp đúng như lúc đó.
+  await client.request(
+    submitReviewFeedback(run.id, {
+      entries: [{ questionKey: 'category', verdict: 'accept' }],
+      contentHash: await reviewContentHash(currentDraft),
+    }),
+  )
+} catch (err) {
+  const code = decisionErrorCode(err) // DecisionErrorCode có kiểu, hoặc null
+  if (code === 'DECISION_QUOTA_EXCEEDED') {
+    console.warn(`retry in ${(err as LumiError).retryAfter}s`)
+  } else if (code === 'REVIEW_STALE') {
+    // bản nháp đã đổi sau lần review: review bản nháp hiện tại (hash mới, key mới),
+    // hoặc gửi acknowledgeStale: true
+  }
+}
+```
+
+CMS không đọc lại được một bản nháp chưa lưu. Với lần chạy snapshot, CMS chỉ phát hiện bản nháp đã đổi bằng cách so `contentHash` bạn gửi kèm feedback với hash nó đã review. Hãy tính giá trị đó bằng `reviewContentHash` trên đúng các field đã gửi trong `snapshot`, tại thời điểm ra quyết định. Gửi lại `run.contentHash` thì luôn khớp, nghĩa là tắt phép kiểm này. Lần chạy trên item không cần hash: CMS đọc lại item và báo `stale`.
+
+Gửi lại cùng `idempotencyKey` sẽ trả về lần chạy đã lưu mà không gọi provider lần thứ hai. CMS tìm lần chạy chỉ theo site, người gọi và key, không so nội dung. Vì vậy một key giữ nguyên sau khi bản nháp đổi sẽ trả về kết quả review của bản nháp cũ. Hãy dựng key từ content hash và phiên bản profile như ví dụ trên, đừng bao giờ dùng một id cố định. Với lần chạy trên item, cũng đổi key khi `getReview` báo `stale`. Key dài 8–128 ký tự. Lỗi dùng cùng các mã với `decide`, gồm 403 `DECISION_DISABLED`, 504 `DECISION_TIMEOUT` và 429 kèm `retryAfter`, cộng thêm các mã `REVIEW_*`: 409 `REVIEW_STALE`, 422 `REVIEW_FIELD_NOT_ALLOWED`, và 404 `REVIEW_PROFILE_NOT_FOUND` / `REVIEW_RUN_NOT_FOUND`. `decisionErrorCode(err)` trả về `null` khi request bị huỷ, lỗi mạng, hoặc gặp mã mà phiên bản SDK này chưa biết. Khi đó hãy đọc `err.body`. Ví dụ đầy đủ, biên dịch được từ public entry, nằm ở `packages/sdk/examples/draft-review.ts`.
 
 ---
 
@@ -315,3 +451,6 @@ try {
 
 Một lần thất bại không phải JSON hoặc không có body vẫn được chuẩn hoá về cùng
 envelope đó, với code `HTTP_ERROR`.
+
+`error.retryAfter` chứa header `Retry-After` tính bằng giây, ví dụ khi gặp 429 do
+hết ngân sách của site. Giá trị là `null` khi response không gửi header này.

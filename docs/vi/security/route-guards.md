@@ -1,14 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:09:21.814Z
+version: 6
+lastUpdated: 2026-10-17T16:36:21.044Z
 sourceLang: en
 translatedFrom: en
-sourceHash: dcfa4f547e6476fb
+sourceHash: 0a951ac2ef5f147c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:09:30.532Z
-codeVerifiedHash: dcfa4f547e6476fb
-codeVerifiedClaims: 20
+codeVerified: 2026-10-17T16:36:21.044Z
+codeVerifiedHash: 0a951ac2ef5f147c
+codeVerifiedClaims: 22
 ---
 
 # Route guards — the `/api/v1` security chain
@@ -29,8 +29,9 @@ Mỗi lớp trả lời một câu hỏi, theo thứ tự:
 | `withAuth` | Ai đang gọi? (CF Access / JWT tùy chỉnh / API key / dev token) | 401 `UNAUTHENTICATED` |
 | `withSiteMembership` | Principal này có được phép trên **site đó** không? (thành viên `user_sites`; API key đã được khớp site bởi `withAuth`) | 403 `TENANT_FORBIDDEN` |
 | `withStudioAccess` | Principal này có được dùng bề mặt Studio không? (`appAccess`, TFA) | 403 `APP_ACCESS_DENIED` / `TFA_REQUIRED` |
-| `withControlPlaneAccessGuard` | Đây có phải đường dẫn quản trị hệ thống không? Nếu vậy đòi hỏi một principal admin ngay cả khi route quên kiểm tra của chính nó. | 403 `CONTROL_PLANE_FORBIDDEN` |
-| `withRls` | Row-level security của Postgres như tuyến phòng thủ cuối. | — |
+| `withControlPlaneAccessGuard` | Đây có phải đường dẫn quản trị hệ thống không? Nếu vậy đòi hỏi một principal admin ngay cả khi route quên kiểm tra của chính nó. Principal admin là role có tên đúng `admin`/`administrator`, hoặc một **user** đã đăng nhập có role cấp quyền admin trong site đang dùng (`access.admin`); API key, principal ẩn danh và session audience `frontend` không bao giờ đủ điều kiện qua bundle. Một ngoại lệ: `GET /api/v1/permissions/me` cho qua mọi principal đã xác thực, vì nó chỉ trả bundle quyền của chính người gọi. | 403 `CONTROL_PLANE_FORBIDDEN` |
+| `withRls` | Kiểm tra đứng sau lớp chốt Postgres RLS: với `LUMIBASE_DB_RLS=enforce` nó trả `503 RLS_UNAVAILABLE` khi db của request chưa được scope theo site của request. Bản thân scope do `withDb` áp (B130). | — |
+| `withSystemDb` | Db của system role (BYPASSRLS, không scope) cho các router không có site scope: setup, recovery, `/scim/v2`, git OAuth callback (B130). | — |
 
 ## Quy tắc khi thêm hoặc thay đổi route
 
@@ -78,6 +79,8 @@ Các test hành vi đi kèm:
 
 | Bản sửa | Lỗ hổng |
 | --- | --- |
+| PR #495 | Lớp dự phòng cũng chặn `GET /api/v1/permissions/me`, tức bundle quyền của chính người gọi. Mọi user không có role đúng tên `admin` nhận 403, nên Studio báo "không có quyền read" trên các collection mà role của họ đọc được. Ngoại lệ chỉ áp cho GET và yêu cầu có principal; phần còn lại của `/permissions` vẫn chỉ dành cho admin. |
+| PR #495 (B101) | Lớp dự phòng chỉ nhận admin theo **tên** role. User được mời mang **id** role, nên user có role Administrator bị mọi route control-plane từ chối, dù `requireSiteAdmin` cho phép. Lớp dự phòng nay nhận thêm user đã đăng nhập có bundle quyền của site với `admin`; API key chưa được áp dụng, chờ #472. |
 | PR #184 (đã port) | Không có kiểm tra thành viên giữa `withAuth` và các handler: bất kỳ principal đã xác thực nào cũng có thể chọn một `X-Lumi-Site` tùy ý và thao tác trên một tenant khác. |
 | PR #152 (đã port) | Refactor bỏ `adminOnly` khỏi `extensionsRouter.all('/:name/*')` — người dùng không phải admin có thể thực thi các bundle endpoint với host binding. |
 | PR #153/#154 | `/api/v1/agent` thiếu khỏi `CONTROL_PLANE_PATHS` — các token đặc quyền thấp có thể đọc/thay đổi trạng thái Agent Harness. |

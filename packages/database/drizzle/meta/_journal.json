@@ -106,6 +106,188 @@
       "when": 1783500700000,
       "tag": "0014_user_totp",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1789000000000,
+      "tag": "0015_approval_requester_principal",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1789000100000,
+      "tag": "0016_goal_dispatch_lease",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789000200000,
+      "tag": "0017_one_active_run_per_goal",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789000300000,
+      "tag": "0018_goal_dispatch_rotation",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1789000400000,
+      "tag": "0019_jev_review_profiles_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789000500000,
+      "tag": "0020_jev_review_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1789000600000,
+      "tag": "0021_jev_automation_actions",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1789000700000,
+      "tag": "0022_semantic_drift_cursor",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1789000800000,
+      "tag": "0023_ai_conversation_api_key_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794236400000,
+      "tag": "0024_organizations",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794241373412,
+      "tag": "0025_organization_approvals",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794380400000,
+      "tag": "0026_site_skills",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794466800000,
+      "tag": "0027_email_identity_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794470400000,
+      "tag": "0028_import_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794556800000,
+      "tag": "0029_activation_milestones",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794643200000,
+      "tag": "0030_agent_tool_secrets",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1794729600000,
+      "tag": "0031_ops_errors",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794902400000,
+      "tag": "0032_user_passkeys",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794988800000,
+      "tag": "0033_social_login_identities",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1795075200000,
+      "tag": "0034_item_tree",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1795161600000,
+      "tag": "0035_items_site_scoped_pk",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795248000000,
+      "tag": "0036_items_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1795334400000,
+      "tag": "0037_item_publication_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795420800000,
+      "tag": "0038_dam_assets",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1795507200000,
+      "tag": "0039_preview_secrets",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1795593600000,
+      "tag": "0040_locale_generation",
+      "breakpoints": true
     }
   ]
 }

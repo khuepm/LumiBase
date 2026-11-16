@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import {
   activity,
   agentApprovals,
@@ -5,19 +6,33 @@ import {
   agentRuns,
   type Database,
 } from '@lumibase/database';
-import { and, desc, eq } from 'drizzle-orm';
+import { ASK_USER_LIMITS } from '@lumibase/contracts';
+import { and, desc, eq, ne } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
-import { agentApprovalLatency, agentApprovalsTotal } from '../services/agent-metrics';
+import { observeApprovalDecision } from '../services/agent-metrics';
 import { AGENT_RUNS_QUEUE, type AgentRunJobPayload } from '../services/agent-run-worker';
 import { AgentArtifactService } from '../services/agent-artifact-service';
 import { AgentEvaluationService } from '../services/agent-evaluation-service';
 import { AgentMemoryService } from '../services/agent-memory-service';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
-import { AgentRunService } from '../services/agent-run-service';
-import { CORE_SKILLS } from '../services/ai-harness';
+import { safeRequestId, maskSecrets, AgentRunService, type RetryRunRefusalCode } from '../services/agent-run-service';
+import { skillCatalog } from '../services/ai-harness';
+import { siteExternalToolRegistry } from '../extensions/mcp-extension-tools';
+import {
+  AgentQuestionService,
+  QUESTION_KIND,
+  QUESTION_REFUSAL_STATUS,
+} from '../services/agent-question-service';
+import { parseApprovalRequester } from '../services/approval-requester';
+import {
+  approvalDeciderFromAuth,
+  principalRefFromAuth,
+  resolveRequestCapabilities,
+} from '../services/governed-capabilities';
+import { ToolSecretError, ToolSecretService, TOOL_SECRET_MAX_LENGTH, TOOL_SECRET_MIN_LENGTH } from '../services/tool-secret-service';
 import { ToolRegistryService } from '../services/tool-registry-service';
 
 export const agentRouter = new Hono<AppEnv>();
@@ -107,13 +122,13 @@ agentRouter.post('/goals', async (c) => {
       );
     }
     // No queue adapter → explicit error; sync execution remains available (Req 3.3).
-    if (!queue) {
+    if (!queue || queue.supportsQueue?.(AGENT_RUNS_QUEUE) === false) {
       return c.json(
         {
           errors: [
             {
               code: 'ASYNC_UNAVAILABLE',
-              message: 'Async execution requires a queue adapter; this runtime has none. Use execution: "sync".',
+              message: 'Async execution requires the agent-runs queue binding. Use execution: "sync".',
             },
           ],
         },
@@ -131,11 +146,13 @@ agentRouter.post('/goals', async (c) => {
     assigneeAgent: parsed.data.assigneeAgent,
     priority: parsed.data.priority,
     successCriteria: parsed.data.successCriteria,
+    metadata: { requestId: safeRequestId(c.get('requestId')), ...(parsed.data.execution === 'async' ? { asyncTask: maskSecrets(parsed.data.task) } : {}) },
   }).returning();
 
   if (parsed.data.execution === 'async') {
     const runService = new AgentRunService(db, siteId, queue, buildAgentNotifier(c));
     const run = await runService.ensureRun({
+    requestId: c.get('requestId'),
       goalId: goal!.id,
       agentName: parsed.data.assigneeAgent,
       title: parsed.data.title,
@@ -145,16 +162,28 @@ agentRouter.post('/goals', async (c) => {
       status: 'queued',
     });
     const payload: AgentRunJobPayload = {
+      requestId: safeRequestId(c.get('requestId')) ?? undefined,
       siteId,
       goalId: goal!.id,
       runId: run.runId,
       skillName: parsed.data.task!.skillName,
+      budget: parsed.data.budget,
       arguments: parsed.data.task!.arguments,
-      capabilities: auth.roles ?? [],
+      // A principal reference, NOT a capability snapshot (#472). The worker
+      // re-resolves the grant when it picks the job up, so a role change or a
+      // revoked key between enqueue and execution takes effect.
+      principal: principalRefFromAuth(auth, siteId),
       userId: auth.userId ?? null,
       contextMessage: parsed.data.description,
     };
-    await queue!.enqueue(AGENT_RUNS_QUEUE, 'execute', payload);
+    try {
+      await queue!.enqueue(AGENT_RUNS_QUEUE, 'execute', payload);
+    } catch {
+      // A transport can accept a job and then lose the acknowledgement. Only
+      // settle an unclaimed row; never overwrite a worker's actual outcome.
+      await runService.failQueuedRun(run.runId, 'enqueue_failed');
+      return c.json({ errors: [{ code: 'ENQUEUE_FAILED', message: 'The run could not be queued. Retry this run after queue recovery.', goalId: goal!.id, runId: run.runId }] }, 503);
+    }
     return c.json({ data: { goal, runId: run.runId, status: 'queued' } }, 202);
   }
 
@@ -163,9 +192,26 @@ agentRouter.post('/goals', async (c) => {
 
 // ── Agent roles + planner delegation (content-os task 10; Req 10.1-10.5) ───
 
-function canManageRoles(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('*');
+/**
+ * Shared governance gate, resolved from RBAC (#472).
+ *
+ * Every gate on this router used to read `auth.roles` and look for the literal
+ * strings `'admin'` / `'*'` / a capability name. Only a bootstrap or dev
+ * principal ever carries `'admin'`, and a normal user carries a role *id*, so in
+ * practice these were bootstrap-only gates that silently rejected real site
+ * admins. They now ask the same resolver the harness uses, so there is one
+ * authorization model on this surface rather than two.
+ *
+ * `controlPlaneAdmin` is the admin bypass; a named capability is still honoured
+ * for principals whose bundle grants it.
+ */
+async function hasGovernanceCapability(c: Context<AppEnv>, capability: string): Promise<boolean> {
+  const grant = await resolveRequestCapabilities(c);
+  return grant.controlPlaneAdmin || grant.capabilities.includes(capability);
+}
+
+async function canManageRoles(c: Context<AppEnv>): Promise<boolean> {
+  return (await resolveRequestCapabilities(c)).controlPlaneAdmin;
 }
 
 const roleBodySchema = z.object({
@@ -184,7 +230,7 @@ agentRouter.get('/roles', async (c) => {
 });
 
 agentRouter.post('/roles', async (c) => {
-  if (!canManageRoles(c)) {
+  if (!(await canManageRoles(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Managing agent roles requires an admin.' }] }, 403);
   }
   const parsed = roleBodySchema.safeParse(await c.req.json().catch(() => null));
@@ -204,10 +250,10 @@ agentRouter.post('/roles', async (c) => {
 });
 
 agentRouter.patch('/roles/:name', async (c) => {
-  if (!canManageRoles(c)) {
+  if (!(await canManageRoles(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Managing agent roles requires an admin.' }] }, 403);
   }
-  const parsed = roleBodySchema.partial().omit({ name: true }).safeParse(await c.req.json().catch(() => null));
+  const parsed = patchSchema(roleBodySchema.omit({ name: true })).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
     return validationError(c, parsed.error);
   }
@@ -224,7 +270,7 @@ agentRouter.patch('/roles/:name', async (c) => {
 });
 
 agentRouter.delete('/roles/:name', async (c) => {
-  if (!canManageRoles(c)) {
+  if (!(await canManageRoles(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Managing agent roles requires an admin.' }] }, 403);
   }
   const { AgentRoleService, AgentRoleError } = await import('../services/agent-role-service');
@@ -256,8 +302,7 @@ const decomposeSchema = z.object({
 
 /** Planner: decompose a goal into role-scoped sub-goals (Req 10.1/10.3). */
 agentRouter.post('/goals/:id/decompose', async (c) => {
-  const roles = c.get('auth').roles ?? [];
-  if (!(roles.includes('admin') || roles.includes('goals:write') || roles.includes('*'))) {
+  if (!(await hasGovernanceCapability(c, 'goals:write'))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Capability "goals:write" is required.' }] }, 403);
   }
   const parsed = decomposeSchema.safeParse(await c.req.json().catch(() => null));
@@ -334,8 +379,7 @@ const promotionDecideSchema = z.object({
 
 /** Human decision on a promotion proposal — the only path to a higher level. */
 agentRouter.post('/autonomy/promotions/:id/decide', async (c) => {
-  const roles = c.get('auth').roles ?? [];
-  if (!(roles.includes('admin') || roles.includes('agents:freeze') || roles.includes('*'))) {
+  if (!(await hasGovernanceCapability(c, 'agents:freeze'))) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Promotion decisions require an admin.' }] },
       403,
@@ -365,9 +409,8 @@ agentRouter.post('/autonomy/promotions/:id/decide', async (c) => {
 
 // ── Constitution (content-os task 16; Req 15.1-15.6) ────────────────────────
 
-function canEditConstitution(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('constitution:write') || roles.includes('*');
+function canEditConstitution(c: Context<AppEnv>): Promise<boolean> {
+  return hasGovernanceCapability(c, 'constitution:write');
 }
 
 /** All versions plus the active one — the editor's version list. */
@@ -378,7 +421,7 @@ agentRouter.get('/constitution', async (c) => {
 });
 
 agentRouter.post('/constitution', async (c) => {
-  if (!canEditConstitution(c)) {
+  if (!(await canEditConstitution(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Editing the constitution requires an admin.' }] }, 403);
   }
   const body = (await c.req.json().catch(() => null)) as { evaluators?: unknown } | null;
@@ -448,7 +491,7 @@ agentRouter.post('/constitution/:id/dry-run', async (c) => {
 });
 
 agentRouter.post('/constitution/:id/activate', async (c) => {
-  if (!canEditConstitution(c)) {
+  if (!(await canEditConstitution(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Activating a constitution requires an admin.' }] }, 403);
   }
   const { ConstitutionService, ConstitutionError } = await import('../services/constitution-service');
@@ -471,14 +514,12 @@ const killSwitchSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 
-function canFreeze(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('agents:freeze') || roles.includes('*');
+function canFreeze(c: Context<AppEnv>): Promise<boolean> {
+  return hasGovernanceCapability(c, 'agents:freeze');
 }
 
-function canOperateAgents(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('agents:freeze') || roles.includes('*');
+function canOperateAgents(c: Context<AppEnv>): Promise<boolean> {
+  return hasGovernanceCapability(c, 'agents:freeze');
 }
 
 /** Active freezes + recent freeze/lift history. */
@@ -495,7 +536,9 @@ agentRouter.post('/kill-switch', async (c) => {
   }
   // Freezing a role/site requires the dedicated capability (Req 14.3);
   // run/intent scopes accept the same operators.
-  const allowed = parsed.data.scope === 'role' || parsed.data.scope === 'site' ? canFreeze(c) : canOperateAgents(c);
+  const allowed = parsed.data.scope === 'role' || parsed.data.scope === 'site'
+    ? await canFreeze(c)
+    : await canOperateAgents(c);
   if (!allowed) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Capability "agents:freeze" is required.' }] },
@@ -522,7 +565,7 @@ agentRouter.post('/kill-switch/lift', async (c) => {
   if (!parsed.success) {
     return validationError(c, parsed.error);
   }
-  if (!canFreeze(c)) {
+  if (!(await canFreeze(c))) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Capability "agents:freeze" is required.' }] },
       403,
@@ -546,9 +589,8 @@ agentRouter.post('/kill-switch/lift', async (c) => {
 
 // ── Veto window (content-os task 14; Req 13.2/13.4/13.6) ────────────────────
 
-function canVeto(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('veto') || roles.includes('*');
+function canVeto(c: Context<AppEnv>): Promise<boolean> {
+  return hasGovernanceCapability(c, 'veto');
 }
 
 /** Stagings inside their veto window, soonest deadline first. */
@@ -559,7 +601,7 @@ agentRouter.get('/staged', async (c) => {
 });
 
 agentRouter.post('/staged/:id/veto', async (c) => {
-  if (!canVeto(c)) {
+  if (!(await canVeto(c))) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Veto requires the admin or veto role.' }] },
       403,
@@ -596,21 +638,235 @@ agentRouter.get('/runs', async (c) => {
   return c.json({ data: await service.listRuns() });
 });
 
+/**
+ * HTTP status per retry refusal. 409 is "the run or its goal is not in a state
+ * that can be retried"; the others mirror what `POST /goals` answers for the same
+ * condition (423 frozen, 400 no queue adapter).
+ */
+const RETRY_REFUSAL_STATUS: Record<RetryRunRefusalCode, 400 | 404 | 409 | 423 | 503> = {
+  NOT_FOUND: 404,
+  RUN_NOT_RETRYABLE: 409,
+  RUN_ACTIVE: 409,
+  RUN_OUTCOME_UNKNOWN: 409,
+  RUN_EFFECT_RECORDED: 409,
+  RETRY_SUPERSEDED: 409,
+  GOAL_CLOSED: 409,
+  GOAL_BUSY: 409,
+  RETRY_UNRECOVERABLE: 409,
+  INTENT_NOT_ACTIVE: 409,
+  FROZEN: 423,
+  ASYNC_UNAVAILABLE: 400,
+  ENQUEUE_FAILED: 503,
+};
+
+/**
+ * Retries a failed or cancelled run as a new `queued` run and enqueues it.
+ *
+ * It used to insert a `running` row and enqueue nothing, so a 201 here meant
+ * nothing would ever execute. The retry now runs through the same queue worker,
+ * claim and harness as any async run, under the requester's re-resolved rights
+ * (#472); see `AgentRunService.retryRun` for the at-most-once guarantee.
+ */
 agentRouter.post('/runs/:id/retry', async (c) => {
-  const service = new AgentRunService(c.get('db'), c.get('siteId'), c.get('runtime').queue);
-  const retry = await service.retryRun(c.req.param('id'));
-  if (!retry) {
-    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Run not found' }] }, 404);
+  const siteId = c.get('siteId');
+  const auth = c.get('auth');
+  const principal = principalRefFromAuth(auth, siteId);
+  if (!principal) {
+    return c.json(
+      {
+        errors: [{
+          code: 'REQUESTER_UNRESOLVED',
+          message: 'A retry executes under the principal who requests it, and this request has none that can be re-resolved.',
+        }],
+      },
+      403,
+    );
   }
-  return c.json({ data: retry }, 201);
+  const service = new AgentRunService(c.get('db'), siteId, c.get('runtime').queue);
+  const result = await service.retryRun(c.req.param('id'), {
+    principal,
+    userId: auth.userId ?? null,
+    requestId: c.get('requestId'),
+  });
+  if (!result.ok) {
+    return c.json(
+      { errors: [{ code: result.code, message: result.message }] },
+      RETRY_REFUSAL_STATUS[result.code],
+    );
+  }
+  return c.json({ data: result.retry }, 201);
+});
+
+/**
+ * Agent receipts (#713): read-only aggregation of runs, tool calls, approvals,
+ * vetoes, overrides, cost, drift, incidents and autonomy over a window. Under
+ * the `/api/v1/agent` control-plane guard (admin only), like the trust ledger.
+ */
+async function receiptsWindowOrError(c: Context<AppEnv>) {
+  const { agentReceiptsQuerySchema } = await import('@lumibase/contracts');
+  const { resolveReceiptsWindow, AgentReceiptsError } = await import('../services/agent-receipts-service');
+  const parsed = agentReceiptsQuerySchema.safeParse({ since: c.req.query('since'), until: c.req.query('until') });
+  if (!parsed.success) return { error: validationError(c, parsed.error) };
+  try {
+    return { window: resolveReceiptsWindow(parsed.data) };
+  } catch (err) {
+    if (err instanceof AgentReceiptsError) {
+      return { error: c.json({ errors: [{ code: err.code, message: err.message }] }, 400) };
+    }
+    throw err;
+  }
+}
+
+agentRouter.get('/receipts', async (c) => {
+  const resolved = await receiptsWindowOrError(c);
+  if ('error' in resolved) return resolved.error;
+  const { AgentReceiptsService } = await import('../services/agent-receipts-service');
+  const report = await new AgentReceiptsService({ db: c.get('db'), siteId: c.get('siteId') }).report(resolved.window);
+  return c.json({ data: report });
+});
+
+agentRouter.get('/receipts/export', async (c) => {
+  const { AGENT_RECEIPTS_EXPORT_KINDS } = await import('@lumibase/contracts');
+  const kind = c.req.query('kind') ?? 'runs';
+  if (!(AGENT_RECEIPTS_EXPORT_KINDS as readonly string[]).includes(kind)) {
+    return c.json({ errors: [{ code: 'VALIDATION', message: `kind must be one of ${AGENT_RECEIPTS_EXPORT_KINDS.join(', ')}` }] }, 400);
+  }
+  const resolved = await receiptsWindowOrError(c);
+  if ('error' in resolved) return resolved.error;
+  const { AgentReceiptsService } = await import('../services/agent-receipts-service');
+  const result = await new AgentReceiptsService({ db: c.get('db'), siteId: c.get('siteId') }).exportCsv(
+    kind as (typeof AGENT_RECEIPTS_EXPORT_KINDS)[number],
+    resolved.window,
+  );
+  c.header('Content-Type', 'text/csv; charset=utf-8');
+  c.header('Content-Disposition', `attachment; filename="agent-receipts-${kind}-${resolved.window.since.toISOString().slice(0, 10)}.csv"`);
+  c.header('X-Export-Rows', String(result.rows));
+  c.header('X-Export-Truncated', result.truncated ? 'true' : 'false');
+  return c.body(result.csv, 200);
+});
+
+agentRouter.get('/receipts/alerts', async (c) => {
+  const { AgentReceiptsService } = await import('../services/agent-receipts-service');
+  return c.json({ data: await new AgentReceiptsService({ db: c.get('db'), siteId: c.get('siteId') }).getThresholds() });
+});
+
+agentRouter.put('/receipts/alerts', async (c) => {
+  const { AgentReceiptsService, AgentReceiptsError } = await import('../services/agent-receipts-service');
+  try {
+    const saved = await new AgentReceiptsService({ db: c.get('db'), siteId: c.get('siteId') }).setThresholds(
+      await c.req.json().catch(() => null),
+    );
+    return c.json({ data: saved });
+  } catch (err) {
+    if (err instanceof AgentReceiptsError) return c.json({ errors: [{ code: err.code, message: err.message }] }, 400);
+    throw err;
+  }
 });
 
 agentRouter.get('/tools', async (c) => {
-  const service = new ToolRegistryService(c.get('db'), c.get('siteId'), CORE_SKILLS);
+  // Includes registered external-action tools, with their declared risk
+  // metadata under `external`.
+  // Extension tools (#715) are listed with the same `external` metadata.
+  const externalTools = await siteExternalToolRegistry({ db: c.get('db'), siteId: c.get('siteId'), env: c.env });
+  const service = new ToolRegistryService(c.get('db'), c.get('siteId'), skillCatalog(externalTools));
   const tools = await service.listTools();
   return c.json({
     data: tools.map(({ handler: _handler, ...tool }) => tool),
   });
+});
+
+/**
+ * Secrets of external-action tools.
+ *
+ * Write-only by construction: a value can be stored, replaced and deleted, and
+ * no route returns it. Managing them is reserved to a signed-in site
+ * administrator. An API key is refused even with administrative rights, since
+ * it is exactly the credential an agent would hold, and an agent must not be
+ * able to plant or swap the secret a tool will use.
+ */
+async function toolSecretAdmin(c: Context<AppEnv>): Promise<boolean> {
+  if (approvalDeciderFromAuth(c.get('auth')).kind !== 'human') return false;
+  return (await resolveRequestCapabilities(c)).controlPlaneAdmin === true;
+}
+
+const TOOL_SECRET_FORBIDDEN = {
+  errors: [{
+    code: 'FORBIDDEN',
+    message: 'Tool secrets are managed by a signed-in site administrator. API keys cannot manage them.',
+  }],
+};
+
+const TOOL_SECRET_STATUS: Record<ToolSecretError['code'], 400 | 404 | 503> = {
+  INVALID_NAME: 400,
+  INVALID_VALUE: 400,
+  KEYS_UNAVAILABLE: 503,
+  SECRET_MISSING: 404,
+  SECRET_UNREADABLE: 503,
+};
+
+function toolSecretService(c: Context<AppEnv>): ToolSecretService {
+  return new ToolSecretService({ db: c.get('db'), siteId: c.get('siteId'), keys: c.get('runtime')?.keys });
+}
+
+/** Names and timestamps of the site's tool secrets. Never values. */
+agentRouter.get('/tool-secrets', async (c) => {
+  if (!(await toolSecretAdmin(c))) return c.json(TOOL_SECRET_FORBIDDEN, 403);
+  return c.json({ data: await toolSecretService(c).list() });
+});
+
+agentRouter.put('/tool-secrets/:name', async (c) => {
+  if (!(await toolSecretAdmin(c))) return c.json(TOOL_SECRET_FORBIDDEN, 403);
+  const body = z
+    .object({ value: z.string().min(TOOL_SECRET_MIN_LENGTH).max(TOOL_SECRET_MAX_LENGTH) })
+    .strict()
+    .safeParse(await c.req.json().catch(() => null));
+  if (!body.success) {
+    // Not `validationError(c, …)`: a zod issue can quote the received input,
+    // and the input here is a secret.
+    return c.json(
+      {
+        errors: [{
+          code: 'VALIDATION',
+          message: `Body must be { "value": string } with ${TOOL_SECRET_MIN_LENGTH}-${TOOL_SECRET_MAX_LENGTH} characters.`,
+        }],
+      },
+      400,
+    );
+  }
+  const name = c.req.param('name');
+  const userId = c.get('auth').userId ?? null;
+  try {
+    const data = await toolSecretService(c).set(name, body.data.value, userId);
+    await c.get('db').insert(activity).values({
+      siteId: c.get('siteId'),
+      action: 'agent.tool_secret.set',
+      userId,
+      payload: { name: data.name, keyId: data.keyId },
+    });
+    return c.json({ data });
+  } catch (err) {
+    if (err instanceof ToolSecretError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, TOOL_SECRET_STATUS[err.code]);
+    }
+    throw err;
+  }
+});
+
+agentRouter.delete('/tool-secrets/:name', async (c) => {
+  if (!(await toolSecretAdmin(c))) return c.json(TOOL_SECRET_FORBIDDEN, 403);
+  const name = c.req.param('name');
+  const removed = await toolSecretService(c).delete(name);
+  if (!removed) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Secret not found' }] }, 404);
+  }
+  const userId = c.get('auth').userId ?? null;
+  await c.get('db').insert(activity).values({
+    siteId: c.get('siteId'),
+    action: 'agent.tool_secret.deleted',
+    userId,
+    payload: { name },
+  });
+  return c.json({ data: { name, deleted: true } });
 });
 
 agentRouter.get('/approvals', async (c) => {
@@ -619,10 +875,140 @@ agentRouter.get('/approvals', async (c) => {
   const rows = await db
     .select()
     .from(agentApprovals)
-    .where(eq(agentApprovals.siteId, siteId))
+    // `askUser` questions (#710) share the table but are not approvals: they
+    // have no approve/reject, and listing them here invited a client to decide
+    // one. They are listed at `GET /questions`.
+    .where(and(eq(agentApprovals.siteId, siteId), ne(agentApprovals.kind, QUESTION_KIND)))
     .orderBy(desc(agentApprovals.createdAt))
     .limit(100);
   return c.json({ data: rows });
+});
+
+// ── askUser clarification questions (#710) ─────────────────────────────────
+
+/**
+ * Who may answer a question. An answer must come from a human session — never
+ * from an API key, of any scope and whatever capabilities it carries: a key is
+ * how an agent acts, and an agent answering its own question (an
+ * organization-scoped key resolves as a control-plane admin) would close the
+ * loop the tool exists to open and settle the run as `via: 'approver'` with no
+ * human in the audit trail. That refusal runs first, before either branch:
+ *
+ * - `'approver'` — a user holding `approvals:decide` (or a control-plane admin):
+ *   the operators already trusted to unblock a parked run, and the only path for
+ *   reconciler runs, which have no human requester;
+ * - `'requester'` — the run's requester, when that requester is a **user** who
+ *   still resolves on this site and is the caller.
+ *
+ * Today the `'requester'` branch is not reachable in production: every
+ * `/api/v1/agent/*` route sits behind the control-plane guard, which admits only
+ * site administrators (plus organization-scoped keys, refused above), and an
+ * administrator already matches `'approver'`. So today only administrators —
+ * who hold `approvals:decide` through the admin bypass — answer. The requester
+ * branch takes effect once backlog B207 reclassifies the answer route out of
+ * the control plane; it is kept so that change needs no new rule.
+ *
+ * Evaluated after existence so a 403 cannot be used to probe ids.
+ */
+async function questionAnswerer(
+  c: Context<AppEnv>,
+  requestedByPrincipal: unknown,
+): Promise<'approver' | 'requester' | null> {
+  const auth = c.get('auth');
+  if (!auth || auth.type === 'api_key' || auth.apiKeyId || auth.apiKey) return null;
+  const grant = await resolveRequestCapabilities(c);
+  if (grant.controlPlaneAdmin || grant.capabilities.includes('approvals:decide')) return 'approver';
+  if (!grant.allowed) return null;
+  const requester = parseApprovalRequester(requestedByPrincipal);
+  const caller = principalRefFromAuth(auth, c.get('siteId'));
+  if (
+    requester?.kind === 'principal'
+    && requester.ref.type === 'user'
+    && caller?.type === 'user'
+    && caller.siteId === requester.ref.siteId
+    && caller.userId === requester.ref.userId
+  ) {
+    return 'requester';
+  }
+  return null;
+}
+
+function questionService(c: Context<AppEnv>): AgentQuestionService {
+  const environment = (c.env as { LUMIBASE_ENV?: string } | undefined)?.LUMIBASE_ENV ?? process.env.LUMIBASE_ENV;
+  return new AgentQuestionService({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+    cache: c.get('runtime')?.cache,
+    ...(environment ? { environment } : {}),
+  });
+}
+
+const QUESTION_STATUSES = ['pending', 'answered', 'expired', 'cancelled'] as const;
+
+/** Questions of this site, newest first. `?status=` narrows (default `pending`; `all` for every status). */
+agentRouter.get('/questions', async (c) => {
+  const raw = c.req.query('status') ?? 'pending';
+  if (raw !== 'all' && !(QUESTION_STATUSES as readonly string[]).includes(raw)) {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: `status must be one of ${QUESTION_STATUSES.join(', ')} or all` }] },
+      400,
+    );
+  }
+  const status = raw === 'all' ? undefined : (raw as (typeof QUESTION_STATUSES)[number]);
+  return c.json({ data: await questionService(c).list(status) });
+});
+
+agentRouter.get('/questions/:id', async (c) => {
+  const question = await questionService(c).get(c.req.param('id'));
+  if (!question) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Question not found' }] }, 404);
+  }
+  return c.json({ data: question });
+});
+
+/**
+ * Answers a question and resumes its run (#710). Idempotent by refusal: the
+ * answer claims the `pending` row in the same transaction that resumes the run,
+ * so a second answer gets 409 and never a second resume.
+ */
+agentRouter.post('/questions/:id/answer', async (c) => {
+  const body = z
+    .object({ answer: z.string().trim().min(1).max(ASK_USER_LIMITS.answer) })
+    .strict()
+    .safeParse(await c.req.json().catch(() => null));
+  if (!body.success) {
+    return validationError(c, body.error);
+  }
+
+  const service = questionService(c);
+  const existing = await service.loadRow(c.req.param('id'));
+  if (!existing) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Question not found' }] }, 404);
+  }
+  const via = await questionAnswerer(c, existing.requestedByPrincipal);
+  if (!via) {
+    return c.json(
+      {
+        errors: [{
+          code: 'FORBIDDEN',
+          message:
+            'Only a signed-in user may answer: the run\'s requesting user or a holder of "approvals:decide". API keys cannot answer.',
+        }],
+      },
+      403,
+    );
+  }
+
+  const result = await service.answer({
+    questionId: existing.id,
+    answer: body.data.answer,
+    answeredBy: c.get('auth')?.userId ?? null,
+    via,
+  });
+  if (!result.ok) {
+    return c.json({ errors: [{ code: result.code, message: result.message }] }, QUESTION_REFUSAL_STATUS[result.code]);
+  }
+  return c.json({ data: result.question });
 });
 
 const agentDecideSchema = z.object({
@@ -645,6 +1031,10 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
   const { ReviewerService, ReviewerError } = await import('../services/reviewer-service');
   const { buildAuthorizedHarness } = await import('./ai');
   const auth = c.get('auth');
+  // Resolved once, from RBAC (#472), and used for BOTH the reviewer's own gate
+  // and the capability check inside `executeApproved`. Two different sources here
+  // would mean a reviewer could pass one check and fail the other.
+  const deciderCapabilities = (await resolveRequestCapabilities(c)).capabilities;
   const service = new ReviewerService({
     db: c.get('db'),
     siteId: c.get('siteId'),
@@ -655,10 +1045,13 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
       if (!legacyApprovalId) {
         return { executed: false, message: 'Approval has no stored action to execute.' };
       }
-      const result = await buildAuthorizedHarness(c).executeApproved(
+      const result = await (await buildAuthorizedHarness(c)).executeApproved(
         legacyApprovalId,
         auth.userId ?? auth.externalId ?? 'agent-reviewer',
-        auth.roles ?? [],
+        deciderCapabilities,
+        // The caller of this route is a reviewing agent, whatever credential
+        // it presents.
+        { kind: 'agent' },
       );
       return { executed: result.status === 'executed', message: result.message };
     },
@@ -670,7 +1063,7 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
       decision: parsed.data.decision,
       confidence: parsed.data.confidence,
       reason: parsed.data.reason,
-      capabilities: c.get('auth').roles ?? [],
+      capabilities: deciderCapabilities,
     });
     return c.json({ data });
   } catch (err) {
@@ -686,9 +1079,9 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
  * risk-classified action. It requires the same capability as freezing/operating
  * agents rather than mere tenant membership.
  */
-function canDecideApprovals(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('approvals:decide') || roles.includes('*');
+async function canDecideApprovals(c: Context<AppEnv>): Promise<boolean> {
+  const grant = await resolveRequestCapabilities(c);
+  return grant.controlPlaneAdmin || grant.capabilities.includes('approvals:decide');
 }
 
 /**
@@ -734,11 +1127,16 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
   // Capability is checked after existence so a caller without it cannot use
   // the response code to probe which approval ids exist in another tenant —
   // a cross-tenant id already returned 404 above.
-  if (!canDecideApprovals(c)) {
+  if (!(await canDecideApprovals(c))) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Capability "approvals:decide" is required.' }] },
       403,
     );
+  }
+  if (existing.kind === QUESTION_KIND) {
+    // A rejection here would mark the row decided and leave its run parked in
+    // `waiting_user` until the timeout; an approval has nothing to execute.
+    return questionNotDecidable(c, approvalId);
   }
   if (existing.status !== 'pending') {
     return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
@@ -746,14 +1144,6 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
   if (existing.expiresAt && existing.expiresAt <= new Date()) {
     return c.json({ errors: [{ code: 'EXPIRED', message: 'Approval expired' }] }, 409);
   }
-
-  const observe = (row: typeof agentApprovals.$inferSelect) => {
-    agentApprovalsTotal.inc({ subject_type: row.subjectType, status: row.status });
-    agentApprovalLatency.observe(
-      { subject_type: row.subjectType, status: row.status },
-      (Date.now() - row.createdAt.getTime()) / 1000,
-    );
-  };
 
   if (body.data.decision === 'approved') {
     if (!existing.legacyApprovalId) {
@@ -777,10 +1167,17 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
     // is exactly what made the first version of this fix respond 409 to every
     // approve.
     const { buildAuthorizedHarness } = await import('./ai');
-    const result = await buildAuthorizedHarness(c).executeApproved(
+    // The decider's own live capabilities (#472). They are one half of the check:
+    // the harness re-resolves the REQUESTER's grant too and executes with the
+    // intersection, under the requester's row/field rules. An earlier version of
+    // this comment claimed execution used the decider's grant alone — it did, and
+    // that was the defect: an action parked by a user who was since demoted still
+    // ran, with the approver's reach.
+    const result = await (await buildAuthorizedHarness(c)).executeApproved(
       existing.legacyApprovalId,
       auth.userId ?? auth.externalId ?? 'unknown',
-      auth.roles ?? [],
+      (await resolveRequestCapabilities(c)).capabilities,
+      approvalDeciderFromAuth(auth),
     );
 
     if (result.status !== 'executed') {
@@ -809,7 +1206,6 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
         .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)));
     }
 
-    observe(row);
     return c.json({
       data: row,
       meta: { execution: { status: result.status, runId: result.runId, toolCallId: result.toolCallId } },
@@ -825,9 +1221,10 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
   // `/ai/approvals/:id/decide`.
   if (existing.legacyApprovalId) {
     const { buildAuthorizedHarness } = await import('./ai');
-    const rejected = await buildAuthorizedHarness(c).rejectApproval(
+    const rejected = await (await buildAuthorizedHarness(c)).rejectApproval(
       existing.legacyApprovalId,
       auth.userId ?? auth.externalId ?? 'unknown',
+      approvalDeciderFromAuth(auth),
     );
     if (!rejected) {
       return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
@@ -847,7 +1244,6 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
         .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)));
     }
 
-    observe(row);
     return c.json({ data: row });
   }
 
@@ -872,7 +1268,7 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
     return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
   }
 
-  observe(record);
+  observeApprovalDecision(record);
   return c.json({ data: record });
 });
 
@@ -910,11 +1306,34 @@ agentRouter.post('/approvals/:id/reopen', async (c) => {
   if (!existing) {
     return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Approval not found' }] }, 404);
   }
-  if (!canDecideApprovals(c)) {
+  if (!(await canDecideApprovals(c))) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Capability "approvals:decide" is required.' }] },
       403,
     );
+  }
+  if (existing.kind === QUESTION_KIND) {
+    return questionNotDecidable(c, approvalId);
+  }
+  // A veto commit that died after applying its patch is quarantined `failed`
+  // by the claim sweep. Reopening it would hand it back to the veto sweep,
+  // which would apply the same staging again (B131), so refuse it here and
+  // leave the decision on the live content to a human edit.
+  if (existing.kind === 'veto' && existing.status === 'failed') {
+    const { VetoService } = await import('../services/veto-service');
+    if (await new VetoService({ db, siteId }).isStagingApplied(approvalId)) {
+      return c.json(
+        {
+          errors: [
+            {
+              code: 'VETO_ALREADY_APPLIED',
+              message: 'The staged change is already live; reopening would apply it twice.',
+            },
+          ],
+        },
+        409,
+      );
+    }
   }
 
   // The transition and its audit commit together. Reopening authorizes a second
@@ -1060,6 +1479,7 @@ agentRouter.post('/generate-app', async (c) => {
   const evaluationService = new AgentEvaluationService(db, siteId);
 
   const run = await runService.ensureRun({
+    requestId: c.get('requestId'),
     agentName: 'lumibase-app-generator',
     title: `Generate ${parsed.data.targetApp}`,
     contextMessage: `Generate app from ${parsed.data.collections.join(', ')}`,
@@ -1127,6 +1547,19 @@ agentRouter.post('/generate-app', async (c) => {
 
   return c.json({ data: { run, artifacts: [pageArtifact, componentArtifact, seedArtifact, apiArtifact], evaluations } }, 201);
 });
+
+/** Refusal for approval routes that are handed an `askUser` question id (#710). */
+function questionNotDecidable(c: Context<AppEnv>, id: string) {
+  return c.json(
+    {
+      errors: [{
+        code: 'NOT_AN_APPROVAL',
+        message: `This is an agent question; answer it at POST /api/v1/agent/questions/${id}/answer.`,
+      }],
+    },
+    409,
+  );
+}
 
 function validationError(c: Context<AppEnv>, error: z.ZodError) {
   return c.json(

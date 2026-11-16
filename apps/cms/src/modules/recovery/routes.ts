@@ -18,10 +18,10 @@
  *
  * This router is therefore modelled on `setupRouter`
  * (`apps/cms/src/modules/setup/routes.ts`): it is a standalone
- * `Hono<AppEnv>` that applies ONLY `withDb()` internally (no tenant, no
- * auth) and is mounted on the TOP-LEVEL `app` in
+ * `Hono<AppEnv>` that applies ONLY `withSystemDb()` internally (no tenant, no
+ * auth; system connection — B130) and is mounted on the TOP-LEVEL `app` in
  * `apps/cms/src/index.ts` — NOT on the authenticated `api`. `withRuntime`
- * has already run globally, so the per-request `withDb()` here resolves
+ * has already run globally, so the per-request `withSystemDb()` here resolves
  * the Drizzle client through the runtime's DatabaseProvider exactly like
  * the setup wizard does on a fresh instance.
  *
@@ -118,12 +118,16 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
-import { PasswordSchema } from '@lumibase/contracts/schemas';
+import {
+  NewPasswordInputSchema,
+  checkNewPassword,
+  passwordPolicyErrorBody,
+} from '../../services/auth/password-policy';
 import { eq, sql } from 'drizzle-orm';
 import { users } from '@lumibase/database';
 
 import type { AppEnv } from '../../env';
-import { withDb } from '../../middleware/db';
+import { withSystemDb } from '../../middleware/db';
 import { hashPassword } from '../../services/auth/password';
 import { extractClientIp } from '../login-guard/ip-extract';
 import { AuditLogger } from '../audit/logger';
@@ -155,8 +159,9 @@ const forgotPathBodySchema = z.object({
 
 const resetPasswordBodySchema = z.object({
   unlockToken: z.string().min(1).max(256),
-  // Shared strength policy (min 12 + complexity) — single source of truth.
-  password: PasswordSchema,
+  // Bounded string; the instance password policy (#733) is enforced in the
+  // handler so a failure names each rule.
+  password: NewPasswordInputSchema,
 });
 
 // ── service factory ───────────────────────────────────────────────────────
@@ -194,10 +199,11 @@ function buildService(
 
 export const recoveryRouter = new Hono<AppEnv>();
 
-// Public surface: only `withDb()` (no tenant, no auth) — the operator is
+// Public surface: only `withSystemDb()` (no tenant, no auth) — the operator is
 // locked out and can't authenticate. `withRuntime` ran globally, so this
 // resolves the Drizzle client the same way `setupRouter` does.
-recoveryRouter.use('*', withDb());
+// System connection (B130): pre-tenant break-glass, no site scope.
+recoveryRouter.use('*', withSystemDb());
 
 // ── POST /recover (Req 14.4; design §4.7) ─────────────────────────────────
 
@@ -364,6 +370,11 @@ recoveryRouter.post('/reset-password', async (c) => {
       400,
     );
   }
+
+  // Password policy BEFORE the unlock token is consumed: a rejected password
+  // must not burn the single-use token and force the admin to start over.
+  const policyFailure = await checkNewPassword(c, parsed.data.password);
+  if (policyFailure) return c.json(passwordPolicyErrorBody(policyFailure), 400);
 
   const svc = buildService(c);
   const consumed = await svc.validateUnlockToken(parsed.data.unlockToken);

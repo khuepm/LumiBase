@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/extension-sdk",
-  "version": "1.0.0-rc.1",
+  "version": "2.1.0",
   "description": "Types + helpers for building LumiBase extensions (hooks, endpoints, UI).",
   "license": "Apache-2.0",
   "type": "module",
@@ -21,7 +21,7 @@
   },
   "devDependencies": {
     "typescript": "^5.6.2",
-    "tsup": "^8.5.1"
+    "tsup": "^9.0.0"
   },
   "files": [
     "dist"

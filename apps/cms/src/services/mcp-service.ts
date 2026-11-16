@@ -11,8 +11,9 @@ import type { HarnessExecutionResult } from './ai-harness';
  * MCP-specific business logic.
  *
  * Error split (design "Error Handling"): protocol violations are JSON-RPC
- * errors; business outcomes (`denied`, `pending_approval`) are ordinary tool
- * results so MCP clients can surface the approval id to the user (Req 4.4).
+ * errors; business outcomes (`denied`, `pending_approval`, `waiting_user`) are
+ * ordinary tool results so MCP clients can surface the approval or question id
+ * to the user (Req 4.4).
  */
 
 /** Protocol revisions this adapter accepts from clients. */
@@ -47,6 +48,43 @@ export interface McpToolSummary {
   description: string;
   inputSchema?: Record<string, unknown>;
   enabled?: boolean;
+  /** Human-readable name; MCP `title`. */
+  title?: string;
+  /** MCP tool annotations. Hints for the client, never an authorization input. */
+  annotations?: McpToolAnnotations;
+}
+
+/** The MCP tool annotations LumiBase derives (#346; ported from #805). */
+export interface McpToolAnnotations {
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+}
+
+/** `listItems` → `List items`; `org:list_sites` → `Org list sites`. */
+export function toolTitle(name: string): string {
+  const words = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_:]+/g, ' ').trim().toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * Derive the hints from what the registry already knows. Hosted clients
+ * (ChatGPT, Claude) use them to decide when to ask the user before a call.
+ *
+ * A tool is read-only only when it is `safe` and every capability it needs is
+ * a `:read` one — a tool that declares no capability is not assumed harmless.
+ * `dangerous` is the registry's own classification of schema changes, deletes
+ * and outward side effects, which is what `destructiveHint` means. Hints never
+ * gate anything: the harness, the scopes and the control-plane backstop do.
+ */
+export function toolAnnotations(tool: {
+  requiredCapabilities: readonly string[];
+  riskPolicy: { level: string };
+}): McpToolAnnotations {
+  const readOnly =
+    tool.riskPolicy.level === 'safe' &&
+    tool.requiredCapabilities.length > 0 &&
+    tool.requiredCapabilities.every((capability) => capability.endsWith(':read'));
+  return { readOnlyHint: readOnly, destructiveHint: !readOnly && tool.riskPolicy.level === 'dangerous' };
 }
 
 /**
@@ -54,7 +92,54 @@ export interface McpToolSummary {
  * `ToolRegistryService` + `AISecureHarness`; mocked directly in tests so the
  * parity property can compare MCP and Agent API decisions byte-for-byte.
  */
+/** A site playbook projected into MCP `prompts/list` (#712, #345). */
+export interface McpPromptSummary {
+  /** The skill slug. */
+  name: string;
+  title?: string;
+  description?: string;
+}
+
+/** A playbook body returned by MCP `prompts/get`. */
+export interface McpPromptContent extends McpPromptSummary {
+  text: string;
+  /** Site playbook provenance (#712). */
+  version?: number;
+  hash?: string;
+  /** Extension provenance (#715): which extension version shipped the prompt. */
+  extension?: { key: string; version: string };
+}
+
+/** A static resource projected into MCP `resources/list` (#715). */
+export interface McpResourceSummary {
+  uri: string;
+  name: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+}
+
+/** A resource body returned by MCP `resources/read`. */
+export interface McpResourceContent extends McpResourceSummary {
+  text: string;
+}
+
 export interface McpHarnessPort {
+  /**
+   * Static resources contributed by granted extensions (#715). Optional: a
+   * port without them does not advertise the `resources` capability.
+   */
+  listResources?(capabilities: string[]): Promise<McpResourceSummary[]>;
+  /** `null` when the resource does not exist or is not offered to this caller. */
+  readResource?(uri: string, capabilities: string[]): Promise<McpResourceContent | null>;
+  /**
+   * Site playbooks offered as MCP prompts. Optional: a port without them (the
+   * organization plane) does not advertise the `prompts` capability, and
+   * `prompts/*` answers "method not supported" exactly as before.
+   */
+  listPrompts?(capabilities: string[]): Promise<McpPromptSummary[]>;
+  /** `null` when the prompt does not exist or is not offered to this caller. */
+  getPrompt?(name: string, capabilities: string[]): Promise<McpPromptContent | null>;
   listTools(): Promise<McpToolSummary[]>;
   execute(
     skillName: string,
@@ -70,19 +155,65 @@ export interface McpHarnessPort {
  * (Property 14).
  */
 export interface McpToolDecision {
+  organizationId?: string;
   status: HarnessExecutionResult['status'];
+  /**
+   * Machine-readable denial reason, e.g. `VALIDATION`, `AUTONOMY_SHADOW`. Lets a
+   * client branch on "fix your arguments" vs "you are not allowed" without
+   * parsing prose.
+   */
+  code?: string;
   data?: unknown;
-  /** Present when status is `pending_approval` — resolve via the approvals API. */
+  /**
+   * Id to act on when status is `pending_approval`.
+   *
+   * ⚠️ Two id spaces exist and they are not interchangeable. `execute()` inserts
+   * into BOTH `lumibase_agent_approvals` and the legacy `lumibase_ai_approvals`,
+   * and they are decided at two different routes. This field carries the
+   * `agent_approvals` id whenever one exists — see `approvalSpace` for which one
+   * you actually got, instead of having to guess from the value.
+   */
   approvalId?: string;
+  /**
+   * Which table `approvalId` belongs to, and therefore which endpoint accepts it:
+   * - `agent` → `POST /api/v1/agent/approvals/{approvalId}/decide` (`routes/agent.ts`)
+   * - `legacy_ai` → `POST /api/v1/ai/approvals/{approvalId}/decide` (`routes/ai.ts`)
+   *
+   * Added because the previous shape collapsed `agentApprovalId ?? approvalId`
+   * into one field, so a client could hold a valid-looking id and call the wrong
+   * route with no way to tell.
+   */
+  approvalSpace?: 'agent' | 'legacy_ai';
+  /** The `agent_approvals` id, when the governed path produced one. */
+  agentApprovalId?: string;
+  /** The legacy `ai_approvals` id, when one was written. */
+  legacyApprovalId?: string;
+  /**
+   * The `askUser` question the run waits on, when status is `waiting_user`
+   * (#710). Answered by a human at `POST /api/v1/agent/questions/{questionId}/answer`;
+   * the agent reads the outcome with the `getUserAnswer` tool.
+   */
+  questionId?: string;
   runId?: string;
   message?: string;
 }
 
 export function toToolDecision(result: HarnessExecutionResult): McpToolDecision {
   const decision: McpToolDecision = { status: result.status };
+  if (result.code) decision.code = result.code;
   if (result.data !== undefined) decision.data = result.data;
+
+  // `approvalId` keeps its historical meaning (agent id preferred) so existing
+  // clients do not change, and the space is now stated rather than inferred.
   const approvalId = result.agentApprovalId ?? result.approvalId;
-  if (approvalId) decision.approvalId = approvalId;
+  if (approvalId) {
+    decision.approvalId = approvalId;
+    decision.approvalSpace = result.agentApprovalId ? 'agent' : 'legacy_ai';
+  }
+  if (result.agentApprovalId) decision.agentApprovalId = result.agentApprovalId;
+  if (result.approvalId) decision.legacyApprovalId = result.approvalId;
+  if (result.questionId) decision.questionId = result.questionId;
+
   if (result.runId) decision.runId = result.runId;
   if (result.message) decision.message = result.message;
   return decision;
@@ -102,7 +233,7 @@ function rpcError(
 }
 
 export class McpService {
-  constructor(private readonly port: McpHarnessPort) {}
+  constructor(private readonly port: McpHarnessPort, private readonly context: { organizationId?: string } = {}) {}
 
   /**
    * Handles one Streamable-HTTP POST body. Returns `null` for notifications
@@ -149,7 +280,11 @@ export class McpService {
           : DEFAULT_PROTOCOL_VERSION;
         return {
           protocolVersion,
-          capabilities: { tools: { listChanged: false } },
+          capabilities: {
+            tools: { listChanged: false },
+            ...(this.port.listPrompts ? { prompts: { listChanged: false } } : {}),
+            ...(this.port.listResources ? { resources: { listChanged: false } } : {}),
+          },
           serverInfo: MCP_SERVER_INFO,
         };
       }
@@ -166,6 +301,8 @@ export class McpService {
             .map((tool) => ({
               name: tool.name,
               description: tool.description,
+              ...(tool.title ? { title: tool.title } : {}),
+              ...(tool.annotations ? { annotations: tool.annotations } : {}),
               inputSchema:
                 tool.inputSchema && Object.keys(tool.inputSchema).length > 0
                   ? tool.inputSchema
@@ -185,13 +322,86 @@ export class McpService {
         const decision = toToolDecision(
           await this.port.execute(name, rawArgs as Record<string, unknown>, capabilities),
         );
+        if (this.context.organizationId) decision.organizationId = this.context.organizationId;
         // Business outcomes ride inside the tool result (Req 4.4): a denial is
         // an isError tool result, a pending approval is a normal result whose
-        // payload carries the approvalId — never a JSON-RPC protocol error.
+        // payload carries the approvalId, and a question (`waiting_user`, #710)
+        // is a normal result carrying the questionId — never a JSON-RPC
+        // protocol error.
         return {
           content: [{ type: 'text', text: JSON.stringify(decision) }],
           structuredContent: decision as unknown as Record<string, unknown>,
           isError: decision.status === 'denied',
+        };
+      }
+      case 'prompts/list': {
+        if (!this.port.listPrompts) {
+          throw new McpProtocolError(METHOD_NOT_FOUND, `Method not supported: ${request.method}`);
+        }
+        const prompts = await this.port.listPrompts(capabilities);
+        return {
+          prompts: prompts.map((prompt) => ({
+            name: prompt.name,
+            ...(prompt.title ? { title: prompt.title } : {}),
+            ...(prompt.description ? { description: prompt.description } : {}),
+          })),
+        };
+      }
+      case 'prompts/get': {
+        if (!this.port.getPrompt) {
+          throw new McpProtocolError(METHOD_NOT_FOUND, `Method not supported: ${request.method}`);
+        }
+        const name = request.params?.name;
+        if (typeof name !== 'string' || name.length === 0) {
+          throw new McpProtocolError(INVALID_PARAMS, 'params.name is required');
+        }
+        const prompt = await this.port.getPrompt(name, capabilities);
+        if (!prompt) {
+          // One answer for "no such prompt" and "not offered to you", so a
+          // caller cannot probe for capability-gated playbooks by name.
+          throw new McpProtocolError(INVALID_PARAMS, `Unknown prompt: ${name}`);
+        }
+        return {
+          ...(prompt.description ? { description: prompt.description } : {}),
+          messages: [{ role: 'user', content: { type: 'text', text: prompt.text } }],
+          // Provenance: which version of the playbook the client was handed.
+          _meta: prompt.extension
+            ? { 'lumibase/extension': { key: prompt.extension.key, version: prompt.extension.version } }
+            : { 'lumibase/siteSkill': { slug: prompt.name, version: prompt.version, hash: prompt.hash } },
+        };
+      }
+      case 'resources/list': {
+        if (!this.port.listResources) {
+          throw new McpProtocolError(METHOD_NOT_FOUND, `Method not supported: ${request.method}`);
+        }
+        const resources = await this.port.listResources(capabilities);
+        return {
+          resources: resources.map((resource) => ({
+            uri: resource.uri,
+            name: resource.name,
+            ...(resource.title ? { title: resource.title } : {}),
+            ...(resource.description ? { description: resource.description } : {}),
+            ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
+          })),
+        };
+      }
+      case 'resources/read': {
+        if (!this.port.readResource) {
+          throw new McpProtocolError(METHOD_NOT_FOUND, `Method not supported: ${request.method}`);
+        }
+        const uri = request.params?.uri;
+        if (typeof uri !== 'string' || uri.length === 0) {
+          throw new McpProtocolError(INVALID_PARAMS, 'params.uri is required');
+        }
+        const resource = await this.port.readResource(uri, capabilities);
+        if (!resource) {
+          // Same answer for "missing" and "not offered to you" (cf. prompts/get).
+          throw new McpProtocolError(INVALID_PARAMS, `Unknown resource: ${uri}`);
+        }
+        return {
+          contents: [
+            { uri: resource.uri, ...(resource.mimeType ? { mimeType: resource.mimeType } : {}), text: resource.text },
+          ],
         };
       }
       default:

@@ -1,11 +1,11 @@
 ---
-version: 3
-lastUpdated: 2026-08-30T09:36:15.719Z
+version: 13
+lastUpdated: 2026-11-14T02:32:19.524Z
 sourceLang: en
-contentHash: 644f0f4b2f32179b
-codeVerified: 2026-08-30T09:36:15.719Z
-codeVerifiedHash: 644f0f4b2f32179b
-codeVerifiedClaims: 112
+contentHash: 5fc1233101995b59
+codeVerified: 2026-11-14T02:32:19.524Z
+codeVerifiedHash: 5fc1233101995b59
+codeVerifiedClaims: 122
 ---
 
 # User Management Best Practices
@@ -48,6 +48,7 @@ duplicate-account drift.
 | **Staff** | editors, admins, teammates | `administrator`, `member` | `true` | Invite-only (`POST /users/invite`) | CF Access JWT, or password `/login` (Studio token) |
 | **Frontend end-user** | public visitors / subscribers | `subscriber` | `false` | Public self-service (`POST /auth/register`) | password `/login` (frontend token) |
 | **Integration** | server-to-server (ISR, build) | n/a (API key) | per attached policy | Admin creates API key | `Authorization: Bearer lbk_…` |
+| **Organization key** | organization automation | fixed `admin` | inherited site administrator | Owner/admin creates via `/orgs/:orgId/keys` | `Authorization: Bearer lbo_…` |
 
 ---
 
@@ -62,11 +63,13 @@ user_sites (membership N–N)     ← which sites + the PRIMARY role there
 roles (per site)                ← administrator | member | subscriber | custom
   └─ adminAccess, appAccess, systemKey
 policies → permissions          ← what a role can actually do (Policy DSL, ADR-008)
-api_keys → api_key_roles/policies  ← integration principals, scoped per site
+organization_members (membership N–N)
+  └─ (userId, organizationId) → owner | admin | billing | member
+organizations → sites.organizationId
+api_keys → site role/policy links OR fixed organization admin (scope=organization)
 ```
 
-- Domain rule: every domain table has `site_id` and every query filters by
-  it (Strict Rule #2). RLS (`withRls`) is the defense-in-depth backstop.
+- Site-plane queries filter by `site_id`; organization-plane queries filter by `organization_id`. Postgres RLS is the defense-in-depth backstop when `LUMIBASE_DB_RLS=enforce` (B130; off by default).
 - **`subscriber`** is the least-privilege frontend role. It grants nothing
   until you attach content permissions to it (e.g. `articles::read WHERE
   status = 'published'`). It is created idempotently on first registration
@@ -74,6 +77,75 @@ api_keys → api_key_roles/policies  ← integration principals, scoped per site
 
 > ⚠️ **Never attach Studio/admin policies to `subscriber`.** That role's
 > entire purpose is to be the safe floor for self-service signups.
+
+---
+
+## 2b. Email identity policy (aliases)
+
+`users` is identity-global, so "are these two addresses the same account?" is
+an instance-wide question. Before #794 the only rule was `lower(email)`:
+`test+a@gmail.com`, `test+b@gmail.com` and `t.est@gmail.com` were three
+accounts delivering to one mailbox. The policy is now chosen explicitly, in
+two tiers — and a site can only be **stricter** than the instance:
+
+| Instance mode | Site `strict` | Result |
+|---|---|---|
+| `exact` (default) | off (default) | Pre-#794 behaviour: every distinct address is its own account |
+| `exact` | on | Aliases exist globally, but the site admits one membership per root mailbox |
+| `root` | any | One root mailbox = one account instance-wide; the site flag is a no-op |
+
+Root mailbox: `+tag` is stripped from the local part on every domain (a
+leading `+` is kept); for Gmail the local part also loses its dots and
+`googlemail.com` folds to `gmail.com`.
+
+> **This is a policy, not a delivery guarantee.** Sub-addressing (`+tag`) is a
+> provider convention. On a domain that does not implement it, `a+b@example.com`
+> can be a different mailbox from `a@example.com`, and `root` mode (or a strict
+> site) will still treat them as one identity — so its holders compete for one
+> account or one membership. Choose `root` / strict only when that trade-off is
+> acceptable for your user base; the default `exact` mode never applies it.
+
+The rule lives twice, in `emailRoot()`
+(`apps/cms/src/modules/email-identity/normalize.ts`) and in the SQL function
+`lumibase_email_root()` (migration `0027`); an integration test pins both to
+one fixture list. Database triggers write `users.email_canonical` /
+`users.email_root` and `user_sites.identity_key`, so every writer — register,
+invite, SCIM, setup, seeds — is keyed the same way, and unique indexes (not a
+check-then-insert) enforce the result.
+
+**Choosing and changing it.** The instance mode is picked in the Setup Wizard
+(Security step, or the review step of quick setup); existing instances are
+backfilled to `exact`, so upgrading changes nothing. Later, only the bootstrap
+admin can change it (`PUT /api/v1/admin/email-identity/instance`); a site admin
+toggles strict for their site (`PUT /api/v1/admin/email-identity/site`).
+Tightening runs a check first and refuses with `409 IDENTITY_COLLISION` and the
+list of colliding accounts — merge or rename them, then retry. Loosening always
+succeeds. Both accept `dryRun: true`, and every applied change is audit-logged.
+
+**Decisions.**
+
+- **Login under `root` accepts any alias.** `POST /auth/login` (and
+  forgot-password / resend-verification) resolves the typed address to the
+  account by its root mailbox, so `test+anything@gmail.com` signs into the
+  `test@gmail.com` account with that account's password. This follows from
+  "one mailbox = one account": every alias delivers to the same inbox, so it
+  grants no access the mailbox owner does not already have.
+- **Lockout is per account row, not per typed address.** Failed attempts are
+  counted against the resolved account's stored address and the lock is set on
+  that row by primary key; the pre-check reads the lock through the same
+  resolution. Rotating aliases neither resets the counter nor dodges a lock.
+  Attempts against an address that matches no account are still counted on the
+  typed address (and by IP), as before.
+- **Anti-enumeration is unchanged.** `/register` answers the same generic
+  `202` whether the address, one of its aliases, or a strict-site alias already
+  exists; the account and its membership commit in one transaction, so a
+  refused membership never leaves an orphan account.
+
+Several external identities can be linked to one account through the
+`lumibase_user_identities` table (one row per `(issuer, subject)`). Members use
+it for social login — see [Social login](./social-login.md); automatic linking
+there only happens when the provider asserts the email is verified, and email
+matching follows the mode above.
 
 ---
 
@@ -154,8 +226,8 @@ Visitor (Next.js)            CMS                              Email
 | `POST /api/v1/auth/logout` | public | Revokes the presented refresh token's family and clears the cookie. Idempotent. |
 | `POST /api/v1/me/change-password` | bearer | Body `{currentPassword,newPassword}`. Verifies current password, sets new hash, revokes all refresh tokens. |
 | `GET /api/v1/me/sessions` | bearer | The caller's active sessions (live refresh tokens), redacted. |
-| `DELETE /api/v1/me/sessions/:id` | bearer | Revoke one of the caller's own sessions. |
-| `DELETE /api/v1/me/sessions` | bearer | Revoke ALL of the caller's sessions (logout everywhere). |
+| `DELETE /api/v1/me/sessions/:id` | bearer | Revoke one of the caller's own sessions (`:id` = `sessionId`); effective immediately. |
+| `DELETE /api/v1/me/sessions` | bearer | Revoke ALL of the caller's sessions (logout everywhere); `?scope=others` keeps the current one. |
 | `GET /api/v1/auth/me` | bearer | Current principal incl. `isFrontendUser`. |
 
 ### Guardrails baked in
@@ -302,6 +374,35 @@ For a logged-in user (`bearer`, under `/api/v1/me`):
   `DELETE /me/sessions/:id` revokes one, and `DELETE /me/sessions` revokes
   all (logout everywhere). Expired/revoked rows are swept by the hourly
   prune (§4d).
+- **Sessions & devices (#730).** A *session* is one refresh-token rotation
+  family. Every login and refresh signs the family id into the access JWT
+  as `sid`, so:
+  - each `GET /me/sessions` row carries a stable `sessionId` (survives
+    rotation), `startedAt` (oldest retained token of the session),
+    `lastSeenAt` (last refresh), `lastIp`, `lastUserAgent` and
+    `current: true` for the session making the request;
+  - `DELETE /me/sessions/:id` takes the `sessionId` (the live row `id` still
+    works for older clients) and returns `{ sessionId, revoked, current }`;
+    revoking the current session also clears the refresh cookie;
+  - `DELETE /me/sessions?scope=others` signs out every session except the
+    current one (`{ status: 'other_sessions_revoked', revoked }`). A token
+    without `sid` gets `409 NO_CURRENT_SESSION` instead of being treated as
+    "all";
+  - **revocation is immediate on both runtimes**: `withAuth` rejects an
+    access JWT whose `sid` has no live refresh row left (one indexed lookup
+    per bearer request, on the system handle so a Studio token acting on a
+    sibling site still resolves). Access tokens minted before `sid` existed
+    skip the check until they expire;
+  - **confirming TOTP enrolment** (`POST /me/tfa/confirm`) signs out every
+    *other* session — they were authenticated with the password alone —
+    and keeps the enrolling device. Password change/reset still kills every
+    session, including the current one (`tokenVersion` bump);
+  - audit events: `session_revoked` (`sessionId`, `current`) and
+    `sessions_revoked` (`scope: all | others`, `revoked`); `mfa_enrolled`
+    gains `revokedOtherSessions`.
+
+  Studio shows the list under **Settings → Security → Active sessions**,
+  with "Sign out" per device and "Sign out other sessions".
 
 ## 4f. Two-factor authentication (TOTP)
 
@@ -368,6 +469,12 @@ current site. Env knobs are deployment-wide: `ENCRYPTION_KEY` (required to
 enroll) and `LUMIBASE_TOTP_ISSUER` (label in authenticator apps, default
 `LumiBase`).
 
+**Passkeys.** Passkeys (WebAuthn) sit beside TOTP: as the second factor after
+the password (`amr: ["pwd","webauthn"]`) or as a passwordless staff sign-in
+(`amr: ["webauthn"]`), both setting `tfaVerified`. When a user has a passkey,
+`/auth/login` adds `methods` to the `mfa_required` response. Recovery codes are
+shared with TOTP. See [Passkeys](./passkeys.md).
+
 ## 5. Staff onboarding (do NOT use self-service)
 
 Staff are created **invite-only**:
@@ -399,69 +506,31 @@ session).
 
 ---
 
-## 7. Exposing user management over MCP (future feasibility)
+## 7. User and organization management over MCP
 
-> Can this surface later be exposed via **MCP** (Model Context Protocol)?
-> Evaluation below. [Inference] — a design assessment, not a shipped
-> capability.
+The stdio server in `packages/mcp-server` already exposes site user/team management, including `list_users`, `get_user`, `invite_user`, `update_user`, and `remove_user`. ADR-013 adds a separate organization plane; granting site administrator does not grant organization authority.
 
-**Grounding:** LumiBase already ships an MCP server —
-`packages/mcp-server` (`name: 'lumibase'`, stdio transport). It exposes
-**items / collections / fields** tools today and authenticates exactly the
-way this evaluation recommends: a `LumiBaseClient` carrying
-`Authorization: Bearer <api key>` + `X-Lumi-Site: <siteId>`
-(`packages/mcp-server/src/client.ts`). So "exposing user management over
-MCP" concretely means **adding a `tools/users.ts` alongside the existing
-tool modules**, reusing the same API-key client — not building new infra.
+### Credential profiles
 
-**What MCP would be here:** an MCP *server* exposing user/role operations
-as tools an AI agent (or external MCP client) can call.
+| Credential | Advertised tools | Site routing |
+|---|---|---|
+| `lbk_` | Existing site tool list | `LUMIBASE_SITE_ID` required |
+| `lbo_` with a site pin | Site tools plus `get_organization`, `list_sites` | Pinned site |
+| `lbo_` without a pin | Eight organization tools plus site tools | Each site tool requires `site`; organization calls omit the site header |
 
-### Recommended split
+`LUMIBASE_READ_ONLY=true` hides mutation tools for every profile. Organization roles are fixed: owner/admin manage the organization, billing/member have no inherited site authority. An organization key is always admin, never owner, and cannot change who holds authority: member, organization-key and organization-settings writes require a user session, so a leaked key cannot add its holder as a human admin, mint replacement keys or enable its own MCP tools. It requests those changes through organization MCP for a human to approve; an approved `create_org_key` shows the new key once to the approver and the stored receipt keeps no plaintext. The same human must own both organizations to approve a transfer. Owners can rename the personal organization's `default` slug. Settings shows Organization to owner/admin even with one organization; only the switcher is hidden in that case.
 
-| Surface | MCP-exposable? | Rationale |
-|---------|----------------|-----------|
-| **Read** — list users, read roles/policies, audit queries | ✅ Low risk | Read-only, already admin-gated; maps cleanly to MCP tools. |
-| **Management** — invite user, assign/revoke role, suspend, rotate API key | ⚠️ With strong gating | High-impact. Expose only behind an API key bound to an explicit admin policy, per-site scoped, and route privilege-changing calls through the HITL `ai_approvals` path. |
-| **Public auth** — `register`, `login`, `verify-email` | ❌ Do not expose | These are *end-user credential flows*, not agent capabilities. An agent should never self-register accounts or handle user passwords. |
+### Mandatory organization approvals
 
-### Why it fits LumiBase cleanly
+Organization tools are gated by `contentOs.mcp.allowOrganizationTools` (off by default), overridden by `LUMIBASE_MCP_ORG_TOOLS=off`. Writes always use the organization harness and `ai_approvals`, regardless of the legacy site governance mode. `confirm=true` cannot grant approval and cannot trigger a REST fallback.
 
-- **Capability + HITL already exist.** Strict Rule #4 requires skills with
-  `schema:write`-class capability or `delete*` to go through `ai_approvals`
-  first. User-mutation tools (assign admin role, delete user) are exactly
-  the dangerous class — reuse that gate; do not invent a side channel.
-- **Per-site scoping is native.** Every table is `site_id`-scoped and API
-  keys are bound to one site, so an MCP tool inherits tenant isolation.
-- **Audit is native.** `audit_log` already records `user_registered`,
-  `email_verified`, `api_key_*`, role changes — MCP-initiated actions get
-  the same provenance for free (set `actorEmail`/metadata to the agent).
-- **Earned autonomy (L0–L4).** MCP user-management tools map onto the
-  Content OS autonomy ladder: start at L1 (propose → human approves),
-  promote to veto-window/autopilot only for low-risk ops (e.g. read,
-  resend invite), never for role elevation.
+The requesting user/key is recorded and checked again before execution. A human owner/admin decides through the organization approval API or Studio. Owner-only changes still need an owner, and organization keys cannot read or decide human receipts. Domain changes and the receipt commit atomically, so retries cannot create duplicate sites or keys. A newly minted organization key appears only in the human receipt. Run audits carry `organizationId` and `runId`, including organization requests with zero sites.
 
-### Hard constraints if/when implemented
+### Site management and the auth boundary
 
-1. **Never mint or elevate a principal without HITL.** Any tool that can
-   grant `appAccess`/`adminAccess`, create an admin, or issue an API key
-   MUST create an `ai_approvals` row first.
-2. **Audience integrity.** MCP tools authenticate as an API-key principal
-   (or `studio`), never by forging a user JWT; the `frontend` audience wall
-   stays intact.
-3. **No password handling.** MCP tools must not accept, store, or relay
-   end-user passwords; verification/login stay HTTP-only.
-4. **Rate + scope.** Bind the MCP server's API key to a narrow policy
-   (e.g. `users::read` + `users::update` on `status`/`roleId` only) rather
-   than admin bypass.
+Legacy site tools retain their existing governance modes. `LUMIBASE_MCP_GOVERNED=on` refuses a mutation without a canonical governed mapping; compatibility modes may use REST. Do not assume those site modes provide the mandatory organization approval contract. See [Governed tool contract](../mcp/governed-tool-contract.md).
 
-**Bottom line:** the *management* surface is a good future MCP candidate
-because the safety primitives (capability gating, HITL, per-site scope,
-audit, autonomy levels) are already in place — and the delivery vehicle
-(`packages/mcp-server` + its API-key client) already exists, so the work is
-a new `tools/users.ts` module plus an admin-scoped key, not new
-infrastructure. The *public auth* surface should remain ordinary HTTP and
-never become an agent tool.
+Public registration, password login, verification, and reset remain HTTP authentication flows rather than MCP tools. Staff identity activation and organization membership remain separate operations. Use the existing invitation flow to activate a new staff account. See [Organization settings](../features/organizations.md) for the human workflow and the site-free recovery boundary.
 
 ---
 
@@ -479,6 +548,7 @@ never become an agent tool.
 | Rotating refresh tokens (issue/rotate/revoke) | `apps/cms/src/services/auth/refresh-token.ts` (table `lumibase_refresh_tokens`) |
 | Email-verify / password-reset tokens | `apps/cms/src/services/auth/{email-verification,password-reset}.ts` |
 | Per-IP rate limit (register/resend/forgot) | `apps/cms/src/modules/auth/registration-guard.ts` |
+| Email identity policy (normaliser, lookups, guarded mode change, invite) | `apps/cms/src/modules/email-identity/` · `apps/cms/src/routes/admin-email-identity.ts` |
 | Verification / reset emails | `apps/cms/src/modules/email/{verify-email,password-reset}.ts` |
 | Decision record | `docs/en/architecture/decisions/adr-011-user-management-realms.md` |
 

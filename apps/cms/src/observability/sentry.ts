@@ -1,4 +1,5 @@
 import type { Bindings } from '../env';
+import type { CloudflareOptions } from '@sentry/cloudflare';
 
 /**
  * Sentry options for the Cloudflare Workers build.
@@ -15,7 +16,7 @@ import type { Bindings } from '../env';
 export interface SentryOptions {
   dsn: string;
   tracesSampleRate: number;
-  enableLogs: boolean;
+  dataCollection: NonNullable<CloudflareOptions['dataCollection']>;
   environment: string;
   release?: string;
 }
@@ -33,8 +34,23 @@ export function resolveSentryOptions(env: Bindings): SentryOptions {
     dsn: env.SENTRY_DSN ?? '',
     // Capture 100% of spans by default; override per environment to control cost.
     tracesSampleRate: parseSampleRate(env.SENTRY_TRACES_SAMPLE_RATE, 1.0),
-    // Send structured logs to Sentry.
-    enableLogs: true,
+    // Sentry 11 removed enableLogs; logging is opt-in through logger APIs.
+    // Keep the v10 data-collection baseline rather than adopting v11's
+    // broader defaults for request bodies, user data, and AI content.
+    dataCollection: {
+      userInfo: false,
+      cookies: false,
+      httpHeaders: {
+        request: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+        response: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+      },
+      httpBodies: [],
+      urlQueryParams: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+      genAI: { inputs: false, outputs: false },
+      databaseQueryData: false,
+      queues: false,
+      graphQL: { document: false, variables: false },
+    },
     environment: env.LUMIBASE_ENV || 'development',
     release: env.LUMIBASE_VERSION && env.LUMIBASE_VERSION !== 'unknown'
       ? env.LUMIBASE_VERSION

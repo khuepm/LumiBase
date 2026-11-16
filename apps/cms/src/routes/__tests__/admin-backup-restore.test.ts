@@ -55,7 +55,7 @@ describe('admin backup/restore authorization', () => {
     expect(res.status).toBe(403);
     expect(body.errors[0]).toMatchObject({
       code: 'FORBIDDEN',
-      message: 'Admin role required.',
+      message: 'Admin access required.',
     });
   });
 
@@ -70,7 +70,7 @@ describe('admin backup/restore authorization', () => {
     expect(res.status).toBe(403);
     expect(body.errors[0]).toMatchObject({
       code: 'FORBIDDEN',
-      message: 'Admin access for the requested site is required.',
+      message: 'Admin access required.',
     });
   });
 });

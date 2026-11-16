@@ -1,12 +1,12 @@
 ---
-version: 4
-lastUpdated: 2026-09-07T15:32:41.098Z
+version: 6
+lastUpdated: 2026-11-15T08:38:33.808Z
 sourceLang: en
 syncStatus: source
-contentHash: db3d36504104f971
-codeVerified: 2026-09-07T15:32:41.098Z
-codeVerifiedHash: db3d36504104f971
-codeVerifiedClaims: 34
+contentHash: 5e2ec23fbbecaadb
+codeVerified: 2026-11-15T08:38:33.808Z
+codeVerifiedHash: 5e2ec23fbbecaadb
+codeVerifiedClaims: 38
 ---
 
 # Deployment Integrations (Vercel / Netlify)
@@ -47,7 +47,7 @@ Provider API tokens are **never stored in plaintext**. On create, the token is e
 Two complementary paths keep a deployment's status current:
 
 - **Status poller** — a 30s cron (`apps/cms/src/services/deployment/status-poller.ts`, registered in `serve.ts`) sweeps every non-terminal deployment and syncs it from the provider. Each sync is a guarded conditional update (only flips `queued`/`building`) and a single provider error never aborts the sweep — re-running is a no-op.
-- **Inbound webhook** — `POST /api/v1/deployments/webhook/:provider` (public, pre-auth) receives provider-pushed status events. It is intentionally outside the authenticated surface because the provider authenticates by **signing the request body**, not a bearer token; it still runs `withTenant` + `withDb`. The signature is verified for real over the raw body via Web Crypto: **Vercel** uses HMAC-SHA1 (`x-vercel-signature`), **Netlify** a JWS/HS256 (`x-webhook-signature`), compared in constant time. For Netlify the signature check alone is not enough — the body is not part of a JWS signing input — so the payload must also bind to these bytes: its `sha256` claim is compared against the digest of the raw body (a payload that *is* the raw body is also accepted). Without that, an authentic JWS captured from one notification would authenticate a different body. A signature of the wrong length, an undecodable payload or a body tampered after signing all return `401`, never a `500`. The shared secret is read from the per-site setting `deployment.webhook.<provider>` (value `{ "secret": "…" }`) — **never** from a request header. If no secret is configured, every webhook request is rejected (`401 INVALID_SIGNATURE`); status still syncs via the poller.
+- **Inbound webhook** — `POST /api/v1/deployments/webhook/:provider/:siteId` (and `POST /api/v1/deployments/webhook/:provider`, both public and pre-auth) receives provider-pushed status events. It is intentionally outside the authenticated surface because the provider authenticates by **signing the request body**, not a bearer token. Because Vercel and Netlify outgoing webhooks only configure a destination URL and signing secret (not custom HTTP headers), the `/:provider/:siteId` route carries the site id in the path so webhooks work on the shared API host (`api.lumibase.dev`) without a per-site host mapping; `/:provider` remains supported via `withTenant` (`X-Lumi-Site` header or per-site host mapping). Both routes run `withDb` and scope every query via `scopedDbFor(c, siteId)`. The signature is verified for real over the raw body via Web Crypto: **Vercel** uses HMAC-SHA1 (`x-vercel-signature`), **Netlify** a JWS/HS256 (`x-webhook-signature`), compared in constant time. For Netlify the signature check alone is not enough — the body is not part of a JWS signing input — so the payload must also bind to these bytes: its `sha256` claim is compared against the digest of the raw body (a payload that *is* the raw body is also accepted). Without that, an authentic JWS captured from one notification would authenticate a different body. A signature of the wrong length, an undecodable payload or a body tampered after signing all return `401`, never a `500`. The shared secret is read from the per-site setting `deployment.webhook.<provider>` (value `{ "secret": "…" }`) — **never** from a request header. If no secret is configured, every webhook request is rejected (`401 INVALID_SIGNATURE`); status still syncs via the poller.
 
 ## 5. REST API
 
@@ -69,7 +69,7 @@ SDK (`@lumibase/sdk`): `client.deployments.targets.{list,create,update,delete,de
 
 ### 5a. Trigger rate limit
 
-Every accepted trigger starts a provider-billed build, so `POST /targets/:id/deploy` is capped **per target** on top of the admin gate (`apps/cms/src/services/deployment/trigger-rate-limit.ts`):
+Every accepted trigger starts a provider-billed build, so `POST /targets/:id/deploy` is capped **per target** on top of the deploy permission gate (`apps/cms/src/services/deployment/trigger-rate-limit.ts`):
 
 | Tier | Budget |
 |---|---|
@@ -79,7 +79,7 @@ Every accepted trigger starts a provider-billed build, so `POST /targets/:id/dep
 - **Scope** — budget keys carry both `site_id` and the target id (`rl:deploy:<tier>:<siteId>:<targetId>`), so two targets never share a budget and one site can never exhaust another's.
 - **Applies to every trigger source** — manual, flow (`auto`) and agent triggers all consume the same per-target budget, because the limit protects the tenant's provider account regardless of who asked. Flow auto-deploys normally stay far below it thanks to `coalesceWindowMs`; a coalesced trigger reuses an existing build and does **not** spend budget (the check runs just before the outbound provider call).
 - **Exceeded** — the request is rejected with `429` and `{ "errors": [{ "code": "RATE_LIMITED", "retryAfterSeconds": <n> }] }` plus a `Retry-After` header. No `deployments` row is created for a rejected trigger; the attempt is audited as `deployment.trigger.rate_limited`.
-- **Fail-open** — if the rate limiter backend is unreachable the trigger is allowed; a limiter outage must not take deploys down. The admin gate and the `status='active'` target check still apply.
+- **Fail-open** — if the rate limiter backend is unreachable the trigger is allowed; a limiter outage must not take deploys down. The deploy permission gate and the `status='active'` target check still apply.
 
 ## 6. Auto-deploy via Flows
 
@@ -107,13 +107,13 @@ Like the flow operations above, all four skills are runtime-bound: their handler
 
 ## 8. Studio
 
-A **Settings → Deployments** page (`apps/studio/src/modules/settings/deployments-page.tsx`) lists targets and recent deployments, with controls to add a target, trigger a deploy, refresh status, and view logs. It lives at `/settings/deployments` (and `/<adminPath>/settings/deployments` on instances with a custom admin path), reachable from the **Integrations** group of the settings sidebar.
+A **Settings → Deployments** page (`apps/studio/src/modules/settings/deployments-page.tsx`) lists targets and recent deployments, with controls to add a target, trigger a deploy, refresh status, and view logs. It lives at `/settings/deployments` (and `/<adminPath>/settings/deployments` on instances with a custom admin path), reachable from the **Integrations** group of the settings sidebar. Who may trigger which target, environments, promotion and the production approval gate are described in [Deployment environments](./deployment-environments.md).
 
 ## 9. Setup notes
 
 - **Capabilities:** adds `deployments:read` / `deployments:write` — grant them to the admin role on upgrade. (No default agent role carries `deployments:write`, so the `triggerDeployment` skill only runs for callers explicitly granted it — deploy is never auto-available to ordinary agents.)
 - **No seed:** targets are created by an admin after setup; there are no defaults.
 - **RLS:** `lumibase_deployment_targets` and `lumibase_deployments` are site-isolated via `packages/database/migrations/rls-policies.sql` (per project convention, not in the table migration).
-- **Inbound webhooks (optional):** to receive provider-pushed status, set the per-site setting `deployment.webhook.<provider>` to `{ "secret": "<shared secret>" }` and configure the same secret on the provider's webhook. Without it, status syncs via the 30s poller only.
+- **Inbound webhooks (optional):** to receive provider-pushed status, set the per-site setting `deployment.webhook.<provider>` to `{ "secret": "<shared secret>" }` and configure the provider's webhook URL as `https://<api-host>/api/v1/deployments/webhook/<provider>/<siteId>` with the same secret. Without it, status syncs via the 30s poller only.
 - **Tables** `lumibase_deployment_targets` and `lumibase_deployments` are part of the consolidated `0000_lumibase_init` schema migration.
 - See the spec under `.kiro/specs/deployment-integrations/` for the full requirements and design.

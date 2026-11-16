@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 
 const SECRET_FILE_VARS = [
   'DATABASE_URL',
+  'DATABASE_SYSTEM_URL',
   'REDIS_URL',
   'JWT_SECRET',
   'ENCRYPTION_KEY',
@@ -64,6 +65,13 @@ export function validateProductionConfig(env: NodeJS.ProcessEnv = process.env): 
 
   if (env.LUMIBASE_DEV_AUTH === 'true') {
     errors.push('LUMIBASE_DEV_AUTH must not be true in production.');
+  }
+
+  // Extension hot reload (#754) imports code pushed by `lumibase-ext dev` —
+  // local development only. Fail the start rather than silently ignore it.
+  const extDev = env.LUMIBASE_EXTENSION_DEV?.trim().toLowerCase();
+  if (extDev === '1' || extDev === 'true') {
+    errors.push('LUMIBASE_EXTENSION_DEV must not be enabled in production (extension hot reload is local-development only).');
   }
 
   for (const key of ['JWT_SECRET', 'ENCRYPTION_KEY', 'S3_ACCESS_KEY', 'S3_SECRET_KEY', 'MEILISEARCH_API_KEY']) {

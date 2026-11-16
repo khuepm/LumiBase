@@ -108,6 +108,7 @@ function makeFakeDb(captured: {
             // users insert uses `.returning(...)`; roles insert uses
             // `.onConflictDoNothing().returning(...)`.
             async returning() {
+                  if (tableName === 'lumibase_sites') return [rows];
               if (tableName === 'lumibase_roles') {
                 return [{ id: 'role_admin' }];
               }
@@ -125,6 +126,7 @@ function makeFakeDb(captured: {
             onConflictDoNothing() {
               return {
                 async returning() {
+                  if (tableName === 'lumibase_sites') return [rows];
                   if (tableName === 'lumibase_roles') {
                     return [{ id: 'role_admin' }];
                   }
@@ -153,7 +155,8 @@ function makeFakeDb(captured: {
     },
     select() {
       return {
-        from() {
+        from(table: { [k: string]: unknown }) {
+          const isOrganization = getTableName(table) === 'lumibase_organizations';
           return {
             where() {
               const chain = {
@@ -167,7 +170,7 @@ function makeFakeDb(captured: {
                   ]);
                 },
                 then(resolve: (v: unknown) => void) {
-                  resolve([]);
+                  resolve(isOrganization ? [{ id: 'org_default' }] : []);
                 },
               };
               return chain;

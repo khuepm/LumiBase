@@ -15,6 +15,7 @@ import {
   normalizeAdminPath,
   type AdminPathFormValues,
 } from '../schemas/admin-path';
+import { getPathDraft, setPathDraft } from '../setup-drafts';
 import { useSetupStore } from '../setup-store';
 import { wordlistGenerateUnique } from '../wordlist';
 
@@ -56,32 +57,8 @@ import { wordlistGenerateUnique } from '../wordlist';
  *     enforces the deterministic format/blacklist rules.
  */
 
-// ────────────────────────────────────────────────────────────────────────
-// In-memory path draft
-//
-// Mirrors the pattern from `step-account.tsx`: the persisted Zustand
-// store deliberately holds only validity flags + the post-completion
-// `adminPath` (see setup-store.ts), so we cache the chosen value here
-// in module memory until `useCompleteSetup` (task 3.8) flushes it to
-// `POST /api/v1/setup/complete`. Living only in heap means a refresh
-// resets the wizard cleanly without ever touching `sessionStorage`.
-// ────────────────────────────────────────────────────────────────────────
-
-let pathDraft: AdminPathFormValues | null = null;
-
-/** Read the in-memory admin-path draft, or `null` if not yet captured. */
-export function getPathDraft(): AdminPathFormValues | null {
-  return pathDraft;
-}
-
-/** Drop the draft. Call after `POST /setup/complete` succeeds. */
-export function clearPathDraft(): void {
-  pathDraft = null;
-}
-
-export function setPathDraft(value: AdminPathFormValues): void {
-  pathDraft = value;
-}
+// In-memory path draft: lives in `../setup-drafts` (#757). Re-exported here.
+export { clearPathDraft, getPathDraft, setPathDraft } from '../setup-drafts';
 
 // ────────────────────────────────────────────────────────────────────────
 // Form values type
@@ -129,7 +106,7 @@ export function StepPath({ onSubmitted }: StepPathProps) {
     reValidateMode: 'onChange',
     shouldUnregister: false,
     defaultValues: {
-      adminPath: pathDraft?.adminPath ?? '',
+      adminPath: getPathDraft()?.adminPath ?? '',
     },
   });
 

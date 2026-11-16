@@ -1,8 +1,20 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  check,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  real,
+  text,
+  timestamp,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
-import { sites, users } from './core';
+import { organizations, sites, users } from './core';
+import { apiKeys } from './access';
 
 /**
  * AI-First CMS Engine tables. Stores approval records for the
@@ -18,8 +30,12 @@ export const aiApprovals = pgTable(
   {
     id: id(),
     siteId: text('site_id')
-      .notNull()
       .references(() => sites.id, { onDelete: 'cascade' }),
+    organizationId: text('organization_id').references(() => organizations.id, { onDelete: 'cascade' }),
+    organizationRequester: jsonb('organization_requester').$type<
+      { type: 'user'; userId: string } | { type: 'api_key'; apiKeyId: string }
+    >(),
+    result: jsonb('result'),
     agentName: text('agent_name').default('lumibase-copilot').notNull(),
     skillName: text('skill_name').notNull(),
     arguments: jsonb('arguments').default({}).notNull(),
@@ -30,6 +46,10 @@ export const aiApprovals = pgTable(
     decidedBy: text('decided_by').references(() => users.id, { onDelete: 'set null' }),
   },
   (t) => ({
+    organizationStatusIdx: index('ai_approvals_org_status_idx').on(t.organizationId, t.status),
+    scopeTarget: check('ai_approvals_scope_target', sql`
+      (${t.siteId} is not null and ${t.organizationId} is null) or
+      (${t.siteId} is null and ${t.organizationId} is not null and ${t.organizationRequester} is not null)`),
     siteStatusIdx: index('ai_approvals_site_status_idx').on(t.siteId, t.status),
   }),
 );
@@ -49,12 +69,20 @@ export const aiConversations = pgTable(
       .notNull()
       .references(() => sites.id, { onDelete: 'cascade' }),
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    /**
+     * API key that started the conversation when the caller has no user id
+     * (#579). Without it every API key of a site shared one pool of
+     * user-less conversations. Null for user conversations and for rows
+     * created before migration 0023 (those have no owner any more).
+     */
+    apiKeyId: text('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
     title: text('title').default('New conversation').notNull(),
     createdAt: createdAt(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (t) => ({
     siteUserIdx: index('ai_conversations_site_user_idx').on(t.siteId, t.userId),
+    siteApiKeyIdx: index('ai_conversations_site_api_key_idx').on(t.siteId, t.apiKeyId),
   }),
 );
 
@@ -162,6 +190,35 @@ export const agentGoals = pgTable(
     driftFingerprint: text('drift_fingerprint'),
     /** Role from the `agent_roles` library executing this goal. */
     agentRole: text('agent_role'),
+    /**
+     * Dispatch lease: until when, and by whom (#455, reviewer R3/R4).
+     *
+     * Advancing a reconciler goal is a read-then-write — read the latest run,
+     * then insert a new one — and it has more than one entry point (the cron tick
+     * and `POST /intents/:id/scan`). Two callers that both read "no active run"
+     * both created a run and a queue job for the same drift. The cron's leader
+     * lock cannot help: it does not cover the HTTP path, and it was being released
+     * early anyway.
+     *
+     * The lease is the serialization point. A conditional UPDATE takes it
+     * (`WHERE lease IS NULL OR lease < now()`), so exactly one caller proceeds and
+     * the database decides which. It is time-bounded rather than a boolean
+     * because the holder can die: an expired lease is reclaimable without an
+     * operator, which is also what lets a goal recover from a crash between
+     * inserting the run and enqueueing its job.
+     */
+    dispatchLeaseUntil: timestamp('dispatch_lease_until'),
+    dispatchLeaseBy: text('dispatch_lease_by'),
+    /**
+     * When dispatch last CONSIDERED this goal — not when it last succeeded
+     * (#481 R3.3).
+     *
+     * The rotation key. A pass takes the N goals least recently considered, so a
+     * goal that keeps being skipped moves to the back of the queue instead of
+     * occupying the same slot on every tick. Null means "never considered", which
+     * sorts first: a new goal is served before anything already looked at.
+     */
+    dispatchAttemptedAt: timestamp('dispatch_attempted_at'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -170,6 +227,11 @@ export const agentGoals = pgTable(
     siteCreatedIdx: index('agent_goals_site_created_idx').on(t.siteId, t.createdAt),
     siteParentIdx: index('agent_goals_site_parent_idx').on(t.siteId, t.parentGoalId),
     siteOriginIdx: index('agent_goals_site_origin_idx').on(t.siteId, t.origin),
+    /** Serves the rotation order of the dispatch queue (#481 R3.3). */
+    dispatchRotationIdx: index('agent_goals_dispatch_rotation_idx').on(
+      t.siteId,
+      t.dispatchAttemptedAt,
+    ),
   }),
 );
 
@@ -201,6 +263,18 @@ export const agentRuns = pgTable(
   (t) => ({
     siteStatusIdx: index('agent_runs_site_status_idx').on(t.siteId, t.status),
     goalCreatedIdx: index('agent_runs_goal_created_idx').on(t.goalId, t.createdAt),
+    /**
+     * At most ONE in-flight run per goal (#481 R3.2).
+     *
+     * Dispatch already serializes on the goal's lease inside a transaction; this
+     * is the same rule stated where it cannot be forgotten by a future call site
+     * that inserts a run without taking that lease. `awaiting_approval` is out of
+     * scope on purpose — a parked run coexists with the human decision flow, and
+     * duplicate parking is prevented by the run-claim CAS instead.
+     */
+    oneActivePerGoalIdx: uniqueIndex('agent_runs_one_active_per_goal_idx')
+      .on(t.siteId, t.goalId)
+      .where(sql`${t.status} IN ('queued', 'running')`),
   }),
 );
 
@@ -250,6 +324,37 @@ export const agentTools = pgTable(
   (t) => ({
     siteNameIdx: index('agent_tools_site_name_idx').on(t.siteId, t.name),
     siteEnabledIdx: index('agent_tools_site_enabled_idx').on(t.siteId, t.enabled),
+  }),
+);
+
+/**
+ * Secrets for external-action tools, per site.
+ *
+ * An external-action tool declares the NAMES of the secrets it needs; the
+ * value lives here, encrypted with the runtime KeyProvider (versioned
+ * `{keyId}:{body}` envelope, AAD bound to site and name), and is decrypted by
+ * the harness only while the handler runs. No API returns `ciphertext` or the
+ * plaintext: a secret can be set, replaced and deleted, never read back.
+ */
+export const agentToolSecrets = pgTable(
+  'lumibase_agent_tool_secrets',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    /** Reference name a tool declares, e.g. `TICKETS_API_TOKEN`. */
+    name: text('name').notNull(),
+    /** AES-GCM envelope of the value. */
+    ciphertext: text('ciphertext').notNull(),
+    /** KeyProvider key version that wrapped the value. */
+    keyId: text('key_id').notNull(),
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteNameUnique: uniqueIndex('agent_tool_secrets_site_name_unique').on(t.siteId, t.name),
   }),
 );
 
@@ -326,6 +431,24 @@ export const agentApprovals = pgTable(
     /** Veto window deadline: staged work auto-commits here unless vetoed. */
     autoCommitAt: timestamp('auto_commit_at'),
     requestedByAgent: text('requested_by_agent').default('lumibase-copilot').notNull(),
+    /**
+     * Who asked for this action, as a reference that can be re-resolved (#472).
+     *
+     * Deliberately a reference and not a capability snapshot. An approval can sit
+     * pending for days; without this column the only identity available at
+     * execution time was the decider's, so a requester who was demoted, had their
+     * key revoked or was removed from the site between parking and approval still
+     * had their action executed under the decider's rights. Storing the reference
+     * means the grant is re-read when the action finally runs.
+     *
+     * Two shapes, because not every requester is a person:
+     *   { kind: 'principal', ref: { type: 'user' | 'api_key' | 'dev', … } }
+     *   { kind: 'agentRole', role: 'translator', intentId?, autonomyCap? }
+     *
+     * Null on rows created before this column existed. Those cannot be resolved,
+     * so execution refuses them rather than guessing — see `executeApproved`.
+     */
+    requestedByPrincipal: jsonb('requested_by_principal'),
     decidedBy: text('decided_by').references(() => users.id, { onDelete: 'set null' }),
     decisionReason: text('decision_reason'),
     /**
@@ -425,5 +548,230 @@ export const agentMemory = pgTable(
   (t) => ({
     siteScopeIdx: index('agent_memory_site_scope_idx').on(t.siteId, t.scope, t.scopeId),
     siteSourceIdx: index('agent_memory_site_source_idx').on(t.siteId, t.sourceType, t.sourceId),
+  }),
+);
+// ---------------------------------------------------------------------------
+// Jev J05 (#512) — versioned review profiles and item-bound decision runs
+// ---------------------------------------------------------------------------
+/**
+ * A review profile: which fields a draft review reads and which Decision
+ * questions it asks. Rows are immutable — an edit inserts `version + 1` and
+ * archives the previous row — so a run always points at the exact rubric it
+ * was answered against. `collection` is the collection name (null = any).
+ */
+export const reviewProfiles = pgTable(
+  'lumibase_review_profiles',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    collection: text('collection'),
+    key: text('key').notNull(),
+    version: integer('version').notNull(),
+    /** `active` | `archived` */
+    status: text('status').default('active').notNull(),
+    /** `taxonomy` | `brand-voice` | `brief-alignment` | null (custom). */
+    preset: text('preset'),
+    /** Top-level field names the review reads. */
+    fields: jsonb('fields').default([]).notNull(),
+    /** Decision questions keyed by question key. */
+    questions: jsonb('questions').default({}).notNull(),
+    sourceField: text('source_field'),
+    /** Below this confidence a run is `abstained`. */
+    minConfidence: real('min_confidence'),
+    /** Caveat shown with results, e.g. "no source — not a fact-check". */
+    note: text('note'),
+    createdBy: text('created_by'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    siteKeyVersionUq: uniqueIndex('review_profiles_site_key_version_uq').on(t.siteId, t.key, t.version),
+    siteStatusIdx: index('review_profiles_site_status_idx').on(t.siteId, t.status, t.collection),
+  }),
+);
+/**
+ * One decision run of a profile against one item revision (or an unsaved
+ * snapshot). Ids are uuidv7, supplied by the service. `content_hash` is the
+ * sha256 of the canonical projected fields, so a later edit is detectable.
+ */
+export const reviewRuns = pgTable(
+  'lumibase_review_runs',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    profileId: text('profile_id')
+      .notNull()
+      .references(() => reviewProfiles.id, { onDelete: 'cascade' }),
+    profileKey: text('profile_key').notNull(),
+    profileVersion: integer('profile_version').notNull(),
+    collection: text('collection').notNull(),
+    itemId: text('item_id'),
+    revisionId: text('revision_id'),
+    contentHash: text('content_hash').notNull(),
+    /** `item` | `snapshot` */
+    source: text('source').notNull(),
+    /** Fields of the profile the caller could not read; never sent. */
+    omittedFields: jsonb('omitted_fields').default([]).notNull(),
+    principalType: text('principal_type').notNull(),
+    principalId: text('principal_id').notNull(),
+    /** `running` | `success` | `abstained` | `error` */
+    status: text('status').notNull(),
+    provider: text('provider'),
+    model: text('model'),
+    calibrated: boolean('calibrated'),
+    answers: jsonb('answers'),
+    usage: jsonb('usage'),
+    latencyMs: integer('latency_ms'),
+    errorCode: text('error_code'),
+    idempotencyKey: text('idempotency_key').notNull(),
+    createdAt: createdAt(),
+    completedAt: timestamp('completed_at'),
+  },
+  (t) => ({
+    // Scoped to the principal so two callers that pick the same key never share a run.
+    siteIdempotencyUq: uniqueIndex('review_runs_site_principal_idempotency_uq').on(
+      t.siteId,
+      t.principalType,
+      t.principalId,
+      t.idempotencyKey,
+    ),
+    siteItemIdx: index('review_runs_site_item_idx').on(t.siteId, t.itemId, t.createdAt),
+    createdIdx: index('review_runs_created_idx').on(t.createdAt),
+  }),
+);
+/** Editor verdict on one answer of a run. One row per principal and question. */
+export const reviewFeedback = pgTable(
+  'lumibase_review_feedback',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    runId: text('run_id')
+      .notNull()
+      .references(() => reviewRuns.id, { onDelete: 'cascade' }),
+    questionKey: text('question_key').notNull(),
+    /** `accept` | `edit` | `reject` */
+    verdict: text('verdict').notNull(),
+    editedValue: jsonb('edited_value'),
+    principalType: text('principal_type').notNull(),
+    principalId: text('principal_id').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    runQuestionPrincipalUq: uniqueIndex('review_feedback_run_question_principal_uq').on(
+      t.siteId,
+      t.runId,
+      t.questionKey,
+      t.principalId,
+    ),
+  }),
+);
+// ---------------------------------------------------------------------------
+// Jev J09 (#516) — draft-review pilot timing
+// ---------------------------------------------------------------------------
+/**
+ * One editor review session on a pilot collection: from opening the editor
+ * to the first successful save. `baseline` sessions run with the review panel
+ * hidden, `assisted` sessions with it shown; the pilot compares the two.
+ * `viewed_questions` lists the suggestions of `run_id` that were rendered to
+ * the editor, so acceptance rates are computed over viewed suggestions only.
+ * No content is stored. Ids are uuidv7, supplied by the service.
+ */
+export const reviewSessions = pgTable(
+  'lumibase_review_sessions',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    collection: text('collection').notNull(),
+    itemId: text('item_id'),
+    /** `baseline` | `assisted` */
+    mode: text('mode').notNull(),
+    runId: text('run_id').references(() => reviewRuns.id, { onDelete: 'set null' }),
+    viewedQuestions: jsonb('viewed_questions').default([]).notNull(),
+    principalType: text('principal_type').notNull(),
+    principalId: text('principal_id').notNull(),
+    durationMs: integer('duration_ms').notNull(),
+    locale: text('locale'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    siteCreatedIdx: index('review_sessions_site_created_idx').on(t.siteId, t.createdAt),
+    siteRunIdx: index('review_sessions_site_run_idx').on(t.siteId, t.runId),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Jev J11 (#518) — shadow-first tagging and review-queue routing
+// ---------------------------------------------------------------------------
+
+/**
+ * One metadata action proposed by a Flows automation node (`ai:apply-tags`,
+ * `editorial:route`) for one item in one flow run. `shadow` rows record the
+ * proposal only; `live` rows went through the governed harness, capped at L1,
+ * so the write waits for a human approval (`approval_id`). The audit chain is
+ * by id: `revision_id` (input revision) → `review_run_id` (decision) → this row
+ * → `lumibase_review_feedback` (run id + question key). Ids are uuidv7.
+ * Unique per (site, flow run, node, item), so a redelivered job never records
+ * or proposes twice.
+ */
+export const aiAutomationActions = pgTable(
+  'lumibase_ai_automation_actions',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    flowRunId: text('flow_run_id').notNull(),
+    nodeId: text('node_id').notNull(),
+    reviewRunId: text('review_run_id').references(() => reviewRuns.id, { onDelete: 'set null' }),
+    collection: text('collection').notNull(),
+    itemId: text('item_id').notNull(),
+    revisionId: text('revision_id'),
+    contentHash: text('content_hash'),
+    /** `tag` | `route` */
+    action: text('action').notNull(),
+    /** `shadow` | `live` */
+    mode: text('mode').notNull(),
+    /** `pending` | `recorded` | `skipped` | `noop` | `pending_approval` | `applied` | `denied` | `rejected` | `reverted` */
+    status: text('status').notNull(),
+    /** Why the action was skipped, forced to shadow, or denied. */
+    reason: text('reason'),
+    questionKey: text('question_key'),
+    locale: text('locale'),
+    provider: text('provider'),
+    model: text('model'),
+    profileKey: text('profile_key'),
+    profileVersion: integer('profile_version'),
+    confidence: real('confidence'),
+    /** Confidence at or above the locale/action threshold (the auto-action zone). */
+    inZone: boolean('in_zone').default(false).notNull(),
+    proposed: jsonb('proposed'),
+    applied: boolean('applied').default(false).notNull(),
+    previous: jsonb('previous'),
+    /** `lumibase_agent_approvals.id` of a live proposal. */
+    approvalId: text('approval_id'),
+    agentRunId: text('agent_run_id'),
+    principalType: text('principal_type').notNull(),
+    principalId: text('principal_id').notNull(),
+    revertedAt: timestamp('reverted_at'),
+    revertedBy: text('reverted_by'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteRunNodeItemUq: uniqueIndex('ai_automation_actions_site_run_node_item_uq').on(
+      t.siteId,
+      t.flowRunId,
+      t.nodeId,
+      t.itemId,
+    ),
+    siteCreatedIdx: index('ai_automation_actions_site_created_idx').on(t.siteId, t.createdAt),
+    siteItemIdx: index('ai_automation_actions_site_item_idx').on(t.siteId, t.collection, t.itemId),
   }),
 );

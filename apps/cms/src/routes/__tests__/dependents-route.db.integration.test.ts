@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { eq } from 'drizzle-orm';
@@ -48,7 +49,7 @@ describe.skipIf(!hasDbIntegrationUrl)('items dependents routes — DB integratio
 
   beforeEach(async () => {
     await db.delete(sites).where(eq(sites.id, SITE));
-    await db.insert(sites).values({ id: SITE, name: 'Deps Route IT' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'Deps Route IT' });
     // The routes enforce real RBAC (dependents-service gates per-action): seed
     // an admin membership so the request principal has admin bypass.
     await db.insert(users).values({ id: ADMIN, email: 'deps-route-admin@x.dev', status: 'active' }).onConflictDoNothing();

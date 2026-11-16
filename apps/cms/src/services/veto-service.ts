@@ -6,7 +6,7 @@ import {
   revisions,
   type Database,
 } from '@lumibase/database';
-import { and, asc, eq, isNull, lte } from 'drizzle-orm';
+import { and, asc, eq, isNull, lte, sql } from 'drizzle-orm';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import { agentVetoesTotal, agentVetoStagingsTotal } from './agent-metrics';
 import { AutonomyService } from './autonomy-service';
@@ -73,6 +73,11 @@ export function decideVetoCommit(
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_VETO_WINDOW_MS = 4 * 60 * 60 * 1000;
+
+/** Provenance entry a veto commit adds to the live revision it writes (B131). */
+export function stagingMarker(stagingRevisionId: string): { kind: 'veto_staging'; revisionId: string } {
+  return { kind: 'veto_staging', revisionId: stagingRevisionId };
+}
 export const VETO_COMMIT_MAX_ATTEMPTS = 5;
 
 export class VetoServiceError extends Error {
@@ -295,9 +300,10 @@ export class VetoService {
     if (approval.status !== 'pending') {
       throw new VetoServiceError('ALREADY_DECIDED', 'Staging already committed or vetoed.', 409);
     }
-    agentVetoesTotal.inc();
-
-    await this.deps.db
+    // Guarded on `pending` (B131): an auto-commit holding the `deciding` claim
+    // owns the row, so a veto that lost the race reports it instead of
+    // overwriting a commit that is already applying the patch.
+    const rejected = await this.deps.db
       .update(agentApprovals)
       .set({
         status: 'rejected',
@@ -305,7 +311,18 @@ export class VetoService {
         decisionReason: reason ?? 'vetoed',
         decidedAt: new Date(),
       })
-      .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, this.deps.siteId)));
+      .where(
+        and(
+          eq(agentApprovals.id, approvalId),
+          eq(agentApprovals.siteId, this.deps.siteId),
+          eq(agentApprovals.status, 'pending'),
+        ),
+      )
+      .returning({ id: agentApprovals.id });
+    if (rejected.length === 0) {
+      throw new VetoServiceError('ALREADY_DECIDED', 'Staging already committed or vetoed.', 409);
+    }
+    agentVetoesTotal.inc();
 
     await this.discardStaging(approval.subjectId);
 
@@ -338,8 +355,72 @@ export class VetoService {
     if (decision === 'skip') return { outcome: 'skipped' };
     if (decision === 'wait') return { outcome: 'waiting' };
 
+    // CLAIM before applying anything (B131), the same `pending → deciding`
+    // conditional UPDATE the harness uses (#453). The queue job and the sweep
+    // both reach here, and on Workers two sweeps can overlap with no leader
+    // lock; reading `pending` and then acting let both apply the patch. The
+    // database picks one winner. A process that dies holding the claim is
+    // moved to `failed` by the approval-claim sweep, never silently retried.
+    const claimed = await this.deps.db
+      .update(agentApprovals)
+      .set({ status: 'deciding', decidedAt: new Date() })
+      .where(
+        and(
+          eq(agentApprovals.id, approval.id),
+          eq(agentApprovals.siteId, this.deps.siteId),
+          eq(agentApprovals.status, 'pending'),
+        ),
+      )
+      .returning({ id: agentApprovals.id });
+    if (claimed.length === 0) return { outcome: 'skipped' };
+
+    const progress = { applied: false };
+    try {
+      return await this.commitClaimed(approval, itemService, progress);
+    } catch (err) {
+      // `progress.applied` only knows that `patch` RESOLVED. A write can commit
+      // and still reject (connection lost after COMMIT, an ambiguous ack), so
+      // before handing the row back ask the database whether the patch is live.
+      // Only a positive "not applied" releases the claim; an unanswerable check
+      // leaves it `deciding` for the approval-claim sweep.
+      const applied =
+        progress.applied ||
+        (await this.isStagingApplied(approval.id).catch(() => null));
+      if (applied === false) {
+        // Nothing reached live content (Req 13.5): hand the row back so the
+        // worker's backoff retry and the sweep can try again.
+        await this.releaseCommitClaim(approval.id);
+      } else if (applied === null) {
+        console.error('[veto-commit] could not tell whether the patch applied; left claimed', {
+          approvalId: approval.id,
+        });
+      } else {
+        // The patch is live; only the bookkeeping failed. Returning the row to
+        // `pending` would let the next sweep apply the staging a second time,
+        // so record it as the commit it was. If even that write fails the row
+        // stays `deciding`, out of the sweep's reach, and the approval-claim
+        // sweep hands it to a human as `failed`.
+        await this.settleAppliedClaim(approval.id, approval.subjectId).catch((settleErr: unknown) => {
+          console.error('[veto-commit] applied patch left claimed', {
+            approvalId: approval.id,
+            error: settleErr instanceof Error ? settleErr.message : String(settleErr),
+          });
+        });
+      }
+      throw err;
+    }
+  }
+
+  private async commitClaimed(
+    approval: Awaited<ReturnType<VetoService['getVetoApproval']>>,
+    itemService: ItemService,
+    progress: { applied: boolean },
+  ): Promise<{ outcome: 'committed' | 'noop' | 'skipped'; droppedPinned?: string[] }> {
     const staging = await this.getStaging(approval.subjectId);
-    if (!staging || !staging.staged) return { outcome: 'skipped' };
+    if (!staging || !staging.staged) {
+      await this.releaseCommitClaim(approval.id);
+      return { outcome: 'skipped' };
+    }
 
     const delta = (staging.delta ?? {}) as { patch?: Record<string, unknown> };
     const patch = delta.patch ?? {};
@@ -375,10 +456,12 @@ export class VetoService {
       runId: approval.runId,
       model: staging.model,
       constitutionHash: staging.constitutionHash,
-      sources: staging.sources as unknown[] | null,
+      // The marker binds the live revision to this staging (isStagingApplied).
+      sources: [...(Array.isArray(staging.sources) ? staging.sources : []), stagingMarker(staging.id)],
       confidence: staging.confidence,
     });
     await itemService.patch(collectionName, staging.itemId, { data: applied });
+    progress.applied = true;
 
     await this.finalizeCommit(
       approval.id,
@@ -386,6 +469,36 @@ export class VetoService {
       dropped.length > 0 ? `auto_commit_partial:dropped=${dropped.join(',')}` : 'auto_commit',
     );
     return { outcome: 'committed', droppedPinned: dropped };
+  }
+
+  /**
+   * Whether THIS staging's patch is live (B131).
+   *
+   * Every commit stamps the live revision it writes with
+   * `{ kind: 'veto_staging', revisionId: <staging id> }` in `sources`, in the
+   * same transaction as the item update (`ItemService.patch`). The marker is
+   * the proof: it exists if and only if this staging's patch committed. Run id,
+   * item and time are not enough on their own, because one run can stage
+   * several patches of the same item.
+   *
+   * Used by the commit to decide whether a failed attempt may be retried, and
+   * by `POST /agent/approvals/:id/reopen` to refuse replaying a live staging.
+   * Commits made before the marker existed carry none and read as not applied.
+   */
+  async isStagingApplied(approvalId: string): Promise<boolean> {
+    const approval = await this.getVetoApproval(approvalId);
+    const [live] = await this.deps.db
+      .select({ id: revisions.id })
+      .from(revisions)
+      .where(
+        and(
+          eq(revisions.siteId, this.deps.siteId),
+          eq(revisions.staged, false),
+          sql`${revisions.sources} @> ${JSON.stringify([stagingMarker(approval.subjectId)])}::jsonb`,
+        ),
+      )
+      .limit(1);
+    return !!live;
   }
 
   /** Due stagings for the sweep/queue runner. */
@@ -457,11 +570,55 @@ export class VetoService {
   }
 
   private async finalizeCommit(approvalId: string, revisionId: string, reason: string): Promise<void> {
+    // Only the claim holder finalizes.
     await this.deps.db
       .update(agentApprovals)
       .set({ status: 'approved', decisionReason: reason, decidedAt: new Date() })
-      .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, this.deps.siteId)));
+      .where(
+        and(
+          eq(agentApprovals.id, approvalId),
+          eq(agentApprovals.siteId, this.deps.siteId),
+          eq(agentApprovals.status, 'deciding'),
+        ),
+      );
     await this.discardStaging(revisionId);
+  }
+
+  /**
+   * Settles a claim whose patch already reached live content after finalizing
+   * failed. Terminal and truthful (`approved`), never `pending`, so no later
+   * sweep re-applies it; guarded on `deciding` like every claim write.
+   */
+  private async settleAppliedClaim(approvalId: string, revisionId: string): Promise<void> {
+    await this.deps.db
+      .update(agentApprovals)
+      .set({
+        status: 'approved',
+        decisionReason: 'auto_commit (applied; finalize failed and was recovered)',
+        decidedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(agentApprovals.id, approvalId),
+          eq(agentApprovals.siteId, this.deps.siteId),
+          eq(agentApprovals.status, 'deciding'),
+        ),
+      );
+    await this.discardStaging(revisionId);
+  }
+
+  /** Returns this caller's `deciding` claim to `pending`; a row decided elsewhere is left alone. */
+  private async releaseCommitClaim(approvalId: string): Promise<void> {
+    await this.deps.db
+      .update(agentApprovals)
+      .set({ status: 'pending', decidedAt: null })
+      .where(
+        and(
+          eq(agentApprovals.id, approvalId),
+          eq(agentApprovals.siteId, this.deps.siteId),
+          eq(agentApprovals.status, 'deciding'),
+        ),
+      );
   }
 
   private async capabilityOf(revisionId: string): Promise<string | null> {

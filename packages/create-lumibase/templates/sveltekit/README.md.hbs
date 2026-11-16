@@ -1,0 +1,144 @@
+# {{projectName}}
+
+A [SvelteKit](https://svelte.dev/docs/kit) website that reads LumiBase content
+in **server-side loads** and runs on Cloudflare Pages, with draft preview.
+
+Pages are rendered by a Pages Function (`@sveltejs/adapter-cloudflare`) at
+request time, so a publish in Studio shows up without a rebuild. Every CMS call
+happens in `src/lib/server/` — never in the browser.
+
+## Quick start
+
+```bash
+cp .env.example .env   # LUMIBASE_URL, LUMIBASE_SITE_ID, LUMIBASE_PUBLISHABLE_KEY
+npm install
+npm run dev            # http://localhost:5173
+```
+
+With `LUMIBASE_URL` or the key empty, the site renders a "connect your CMS"
+page instead of an error.
+
+## What the CMS needs to provide
+
+This site only reads. Whoever runs the LumiBase instance provides:
+
+1. **A publishable key** — Studio → Access → API keys, marked publishable (the
+   token starts with `lbk_pub_`). The site refuses any other kind of token in
+   `LUMIBASE_PUBLISHABLE_KEY`.
+2. **A read grant restricted to published rows.** `GET /api/v1/items` applies
+   no published-only filter of its own; normal requests ask for
+   `status=published` explicitly, but the grant is what actually enforces it.
+3. **A `posts` collection** with `title`, `slug` and `body` fields — or change
+   the collection in `src/lib/server/lumibase.ts` and regenerate types.
+
+No CMS yet? `npm create lumibase my-cms -- --template nextjs` scaffolds one
+that runs locally in Docker (CMS + Studio + Postgres) and creates exactly the
+key and grant above. For hosting, see the one-click deploys:
+https://docs.lumibase.dev/en/docs/deployment/one-click
+
+## Environment
+
+All variables are declared in `src/env.ts` and read through
+`$app/env/private`, a server-only module: SvelteKit fails the build if browser
+code imports it. None is `static`, so on Cloudflare Pages they are read from
+the project's Variables and Secrets when the app starts, not baked into the
+build.
+
+## Typed content
+
+`src/lib/lumibase-types.ts` holds the generated types for your collections; the
+version shipped here matches the `posts` collection described above.
+Regenerate it from your real schema:
+
+```bash
+LUMIBASE_TOKEN=… npm run types        # writes src/lib/lumibase-types.ts
+npm run types:check                   # CI: fails when the file is stale
+```
+
+`LUMIBASE_TOKEN` needs schema read access, so it is a secret. It is only used
+by these two commands, never by the site.
+
+## Draft preview
+
+Preview is **off** until both of these are set (server-side only):
+
+| Variable | Value |
+|---|---|
+| `LUMIBASE_PREVIEW_SECRET` | A random string of 32+ characters (`openssl rand -base64 32`) |
+| `LUMIBASE_PREVIEW_TOKEN` | A secret token (`lbk_…`, not `lbk_pub_…`) whose grant includes drafts |
+
+Then open, or configure as the preview URL in Studio:
+
+```
+https://<your-site>/api/preview?secret=<LUMIBASE_PREVIEW_SECRET>&redirect=/posts/<slug>
+```
+
+The browser receives an HttpOnly cookie signed with the secret, valid for one
+hour. Requests carrying it read with the preview token (drafts included) and
+are served `Cache-Control: private, no-store`; everyone else reads with the
+publishable key and gets `public, max-age=0, s-maxage=60`, which a shared
+cache in front of the site may honour. A wrong secret is a `401`,
+and with preview not configured the route is a `404`. `/api/preview/exit`
+ends the session; rotating the secret ends every session at once. The redirect
+only accepts same-origin paths.
+
+The LumiBase Delivery API's own `?preview=true` flag
+(`/api/v1/deliver/page/:site/:slug?preview=true`) only bypasses its caches — it
+does not return drafts. That is why preview here uses a separate token rather
+than a query flag.
+
+## Deploy to Cloudflare Pages
+
+`npm run build` writes the Pages output (static assets plus `_worker.js`) to
+`.svelte-kit/cloudflare`; `wrangler.jsonc` names that directory and the Pages
+project (`{{projectName}}`).
+
+**Option A — Git integration.** Connect the repository in the Cloudflare
+dashboard with build command `npm run build` and output directory
+`.svelte-kit/cloudflare`, then add the variables above — the key, preview
+secret and preview token as **secrets**.
+
+**Option B — direct upload** from your machine or CI:
+
+```bash
+npm run build
+CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… npm run deploy
+npx wrangler pages secret put LUMIBASE_PUBLISHABLE_KEY
+```
+
+In CI, keep `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` in repository
+secrets and guard the deploy step with
+`if: env.CLOUDFLARE_API_TOKEN != ''` so pull requests from forks still build.
+
+To run the built site locally under the Pages runtime, put the variables in
+`.dev.vars` (git-ignored) and run `npm run preview`.
+
+## Fully static instead
+
+Prefer static HTML, like the Astro starter? Install
+`@sveltejs/adapter-static`, use it in `vite.config.ts`, add
+`export const prerender = true;` to `src/routes/+layout.server.ts`, and delete
+`src/routes/api/preview` and `src/hooks.server.ts` — a static build has no
+server to read a preview cookie. The site is written to `build/`, so set
+`pages_build_output_dir` in `wrangler.jsonc` (and the Pages output directory)
+to `build`. Content is then fixed at build time, so
+rebuild on publish with a Pages deploy hook triggered from a LumiBase Flow
+(see the Astro starter guide).
+
+## Visual editing
+
+LumiBase visual editing (the planned `@lumibase/visual-editing` package) is not
+released yet. `src/lib/components/VisualEditing.svelte` is the hook point: the
+root layout renders it only for verified preview sessions, and it is empty
+today.
+
+## Scripts
+
+| Script | What it does |
+|---|---|
+| `npm run dev` | Vite dev server |
+| `npm run build` | Cloudflare Pages build into `.svelte-kit/cloudflare` |
+| `npm run preview` | Build, then serve it with `wrangler pages dev` |
+| `npm run typecheck` | `svelte-kit sync` + `svelte-check` |
+| `npm run types` / `types:check` | Generate / verify `src/lib/lumibase-types.ts` |
+| `npm run deploy` | `wrangler pages deploy` |

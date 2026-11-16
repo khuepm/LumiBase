@@ -227,7 +227,7 @@ export function ApiKeysPage() {
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
           <div className="overflow-hidden rounded-lg border">
             <table className="w-full text-sm">
-              <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+              <thead className="bg-muted/40 text-start text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="px-4 py-2 font-medium">Name</th>
                   <th className="px-4 py-2 font-medium">Prefix</th>
@@ -246,7 +246,7 @@ export function ApiKeysPage() {
                       <button
                         type="button"
                         onClick={() => setSelectedId(key.id)}
-                        className="text-left font-medium text-primary hover:underline"
+                        className="text-start font-medium text-primary hover:underline"
                       >
                         {key.name}
                       </button>
@@ -617,7 +617,7 @@ function EffectivePermissionsPreview({
       {!isLoading && rows.length > 0 && (
         <div className="overflow-hidden rounded-md border">
           <table className="w-full text-xs">
-            <thead className="bg-muted/40 text-left uppercase text-muted-foreground">
+            <thead className="bg-muted/40 text-start uppercase text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 font-medium">Collection</th>
                 {ACTIONS.map((action) => (
@@ -642,7 +642,7 @@ function EffectivePermissionsPreview({
                             {cell.map((row) => (
                               <li key={`${row.policyId}:${row.permission.id}`} className="rounded bg-muted px-1.5 py-1">
                                 <span className="font-medium">{row.policyName}</span>
-                                <span className="ml-1 text-muted-foreground">{row.permission.fields.join(', ')}</span>
+                                <span className="ms-1 text-muted-foreground">{row.permission.fields.join(', ')}</span>
                               </li>
                             ))}
                           </ul>
@@ -876,7 +876,7 @@ function CreateAccessDialog({
             />
             <span className="text-xs">
               Admin access
-              <span className="ml-1 text-muted-foreground">(bypass all permission checks)</span>
+              <span className="ms-1 text-muted-foreground">(bypass all permission checks)</span>
             </span>
           </label>
           {isRole && (
@@ -889,7 +889,7 @@ function CreateAccessDialog({
               />
               <span className="text-xs">
                 App access
-                <span className="ml-1 text-muted-foreground">(can sign in to Studio)</span>
+                <span className="ms-1 text-muted-foreground">(can sign in to Studio)</span>
               </span>
             </label>
           )}

@@ -625,7 +625,7 @@ marketplaceRouter.post("/extensions/:slug/install", async (c) => {
   return c.json({ data: installed[0] }, 201);
 });
 
-const publishSchema = z.object({
+export const publishSchema = z.object({
   extensionId: z.string(),
   marketplaceSlug: z.string().regex(/^[a-z0-9-]+$/),
   publisher: z.string().min(1),

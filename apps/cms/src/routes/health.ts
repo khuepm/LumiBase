@@ -13,7 +13,7 @@ type CacheServiceStatus = 'healthy' | 'degraded' | 'unhealthy';
 type OverallStatus = 'healthy' | 'degraded';
 type ServiceName = keyof HealthResponse['services'];
 
-interface HealthResponse {
+export interface HealthResponse {
   status: OverallStatus;
   services: {
     database: ServiceStatus;
@@ -84,14 +84,22 @@ async function probeCache(runtime: RuntimeContext): Promise<CacheServiceStatus> 
   return 'healthy';
 }
 
-async function collectHealth(c: Context<AppEnv>): Promise<HealthResponse> {
+export async function collectHealth(c: Context<AppEnv>): Promise<HealthResponse> {
   const runtime = c.get('runtime');
 
   const [database, cache, search, storage, queue] = await Promise.all([
     probeService(async () => {
+      // Probe the app connection (the request path) and, when a dedicated
+      // one is configured, the system connection that workers and system
+      // routes use (B130). Either failing marks the database unhealthy.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sql = runtime.database.getConnection() as any;
       await sql`SELECT 1`;
+      if (runtime.database.hasSystemConnection?.()) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const system = runtime.database.getSystemConnection() as any;
+        await system`SELECT 1`;
+      }
       return true;
     }, 3000),
     probeCache(runtime),
@@ -156,6 +164,16 @@ function isReady(response: HealthResponse): boolean {
 }
 
 healthRouter.get('/', async (c) => c.json(shapeHealth(c, await collectHealth(c)), 200));
+
+/**
+ * Liveness: the process is up and answering HTTP. Probes no dependency, so it
+ * answers in milliseconds even while PostgreSQL, Redis or S3 are unreachable.
+ * `/` waits up to 3 s on the database and queue probes when they are down,
+ * which is longer than a liveness/HEALTHCHECK timeout: an orchestrator would
+ * restart (or mark unhealthy) a healthy process because a dependency is out.
+ * Dependency state belongs to readiness (`/ready`), not to liveness.
+ */
+healthRouter.get('/live', (c) => c.json({ status: 'ok' as const }, 200));
 
 healthRouter.get('/ready', async (c) => {
   const response = await collectHealth(c);

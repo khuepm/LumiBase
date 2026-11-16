@@ -1,10 +1,13 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
+  foreignKey,
   index,
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -184,7 +187,12 @@ export const relations = pgTable(
 export const items = pgTable(
   'lumibase_items',
   {
-    id: id(),
+    /**
+     * Item id, unique within its site (primary key `(site_id, id)`, migration
+     * 0035). String primary keys are caller-chosen, so the same id may exist in
+     * two sites; every lookup by id must also filter by `site_id`.
+     */
+    id: text('id').$defaultFn(() => nanoid()).notNull(),
     siteId: text('site_id')
       .notNull()
       .references(() => sites.id, { onDelete: 'cascade' }),
@@ -195,11 +203,30 @@ export const items = pgTable(
     status: text('status').default('draft').notNull(),
     data: jsonb('data').default({}).notNull(),
     /**
+     * Optimistic-concurrency counter (content-environments Phase A, migration
+     * 0036). Incremented by every write that changes the item's logical
+     * content: `data`, `status`, pins, soft delete (incl. tree cascade),
+     * crypto-shred, moving the item in a tree. Descendant path rebases, sibling
+     * sort renumbering and key-rotation re-encryption leave it alone. Exposed as the strong ETag
+     * of `GET /items/:collection/:id`; `If-Match` compares against it.
+     */
+    version: integer('version').default(0).notNull(),
+    /**
      * Field names pinned by a human edit (Law Zero / override-is-law).
      * Agents are denied writes to pinned fields at the harness boundary.
      */
     pinnedFields: jsonb('pinned_fields').default([]).notNull(),
     sort: integer('sort').default(0).notNull(),
+    /**
+     * Hierarchical collections (#749). Only written for collections with
+     * `meta.tree.enabled`; NULL/NULL reads as a root. `path` is the
+     * materialised ancestor chain including the item itself (`/root/child/`),
+     * maintained server-side by ItemService (create/move/delete) under a
+     * per-collection advisory lock. No FK on `parent_id`: integrity is kept by
+     * the service and soft-deleted parents keep their rows.
+     */
+    parentId: text('parent_id'),
+    path: text('path'),
     /**
      * Content scheduling window (Req 7). When set, the Scheduler publishes at
      * `publishAt` and unpublishes at `unpublishAt`; delivery filters to the
@@ -213,6 +240,18 @@ export const items = pgTable(
      */
     editorialState: text('editorial_state'),
     /**
+     * Publication timestamps (#687, migration 0037). `firstPublishedAt` is
+     * stamped once, on the first transition into `published`, and never moves.
+     * `publishedAt` is the most recent publish (kept on unpublish, so it reads
+     * "last published at"). `hasUnpublishedChanges` flips on when the data of
+     * an item that has been published is edited, and clears on the next
+     * publish. Maintained by ItemService / EditorialService / the scheduler
+     * through `publication-state.ts`.
+     */
+    firstPublishedAt: timestamp('first_published_at'),
+    publishedAt: timestamp('published_at'),
+    hasUnpublishedChanges: boolean('has_unpublished_changes').default(false).notNull(),
+    /**
      * Per-record wrapped DEK for envelope encryption (Req 4.5). Null unless
      * `LUMIBASE_ENVELOPE_ENCRYPTION` is enabled; deleting it crypto-shreds the
      * record (Req 11.2).
@@ -225,6 +264,7 @@ export const items = pgTable(
     deletedAt: timestamp('deleted_at'),
   },
   (t) => ({
+    pk: primaryKey({ name: 'lumibase_items_pkey', columns: [t.siteId, t.id] }),
     collectionStatusIdx: index('items_collection_status_idx').on(
       t.siteId,
       t.collectionId,
@@ -248,6 +288,18 @@ export const items = pgTable(
     deliverIdx: index('items_deliver_idx')
       .on(t.siteId, t.collectionId, t.status, t.publishAt, t.unpublishAt)
       .where(sql`${t.deletedAt} is null`),
+    /** Tree children + sibling order (#749, migration 0034_item_tree). */
+    treeParentIdx: index('items_tree_parent_idx')
+      .on(t.siteId, t.collectionId, t.parentId, t.sort)
+      .where(sql`${t.deletedAt} is null`),
+    /** Tree subtree prefix scans (#749, migration 0034_item_tree). */
+    treePathIdx: index('items_tree_path_idx')
+      .on(t.siteId, t.collectionId, t.path.op('text_pattern_ops'))
+      .where(sql`${t.path} is not null`),
+    /** "Modified since publish" list filter (#687, migration 0037). */
+    unpublishedChangesIdx: index('items_unpublished_changes_idx')
+      .on(t.siteId, t.collectionId)
+      .where(sql`${t.hasUnpublishedChanges} = true and ${t.deletedAt} is null`),
   }),
 );
 
@@ -258,9 +310,7 @@ export const revisions = pgTable(
     siteId: text('site_id')
       .notNull()
       .references(() => sites.id, { onDelete: 'cascade' }),
-    itemId: text('item_id')
-      .notNull()
-      .references(() => items.id, { onDelete: 'cascade' }),
+    itemId: text('item_id').notNull(),
     collectionId: text('collection_id')
       .notNull()
       .references(() => collections.id, { onDelete: 'cascade' }),
@@ -288,6 +338,12 @@ export const revisions = pgTable(
     createdAt: createdAt(),
   },
   (t) => ({
+    /** Same-site item (composite FK, migration 0035). */
+    itemFk: foreignKey({
+      name: 'lumibase_revisions_item_fk',
+      columns: [t.siteId, t.itemId],
+      foreignColumns: [items.siteId, items.id],
+    }).onDelete('cascade'),
     itemIdx: index('revisions_item_idx').on(t.itemId, t.createdAt),
     stagedIdx: index('revisions_staged_idx')
       .on(t.siteId, t.autoCommitAt)
@@ -613,9 +669,7 @@ export const releaseItems = pgTable(
       .references(() => releases.id, { onDelete: 'cascade' }),
     /** Collection name (releases span collections). */
     collection: text('collection').notNull(),
-    itemId: text('item_id')
-      .notNull()
-      .references(() => items.id, { onDelete: 'cascade' }),
+    itemId: text('item_id').notNull(),
     /** Target `items.status` to set on publish (`published` default). */
     targetStatus: text('target_status').default('published').notNull(),
     /** Revision pin; null → publish the item's live state at publish time. */
@@ -626,6 +680,12 @@ export const releaseItems = pgTable(
     createdAt: createdAt(),
   },
   (t) => ({
+    /** Same-site item (composite FK, migration 0035). */
+    itemFk: foreignKey({
+      name: 'lumibase_release_items_item_fk',
+      columns: [t.siteId, t.itemId],
+      foreignColumns: [items.siteId, items.id],
+    }).onDelete('cascade'),
     releaseItemUnique: uniqueIndex('release_items_release_item_unique').on(
       t.releaseId,
       t.collection,
@@ -659,5 +719,55 @@ export const transformPresets = pgTable(
   },
   (t) => ({
     siteKeyUnique: uniqueIndex('transform_presets_site_key_unique').on(t.siteId, t.key),
+  }),
+);
+
+/**
+ * Preview secrets (epic #667, V01) — one row per minted preview token.
+ *
+ * The token itself is an HS256 JWT signed with a key derived per site from
+ * the deployment secret, so a token minted for site A never verifies on site
+ * B. Only the SHA-256 of the token is stored: the row is the server-side
+ * record that makes a token revocable and auditable, and the delivery read
+ * requires both a valid signature AND a live row on the requesting site.
+ *
+ * A token targets one item (optionally a named content version of it) or a
+ * whole release; `locale` is carried through to the frontend.
+ */
+export const previewSecrets = pgTable(
+  'lumibase_preview_secrets',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    /** SHA-256 hex of the signed token. Plaintext is returned only on mint. */
+    tokenHash: text('token_hash').notNull(),
+    collection: text('collection'),
+    itemId: text('item_id'),
+    /** `content_versions.key` — preview a named branch of the item. */
+    versionKey: text('version_key'),
+    releaseId: text('release_id').references(() => releases.id, { onDelete: 'cascade' }),
+    locale: text('locale'),
+    /** The token reads with this user's permissions, re-evaluated per read. */
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: timestamp('expires_at').notNull(),
+    revokedAt: timestamp('revoked_at'),
+    revokedBy: text('revoked_by').references(() => users.id, { onDelete: 'set null' }),
+    useCount: integer('use_count').default(0).notNull(),
+    lastUsedAt: timestamp('last_used_at'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    tokenHashUnique: uniqueIndex('preview_secrets_token_hash_unique').on(t.tokenHash),
+    siteActiveIdx: index('preview_secrets_site_active_idx').on(t.siteId, t.revokedAt, t.expiresAt),
+    siteItemIdx: index('preview_secrets_site_item_idx').on(t.siteId, t.collection, t.itemId),
+    targetCheck: check(
+      'preview_secrets_target_chk',
+      sql`(${t.collection} is not null and ${t.itemId} is not null) or ${t.releaseId} is not null`,
+    ),
+    useCountNonNegative: check('preview_secrets_use_count_non_negative', sql`${t.useCount} >= 0`),
   }),
 );

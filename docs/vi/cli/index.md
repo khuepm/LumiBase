@@ -1,15 +1,15 @@
 ---
 title: LumiBase CLI
-version: 4
-lastUpdated: 2026-09-14T21:26:08.525Z
+version: 12
+lastUpdated: 2026-11-15T21:57:22.334Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1efeb2d4feffe788
+sourceHash: 6f43a3732ad7e73f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-14T21:33:46.476Z
-codeVerifiedHash: 1efeb2d4feffe788
-codeVerifiedClaims: 20
+codeVerified: 2026-11-15T21:57:22.334Z
+codeVerifiedHash: 6f43a3732ad7e73f
+codeVerifiedClaims: 22
 ---
 
 # LumiBase CLI
@@ -42,7 +42,9 @@ CLI yêu cầu Node.js 22+; launcher tại `packages/cli/bin/lumibase.js` từ c
 | --- | --- |
 | `lumibase init [name]` | Tạo khung một project mới |
 | `lumibase types` | Sinh type TypeScript từ một CMS đang chạy |
-| `lumibase doctor` | Báo cáo cấu hình đã resolve và thăm dò kết nối |
+| `lumibase doctor` | Báo cáo cấu hình đã resolve và thăm dò kết nối (`--security`: rà soát cấu hình theo checklist production) |
+| `lumibase skills <list\|pull\|push\|install>` | Đồng bộ Site Skills (playbook cho agent) với một site |
+| `lumibase migrate <source>` | Migrate nội dung từ CMS khác (Contentful); chỉ dry run nếu không có `--apply` |
 
 `lumibase help` và `lumibase version` cũng được chấp nhận, cùng với `--help` / `-h` và `--version` / `-v`.
 
@@ -84,6 +86,8 @@ lumibase init my-site --template cloudflare --pm pnpm
 Có ba template được chấp nhận — `nextjs`, `default`, và `cloudflare` (`TEMPLATES` trong `packages/create-lumibase/src/index.ts`). Không truyền `--template` thì lựa chọn thuộc về prompt, nơi **`nextjs`** được chọn sẵn: một website Next.js kèm CMS và Studio chạy trong Docker, nội dung đã seed, và một publishable key. Template *tên* `default` là starter Hono + Drizzle, không phải lựa chọn mặc định. [Bắt đầu](../getting-started.md) hướng dẫn từng loại.
 
 Scaffolder **không** phải dependency của `lumibase` — nó chạy một lần cho mỗi project, và các thư viện prompt/template của nó không có chỗ trong mọi lần cài một package runtime. `resolveScaffoldCommand` trong `packages/cli/src/commands/init.ts` lấy nó qua trình chạy một-lần của package manager đã gọi CLI (`npx --yes` / `pnpm dlx` / `yarn dlx` / `bunx`, đọc từ `npm_config_user_agent`; yarn classic rơi về `npx`), ghim vào đúng phiên bản của CLI (`create-lumibase@<version>`) để hai binary luôn đến từ cùng một release.
+
+Cái ghim đó có một hệ quả nên biết trước khi nó làm bạn bất ngờ: `init` lấy scaffolder từ **registry**, không phải từ repository này. Nên một template đã có trong source tree vẫn **không** dùng được qua `lumibase init` cho tới khi một bản `create-lumibase` có chứa nó được publish ở đúng phiên bản của CLI. Lệnh fail thế nào tuỳ vào độ cũ của scaffolder đã publish: các bản tới `1.0.0-rc.1` không validate `--template`, nên lệnh fail *bên trong* scaffolder với lỗi thiếu thư mục template; các bản sau đó từ chối tên ngay từ đầu với `Unknown template`, chỉ liệt kê những template mà bản đó mang theo. Dù theo cách nào thì tên vẫn hợp lệ; chỉ là artifact đã publish ra đời trước nó. `npm create lumibase@latest` cũng bị đúng ràng buộc này vì cùng lý do. Nếu bạn đang làm từ một checkout và cần một template chưa publish, hãy chạy scaffolder trực tiếp từ repo thay vì đi qua một trong hai đường vào.
 
 ## `lumibase types`
 
@@ -129,8 +133,66 @@ Bước health gọi endpoint `/health` không cần xác thực (`apps/cms/src/
 
 `doctor` thoát với mã khác 0 nếu có bất kỳ mục nào fail.
 
+### `lumibase doctor --security`
+
+`--security` thay các bước kiểm tra kết nối bằng một lượt rà soát cấu hình của dự án, chạy offline. Nó đọc `.env`, `.env.local`, `.dev.vars`, `[vars]` trong `wrangler.toml` và các mục `environment:` trong file compose. Mỗi phát hiện có mức độ (`critical`, `warning`, `info`), quy tắc được áp dụng và gợi ý cách sửa. Giá trị secret không bao giờ được in ra.
+
+| Flag | Tác dụng |
+| --- | --- |
+| `--production` | Áp dụng checklist production kể cả khi `NODE_ENV` / `LUMIBASE_ENV` không phải `production` |
+| `--env-file <a,b>` | Đọc các file dotenv này thay cho các file mặc định |
+| `--json` | In báo cáo dạng JSON (`ok`, `mode`, `runtime`, `sources`, `summary`, `findings`) |
+
+Lệnh thoát với mã `1` khi có bất kỳ phát hiện critical nào. Một bản scaffold mới từ `create-lumibase` qua được với không phát hiện critical nào. Danh sách quy tắc đầy đủ nằm ở [Mặc định an toàn](../security/secure-defaults.md).
+
+## `lumibase skills`
+
+Đồng bộ [Site Skills](../features/site-skills.md) — các playbook Markdown cho agent của site — giữa một thư mục trong repository của bạn và một site. CLI chỉ chuyển file: CMS parse và validate từng tài liệu, nên định dạng chỉ có một bản cài đặt.
+
+| Lệnh | Tác dụng |
+| --- | --- |
+| `lumibase skills list` | Bảng các skill của site. `--status <s>` để lọc; `--json` in các dòng thô. |
+| `lumibase skills pull` | Ghi mọi skill ra `<dir>/<slug>.skill.md`. `--dir` (mặc định `skills`), `--status`. |
+| `lumibase skills push` | Tạo hoặc cập nhật skill từ các file `*.md` trong `<dir>` (bỏ qua `README.md`), kể cả skill đang active. `--activate`, `--dry-run`, `--check`. |
+| `lumibase skills install <src>` | Thêm skill từ một thư mục, một file `.md` đơn lẻ, hoặc một package npm đã được cài cục bộ. Không bao giờ đổi một skill đang active. `--activate`, `--dry-run`. |
+
+```bash
+lumibase skills pull
+lumibase skills push --dry-run
+lumibase skills push --check      # CI: exit 1 if the site differs from the directory
+lumibase skills install @acme/lumibase-skills
+```
+
+- **Skill mới tới ở dạng draft.** Truyền `--activate` để kích hoạt; nếu không thì rà soát và kích hoạt trong Studio (Mission Control → Skills). Skill đã có giữ nguyên status.
+- **`push` để deploy; `install` không chạm vào skill đang chạy.** `push` coi thư mục là nguồn sự thật và gửi `updateActive: true`, nên push một chỉnh sửa lên skill active sẽ đổi hành vi agent ngay lập tức. `install` thì không: một file sẽ làm đổi skill active được báo `ACTIVE_SKILL_CHANGE` và skill đang chạy được giữ nguyên — hãy rà soát nó trong Studio, hoặc deploy bằng `push`.
+- **Idempotent.** File có nội dung khớp với phiên bản đang lưu được báo `unchanged` và không ghi gì.
+- **Mã thoát.** `push` và `install` thoát `1` khi có tài liệu bị từ chối; các tài liệu khác vẫn được áp dụng. `--check` cũng thoát `1` khi có thứ gì sẽ được tạo hoặc cập nhật.
+- **`install` không tải gì về.** Đường dẫn tồn tại được ưu tiên; nếu không, tên được resolve dưới `node_modules`, đi ngược lên từ thư mục làm việc. Bên trong một package, thư mục skill là `package.json` → `lumibase.skills`, hoặc `skills/` khi key đó vắng mặt. Tên và phiên bản package được ghi làm nguồn của phiên bản — một nhãn do CLI tự khai; tác giả do server ghi lại mới là câu trả lời có thẩm quyền cho "ai".
+- **Một chiều.** `push` không bao giờ xoá: skill có trên site nhưng không có trong thư mục được để yên, và `--check` không báo nó.
+- **Token.** Các endpoint nằm dưới `/api/v1/agent`, và mọi thao tác đọc và ghi skill đều cần control-plane admin, nên token cần quyền admin trên site. Chưa hỗ trợ tác giả skill không phải admin.
+
+## `lumibase migrate contentful`
+
+Chuyển một space Contentful vào site đang kết nối: content type thành collection,
+entry thành item giữ nguyên id Contentful, asset được upload thành file, và rich
+text thành JSON rich-text portable của LumiBase.
+
+```bash
+lumibase migrate contentful --file space.json                 # dry run: prints the plan
+lumibase migrate contentful --file space.json --apply         # asks, then writes
+lumibase migrate contentful --file space.json --apply --yes   # CI
+```
+
+Không có `--apply` thì không ghi gì. `--apply` hỏi xác nhận trước khi đổi schema;
+shell không tương tác cần `--yes`. Chạy lại là an toàn: item đã có được cập nhật,
+asset đã upload được bỏ qua. Các flag, bảng ánh xạ field và giới hạn:
+[Content migration](../features/content-migration.md).
+
 ## Liên quan
 
 - [SDK — typegen](../sdk/typegen.md) — API lập trình nằm sau `lumibase types`
-- [Bắt đầu](../getting-started.md) — chạy một CMS để CLI trỏ vào
+- [Cấu hình typegen và target](./typegen-config.md) — `lumibase.typegen.config.ts`: nhiều cấu hình, đầu ra Zod / GraphQL SDL / OpenAPI, `--watch`
+- [Bắt đầu](../getting-started.md#bạn-thật-sự-cần-cái-nào) — starter vs platform vs consumer client, và `lumibase` nằm ở đâu
+- [Phát triển cục bộ](../deployment/local-development.md) — chạy CMS và Studio mà CLI này trỏ vào
 - [npm publishing](../release/npm-publishing.md) — cách package được phát hành
+- [Content migration](../features/content-migration.md) — `lumibase migrate` đầy đủ

@@ -1,7 +1,10 @@
 import type { MiddlewareHandler } from 'hono';
+import { isOrganizationPath, isMcpPath } from '../services/organization-access';
 import type { AppEnv } from '../env';
 import { getHostMapping } from '../services/domains/host-cache';
 import { isValidSiteId } from '../services/identifier-guard';
+import { mcpSiteIdFromPath } from '../services/mcp-oauth';
+import { socialCallbackSiteId } from '../modules/social-auth/paths';
 
 /**
  * Resolve the active `site_id` for the request and pin it on the context.
@@ -19,11 +22,40 @@ import { isValidSiteId } from '../services/identifier-guard';
  */
 export const withTenant = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   const path = c.req.path;
-  if (path.startsWith('/api/v1/files/upload/')) {
+  if (isOrganizationPath(path) || path.startsWith('/api/v1/files/upload/')) {
     return next();
   }
 
   const headerSite = c.req.header('x-lumi-site');
+
+  // Site-addressed MCP endpoint (#346): `/api/v1/mcp/sites/<id>` and its
+  // `/.well-known/oauth-protected-resource/...` metadata. A hosted OAuth
+  // connector only knows a URL, so the site rides in the path. The path is
+  // authoritative; a contradicting `X-Lumi-Site` is a client bug, not a hint.
+  const pathSite = mcpSiteIdFromPath(path);
+  if (pathSite !== null) {
+    if (!isValidSiteId(pathSite)) {
+      return c.json({ errors: [{ code: 'TENANT_INVALID', message: 'Site id in the path has an invalid format.' }] }, 400);
+    }
+    if (headerSite && headerSite !== pathSite) {
+      return c.json({ errors: [{ code: 'TENANT_MISMATCH', message: 'X-Lumi-Site does not match the site in the path.' }] }, 400);
+    }
+    c.set('siteId', pathSite);
+    return next();
+  }
+  // Prefix is only a routing hint. withAuth MUST verify the key before org MCP runs.
+  // Social login provider callback (#736): the browser returns from Google /
+  // Apple / GitHub without our header, so the site is in the path. The
+  // server-side state is bound to the same site and checked again there.
+  const callbackSite = socialCallbackSiteId(path);
+  if (callbackSite !== null) {
+    if (!isValidSiteId(callbackSite) || (headerSite && headerSite !== callbackSite)) {
+      return c.json({ errors: [{ code: 'TENANT_INVALID', message: 'Site id in the callback path is invalid.' }] }, 400);
+    }
+    c.set('siteId', callbackSite);
+    return next();
+  }
+  if (!headerSite && isMcpPath(path) && /^Bearer\s+lbo_/.test(c.req.header('authorization') ?? '')) return next();
   if (headerSite) {
     // Req 19.2: shape-check the explicit header before it becomes context.
     // 400 (not 404) — this is a client-supplied header, not a resource probe.

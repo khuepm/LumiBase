@@ -1,7 +1,11 @@
-import { apiKeys, users, userSites, type Database } from '@lumibase/database';
+import { classifyTokenPrefix } from '@lumibase/contracts';
+import { organizationRoleForSite, organizationRoleExpression } from './organization-access';
+import { apiKeys, users, userSites, sites, roles, type Database } from '@lumibase/database';
 import type { CacheProvider } from '@lumibase/runtime';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import type { AuthPrincipal } from '../env';
+import { isPublishablePrefix } from './api-key-publishable';
+import { isFrontendAudience } from './auth/token-audience';
 import type { MagicContext } from './permission-dsl';
 import {
   PermissionService,
@@ -28,11 +32,31 @@ export type CapabilityDenialCode =
   | 'PRINCIPAL_NOT_MEMBER'
   | 'API_KEY_REVOKED'
   | 'API_KEY_EXPIRED'
+  | 'SITE_NOT_IN_ORGANIZATION'
   | 'DEV_PRINCIPAL_FORBIDDEN';
+
+/**
+ * What kind of credential the principal is presenting (#562, B144).
+ *
+ * `publishable_api_key` (`lbk_pub_…`) and `frontend_session` (custom JWT with
+ * the `frontend` audience) are held by browsers and apps, so they are treated
+ * as public. A grant on them can still be useful for reads, but some
+ * capabilities (paid AI decisions) must never be usable by them, whatever a
+ * role or policy says. Everything else is `standard`.
+ *
+ * Only the capability resolvers set this value; entry points read it.
+ */
+export type PrincipalCallerClass = 'standard' | 'publishable_api_key' | 'frontend_session' | 'organization_api_key';
 
 export interface EffectiveCapabilityGrant {
   allowed: true;
   principal: AuthenticatedPrincipalRef;
+  /**
+   * Caller class derived from the stored API key row. Users and dev principals
+   * are `standard` here; the session audience is only known on the request
+   * (see {@link callerClassFromAuth}).
+   */
+  callerClass: Extract<PrincipalCallerClass, 'standard' | 'publishable_api_key' | 'organization_api_key'>;
   /** Coarse harness capabilities. Row/field checks remain in ItemService. */
   capabilities: string[];
   /** Whether this principal may pass the MCP control-plane admin backstop. */
@@ -58,6 +82,7 @@ export type EffectiveCapabilityResolution =
 
 export interface EffectiveCapabilityServiceDeps {
   db: Database;
+  authorizationDb?: Database;
   siteId: string;
   cache?: CacheProvider;
   /** Request guards such as policy IP/time conditions use these values. */
@@ -66,6 +91,80 @@ export interface EffectiveCapabilityServiceDeps {
   now?: () => Date;
   /** Dev principals are never accepted outside an explicit development runtime. */
   environment?: string;
+}
+
+/**
+ * Capability tokens that mean "no enumerated limit".
+ *
+ * `admin` is what {@link capabilitiesFromPermissionBundle} emits for an admin
+ * bundle; `*` is the older wildcard still present in agent roles and dev
+ * principals. Both are *markers*, not capabilities anyone can grant themselves:
+ * they only appear because the resolver put them there.
+ */
+export const UNLIMITED_CAPABILITY_TOKENS: readonly string[] = ['*', 'admin'];
+
+/**
+ * Whether a resolved capability set satisfies a required capability.
+ *
+ * ## Why this is shared rather than inlined
+ *
+ * Every consumer of the resolver has to agree on what an admin grant looks
+ * like, and one of them did not (#481 R3.4). `AISecureHarness.checkCapabilities`
+ * accepted `admin` and `*`; `ReviewerService` accepted only `*` and
+ * `review:<domain>`. Since the resolver emits `admin` and never mints `*`, a real
+ * site administrator was refused at the agent-reviewer route with
+ * `Capability "review:items" is required` — the route had no reachable positive
+ * path at all. The existing reviewer tests passed `review:items` directly, so they
+ * proved the service worked without proving anything could produce that input.
+ *
+ * Three copies of "what counts as admin" is how that happens. This is the one
+ * copy; a new consumer that spells it out again is the bug returning.
+ */
+export function satisfiesCapability(
+  capabilities: readonly string[],
+  required: string,
+): boolean {
+  if (capabilities.some((capability) => UNLIMITED_CAPABILITY_TOKENS.includes(capability))) {
+    return true;
+  }
+  return capabilities.includes(required);
+}
+
+/**
+ * `ai:decide` (#511) rides the existing permission language rather than a new
+ * one: a policy grants `create` on this reserved system collection. User
+ * collections cannot take the `lumibase_` prefix (schema-service), so a
+ * content collection never collides with it.
+ */
+export const DECISION_PERMISSION_COLLECTION = 'lumibase_ai_decisions';
+export const DECISION_CAPABILITY = 'ai:decide';
+
+/**
+ * Deployment permissions (#743) ride the permission language the same way
+ * `ai:decide` does: a policy row on the reserved pseudo-collection
+ * `lumibase_deploy:<scope>` where `<scope>` is an environment key, a
+ * deployment-target id, or `*`.
+ *
+ *   `create` → `deploy:trigger:<scope>`   (trigger / promote into it)
+ *   `update` → `deploy:approve:<scope>`   (decide a pending deploy approval)
+ *
+ * Exact collection keys only: no wildcard policy row can mint these, and they
+ * never mint an item capability.
+ */
+export const DEPLOY_PERMISSION_COLLECTION_PREFIX = 'lumibase_deploy:';
+const DEPLOY_SCOPE_PATTERN = /^(?:\*|[A-Za-z0-9_-]{1,64})$/;
+const DEPLOY_CAPABILITY_BY_ACTION: Readonly<Record<string, string>> = {
+  create: 'deploy:trigger:',
+  update: 'deploy:approve:',
+};
+
+/** `deploy:*` capability for a `lumibase_deploy:<scope>` permission row, or null. */
+export function deployCapabilityForPermission(collection: string, action: string): string | null {
+  if (!collection.startsWith(DEPLOY_PERMISSION_COLLECTION_PREFIX)) return null;
+  const scope = collection.slice(DEPLOY_PERMISSION_COLLECTION_PREFIX.length);
+  const prefix = DEPLOY_CAPABILITY_BY_ACTION[action];
+  if (!prefix || !DEPLOY_SCOPE_PATTERN.test(scope)) return null;
+  return `${prefix}${scope}`;
 }
 
 const ITEM_CAPABILITIES_BY_ACTION: Readonly<Record<string, readonly string[]>> = {
@@ -92,6 +191,17 @@ export function capabilitiesFromPermissionBundle(bundle: PermissionBundle): stri
       if (/^schema:(read|create|update|delete|migrate)$/.test(action)) {
         capabilities.add(action);
       }
+      continue;
+    }
+    if (permission.collection === DECISION_PERMISSION_COLLECTION) {
+      // Never an item grant: `create` here must not mint items:write.
+      if (action === 'create') capabilities.add(DECISION_CAPABILITY);
+      continue;
+    }
+    if (permission.collection.startsWith(DEPLOY_PERMISSION_COLLECTION_PREFIX)) {
+      // Never an item grant either (#743).
+      const deploy = deployCapabilityForPermission(permission.collection, action);
+      if (deploy) capabilities.add(deploy);
       continue;
     }
 
@@ -122,6 +232,31 @@ export function principalRefFromAuth(
     return { type: 'dev', siteId, roles: [...(auth.roles ?? [])] };
   }
   return null;
+}
+
+/**
+ * Caller class of the request's principal, from trusted auth middleware only
+ * (#562). Like {@link principalRefFromAuth}, raw request bodies, MCP arguments
+ * and prompts must never supply this value.
+ *
+ * - API key whose stored prefix is publishable (`auth.apiKey.prefix`, set by
+ *   `withAuth` from the `api_keys` row) → `publishable_api_key`.
+ * - Custom-JWT end-user (`isFrontendUser`) or a verified token whose `aud`
+ *   contains `frontend` → `frontend_session`.
+ * - Anything else → `standard`.
+ */
+export function callerClassFromAuth(auth: AuthPrincipal | undefined): PrincipalCallerClass {
+  if (auth?.apiKey?.scope === 'organization') return 'organization_api_key';
+  if (!auth) return 'standard';
+  if (auth.type === 'api_key') {
+    return isPublishablePrefix(auth.apiKey?.prefix as string | undefined)
+      ? 'publishable_api_key'
+      : 'standard';
+  }
+  if (auth.isFrontendUser === true || isFrontendAudience(auth.raw?.aud)) {
+    return 'frontend_session';
+  }
+  return 'standard';
 }
 
 /** Resolve live, tenant-scoped tool capabilities for one authenticated principal. */
@@ -162,8 +297,8 @@ export class EffectiveCapabilityService {
       return this.deny(principal, 'PRINCIPAL_INACTIVE', 'The authenticated user is not active.');
     }
 
-    const [membership] = await this.deps.db
-      .select({ roleId: userSites.roleId })
+    const [membership] = await (this.deps.authorizationDb ?? this.deps.db)
+      .select({ roleId: userSites.roleId, organizationRole: organizationRoleExpression(principal.userId, this.deps.siteId) })
       .from(userSites)
       .where(
         and(
@@ -173,7 +308,12 @@ export class EffectiveCapabilityService {
       )
       .limit(1);
 
-    if (!membership && !user.isBootstrap) {
+    const organizationAdmin = !user.isBootstrap && (membership ? membership.organizationRole : await organizationRoleForSite(
+      this.deps.authorizationDb ?? this.deps.db, principal.userId, this.deps.siteId,
+    ));
+    const [organizationRole] = organizationAdmin ? await this.deps.db.select({ id: roles.id }).from(roles)
+      .where(and(eq(roles.siteId, this.deps.siteId), eq(roles.systemKey, 'administrator'))).limit(1) : [];
+    if (!membership && !user.isBootstrap && !organizationRole) {
       return this.deny(
         principal,
         'PRINCIPAL_NOT_MEMBER',
@@ -183,7 +323,7 @@ export class EffectiveCapabilityService {
 
     const context = this.permissionContext({
       userId: principal.userId,
-      roleId: membership?.roleId ?? null,
+      roleId: organizationRole?.id ?? membership?.roleId ?? null,
       user: { id: principal.userId },
       apiKey: null,
     });
@@ -195,7 +335,7 @@ export class EffectiveCapabilityService {
       ? { ...bundle, admin: true }
       : bundle;
 
-    return this.grant(principal, effectiveBundle, context, effectiveBundle.admin);
+    return this.grant(principal, effectiveBundle, context, effectiveBundle.admin, 'standard');
   }
 
   private async resolveApiKey(
@@ -204,6 +344,9 @@ export class EffectiveCapabilityService {
     const [apiKey] = await this.deps.db
       .select({
         id: apiKeys.id,
+        prefix: apiKeys.prefix,
+        scope: apiKeys.scope,
+        organizationId: apiKeys.organizationId,
         revokedAt: apiKeys.revokedAt,
         expiresAt: apiKeys.expiresAt,
       })
@@ -211,7 +354,7 @@ export class EffectiveCapabilityService {
       .where(
         and(
           eq(apiKeys.id, principal.apiKeyId),
-          eq(apiKeys.siteId, this.deps.siteId),
+          or(eq(apiKeys.siteId, this.deps.siteId), eq(apiKeys.scope, 'organization')),
         ),
       )
       .limit(1);
@@ -227,6 +370,24 @@ export class EffectiveCapabilityService {
       return this.deny(principal, 'API_KEY_EXPIRED', 'The authenticated API key has expired.');
     }
 
+    if (apiKey.scope === 'organization') {
+      if (classifyTokenPrefix(apiKey.prefix) !== 'organization') {
+        return this.deny(principal, 'PRINCIPAL_NOT_FOUND', 'Credential scope and prefix do not match.');
+      }
+      const [site] = await (this.deps.authorizationDb ?? this.deps.db).select({ organizationId: sites.organizationId })
+        .from(sites).where(eq(sites.id, this.deps.siteId)).limit(1);
+      if (!site || site.organizationId !== apiKey.organizationId) {
+        return this.deny(principal, 'SITE_NOT_IN_ORGANIZATION', 'Site is not in the key organization.');
+      }
+      const [administrator] = await this.deps.db.select({ id: roles.id }).from(roles)
+        .where(and(eq(roles.siteId, this.deps.siteId), eq(roles.systemKey, 'administrator'))).limit(1);
+      if (!administrator) return this.deny(principal, 'PRINCIPAL_NOT_FOUND', 'Site administrator role is missing.');
+      const context = this.permissionContext({ userId: null, roleId: administrator.id,
+        user: null, apiKey: { id: principal.apiKeyId } });
+      const bundle = await this.bundle(context);
+      return this.grant(principal, bundle, context, true, 'organization_api_key');
+    }
+
     // API-key roles are resolved from api_key_roles by PermissionService; there
     // is no direct request role to forward into the context.
     const roleId: MagicContext['roleId'] = null;
@@ -240,7 +401,16 @@ export class EffectiveCapabilityService {
 
     // API keys can carry an admin policy for data-plane parity, but the current
     // HTTP control-plane backstop deliberately accepts human/dev admins only.
-    return this.grant(principal, bundle, context, false);
+    // The prefix is derived from the token itself (#562): a publishable key is
+    // classified from the stored row, so a queued job that only kept the key id
+    // is still recognised.
+    return this.grant(
+      principal,
+      bundle,
+      context,
+      false,
+      isPublishablePrefix(apiKey.prefix) ? 'publishable_api_key' : 'standard',
+    );
   }
 
   private resolveDev(
@@ -272,7 +442,7 @@ export class EffectiveCapabilityService {
       user: { roles: [...principal.roles] },
       apiKey: null,
     });
-    return this.grant(principal, bundle, context, true);
+    return this.grant(principal, bundle, context, true, 'standard');
   }
 
   private permissionContext(
@@ -304,10 +474,12 @@ export class EffectiveCapabilityService {
     bundle: PermissionBundle,
     permissionContext: MagicContext,
     controlPlaneAdmin: boolean,
+    callerClass: EffectiveCapabilityGrant['callerClass'],
   ): EffectiveCapabilityGrant {
     return {
       allowed: true,
       principal,
+      callerClass,
       capabilities: capabilitiesFromPermissionBundle(bundle),
       controlPlaneAdmin,
       bundle,

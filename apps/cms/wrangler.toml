@@ -27,6 +27,13 @@ compatibility_flags = ["nodejs_compat"]
 # binding = "HYPERDRIVE"
 # id = "REPLACE_WITH_HYPERDRIVE_ID"
 
+# Optional system-role Hyperdrive (B130). Only needed with LUMIBASE_DB_RLS=enforce:
+# point it at a role with BYPASSRLS; scheduled/queue handlers and system routes use it.
+# Leave commented out otherwise (a Hyperdrive binding needs a real config id).
+# [[hyperdrive]]
+# binding = "HYPERDRIVE_SYSTEM"
+# id = "REPLACE_WITH_SYSTEM_HYPERDRIVE_ID"
+
 # Cloudflare KV for caching configurations and permissions (Strict Rule #4).
 # [[kv_namespaces]]
 # binding = "CONFIG_CACHE"
@@ -85,21 +92,105 @@ new_sqlite_classes = ["PageviewCounter"]
 # The `*/5` trigger drives the pageview hot-counter/DO flush into
 # lumibase_pageview_daily; the handler branches on the fire time so the hourly
 # rotation still only runs at minute 0.
+# The `* * * * *` trigger sweeps due schedule flows onto `flow-events` (same
+# sweep as the Docker `flow-schedule` cron, B118); the handler returns after it,
+# so the minute tick runs nothing else.
 [triggers]
-crons = ["0 * * * *", "*/5 * * * *"]
+crons = ["0 * * * *", "*/5 * * * *", "* * * * *"]
 
 # ─── Queues ───────────────────────────────────────────────────────────────────
+# The Worker's `queue()` export (src/cloudflare-queue.ts) routes each batch by
+# queue name: `lumibase-<logical>-<profile>` → agent-runs / flow-runs /
+# flow-events / content-indexing / revalidation-dispatch /
+# encryption-envelope-migration. Keep the logical
+# segment if you rename a queue. Every named profile needs its queues (and
+# `-dlq`) created before deploy, e.g.
+#   wrangler queues create lumibase-flow-runs-production
+#   wrangler queues create lumibase-flow-runs-production-dlq
+# Flows consumers use `max_retries = 2` (3 deliveries), the same as Docker's
+# BullMQ default `attempts: 3`. See docs/en/features/flows-automation.md.
+# content-indexing and revalidation-dispatch (B131) batch up to 10 messages
+# (each is acked or retried on its own) with the same `max_retries = 2`.
+#
 # Used by ItemService to publish mutation events to SiteRoom without blocking.
 # [[queues.producers]]
 # binding = "REALTIME_QUEUE"
 # queue = "lumibase-realtime"
+
+
+[[queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-local"
+
+[[queues.consumers]]
+queue = "lumibase-agent-runs-local"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-local-dlq"
+
+[[queues.producers]]
+binding = "FLOW_RUNS_QUEUE"
+queue = "lumibase-flow-runs-local"
+
+[[queues.consumers]]
+queue = "lumibase-flow-runs-local"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-runs-local-dlq"
+
+[[queues.producers]]
+binding = "FLOW_EVENTS_QUEUE"
+queue = "lumibase-flow-events-local"
+
+[[queues.consumers]]
+queue = "lumibase-flow-events-local"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-events-local-dlq"
+
+[[queues.producers]]
+binding = "CONTENT_INDEXING_QUEUE"
+queue = "lumibase-content-indexing-local"
+
+[[queues.consumers]]
+queue = "lumibase-content-indexing-local"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-content-indexing-local-dlq"
+
+[[queues.producers]]
+binding = "REVALIDATION_QUEUE"
+queue = "lumibase-revalidation-dispatch-local"
+
+[[queues.consumers]]
+queue = "lumibase-revalidation-dispatch-local"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-revalidation-dispatch-local-dlq"
+
+[[queues.producers]]
+binding = "ENVELOPE_MIGRATION_QUEUE"
+queue = "lumibase-encryption-envelope-migration-local"
+
+[[queues.consumers]]
+queue = "lumibase-encryption-envelope-migration-local"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-encryption-envelope-migration-local-dlq"
 
 # ─── Environment Profiles ────────────────────────────────────────────────────
 # Top-level [vars] is intentionally local/development only. Named environments
 # below repeat their non-sensitive vars and bindings because Wrangler treats
 # environment-scoped values and bindings as independent deployment profiles.
 # Secrets such as JWT_SECRET, ENCRYPTION_KEY, CF_ACCESS_CERTS_URL,
-# CF_ACCESS_AUDIENCE, and optional METRICS_TOKEN must be set with
+# CF_ACCESS_AUDIENCE, and optional METRICS_TOKEN / LUMIBASE_OPS_TOKEN (ops
+# diagnostics plane, docs/en/features/ops-diagnostics.md) must be set with
 # `wrangler secret put --env <environment>`, not hardcoded here.
 #
 # Sentry error monitoring (src/cloudflare.ts wraps the handler with
@@ -117,6 +208,12 @@ crons = ["0 * * * *", "*/5 * * * *"]
 # and `/scim/*` reach the Worker while every other path (the SPA) is served by
 # Pages. `/test-auth` is intentionally NOT routed — it is a local-dev helper.
 #
+# A route without a trailing `*` matches ONE path exactly, so `/health` alone
+# does not cover `/health/ready`: on staging that path fell through to Pages and
+# answered 200 with Studio's index.html (#461), which hid the one endpoint that
+# reports dependency readiness. Every CMS path with sub-paths needs a `/*`
+# route; `shared-domain-worker-routes.test.ts` enforces it.
+#
 # Because Studio and CMS share an origin here, the SPA calls `/api/...`
 # same-origin and CORS is unnecessary, so CORS_ALLOWED_ORIGINS is empty.
 # (Production still uses split origins studio.lumibase.dev + api.lumibase.dev
@@ -130,6 +227,7 @@ crons = ["0 * * * *", "*/5 * * * *"]
 name = "lumibase-cms-staging"
 
 [env.staging.vars]
+LUMIBASE_RUNTIME = "cloudflare"
 LUMIBASE_ENV = "staging"
 LUMIBASE_VERSION = "unknown"
 LUMIBASE_GIT_SHA = "unknown"
@@ -147,6 +245,9 @@ zone_name = "lumibase.dev"
 
 [[env.staging.routes]]
 pattern = "staging.lumibase.dev/health"
+zone_name = "lumibase.dev"
+[[env.staging.routes]]
+pattern = "staging.lumibase.dev/health/*"
 zone_name = "lumibase.dev"
 
 [[env.staging.routes]]
@@ -177,6 +278,13 @@ new_sqlite_classes = ["PageviewCounter"]
 # binding = "HYPERDRIVE"
 # id = "REPLACE_WITH_STAGING_HYPERDRIVE_ID"
 
+# Optional system-role Hyperdrive (B130). Only needed with LUMIBASE_DB_RLS=enforce:
+# point it at a role with BYPASSRLS; scheduled/queue handlers and system routes use it.
+# Leave commented out otherwise (a Hyperdrive binding needs a real config id).
+# [[env.staging.hyperdrive]]
+# binding = "HYPERDRIVE_SYSTEM"
+# id = "REPLACE_WITH_STAGING_SYSTEM_HYPERDRIVE_ID"
+
 # [[env.staging.kv_namespaces]]
 # binding = "CONFIG_CACHE"
 # id = "REPLACE_WITH_STAGING_KV_ID"
@@ -185,7 +293,75 @@ new_sqlite_classes = ["PageviewCounter"]
 # binding = "MEDIA"
 # bucket_name = "lumibase-media-staging"
 
+
+[[env.staging.queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-staging"
+
+[[env.staging.queues.consumers]]
+queue = "lumibase-agent-runs-staging"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-staging-dlq"
+
+[[env.staging.queues.producers]]
+binding = "FLOW_RUNS_QUEUE"
+queue = "lumibase-flow-runs-staging"
+
+[[env.staging.queues.consumers]]
+queue = "lumibase-flow-runs-staging"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-runs-staging-dlq"
+
+[[env.staging.queues.producers]]
+binding = "FLOW_EVENTS_QUEUE"
+queue = "lumibase-flow-events-staging"
+
+[[env.staging.queues.consumers]]
+queue = "lumibase-flow-events-staging"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-events-staging-dlq"
+
+[[env.staging.queues.producers]]
+binding = "CONTENT_INDEXING_QUEUE"
+queue = "lumibase-content-indexing-staging"
+
+[[env.staging.queues.consumers]]
+queue = "lumibase-content-indexing-staging"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-content-indexing-staging-dlq"
+
+[[env.staging.queues.producers]]
+binding = "REVALIDATION_QUEUE"
+queue = "lumibase-revalidation-dispatch-staging"
+
+[[env.staging.queues.consumers]]
+queue = "lumibase-revalidation-dispatch-staging"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-revalidation-dispatch-staging-dlq"
+
+[[env.staging.queues.producers]]
+binding = "ENVELOPE_MIGRATION_QUEUE"
+queue = "lumibase-encryption-envelope-migration-staging"
+
+[[env.staging.queues.consumers]]
+queue = "lumibase-encryption-envelope-migration-staging"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-encryption-envelope-migration-staging-dlq"
+
 [env.staging.triggers]
+# Reserve the minute trigger for production on the shared Free account.
 crons = ["0 * * * *", "*/5 * * * *"]
 
 [env.production]
@@ -264,6 +440,13 @@ new_sqlite_classes = ["PageviewCounter"]
 binding = "HYPERDRIVE"
 id = "6ab50691143d4cfaa338d103125b77f3"
 
+# Optional system-role Hyperdrive (B130). Only needed with LUMIBASE_DB_RLS=enforce:
+# point it at a role with BYPASSRLS; scheduled/queue handlers and system routes use it.
+# Leave commented out otherwise (a Hyperdrive binding needs a real config id).
+# [[env.production.hyperdrive]]
+# binding = "HYPERDRIVE_SYSTEM"
+# id = "REPLACE_WITH_PRODUCTION_SYSTEM_HYPERDRIVE_ID"
+
 [[env.production.kv_namespaces]]
 binding = "CONFIG_CACHE"
 id = "c303408c8d134b75b957926c9457b9e0"
@@ -276,8 +459,75 @@ bucket_name = "lumibase-media"
 binding = "REALTIME_QUEUE"
 queue = "lumibase-realtime"
 
+
+[[env.production.queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-production"
+
+[[env.production.queues.consumers]]
+queue = "lumibase-agent-runs-production"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-production-dlq"
+
+[[env.production.queues.producers]]
+binding = "FLOW_RUNS_QUEUE"
+queue = "lumibase-flow-runs-production"
+
+[[env.production.queues.consumers]]
+queue = "lumibase-flow-runs-production"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-runs-production-dlq"
+
+[[env.production.queues.producers]]
+binding = "FLOW_EVENTS_QUEUE"
+queue = "lumibase-flow-events-production"
+
+[[env.production.queues.consumers]]
+queue = "lumibase-flow-events-production"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-events-production-dlq"
+
+[[env.production.queues.producers]]
+binding = "CONTENT_INDEXING_QUEUE"
+queue = "lumibase-content-indexing-production"
+
+[[env.production.queues.consumers]]
+queue = "lumibase-content-indexing-production"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-content-indexing-production-dlq"
+
+[[env.production.queues.producers]]
+binding = "REVALIDATION_QUEUE"
+queue = "lumibase-revalidation-dispatch-production"
+
+[[env.production.queues.consumers]]
+queue = "lumibase-revalidation-dispatch-production"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-revalidation-dispatch-production-dlq"
+
+[[env.production.queues.producers]]
+binding = "ENVELOPE_MIGRATION_QUEUE"
+queue = "lumibase-encryption-envelope-migration-production"
+
+[[env.production.queues.consumers]]
+queue = "lumibase-encryption-envelope-migration-production"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-encryption-envelope-migration-production-dlq"
+
 [env.production.triggers]
-crons = ["0 * * * *", "*/5 * * * *"]
+crons = ["0 * * * *", "*/5 * * * *", "* * * * *"]
 
 # ─── Dev environment (dev.lumibase.dev, shared domain) ───────────────────────
 # Continuous-integration environment, auto-deployed from the `dev` branch.
@@ -285,6 +535,7 @@ crons = ["0 * * * *", "*/5 * * * *"]
 name = "lumibase-cms-dev"
 
 [env.dev.vars]
+LUMIBASE_RUNTIME = "cloudflare"
 LUMIBASE_ENV = "staging"
 LUMIBASE_VERSION = "unknown"
 LUMIBASE_GIT_SHA = "unknown"
@@ -300,6 +551,9 @@ zone_name = "lumibase.dev"
 
 [[env.dev.routes]]
 pattern = "dev.lumibase.dev/health"
+zone_name = "lumibase.dev"
+[[env.dev.routes]]
+pattern = "dev.lumibase.dev/health/*"
 zone_name = "lumibase.dev"
 
 [[env.dev.routes]]
@@ -326,8 +580,76 @@ new_sqlite_classes = ["SiteRoom"]
 tag = "v2"
 new_sqlite_classes = ["PageviewCounter"]
 
+
+[[env.dev.queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-dev"
+
+[[env.dev.queues.consumers]]
+queue = "lumibase-agent-runs-dev"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-dev-dlq"
+
+[[env.dev.queues.producers]]
+binding = "FLOW_RUNS_QUEUE"
+queue = "lumibase-flow-runs-dev"
+
+[[env.dev.queues.consumers]]
+queue = "lumibase-flow-runs-dev"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-runs-dev-dlq"
+
+[[env.dev.queues.producers]]
+binding = "FLOW_EVENTS_QUEUE"
+queue = "lumibase-flow-events-dev"
+
+[[env.dev.queues.consumers]]
+queue = "lumibase-flow-events-dev"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-events-dev-dlq"
+
+[[env.dev.queues.producers]]
+binding = "CONTENT_INDEXING_QUEUE"
+queue = "lumibase-content-indexing-dev"
+
+[[env.dev.queues.consumers]]
+queue = "lumibase-content-indexing-dev"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-content-indexing-dev-dlq"
+
+[[env.dev.queues.producers]]
+binding = "REVALIDATION_QUEUE"
+queue = "lumibase-revalidation-dispatch-dev"
+
+[[env.dev.queues.consumers]]
+queue = "lumibase-revalidation-dispatch-dev"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-revalidation-dispatch-dev-dlq"
+
+[[env.dev.queues.producers]]
+binding = "ENVELOPE_MIGRATION_QUEUE"
+queue = "lumibase-encryption-envelope-migration-dev"
+
+[[env.dev.queues.consumers]]
+queue = "lumibase-encryption-envelope-migration-dev"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-encryption-envelope-migration-dev-dlq"
+
 [env.dev.triggers]
-crons = ["0 * * * *", "*/5 * * * *"]
+# Reserve account cron capacity for production.
+crons = []
 
 # ─── Demo environment (demo.lumibase.dev, shared domain) ─────────────────────
 # Public demo / showcase. Deployed manually via workflow_dispatch. May be
@@ -336,6 +658,7 @@ crons = ["0 * * * *", "*/5 * * * *"]
 name = "lumibase-cms-demo"
 
 [env.demo.vars]
+LUMIBASE_RUNTIME = "cloudflare"
 LUMIBASE_ENV = "staging"
 LUMIBASE_VERSION = "unknown"
 LUMIBASE_GIT_SHA = "unknown"
@@ -351,6 +674,9 @@ zone_name = "lumibase.dev"
 
 [[env.demo.routes]]
 pattern = "demo.lumibase.dev/health"
+zone_name = "lumibase.dev"
+[[env.demo.routes]]
+pattern = "demo.lumibase.dev/health/*"
 zone_name = "lumibase.dev"
 
 [[env.demo.routes]]
@@ -377,5 +703,73 @@ new_sqlite_classes = ["SiteRoom"]
 tag = "v2"
 new_sqlite_classes = ["PageviewCounter"]
 
+
+[[env.demo.queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-demo"
+
+[[env.demo.queues.consumers]]
+queue = "lumibase-agent-runs-demo"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-demo-dlq"
+
+[[env.demo.queues.producers]]
+binding = "FLOW_RUNS_QUEUE"
+queue = "lumibase-flow-runs-demo"
+
+[[env.demo.queues.consumers]]
+queue = "lumibase-flow-runs-demo"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-runs-demo-dlq"
+
+[[env.demo.queues.producers]]
+binding = "FLOW_EVENTS_QUEUE"
+queue = "lumibase-flow-events-demo"
+
+[[env.demo.queues.consumers]]
+queue = "lumibase-flow-events-demo"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-events-demo-dlq"
+
+[[env.demo.queues.producers]]
+binding = "CONTENT_INDEXING_QUEUE"
+queue = "lumibase-content-indexing-demo"
+
+[[env.demo.queues.consumers]]
+queue = "lumibase-content-indexing-demo"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-content-indexing-demo-dlq"
+
+[[env.demo.queues.producers]]
+binding = "REVALIDATION_QUEUE"
+queue = "lumibase-revalidation-dispatch-demo"
+
+[[env.demo.queues.consumers]]
+queue = "lumibase-revalidation-dispatch-demo"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-revalidation-dispatch-demo-dlq"
+
+[[env.demo.queues.producers]]
+binding = "ENVELOPE_MIGRATION_QUEUE"
+queue = "lumibase-encryption-envelope-migration-demo"
+
+[[env.demo.queues.consumers]]
+queue = "lumibase-encryption-envelope-migration-demo"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-encryption-envelope-migration-demo-dlq"
+
 [env.demo.triggers]
-crons = ["0 * * * *", "*/5 * * * *"]
+# Reserve account cron capacity for production.
+crons = []

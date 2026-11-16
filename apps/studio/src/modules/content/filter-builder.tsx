@@ -27,6 +27,9 @@ const OP_LABELS: Record<ItemFilterOp, string> = {
   _has_key: 'has key',
   _has_any_keys: 'has any keys',
   _has_all_keys: 'has all keys',
+  // geopoint (#746); built by the Map layout rather than offered here.
+  _near: 'within radius',
+  _within_bbox: 'within box',
 };
 
 const OP_ORDER: ItemFilterOp[] = [

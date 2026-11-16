@@ -1,10 +1,10 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
-import { confirmDescription, okText, run } from './_shared.js';
+import { confirmDescription, okAfter, okText, run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
-const relationInputSchema = {
+export const relationInputSchema = {
   manyCollection: z.string().min(1).describe('Collection that holds the foreign key (the "many" side).'),
   manyField: z.string().min(1).describe('Field on manyCollection that stores the relation.'),
   oneCollection: z.string().min(1).describe('Related collection (the "one" side).'),
@@ -49,8 +49,8 @@ export function registerRelationTools(server: McpServer, client: LumiBaseClient)
     },
     async ({ id }) =>
       run(async () => {
-        await client.delete(`/relations/${encodePathSegment(id)}`);
-        return okText(`Relation "${id}" deleted.`);
+        const response = await client.delete(`/relations/${encodePathSegment(id)}`);
+        return okAfter(response, `Relation "${id}" deleted.`);
       }),
   );
 }

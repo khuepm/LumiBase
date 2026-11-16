@@ -27,16 +27,12 @@ import {
   settings,
   translations,
   webhooks,
-  sites,
-  users,
 } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
-import { Hono, type Context, type MiddlewareHandler } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import { stream } from 'hono/streaming';
 import type { AppEnv } from '../env';
-import { reconcileOfficialExtensions } from '../services/official-extension-reconciler';
-import { PermissionService } from '../services/permission-service';
-import type { MagicContext } from '../services/permission-dsl';
+import { resolveSiteAdminAccess } from '../services/site-admin-access';
 
 export const adminRouter = new Hono<AppEnv>();
 
@@ -44,85 +40,9 @@ const errorBody = (code: string, message: string) => ({
   errors: [{ code, message }],
 });
 
-function collectRequestHeaders(c: Context<AppEnv>): Record<string, string> {
-  const headers: Record<string, string> = {};
-  c.req.raw.headers.forEach((value, key) => {
-    headers[key.toLowerCase()] = value;
-  });
-  return headers;
-}
-
-async function resolveAuthUserId(c: Context<AppEnv>): Promise<string | null> {
-  const auth = c.get('auth');
-  if (auth?.userId) return auth.userId;
-  if (!auth?.externalId) return null;
-
-  const [row] = await c
-    .get('db')
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.externalId, auth.externalId))
-    .limit(1);
-  return row?.id ?? null;
-}
-
-async function hasSiteAdminAccess(c: Context<AppEnv>): Promise<boolean> {
-  const auth = c.get('auth');
-  const siteId = c.get('siteId');
-  const userId = await resolveAuthUserId(c);
-  if (!siteId || !userId) return false;
-
-  const ctx: MagicContext = {
-    userId,
-    siteId,
-    roleId: auth?.roleId ?? null,
-    user: auth
-      ? {
-          id: userId,
-          email: auth.email ?? null,
-          roles: auth.roles ?? [],
-          ...(auth.raw ?? {}),
-        }
-      : null,
-    ip:
-      c.get('ip') ??
-      c.req.header('cf-connecting-ip') ??
-      c.req.header('x-forwarded-for') ??
-      null,
-    headers: collectRequestHeaders(c),
-    apiKey: auth?.apiKey ?? null,
-  };
-
-  const bundle = await new PermissionService({
-    db: c.get('db'),
-    cache: c.get('runtime')?.cache,
-    ctx,
-  }).bundle();
-
-  return bundle.admin;
-}
-
 const requireSiteAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
-  const auth = c.get('auth');
-  const authRoles = Array.isArray(auth?.roles) ? auth.roles : [];
-  if (!authRoles.includes('admin')) {
-    return c.json(errorBody('FORBIDDEN', 'Admin role required.'), 403);
-  }
-  if (!c.get('siteId')) {
-    return c.json(
-      errorBody('TENANT_REQUIRED', 'X-Lumi-Site header is required.'),
-      400,
-    );
-  }
-  if (!(await hasSiteAdminAccess(c))) {
-    return c.json(
-      errorBody(
-        'FORBIDDEN',
-        'Admin access for the requested site is required.',
-      ),
-      403,
-    );
-  }
+  if (!c.get('siteId')) return c.json(errorBody('TENANT_REQUIRED', 'X-Lumi-Site header is required.'), 400);
+  if (!(await resolveSiteAdminAccess(c)).allowed) return c.json(errorBody('FORBIDDEN', 'Admin access required.'), 403);
   return next();
 };
 
@@ -373,33 +293,3 @@ adminRouter.post('/restore', async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// site management for test runner / testing isolation
-// ---------------------------------------------------------------------------
-adminRouter.post('/sites', async (c) => {
-  const db = c.get('db');
-  const body = await c.req.json();
-  const [row] = await db
-    .insert(sites)
-    .values({ id: body.id, name: body.name })
-    .returning();
-
-  // Auto-install official `lumibase-*` extensions for the new site. Fail-soft:
-  // never throws, skips when no published/verified source row exists yet.
-  if (row) {
-    await reconcileOfficialExtensions(db, c.env, row.id).catch(() => undefined);
-    const cache = c.get('runtime')?.cache;
-    if (cache) {
-      const { forgetNegative, negativeSiteKey } = await import('../services/negative-cache');
-      await forgetNegative(cache, negativeSiteKey(row.id));
-    }
-  }
-
-  return c.json({ data: row }, 201);
-});
-
-adminRouter.delete('/sites/:id', async (c) => {
-  const db = c.get('db');
-  const id = c.req.param('id');
-  await db.delete(sites).where(eq(sites.id, id));
-  return c.json({ data: { success: true } });
-});

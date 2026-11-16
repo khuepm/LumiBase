@@ -146,6 +146,11 @@ export {
 export {
   DEFAULT_UPLOAD_MAX_BYTES,
   DEFAULT_UPLOAD_MIME_TYPES,
+  CATALOGUED_UPLOAD_MIME_TYPES,
+  DANGEROUS_FILENAME_EXTENSIONS,
+  validateUploadFilename,
+  hasBidiControl,
+  type UploadFilenameIssue,
   UPLOAD_TYPE_CATALOGUE,
   MIME_EXTENSIONS,
   UploadPolicyConfigSchema,
@@ -163,6 +168,47 @@ export {
 } from './upload-policy';
 
 export { TM_DEFAULT_THRESHOLD } from './translation';
+export {
+  REVIEW_PRESETS,
+  REVIEW_RUN_STATUSES,
+  REVIEW_VERDICTS,
+  REVIEW_STALE_REASONS,
+  REVIEW_ERROR_CODES,
+  ReviewPresetSchema,
+  ReviewVerdictSchema,
+  ReviewFieldNameSchema,
+  ReviewProfileKeySchema,
+  ReviewQuestionSchema,
+  ReviewQuestionsSchema,
+  ReviewPresetOptionsSchema,
+  ReviewProfileCreateInputSchema,
+  ReviewProfileVersionInputSchema,
+  ReviewRunRequestSchema,
+  ReviewFeedbackEntrySchema,
+  ReviewFeedbackRequestSchema,
+  REVIEW_PILOT_MODES,
+  REVIEW_SESSION_MAX_MS,
+  ReviewPilotModeSchema,
+  ReviewSessionRequestSchema,
+  type ReviewPilotMode,
+  type ReviewRollout,
+  type ReviewSessionRequest,
+  type ReviewSession,
+  type ReviewPreset,
+  type ReviewPresetOptions,
+  type ReviewRunStatus,
+  type ReviewVerdict,
+  type ReviewStaleReason,
+  type ReviewQuestion,
+  type ReviewProfileCreateInput,
+  type ReviewProfileVersionInput,
+  type ReviewRunRequest,
+  type ReviewFeedbackRequest,
+  type ReviewProfile,
+  type ReviewRun,
+  type ReviewFeedback,
+  type ReviewErrorCode,
+} from './decision-review';
 
 export {
   GIT_PROVIDERS,
@@ -194,6 +240,7 @@ export {
   type FeEdge,
   type GraphError,
   type GraphErrorCode,
+  type ValidateGraphOptions,
 } from './flow-graph';
 
 export {
@@ -256,6 +303,16 @@ export {
   DeploymentTargetCreateSchema,
   DeploymentTargetUpdateSchema,
   DeployTriggerSchema,
+  DeploymentEnvironmentKeySchema,
+  DeploymentEnvironmentSchema,
+  DeploymentEnvironmentsSchema,
+  DeploymentEnvironmentsUpdateSchema,
+  DeployPromoteSchema,
+  DeployApprovalDecisionSchema,
+  type DeploymentEnvironment,
+  type DeploymentEnvironmentsUpdateInput,
+  type DeployPromoteInput,
+  type DeployApprovalDecisionInput,
   type DeploymentProviderKey,
   type DeploymentStatusValue,
   type DeploymentTargetCreateInput,
@@ -270,6 +327,29 @@ export {
   type Password,
 } from './password';
 export {
+  estimatePasswordStrength,
+  passwordUserInputTokens,
+  type PasswordStrengthResult,
+  type PasswordStrengthScore,
+  type PasswordWeakness,
+} from './password-strength';
+export {
+  PasswordPolicySchema,
+  DEFAULT_PASSWORD_POLICY,
+  PASSWORD_POLICY_MIN_LENGTH_FLOOR,
+  PASSWORD_POLICY_MIN_LENGTH_CEILING,
+  PASSWORD_STRENGTH_LABELS,
+  evaluatePasswordPolicy,
+  summarizePasswordPolicyFailure,
+  toPublicPasswordPolicy,
+  type PasswordPolicy,
+  type PasswordPolicyInput,
+  type PasswordPolicyEvaluation,
+  type PasswordRuleId,
+  type PasswordRuleResult,
+  type PublicPasswordPolicy,
+} from './password-policy';
+export {
   TotpCodeSchema,
   TotpVerifyLoginSchema,
   TotpSetupSchema,
@@ -281,6 +361,20 @@ export {
   type TotpConfirmInput,
   type TotpDisableInput,
   type TotpRegenerateRecoveryInput,
+  PasskeyNameSchema,
+  WebAuthnCredentialJsonSchema,
+  PasskeyRegistrationOptionsSchema,
+  PasskeyRegisterSchema,
+  PasskeyRenameSchema,
+  PasskeyStepUpSchema,
+  PasskeyLoginOptionsSchema,
+  PasskeyLoginVerifySchema,
+  type PasskeyRegistrationOptionsInput,
+  type PasskeyRegisterInput,
+  type PasskeyRenameInput,
+  type PasskeyStepUpInput,
+  type PasskeyLoginOptionsInput,
+  type PasskeyLoginVerifyInput,
 } from './tfa';
 export {
   PAGEVIEW_STRATEGIES,
@@ -290,3 +384,28 @@ export {
   type PageviewStrategyName,
   type PageviewSettings,
 } from './pageviews-settings';
+export * from './organizations';
+export * from './organization-tools';
+
+export {
+  ACTIVATION_MILESTONES,
+  ACTIVATION_SOURCES,
+  ActivationMilestoneSchema,
+  ActivationMilestoneStateSchema,
+  ActivationFunnelSchema,
+  TELEMETRY_SCHEMA_VERSION,
+  TELEMETRY_EVENTS,
+  TELEMETRY_EVENT_MILESTONE,
+  TelemetryEventSchema,
+  type ActivationMilestone,
+  type ActivationSource,
+  type ActivationMilestoneState,
+  type ActivationFunnel,
+  type TelemetryEventName,
+  type TelemetryEvent,
+} from './telemetry';
+
+// Field option parity — allowClear / minLength / maxLength / slug (#751).
+export * from './field-options';
+export { GeoPointSchema, GeoNearSchema, GeoBBoxSchema } from './geopoint';
+export * from './preview';

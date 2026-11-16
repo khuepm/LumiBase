@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-07-25T08:11:35.552Z
+version: 3
+lastUpdated: 2026-11-15T16:54:45.327Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 42e2b8eba52703f7
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-25T08:11:35.552Z
-codeVerifiedHash: 42e2b8eba52703f7
+sourceHash: b7103310614498d6
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-15T16:54:45.327Z
+codeVerifiedHash: b7103310614498d6
 codeVerifiedClaims: 2
 ---
 
@@ -217,14 +217,14 @@ lumibase extension publish --token $MARKETPLACE_TOKEN
 ## Local development trong Studio
 
 ```bash
-# Install your local extension in Studio dev mode
+# Studio dev server
 pnpm -F @lumibase/studio dev
 
-# In another terminal
-lumibase extension install ./my-extension/dist/index.js --local --watch
+# In another terminal: watch, rebuild and hot-swap your extension
+npx tsx packages/extension-cli/src/cli.ts dev --dir ./my-extension
 ```
 
-Hot reload của Studio tự động nhận các thay đổi extension trong dev mode.
+`lumibase-ext dev` build lại extension khi lưu file và hot-swap nó vào Studio (UI slot) và vào CMS chạy trên Node (hook, endpoint, operation) mà không cần khởi động lại. Tính năng này chỉ dành cho phát triển cục bộ trên Node/Docker, không áp dụng cho Workers. Xem [Hot reload cho extension](./extension-hot-reload.md) để biết cách thiết lập và mô hình bảo mật.
 
 ## Gửi email từ một extension
 

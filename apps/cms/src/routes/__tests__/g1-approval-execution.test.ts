@@ -14,6 +14,12 @@ import {
 } from '@lumibase/database';
 import type { AppEnv, AuthPrincipal } from '../../env';
 import { createFakeDb, type FakeDb, type Row } from '../../services/__tests__/g1-approval-fake-db';
+import {
+  adminRbac,
+  memberRbac,
+  withRbacSelect,
+  type FakePrincipalRbac,
+} from '../../test-utils/rbac-principal-db';
 
 /**
  * G1 (#453) — a human decision on an agent approval must execute/resume the
@@ -45,7 +51,8 @@ vi.mock('../../services/schema-service', () => ({
 
 // The harness touches assorted ItemService methods for provenance/coalescing;
 // none of them are what these tests assert on.
-vi.mock('../../services/item-service-factory', () => ({
+vi.mock('../../services/item-service-factory', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../services/item-service-factory')>(),
   itemServiceForRequest: () => new Proxy({}, { get: () => async () => undefined }),
 }));
 
@@ -65,6 +72,18 @@ const memberPrincipal: AuthPrincipal = {
   raw: {},
 };
 
+/**
+ * Set by a case that needs a specific RBAC shape (e.g. a member who holds write
+ * permissions), so the default mapping below stays readable.
+ */
+let rbacOverride: FakePrincipalRbac | undefined;
+
+/** RBAC state matching the principal driving a request. */
+function rbacFor(auth: AuthPrincipal): FakePrincipalRbac {
+  if (rbacOverride) return rbacOverride;
+  return auth.userId === adminPrincipal.userId ? adminRbac(auth.userId) : memberRbac(auth.userId ?? 'u');
+}
+
 function seedFakeDb(agentOverrides: Row = {}, legacyOverrides: Row = {}): FakeDb {
   const fake = createFakeDb({
     [AGENT_APPROVALS]: [{
@@ -78,6 +97,14 @@ function seedFakeDb(agentOverrides: Row = {}, legacyOverrides: Row = {}): FakeDb
       status: 'pending',
       approvalPolicy: 'human',
       requestedByAgent: 'lumibase-copilot',
+      // #472: execution re-resolves the REQUESTER's current rights, so a row
+      // without provenance is refused. The fixture therefore names one — here the
+      // admin principal the suite already models, which keeps these cases about
+      // claim/execute semantics rather than about authorization.
+      requestedByPrincipal: {
+        kind: 'principal',
+        ref: { type: 'user', siteId: 'site_a', userId: 'usr_admin' },
+      },
       expiresAt: null,
       decidedAt: null,
       decidedBy: null,
@@ -137,7 +164,11 @@ function buildApp(fake: FakeDb, auth: AuthPrincipal): Hono<AppEnv> {
     // correct for a schema skill.
     (c as never as { env: Record<string, unknown> }).env = {};
     c.set('auth', auth);
-    c.set('db', fake.db);
+    // Since #472 the decide gate resolves capabilities from RBAC instead of
+    // reading `auth.roles`, so the principal's admin-ness has to exist in the
+    // data. `withRbacSelect` answers only those reads; the approval tables are
+    // still answered by this file's own fake.
+    c.set('db', withRbacSelect(fake.db, rbacFor(auth)));
     c.set('siteId', 'site_a');
     c.set('runtime', { cache: undefined, queue: undefined, keys: undefined } as never);
     c.set('requestId', 'req_1');
@@ -189,6 +220,34 @@ describe('G1 — reopening a failed approval', () => {
       expect(res.status).toBe(409);
       expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe(status);
     }
+  });
+
+  it('refuses to reopen a veto whose staged patch is already live (B131)', async () => {
+    const { VetoService } = await import('../../services/veto-service');
+    const applied = vi.spyOn(VetoService.prototype, 'isStagingApplied').mockResolvedValueOnce(true);
+    const fake = seedFakeDb({ status: 'failed', kind: 'veto' });
+    fake.tables[AGENT_APPROVALS]!.updateGuards = { pending: ['failed'] };
+
+    const res = await reopen(fake, { reason: 'retry the commit' });
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { errors: Array<{ code: string }> }).errors[0]!.code).toBe('VETO_ALREADY_APPLIED');
+    expect(applied).toHaveBeenCalledWith('appr_1');
+    expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('failed');
+    applied.mockRestore();
+  });
+
+  it('reopens a failed veto whose patch never reached live content', async () => {
+    const { VetoService } = await import('../../services/veto-service');
+    const applied = vi.spyOn(VetoService.prototype, 'isStagingApplied').mockResolvedValueOnce(false);
+    const fake = seedFakeDb({ status: 'failed', kind: 'veto' });
+    fake.tables[AGENT_APPROVALS]!.updateGuards = { pending: ['failed'] };
+
+    const res = await reopen(fake, { reason: 'commit never ran' });
+
+    expect(res.status).toBe(200);
+    expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('pending');
+    applied.mockRestore();
   });
 
   it('requires the approval capability', async () => {
@@ -286,6 +345,44 @@ describe('G1 — human approval executes the parked action', () => {
     expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('pending');
   });
 
+  /**
+   * Being able to perform the action is not being allowed to approve it (#481 B80).
+   *
+   * Deciding stays admin-only, which is the scope the owner confirmed for this PR:
+   * with an admin decider there is no field mask to intersect, so executing under
+   * the requester's scope is the whole rule. That argument only holds while
+   * non-admins genuinely cannot decide — including the tempting near-miss of a
+   * member who holds the write permission the parked action needs. This case pins
+   * that, so a later change that widens the gate cannot quietly invalidate the
+   * reasoning behind F1.
+   */
+  it('refuses a member who holds the write permission the action needs', async () => {
+    const fake = seedFakeDb();
+    const writer: AuthPrincipal = {
+      userId: 'usr_writer',
+      email: 'writer@example.com',
+      roles: ['member'],
+      raw: {},
+    };
+    // Grant exactly what the stored skill would need, minus the right to approve.
+    rbacOverride = memberRbac('usr_writer', [
+      { collection: 'schema', action: 'schema:delete' },
+      { collection: 'posts', action: 'update' },
+    ]);
+    try {
+      const res = await decide(fake, { decision: 'approved' }, writer);
+
+      expect(res.status).toBe(403);
+      await expect(res.json()).resolves.toMatchObject({
+        errors: [{ code: 'FORBIDDEN' }],
+      });
+      expect(deleteCollection).not.toHaveBeenCalled();
+      expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('pending');
+    } finally {
+      rbacOverride = undefined;
+    }
+  });
+
   it('runs the action once under concurrent approves', async () => {
     const fake = seedFakeDb();
 
@@ -344,5 +441,94 @@ describe('G1 — human approval executes the parked action', () => {
     // A stranded `deciding` row disappears from Mission Control's pending
     // inbox, so it must never be the resting state of a failed execution.
     expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).not.toBe('deciding');
+  });
+});
+
+describe('human-only approvals (external-action tools)', () => {
+  /**
+   * The same administrator, presenting an OAuth access token issued to a
+   * connector instead of a session. Their capabilities are identical; what
+   * differs is that an agent can hold this credential.
+   */
+  const connectorPrincipal: AuthPrincipal = {
+    ...adminPrincipal,
+    oauth: { issuer: 'https://idp.example', resource: 'https://cms.example/api/v1/mcp', scopes: ['mcp:admin'] },
+  };
+
+  it('a signed-in administrator releases a human_required approval', async () => {
+    const fake = seedFakeDb({ approvalPolicy: 'human_required' });
+
+    const res = await decide(fake, { decision: 'approved' });
+
+    expect(res.status).toBe(200);
+    expect(deleteCollection).toHaveBeenCalledTimes(1);
+    expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('approved');
+  });
+
+  it('the same administrator through a connector token cannot, and the approval stays pending', async () => {
+    const fake = seedFakeDb({ approvalPolicy: 'human_required' });
+
+    const res = await decide(fake, { decision: 'approved' }, connectorPrincipal);
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { errors: Array<{ message: string }> };
+    expect(body.errors[0]!.message).toContain('HUMAN_APPROVAL_REQUIRED');
+    expect(deleteCollection).not.toHaveBeenCalled();
+    expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('pending');
+    expect(fake.tables[AI_APPROVALS]!.rows[0]!['status']).toBe('pending');
+  });
+
+  it('an ordinary approval is unaffected by who presents the credential', async () => {
+    const fake = seedFakeDb();
+
+    const res = await decide(fake, { decision: 'approved' }, connectorPrincipal);
+
+    expect(res.status).toBe(200);
+    expect(deleteCollection).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('tool secrets routes', () => {
+  const SECRET = 'route-secret-value-0123456789';
+
+  function request(fake: FakeDb, auth: AuthPrincipal, method: string, path: string, body?: Row) {
+    return buildApp(fake, auth).request(`/agent/tool-secrets${path}`, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+  }
+
+  it('refuses a non-administrator and a non-human administrator', async () => {
+    const connector: AuthPrincipal = {
+      ...adminPrincipal,
+      oauth: { issuer: 'https://idp.example', resource: 'https://cms.example/api/v1/mcp', scopes: ['mcp:admin'] },
+    };
+    const apiKey: AuthPrincipal = { type: 'api_key', apiKeyId: 'key_1', roles: [], raw: {} };
+    for (const auth of [memberPrincipal, connector, apiKey]) {
+      for (const [method, path, body] of [
+        ['GET', '', undefined],
+        ['PUT', '/SOME_TOKEN', { value: SECRET }],
+        ['DELETE', '/SOME_TOKEN', undefined],
+      ] as const) {
+        const res = await request(seedFakeDb(), auth, method, path, body);
+        expect(res.status, `${method} as ${auth.userId ?? auth.apiKeyId}`).toBe(403);
+        expect(await res.text()).not.toContain(SECRET);
+      }
+    }
+  });
+
+  it('never echoes a rejected value back in a validation error', async () => {
+    const res = await request(seedFakeDb(), adminPrincipal, 'PUT', '/SOME_TOKEN', { value: SECRET, extra: SECRET });
+    expect(res.status).toBe(400);
+    expect(await res.text()).not.toContain(SECRET);
+  });
+
+  it('reports a missing KeyProvider instead of storing anything', async () => {
+    const fake = seedFakeDb();
+    const res = await request(fake, adminPrincipal, 'PUT', '/SOME_TOKEN', { value: SECRET });
+    expect(res.status).toBe(503);
+    expect(((await res.json()) as { errors: Array<{ code: string }> }).errors[0]!.code).toBe('KEYS_UNAVAILABLE');
+    expect(JSON.stringify(fake.writes)).not.toContain(SECRET);
   });
 });

@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   apiKeyPolicies,
@@ -59,8 +60,8 @@ describe.skipIf(!hasDbIntegrationUrl)('EffectiveCapabilityService — DB integra
     await db.delete(users).where(inArray(users.id, [USER, ADMIN_USER, SUSPENDED_USER]));
 
     await db.insert(sites).values([
-      { id: SITE, name: 'G2 capability integration' },
-      { id: OTHER_SITE, name: 'G2 capability integration other' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'G2 capability integration' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER_SITE, name: 'G2 capability integration other' },
     ]);
 
     const [editorRole, adminRole] = await db

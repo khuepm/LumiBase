@@ -9,6 +9,7 @@
  * be registered via `registerHandler()` (used by extensions).
  */
 
+import type { CacheProvider, KeyProvider } from '@lumibase/runtime';
 import { validateOutboundUrl } from './ssrf-guard';
 
 export interface FlowNode {
@@ -18,6 +19,12 @@ export interface FlowNode {
   options?: Record<string, unknown>;
   next?: string | null;
   onError?: string | null;
+  /**
+   * Explicit branches (J10, #517): branch key → next node id, `null` ends the
+   * run. When set, the runner follows the `branch` the operation returned
+   * instead of `next`; a returned branch with no entry is a run error.
+   */
+  branches?: Record<string, string | null>;
 }
 
 export interface FlowGraph {
@@ -32,9 +39,16 @@ export interface FlowRunContext {
   env: Record<string, unknown>;
 }
 
+/**
+ * `node` is the node being executed. Most handlers ignore it; a branching
+ * operation reads `node.branches` (to know whether an `error` branch is
+ * mapped) and `node.id` (for a per-node idempotency key).
+ */
 export type OperationHandler = (
   ctx: FlowRunContext,
   options: Record<string, unknown>,
+  /** Always passed by `runFlow`; optional so direct callers and older handlers keep compiling. */
+  node?: FlowNode,
 ) => Promise<unknown>;
 
 const handlers = new Map<string, OperationHandler>();
@@ -55,7 +69,7 @@ export function getHandler(key: string): OperationHandler | undefined {
 const OPERATION_DOCS: Record<string, { description: string; options?: Record<string, string> }> = {
   log: { description: 'Log a message', options: { message: 'string' } },
   condition: {
-    description: 'Compare a context path against a value; the result carries { pass }',
+    description: "Compare a context path against a value; the result carries { pass, branch: 'true' | 'false' }",
     options: { path: "string — e.g. 'input.event.action'", operator: "'==' | '!=' | '>' | '<' | 'contains'", value: 'any' },
   },
   transform: { description: 'Merge fixed fields into the previous step output', options: { set: 'object — fields to set' } },
@@ -65,13 +79,55 @@ const OPERATION_DOCS: Record<string, { description: string; options?: Record<str
   },
   sleep: { description: 'Pause the flow', options: { ms: 'number — milliseconds (max 60000)' } },
   mail: { description: 'Send an email notification', options: { to: 'string', subject: 'string' } },
-  'drift-scan': { description: 'Scan one intent for content drift and open reconciler goals', options: { intentId: 'string' } },
+  'drift-scan': {
+    description: 'Scan one intent for content drift and open reconciler goals',
+    options: { intentId: 'string', maxSemanticItems: 'number' },
+  },
   'trust-promote-check': { description: 'Check trust score for autonomy promotion' },
   'deploy:trigger': {
     description: 'Trigger a deployment target',
     options: { targetId: 'string — deployment target id', coalesceWindowMs: 'number — reuse a deploy created within this window' },
   },
   'deploy:status': { description: 'Fetch latest deployment status', options: { targetId: 'string — deployment target id' } },
+  'ai:decision': {
+    description:
+      "Governed AI decision on one item with a pinned review profile version; branches 'true' | 'false' | 'unknown' | 'error' (or a choice key). Needs aiDecisions.flows and ai:decide.",
+    options: {
+      profileKey: 'string — review profile key',
+      profileVersion: 'number — pinned profile version (required)',
+      collection: 'string — collection of the item',
+      itemId: 'string — item id (defaults to input.itemId)',
+      questionKey: 'string — profile question that decides the branch',
+      noulThreshold: "number 0.5–1 — noul questions: 'true' when ≥ t, 'false' when ≤ 1 − t, else 'unknown'",
+      minConfidence: "number 0–1 — choice questions: below it the branch is 'unknown'",
+    },
+  },
+  'ai:apply-tags': {
+    description:
+      'Propose adding the decided category to a tags field. Shadow by default (records only); live needs aiDecisions.automation with a gate and matching thresholds, and still becomes an approval (L1 cap).',
+    options: {
+      decisionNode: 'string — step id of the ai:decision node (defaults to the previous step)',
+      collection: 'string — collection of the item',
+      itemId: 'string — item id (defaults to input.itemId)',
+      tagField: 'string — array-of-strings field to add the tag to',
+      tagMap: 'object — choice key → tag (unmapped keys use the choice key)',
+      locale: 'string — item locale for the threshold (defaults to input.locale)',
+    },
+  },
+  'editorial:route': {
+    description:
+      'Propose a review queue for the item from a decision. Shadow by default; live needs the automation gate and becomes an approval (L1 cap). Never publishes; the submit_review transition is proposed only.',
+    options: {
+      decisionNode: 'string — step id of the ai:decision node (defaults to the previous step)',
+      collection: 'string — collection of the item',
+      itemId: 'string — item id (defaults to input.itemId)',
+      queueField: 'string — field that holds the queue name',
+      queues: "object — decision branch → queue name",
+      manualQueue: "string — queue suggested when the decision is 'unknown' (never live)",
+      submitForReview: 'boolean — propose the submit_review transition when the editorial state allows it',
+      locale: 'string — item locale for the threshold (defaults to input.locale)',
+    },
+  },
 };
 
 export interface OperationInfo {
@@ -105,9 +161,20 @@ registerHandler('condition', async (ctx, options) => {
   const expected = options['value'];
   const op = String(options['operator'] ?? '==');
 
-  const actual = path.split('.').reduce<unknown>(
-    (acc, key) => (acc && typeof acc === 'object' ? (acc as Record<string, unknown>)[key] : undefined),
-    ctx as unknown as Record<string, unknown>,
+  // Graph authors may inspect data, never trusted runtime dependencies (env).
+  // Resolve against a separate data view, and never traverse prototypes.
+  const segments = path.split('.');
+  if (
+    !['input', 'steps'].includes(segments[0] ?? '') ||
+    segments.some((key) => !key || ['__proto__', 'constructor', 'prototype'].includes(key))
+  ) {
+    throw new Error('Condition path must reference input or steps without prototype access');
+  }
+  const actual = segments.reduce<unknown>(
+    (acc, key) => (acc && typeof acc === 'object' && Object.prototype.hasOwnProperty.call(acc, key)
+      ? (acc as Record<string, unknown>)[key]
+      : undefined),
+    { input: ctx.input, steps: ctx.steps },
   );
 
   let pass = false;
@@ -123,7 +190,9 @@ registerHandler('condition', async (ctx, options) => {
       pass = false;
   }
 
-  return { pass, actual };
+  // `branch` drives a node with explicit branches; `pass` stays for graphs
+  // that read it (legacy `next`-only graphs ignore `branch`).
+  return { pass, branch: pass ? 'true' : 'false', actual };
 });
 
 registerHandler('transform', async (ctx, options) => {
@@ -217,8 +286,21 @@ registerHandler('drift-scan', async (ctx, options) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const deps = { db: db as any, siteId };
 
-  const scan = await new DriftService(deps).scanIntent(intentId, {
+  // Semantic rules (J12) need the decision path: cache (quota), keys and the
+  // provider config. Manual runs and the Docker/Node event/schedule worker
+  // (B121) carry them; a runner without them reports the semantic pass
+  // `unavailable` and changes nothing.
+  const { semanticDriftRuntimeFromEnv } = await import('./semantic-drift-scan');
+  const semantic = semanticDriftRuntimeFromEnv({
+    ...deps,
+    cache: ctx.env['cache'] as CacheProvider | undefined,
+    keys: ctx.env['keys'] as KeyProvider | undefined,
+    processEnv: (ctx.env['processEnv'] ?? undefined) as Record<string, string | undefined> | undefined,
+  });
+  const maxSemanticItems = Number(options['maxSemanticItems']);
+  const scan = await new DriftService({ ...deps, semantic }).scanIntent(intentId, {
     timeBudgetMs: Math.min(60_000, Number(options['timeBudgetMs'] ?? 10_000)),
+    ...(Number.isFinite(maxSemanticItems) && maxSemanticItems > 0 ? { maxSemanticItems } : {}),
   });
   const reconcile = await new ReconcilerService(deps).reconcileIntent(intentId);
   return { scan, reconcile };
@@ -297,6 +379,25 @@ registerHandler('deploy:status', async (ctx, options) => {
   return { deploymentId, status: row?.status ?? 'unknown' };
 });
 
+registerHandler('ai:decision', async (ctx, options, node) => {
+  // Jev J10 (#517): a governed decision that picks the next branch. The
+  // module is lazy-imported like drift-scan so the generic engine does not
+  // load the review/decision stack until a flow uses it.
+  const { runAiDecisionNode } = await import('./flow-ai-decision');
+  return runAiDecisionNode(ctx, options, node);
+});
+
+registerHandler('ai:apply-tags', async (ctx, options, node) => {
+  // Jev J11 (#518): shadow-first metadata automation, lazy like ai:decision.
+  const { runAutomationNode } = await import('./ai-automation-ops');
+  return runAutomationNode('tag', ctx, options, node);
+});
+
+registerHandler('editorial:route', async (ctx, options, node) => {
+  const { runAutomationNode } = await import('./ai-automation-ops');
+  return runAutomationNode('route', ctx, options, node);
+});
+
 // ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------
@@ -307,6 +408,13 @@ export interface FlowRunResult {
   error?: string;
 }
 
+/** The `branch` an operation returned, or null when it returned none. */
+function branchOf(output: unknown): string | null {
+  if (!output || typeof output !== 'object') return null;
+  const branch = (output as { branch?: unknown }).branch;
+  return typeof branch === 'string' && branch.length > 0 ? branch : null;
+}
+
 export async function runFlow(graph: FlowGraph, input: Record<string, unknown>, env: Record<string, unknown> = {}): Promise<FlowRunResult> {
   const nodesById = new Map(graph.nodes.map((n) => [n.id, n]));
   const entry = graph.entry ?? graph.nodes[0]?.id;
@@ -315,8 +423,14 @@ export async function runFlow(graph: FlowGraph, input: Record<string, unknown>, 
   const ctx: FlowRunContext = { input, steps: {}, env };
   let cursor: string | null = entry;
   const visited = new Set<string>();
+  const signal = env['_signal'] as AbortSignal | undefined;
 
   while (cursor) {
+    // A cancelled or timed-out run starts no further node, so no downstream
+    // side effect runs after the caller gave up (J10, #517).
+    if (signal?.aborted) {
+      return { status: 'error', steps: ctx.steps, error: `Flow cancelled before node ${cursor}` };
+    }
     if (visited.has(cursor)) {
       return { status: 'error', steps: ctx.steps, error: `Cycle detected at node ${cursor}` };
     }
@@ -329,10 +443,28 @@ export async function runFlow(graph: FlowGraph, input: Record<string, unknown>, 
     if (!handler) return { status: 'error', steps: ctx.steps, error: `Unknown operation: ${node.key}` };
 
     try {
-      const output = await handler(ctx, node.options ?? {});
+      const output = await handler(ctx, node.options ?? {}, node);
       ctx.steps[node.id] = output;
       ctx.steps['previous'] = output;
-      cursor = node.next ?? null;
+      const branches = node.branches;
+      if (branches && Object.keys(branches).length > 0) {
+        // Explicit branches never fall through to `next`: a missing or
+        // unmapped branch ends the run as an error instead of guessing.
+        const branch = branchOf(output);
+        if (branch === null) {
+          return {
+            status: 'error',
+            steps: ctx.steps,
+            error: `Node ${node.id} has branches but operation ${node.key} returned no branch`,
+          };
+        }
+        if (!Object.prototype.hasOwnProperty.call(branches, branch)) {
+          return { status: 'error', steps: ctx.steps, error: `Unmapped branch "${branch}" at node ${node.id}` };
+        }
+        cursor = branches[branch] ?? null;
+      } else {
+        cursor = node.next ?? null;
+      }
     } catch (err) {
       ctx.steps[node.id] = { error: err instanceof Error ? err.message : String(err) };
       cursor = node.onError ?? null;

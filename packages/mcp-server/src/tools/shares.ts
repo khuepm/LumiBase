@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
-import { confirmDescription, okText, run } from './_shared.js';
+import { confirmDescription, okAfter, okText, run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 /**
@@ -39,8 +39,8 @@ export function registerShareTools(server: McpServer, client: LumiBaseClient) {
     },
     async ({ id }) =>
       run(async () => {
-        await client.post<unknown>(`/shares/${encodePathSegment(id)}/revoke`, {});
-        return okText(`Share link "${id}" revoked.`);
+        const response = await client.post<unknown>(`/shares/${encodePathSegment(id)}/revoke`, {});
+        return okAfter(response, `Share link "${id}" revoked.`);
       }),
   );
 }

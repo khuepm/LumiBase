@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import {
   permissions as permissionsTable,
   policies,
@@ -64,7 +65,7 @@ async function screenPublicAction(
 
 export const policiesRouter = new Hono<AppEnv>();
 
-const policyCreate = z.object({
+export const policyCreate = z.object({
   key: z.string().min(1).max(96).optional(),
   name: z.string().min(1).max(64),
   icon: z.string().max(64).optional(),
@@ -79,9 +80,9 @@ const policyCreate = z.object({
   rules: z.record(z.string(), z.unknown()).optional(),
 });
 
-const policyPatch = policyCreate.partial();
+export const policyPatch = patchSchema(policyCreate);
 
-const permissionUpsert = z.object({
+export const permissionUpsert = z.object({
   collection: z.string().min(1).max(64),
   action: z.enum(['create', 'read', 'update', 'delete', 'share']),
   permissions: z.record(z.string(), z.unknown()).optional(),
@@ -90,9 +91,9 @@ const permissionUpsert = z.object({
   fields: z.array(z.string()).optional(),
 });
 
-const permissionPatch = permissionUpsert.partial();
+export const permissionPatch = patchSchema(permissionUpsert);
 
-const attachUser = z.object({
+export const attachUser = z.object({
   userId: z.string(),
   priority: z.number().int().optional(),
   overrideWarnings: z.boolean().optional(),

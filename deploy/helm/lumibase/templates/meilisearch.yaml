@@ -1,0 +1,113 @@
+{{- if .Values.meilisearch.enabled }}
+{{- $name := include "lumibase.meilisearch.fullname" . -}}
+{{- $component := dict "ctx" . "component" "meilisearch" -}}
+{{- $m := .Values.meilisearch -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lumibase.componentLabels" $component | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 7700
+      targetPort: http
+  selector:
+    {{- include "lumibase.selectorLabels" $component | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lumibase.componentLabels" $component | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "lumibase.selectorLabels" $component | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "lumibase.selectorLabels" $component | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml $m.podSecurityContext | nindent 8 }}
+      containers:
+        - name: meilisearch
+          image: {{ printf "%s:%s" $m.image.repository $m.image.tag }}
+          imagePullPolicy: {{ $m.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 7700
+          env:
+            # production refuses to start without a master key, and keeps the
+            # search preview UI off.
+            - name: MEILI_ENV
+              value: production
+            - name: MEILI_DB_PATH
+              value: /meili_data/data.ms
+            - name: MEILI_NO_ANALYTICS
+              value: "true"
+            {{- include "lumibase.secretEnv" (dict "env" "MEILI_MASTER_KEY" "secret" (include "lumibase.secretName" .) "key" "MEILISEARCH_API_KEY") | nindent 12 }}
+          securityContext:
+            {{- toYaml $m.securityContext | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          resources:
+            {{- toYaml $m.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /meili_data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if not $m.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+      {{- with $m.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $m.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $m.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if $m.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "lumibase.selectorLabels" $component | nindent 10 }}
+      spec:
+        accessModes:
+          {{- toYaml $m.persistence.accessModes | nindent 10 }}
+        {{- with $m.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $m.persistence.size }}
+  {{- end }}
+{{- end }}

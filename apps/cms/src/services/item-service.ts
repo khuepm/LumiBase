@@ -11,9 +11,19 @@ import {
 } from '@lumibase/database';
 import { refreshPhysicalTable, type MaterializeConfig } from './materialize-service';
 import { dispatchItemEvent } from './flow-dispatch';
-import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { nextItemVersion } from './item-etag';
+import { isManualSort, manualSortOrder, nextManualSort } from './item-reorder';
+import {
+  publicationStamps,
+  publicationStateClause,
+  sameItemData,
+  type PublicationState,
+} from './publication-state';
+import { and, asc, desc, eq, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import { SchemaService } from './schema-service';
-import { validateItem } from './validation';
+import { validateItem, type ValidationIssue } from './validation';
+import { applyHiddenValuePolicy, parseFormLayout } from '@lumibase/contracts/form-layout';
+import { hasBlocksFields, resolveBlockTemplates } from './blocks';
 import {
   searchIndexName,
   type CacheProvider,
@@ -23,9 +33,27 @@ import {
   type RealtimeProvider,
 } from '@lumibase/runtime';
 import { buildSearchDocument } from './search-document';
+import {
+  GEO_OPERATORS,
+  GeoFilterError,
+  HAVERSINE_DIALECT,
+  compileGeoClause,
+  filterUsesGeo,
+  resolveGeoDialect,
+  type GeoDialect,
+} from './geo-filter';
+import { containsPattern, endsWithPattern, startsWithPattern } from './like-pattern';
+import {
+  FIELD_FORBIDDEN_CODE,
+  MAX_FILTER_DEPTH,
+  findUnreadableQueryField,
+  isFieldReadable,
+  readableFieldSet,
+} from './filter-guard';
 import { PermissionService, type CompiledPermission, type PermissionAction } from './permission-service';
 import { applyFieldMask, evaluate, type MagicContext } from './permission-dsl';
 import type { PolicyRule } from '@lumibase/contracts';
+import { isZonedDateTimeField, normalizeZonedDateTime, ZonedDateTimeError } from '@lumibase/contracts/field';
 import { CryptoService, DecryptionError, SingleKeyProvider, type CryptoContext } from './crypto-service';
 import {
   newEnvelopeRecordCipher,
@@ -55,13 +83,39 @@ import { AuditLogger } from '../modules/audit/logger';
 import { writeFieldAccessLog as enqueueFieldAccessLog } from '../modules/audit/field-access';
 import { FirebaseSyncService } from '../modules/lumibase-firebase-sync';
 import { WriteCoalescer } from './load-guard-service';
-import type { PrimaryKeyType, StorageMode } from './schema-service';
+import type { CompiledField, PrimaryKeyType, StorageMode } from './schema-service';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import {
   dispatchItemRevalidation,
   invalidateItemsTag,
 } from './content-invalidation';
-import { runSiteTransaction } from './rls-transaction';
+import { runSiteTransaction, type SiteTransaction } from './rls-transaction';
+import { queueAccepts } from './queue-routing';
+import {
+  CASTABLE_OPS,
+  CastValueError,
+  castExpression,
+  castKindForFieldType,
+  castValue,
+  ZONED_DATETIME_FILTER_TYPE,
+  inferCastKindFromValue,
+  type CastKind,
+} from './json-filter-cast';
+import {
+  depthExpression,
+  depthOf,
+  effectivePath,
+  isSelfOrDescendant,
+  parentPathOf,
+  parseTreeConfig,
+  pathFor,
+  pathPrefixClause,
+  pathSegments,
+  renumberSiblings,
+  treeLockSql,
+  type TreeConfig,
+  type TreeQuery,
+} from './tree-service';
 
 const BULK_INSERT_CHUNK = 100;
 
@@ -93,6 +147,17 @@ export interface ListItemsParams {
    * extra aggregate query. When `false`, `meta.total` is omitted.
    */
   withTotal?: boolean;
+  /**
+   * Tree navigation (#749) on a `meta.tree.enabled` collection: children of a
+   * parent, a subtree, or a node's ancestors. Row rules apply to every row
+   * returned, and the anchor node must itself be readable.
+   */
+  tree?: TreeQuery;
+  /**
+   * "Modified since publish" (#687): only items that have been published and
+   * whose data was edited after their last publish.
+   */
+  modifiedSincePublish?: boolean;
 }
 
 export type ItemFilterOp =
@@ -113,7 +178,10 @@ export type ItemFilterOp =
   | '_json_contains'
   | '_has_key'
   | '_has_any_keys'
-  | '_has_all_keys';
+  | '_has_all_keys'
+  // geopoint (#746): radius in metres / `[minLng, minLat, maxLng, maxLat]`.
+  | '_near'
+  | '_within_bbox';
 
 /** Recursive tree-shaped filter, e.g. `{ _and: [ { status: { _eq: 'published' } } ] }`. */
 export interface ItemFilter {
@@ -132,11 +200,36 @@ export interface ItemRow {
   status: string;
   data: Record<string, unknown>;
   sort: number;
+  /** Optimistic-concurrency counter; the item's strong ETag. */
+  version?: number;
+  /** Tree collections only (#749). */
+  parentId?: string | null;
+  path?: string | null;
+  /** Publication state (#687). */
+  firstPublishedAt?: Date | null;
+  publishedAt?: Date | null;
+  hasUnpublishedChanges?: boolean;
   userCreated: string | null;
   userUpdated: string | null;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+}
+
+/** Write precondition for `patch`/`replace` (content-environments Req 6). */
+export interface ItemWriteOptions {
+  /**
+   * When set, the write proceeds only if the item's current `version` is one
+   * of these, checked atomically in the UPDATE; otherwise it fails with
+   * `PRECONDITION_FAILED` (412) and writes nothing. An empty list always
+   * fails. Omit for the legacy last-write-wins behaviour.
+   */
+  expectedVersions?: number[];
+}
+
+/** Out-parameter for `detail`: values the caller needs that projection may drop. */
+export interface ItemDetailMeta {
+  version?: number;
 }
 
 export interface DeepRelationOptions {
@@ -171,6 +264,14 @@ export class ItemServiceError extends Error {
     super(message);
     this.name = 'ItemServiceError';
   }
+}
+
+function preconditionFailed(id: string): ItemServiceError {
+  return new ItemServiceError(
+    'PRECONDITION_FAILED',
+    `Item "${id}" was changed by another write. Reload it and apply your change again.`,
+    412,
+  );
 }
 
 interface PrimaryKeyStrategyInput {
@@ -264,6 +365,19 @@ export interface ItemServiceDeps {
    * user, otherwise system.
    */
   cdcActor?: OutboxActor;
+  /**
+   * Publication cohort for reads (#688): `live` | `preview` | `all`. Applies
+   * to list, detail and nested relation expansion. `undefined` = no cohort
+   * filter (historical behaviour). The request factory clamps anonymous
+   * callers to `live`.
+   */
+  publicationState?: PublicationState;
+  /**
+   * `false` skips the revision row on `patch` (#693, `?saveRevision=false`)
+   * for autosave / machine writes. Ignored for agent-authored writes — their
+   * revision is the provenance record and is always kept.
+   */
+  saveRevision?: boolean;
 }
 
 const STRUCTURAL_FIELDS = new Set([
@@ -364,20 +478,178 @@ function fieldExpression(name: string, mode: 'text' | 'json' = 'text'): SQL {
   }
 }
 
-function buildFilter(filter?: ItemFilter): SQL | undefined {
+/** Field name → schema type, used by the Cast_Rule. */
+export type FieldTypeMap = ReadonlyMap<string, string>;
+
+/**
+ * Build the Cast_Rule type map. A timezone-aware datetime (#747) is mapped to
+ * {@link ZONED_DATETIME_FILTER_TYPE} so filters and sort read its instant.
+ */
+export function buildFieldTypeMap(fields: ReadonlyArray<{ name: string; type: string; options?: unknown }>): FieldTypeMap {
+  return new Map(
+    fields.map((f) => [f.name, isZonedDateTimeField(f) ? ZONED_DATETIME_FILTER_TYPE : f.type]),
+  );
+}
+
+function isZonedKey(key: string, types?: FieldTypeMap): boolean {
+  return !key.includes('.') && types?.get(key) === ZONED_DATETIME_FILTER_TYPE;
+}
+
+/**
+ * Expression for a field in filters / sort. A timezone-aware datetime stores
+ * `{ instant, tz, offset }`; comparisons use `instant`. A value still in the
+ * legacy bare-string shape (written before the option was enabled) is used
+ * as-is: `#>> '{f,instant}'` is NULL on a JSON string, so `coalesce` falls back
+ * to `->> 'f'`, and a non-ISO object text is turned into NULL by the guard.
+ */
+function filterExpression(key: string, types?: FieldTypeMap, mode: 'text' | 'json' = 'text'): SQL {
+  if (mode === 'text' && isZonedKey(key, types)) {
+    return sql`coalesce(${items.data}#>>${bindArrayLiteral([key, 'instant'])}, ${items.data}->>${key})`;
+  }
+  return fieldExpression(key, mode);
+}
+
+/**
+ * A filter value on a timezone-aware field may itself be zoned
+ * (`{ local, tz }` / `{ instant, tz }`); compare on its instant.
+ */
+function zonedFilterValue(raw: unknown, key: string, op: string): unknown {
+  if (Array.isArray(raw)) return raw.map((v) => zonedFilterValue(v, key, op));
+  if (!raw || typeof raw !== 'object') return raw;
+  try {
+    return normalizeZonedDateTime(raw).instant;
+  } catch (err) {
+    if (err instanceof ZonedDateTimeError) {
+      throw new ItemServiceError('INVALID_FILTER', `Operator "${op}" on "${key}": ${err.message}`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Pick the cast for a comparison on `key` (json-field-search Req 4, #729).
+ * Structural columns are natively typed → no cast. A top-level schema field
+ * uses its declared type; nested paths, `json` fields and unknown keys fall
+ * back to the value's JSON type (number → numeric, boolean → boolean), else
+ * text — the historical behaviour.
+ */
+function resolveCastKind(key: string, raw: unknown, types?: FieldTypeMap): CastKind {
+  if (STRUCTURAL_FIELDS.has(key)) return 'text';
+  if (!key.includes('.')) {
+    const fromSchema = castKindForFieldType(types?.get(key));
+    if (fromSchema) return fromSchema;
+  }
+  return inferCastKindFromValue(raw);
+}
+
+function castOrThrow(raw: unknown, kind: CastKind, key: string, op: string): SQL {
+  try {
+    return castValue(raw, kind);
+  } catch (err) {
+    if (err instanceof CastValueError) {
+      throw new ItemServiceError('INVALID_FILTER', `Operator "${op}" on "${key}": ${err.message}.`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Typed comparison clause. Returns `undefined` for a text comparison so the
+ * caller keeps the original (byte-identical) SQL for backward compatibility.
+ */
+function typedComparison(key: string, op: string, input: unknown, types?: FieldTypeMap): SQL | undefined {
+  if (!CASTABLE_OPS.has(op)) return undefined;
+  const raw = isZonedKey(key, types) ? zonedFilterValue(input, key, op) : input;
+  const kind = resolveCastKind(key, raw, types);
+  if (kind === 'text') return undefined;
+  const expr = castExpression(filterExpression(key, types), kind);
+  if (op === '_in' || op === '_nin') {
+    if (!Array.isArray(raw) || raw.length === 0) {
+      throw new ItemServiceError('INVALID_FILTER', `Operator "${op}" expects a non-empty array.`);
+    }
+    const values = sql.join(
+      raw.map((v) => castOrThrow(v, kind, key, op)),
+      sql`, `,
+    );
+    // `not in` would treat a NULL (failed guard) row as unknown → excluded,
+    // matching `<> all(...)` semantics of the text path.
+    return op === '_in' ? sql`${expr} in (${values})` : sql`${expr} not in (${values})`;
+  }
+  const value = castOrThrow(raw, kind, key, op);
+  switch (op) {
+    case '_eq':
+      return sql`${expr} = ${value}`;
+    case '_neq':
+      return sql`${expr} <> ${value}`;
+    case '_gt':
+      return sql`${expr} > ${value}`;
+    case '_gte':
+      return sql`${expr} >= ${value}`;
+    case '_lt':
+      return sql`${expr} < ${value}`;
+    default:
+      return sql`${expr} <= ${value}`;
+  }
+}
+
+/**
+ * `_near` / `_within_bbox` on a geopoint (#746). The operand sits under the
+ * field key like every other operator, so the readable-field guard sees it.
+ * Only JSON data fields can hold a point; a top-level field whose declared type
+ * is not `geopoint` (or `json`) is refused from the schema alone — never from
+ * stored data, so the refusal reveals nothing about rows.
+ */
+function geoClause(key: string, op: string, raw: unknown, types: FieldTypeMap | undefined, geo: GeoDialect): SQL {
+  if (STRUCTURAL_FIELDS.has(key)) {
+    throw new ItemServiceError('INVALID_FILTER', `Operator "${op}" needs a geopoint field, not "${key}".`);
+  }
+  const segments = resolveFieldPath(key);
+  const declared = segments.length === 1 ? types?.get(key) : undefined;
+  if (declared !== undefined && declared !== 'geopoint' && declared !== 'json') {
+    throw new ItemServiceError('INVALID_FILTER', `Operator "${op}" needs a geopoint field; "${key}" is ${declared}.`);
+  }
+  const coords = {
+    lat: sql`${items.data}#>>${bindArrayLiteral([...segments, 'lat'])}`,
+    lng: sql`${items.data}#>>${bindArrayLiteral([...segments, 'lng'])}`,
+  };
+  try {
+    return compileGeoClause(op, raw, coords, geo);
+  } catch (err) {
+    if (err instanceof GeoFilterError) {
+      throw new ItemServiceError('INVALID_FILTER', `Operator "${op}" on "${key}": ${err.message}.`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Compile a filter tree to SQL. Exported for the sanitisation (#738) and geo
+ * filter (#746) tests; callers go through {@link ItemService.list}, which runs
+ * the readable-field guard first. `depth` counts `_and` / `_or` nesting and is
+ * capped at `MAX_FILTER_DEPTH`.
+ */
+export function buildFilter(
+  filter?: ItemFilter,
+  types?: FieldTypeMap,
+  geo: GeoDialect = HAVERSINE_DIALECT,
+  depth = 0,
+): SQL | undefined {
   if (!filter) return undefined;
+  if (depth > MAX_FILTER_DEPTH) {
+    throw new ItemServiceError('INVALID_FILTER', 'Filter is nested too deeply.');
+  }
   const clauses: SQL[] = [];
 
   if (filter._and?.length) {
     const sub = filter._and
-      .map(buildFilter)
+      .map((f) => buildFilter(f, types, geo, depth + 1))
       .filter((c): c is SQL => c !== undefined);
     if (sub.length) clauses.push(sql.join(sub, sql` and `));
   }
 
   if (filter._or?.length) {
     const sub = filter._or
-      .map(buildFilter)
+      .map((f) => buildFilter(f, types, geo, depth + 1))
       .filter((c): c is SQL => c !== undefined);
     if (sub.length) clauses.push(sql`(${sql.join(sub, sql` or `)})`);
   }
@@ -385,10 +657,19 @@ function buildFilter(filter?: ItemFilter): SQL | undefined {
   for (const [key, value] of Object.entries(filter)) {
     if (key === '_and' || key === '_or') continue;
     if (!value || typeof value !== 'object') continue;
-    const expr = fieldExpression(key);
+    const expr = filterExpression(key, types);
     for (const [op, raw] of Object.entries(value as Record<string, unknown>)) {
       if (clauses.length >= MAX_FILTER_CLAUSES) {
         throw new ItemServiceError('INVALID_FILTER', 'Filter has too many clauses.');
+      }
+      if (GEO_OPERATORS.has(op)) {
+        clauses.push(geoClause(key, op, raw, types, geo));
+        continue;
+      }
+      const typed = typedComparison(key, op, raw, types);
+      if (typed) {
+        clauses.push(typed);
+        continue;
       }
       switch (op as ItemFilterOp) {
         // ── JSON containment / key-existence (json-field-search Req 3) ──
@@ -431,14 +712,16 @@ function buildFilter(filter?: ItemFilter): SQL | undefined {
         case '_lte':
           clauses.push(sql`${expr} <= ${raw}`);
           break;
+        // `%` / `_` / `\` in the value are literals (#738): the operators
+        // promise substring / prefix / suffix semantics, not a LIKE pattern.
         case '_contains':
-          clauses.push(sql`${expr} ilike ${'%' + String(raw) + '%'}`);
+          clauses.push(sql`${expr} ilike ${containsPattern(raw)}`);
           break;
         case '_starts_with':
-          clauses.push(sql`${expr} ilike ${String(raw) + '%'}`);
+          clauses.push(sql`${expr} ilike ${startsWithPattern(raw)}`);
           break;
         case '_ends_with':
-          clauses.push(sql`${expr} ilike ${'%' + String(raw)}`);
+          clauses.push(sql`${expr} ilike ${endsWithPattern(raw)}`);
           break;
         case '_null':
           clauses.push(raw ? sql`${expr} is null` : sql`${expr} is not null`);
@@ -456,12 +739,19 @@ function buildFilter(filter?: ItemFilter): SQL | undefined {
   return sql.join(clauses, sql` and `);
 }
 
-function buildSort(sort?: string[]): SQL[] {
+/** Compile sort tokens to ORDER BY expressions (exported for #738 tests). */
+export function buildSort(sort?: string[], types?: FieldTypeMap): SQL[] {
   if (!sort?.length) return [desc(items.updatedAt)];
   return sort.map((token) => {
     const dir = token.startsWith('-') ? desc : asc;
     const name = token.replace(/^[-+]/, '');
-    return dir(fieldExpression(name) as never);
+    // Cast_Rule for sort (json-field-search Req 9): only a top-level schema
+    // field has a declared type; a sort token carries no value to infer from.
+    const kind =
+      STRUCTURAL_FIELDS.has(name) || name.includes('.') ? null : castKindForFieldType(types?.get(name));
+    const base = filterExpression(name, types);
+    const expr = kind && kind !== 'text' ? castExpression(base, kind) : base;
+    return dir(expr as never);
   });
 }
 
@@ -498,6 +788,30 @@ export class ItemService {
   }
 
   /**
+   * The same service bound to a different principal's row/field rules.
+   *
+   * Exists for work that is **authorised by one principal and triggered by
+   * another** — an approval being executed after a human approves it (#472).
+   * The action must run under the requester's rules, not the approver's, so the
+   * executing service has to be rebound at that moment.
+   *
+   * Every other dependency is carried over deliberately. Constructing a fresh
+   * `ItemService` from `{ db, siteId }` alone would silently drop the cache,
+   * search, queue, key provider and extension environment, so writes would stop
+   * invalidating tags and stop indexing — a regression that looks like nothing at
+   * the call site and shows up as stale reads later (DoD §2b).
+   *
+   * `siteId` comes from the context, so a context for another tenant cannot be
+   * used to widen this service's scope; the caller checks tenancy first, and this
+   * keeps the two from disagreeing.
+   */
+  withPermissionContext(permissionCtx: MagicContext): ItemService {
+    const next = new ItemService({ ...this.deps, siteId: permissionCtx.siteId, permissionCtx });
+    next.setProvenance(this.provenance);
+    return next;
+  }
+
+  /**
    * Whether new writes for this site should use envelope (per-record DEK) mode.
    * Driven by the `encryption.envelope` setting (operator-controlled, not a raw
    * env flag); memoized so a batch write reads the setting at most once.
@@ -528,6 +842,64 @@ export class ItemService {
       throw new ItemServiceError('FORBIDDEN', `Action "${action}" on "${collectionName}" is not allowed.`, 403);
     }
     return granted;
+  }
+
+  /**
+   * Schema + relation metadata for a collection export (#727). Checks `read`
+   * permission first, so a caller without access gets 403 before any byte is
+   * streamed. Relations are scoped to this site.
+   */
+  async describeForExport(collectionName: string): Promise<{
+    fields: CompiledField[];
+    relations: Array<{ type: 'm2o' | 'o2m' | 'm2m'; field: string; alias: string; related: string }>;
+  }> {
+    await this.resolveCollection(collectionName);
+    await this.perm(collectionName, 'read');
+    const compiled = await this.schemaService.getCompiled(collectionName);
+    const relationRows = await this.deps.db
+      .select()
+      .from(relations)
+      .where(
+        and(
+          scopeSite(relations.siteId, this.deps.siteId),
+          sql`(${relations.manyCollection} = ${collectionName} or ${relations.oneCollection} = ${collectionName})`,
+        ),
+      );
+    const out: Array<{ type: 'm2o' | 'o2m' | 'm2m'; field: string; alias: string; related: string }> = [];
+    for (const rel of relationRows) {
+      const alias = relationAlias(rel);
+      if (rel.type === 'm2o' && rel.manyCollection === collectionName) {
+        out.push({ type: 'm2o', field: rel.manyField, alias, related: rel.oneCollection });
+      } else if (rel.type === 'o2m' && rel.oneCollection === collectionName) {
+        out.push({ type: 'o2m', field: alias, alias, related: rel.manyCollection });
+      } else if (rel.type === 'm2m' && rel.manyCollection === collectionName) {
+        out.push({ type: 'm2m', field: alias, alias, related: rel.oneCollection });
+      }
+    }
+    return { fields: compiled?.fields ?? [], relations: out };
+  }
+
+  /**
+   * Per-row transform for collection export (#727): runs the extensions'
+   * `items.export.before` hook. Returns `null` when no hook extension is
+   * enabled, so the exporter skips the call entirely. A hook returns
+   * `{ item }` to replace the exported record; throwing aborts the export.
+   */
+  async exportRowTransformer(
+    collectionName: string,
+  ): Promise<((record: Record<string, unknown>) => Promise<Record<string, unknown>>) | null> {
+    const hooks = await this.getHookDispatcher();
+    if (!hooks) return null;
+    return async (record) => {
+      const ctx = await hooks.dispatch('items.export.before', {
+        collection: collectionName,
+        item: record,
+        itemId: typeof record.id === 'string' ? record.id : undefined,
+        userId: this.deps.userId ?? null,
+        siteId: this.deps.siteId,
+      });
+      return ctx.item ?? record;
+    };
   }
 
   /**
@@ -650,6 +1022,15 @@ export class ItemService {
     }
   }
 
+  /**
+   * The same actor-scoped item access extension hooks get, for other sandbox
+   * entry points (extension MCP tools, #715): row/field/action permissions are
+   * those of this service's principal.
+   */
+  extensionDataAccess(): ExtensionActorDataAccess {
+    return this.actorDataAccess();
+  }
+
   private actorDataAccess(): ExtensionActorDataAccess {
     const buildService = () =>
       new ItemService({
@@ -679,20 +1060,47 @@ export class ItemService {
       primaryKeyType: compiled.primaryKeyType,
       storageMode: compiled.storageMode,
       meta: compiled.meta,
+      fieldTypes: buildFieldTypeMap(compiled.fields),
     };
   }
 
   async list(collectionName: string, params: ListItemsParams = {}) {
     const coll = await this.resolveCollection(collectionName);
     const perm = await this.perm(collectionName, 'read');
+    const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
+    // Readable-field guard (#738): a filter / sort may only name fields the
+    // caller can read. Checked before any query runs, from the permission and
+    // the query alone, so the refusal cannot depend on (or leak) stored data.
+    const unreadable = findUnreadableQueryField({
+      perm,
+      knownFields,
+      structuralFields: STRUCTURAL_FIELDS,
+      filter: params.filter,
+      sort: params.sort,
+    });
+    if (unreadable !== null) {
+      throw new ItemServiceError(
+        FIELD_FORBIDDEN_CODE,
+        `Field "${unreadable}" cannot be used in a filter or sort.`,
+        403,
+      );
+    }
     const permClause = this.permissions?.whereFor(perm) ?? undefined;
+    // PostGIS is probed only when a geo operator is used (#746), once per isolate.
+    const geo = filterUsesGeo(params.filter) ? await resolveGeoDialect(this.deps.db) : HAVERSINE_DIALECT;
+    const treeScope = params.tree
+      ? await this.treeListScope(coll, permClause, params.tree)
+      : undefined;
     const where = and(
       scopeSite(items.siteId, this.deps.siteId),
       eq(items.collectionId, coll.id),
       isNull(items.deletedAt),
       params.status ? eq(items.status, params.status) : undefined,
-      buildFilter(params.filter),
+      params.modifiedSincePublish ? eq(items.hasUnpublishedChanges, true) : undefined,
+      buildFilter(params.filter, coll.fieldTypes, geo),
+      treeScope?.where,
       permClause,
+      publicationStateClause(this.deps.publicationState),
     );
 
     const limit = Math.min(params.limit ?? 25, 200);
@@ -702,7 +1110,13 @@ export class ItemService {
       .select()
       .from(items)
       .where(where)
-      .orderBy(...buildSort(params.sort))
+      .orderBy(
+        ...(treeScope && !params.sort?.length
+          ? treeScope.order
+          : !params.sort?.length && isManualSort(coll.meta)
+            ? manualSortOrder()
+            : buildSort(params.sort, coll.fieldTypes)),
+      )
       .limit(limit)
       .offset(offset);
 
@@ -718,7 +1132,6 @@ export class ItemService {
       total = totals[0]?.count ?? 0;
     }
 
-    const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
     const masked = perm && this.permissions
       ? rows.map((r) => this.permissions!.maskItem(perm, r as ItemRow, knownFields))
       : rows;
@@ -749,7 +1162,13 @@ export class ItemService {
     };
   }
 
-  async detail(collectionName: string, id: string, fields?: string[], deep?: DeepQuery) {
+  async detail(
+    collectionName: string,
+    id: string,
+    fields?: string[],
+    deep?: DeepQuery,
+    meta?: ItemDetailMeta,
+  ) {
     const perm = await this.perm(collectionName, 'read');
     const permClause = this.permissions?.whereFor(perm) ?? undefined;
     const coll = await this.resolveCollection(collectionName);
@@ -763,10 +1182,12 @@ export class ItemService {
           eq(items.id, id),
           isNull(items.deletedAt),
           permClause,
+          publicationStateClause(this.deps.publicationState),
         ),
       )
       .limit(1);
     if (!row) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+    if (meta) meta.version = row.version;
     const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
     const masked = perm && this.permissions ? this.permissions.maskItem(perm, row as ItemRow, knownFields) : row;
     masked.data = await this.processCrypto(collectionName, masked.data as Record<string, unknown>, 'decrypt', (masked as ItemRow).id, false, false, undefined, { dekWrapped: (masked as Record<string, unknown>).dekWrapped as string | null });
@@ -783,15 +1204,26 @@ export class ItemService {
       sort?: number;
       publishAt?: string | Date | null;
       unpublishAt?: string | Date | null;
+      /** Tree collections (#749): parent item id; null/absent = root. */
+      parentId?: string | null;
     },
   ) {
     const coll = await this.resolveCollection(collectionName);
+    const tree = parseTreeConfig(coll.meta);
+    if (payload.parentId && !tree) {
+      throw new ItemServiceError('TREE_NOT_ENABLED', `Collection "${collectionName}" is not a tree collection.`, 400);
+    }
     const primaryKey = resolvePrimaryKey({
       field: coll.primaryKeyField,
       type: coll.primaryKeyType,
       storageMode: coll.storageMode,
     }, payload.data ?? {});
     const perm = await this.perm(collectionName, 'create');
+    // Placing under a parent requires that the parent is readable: a caller
+    // must not be able to probe or attach to items its row rules hide.
+    const parentReadClause = payload.parentId
+      ? this.permissions?.whereFor(await this.perm(collectionName, 'read')) ?? undefined
+      : undefined;
     const knownFields = await this.getKnownWritableFields(collectionName);
     assertWritablePermissionFields(perm, knownFields, payload.data ?? {}, {
       status: payload.status,
@@ -799,7 +1231,26 @@ export class ItemService {
     });
     const withPresets = this.permissions?.applyPresets(perm, payload.data ?? {}) ?? payload.data ?? {};
     const status = payload.status ?? 'draft';
-    const sort = payload.sort ?? 0;
+    // Editorial gate (Req 8.2) on the create path too. `patch` already refuses a
+    // direct draft→published on an editorialWorkflow collection, but `create`
+    // accepted `status: 'published'` and inserted it live, so the review step
+    // was skipped by creating instead of updating (#578). A new item has no
+    // editorial state yet, so it can never be in the approved/scheduled state
+    // that publishing requires.
+    if (
+      status === 'published' &&
+      (coll.meta as Record<string, unknown> | null)?.editorialWorkflow === true
+    ) {
+      throw new ItemServiceError(
+        'EDITORIAL_GATE_REQUIRED',
+        'Item must be approved before it can be published.',
+        409,
+      );
+    }
+    // Manual-sort collections (#690) append new items at the end.
+    const sort = payload.sort ?? (isManualSort(coll.meta) && !tree
+      ? await nextManualSort(this.deps.db, this.deps.siteId, coll.id)
+      : 0);
     const createSnapshot = buildPermissionSnapshot({
       data: withPresets,
       status,
@@ -840,9 +1291,16 @@ export class ItemService {
     const cryptoOut: CryptoRecordOpts = {};
     const encryptedData = await this.processCrypto(collectionName, data, 'encrypt', recordId, true, false, undefined, cryptoOut);
     if (primaryKey.id) {
-      await this.assertItemIdAvailable(coll.id, primaryKey.id);
+      await this.assertItemIdAvailable(primaryKey.id);
     }
     const row = await runSiteTransaction(this.deps.db, this.deps.siteId, async (tx) => {
+      const placement = tree
+        ? await this.placeNewTreeItem(tx, coll.id, tree, recordId, {
+            parentId: payload.parentId ?? null,
+            sort: payload.sort,
+            parentReadClause,
+          })
+        : undefined;
       const [inserted] = await tx
         .insert(items)
         .values({
@@ -851,9 +1309,12 @@ export class ItemService {
           collectionId: coll.id,
           data: encryptedData,
           status,
-          sort,
+          sort: placement?.sort ?? sort,
+          parentId: placement?.parentId,
+          path: placement?.path,
           publishAt,
           unpublishAt,
+          ...publicationStamps(null, { status, dataChanged: true }),
           dekWrapped: cryptoOut.wrappedDek ?? null,
           userCreated: this.deps.userId ?? null,
           userUpdated: this.deps.userId ?? null,
@@ -882,6 +1343,8 @@ export class ItemService {
         payload: { data: payload.data },
       });
       return inserted;
+    }).catch((err: unknown) => {
+      throw itemIdConflict(err, recordId) ?? err;
     });
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
@@ -910,7 +1373,9 @@ export class ItemService {
       publishAt: string | Date | null;
       unpublishAt: string | Date | null;
     }>,
+    opts: ItemWriteOptions = {},
   ) {
+    const expectedVersions = opts.expectedVersions;
     const coll = await this.resolveCollection(collectionName);
     const perm = await this.perm(collectionName, 'update');
     const permClause = this.permissions?.whereFor(perm) ?? undefined;
@@ -934,6 +1399,12 @@ export class ItemService {
       )
       .limit(1);
     if (!rawRow) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+    // Fail fast before hooks and validation run; the UPDATE below re-checks
+    // atomically, so a write that lands between this read and the UPDATE is
+    // still caught.
+    if (expectedVersions && !expectedVersions.includes(rawRow.version)) {
+      throw preconditionFailed(id);
+    }
 
     // Law Zero: agents never overwrite fields a human pinned.
     const pinnedFields = Array.isArray(rawRow.pinnedFields)
@@ -961,7 +1432,7 @@ export class ItemService {
       : currentData;
 
     if (patch.data) {
-      await this.runValidation(collectionName, patch.data, true);
+      await this.runValidation(collectionName, patch.data, true, merged, currentData);
     }
 
     // Before hook — extensions can mutate patch data before update.
@@ -975,9 +1446,14 @@ export class ItemService {
     }) ?? { collection: collectionName };
     const hookPatch = hookCtx.patch as Record<string, unknown> | undefined;
     if (hookPatch) {
-      await this.runValidation(collectionName, hookPatch, true);
+      await this.runValidation(collectionName, hookPatch, true, { ...merged, ...hookPatch }, currentData);
     }
-    const finalData = hookPatch ? { ...merged, ...hookPatch } : merged;
+    const mergedFinal = hookPatch ? { ...merged, ...hookPatch } : merged;
+    // Form-layout hidden-value policy (#750): a data write re-applies `clear`
+    // to fields its conditions now hide; a status/sort-only patch leaves data alone.
+    const finalData = patch.data || hookPatch
+      ? await this.applyHiddenValues(collectionName, mergedFinal)
+      : mergedFinal;
     const finalStatus = patch.status ?? rawRow.status;
     const finalSort = patch.sort ?? rawRow.sort;
     // Editorial gate (Req 8.2): on collections with editorialWorkflow=true, an
@@ -1040,12 +1516,18 @@ export class ItemService {
           status: finalStatus,
           sort: finalSort,
           pinnedFields: nextPinned,
+          ...publicationStamps(rawRow, {
+            status: finalStatus,
+            dataChanged: !sameItemData(finalData, currentData),
+            publishRequested: patch.status === 'published',
+          }),
           dekWrapped: cryptoOut.wrappedDek ?? null,
           ...(effectiveWindow
             ? { publishAt: effectiveWindow.publishAt, unpublishAt: effectiveWindow.unpublishAt }
             : {}),
           userUpdated: this.deps.userId ?? null,
           updatedAt: new Date(),
+          version: nextItemVersion(),
         })
         .where(
           and(
@@ -1054,11 +1536,16 @@ export class ItemService {
             eq(items.id, id),
             isNull(items.deletedAt),
             permClause,
+            expectedVersions ? eq(items.version, rawRow.version) : undefined,
           ),
         )
         .returning();
-      if (!updated) throw new ItemServiceError('UPDATE_FAILED', 'Failed to update item.');
-      await tx.insert(revisions).values({
+      if (!updated) {
+        throw expectedVersions
+          ? preconditionFailed(id)
+          : new ItemServiceError('UPDATE_FAILED', 'Failed to update item.');
+      }
+      if (this.shouldSaveRevision()) await tx.insert(revisions).values({
         siteId: this.deps.siteId,
         collectionId: coll.id,
         itemId: id,
@@ -1112,14 +1599,29 @@ export class ItemService {
     return row;
   }
 
+  /**
+   * Validate a payload against the compiled schema. `context` is the full
+   * record form-layout conditions read (#750) — the merged item on a PATCH.
+   * A full (create) validation also applies the layout's hidden-value
+   * policy to the returned data.
+   */
   private async runValidation(
     collectionName: string,
     data: Record<string, unknown>,
     partial: boolean,
+    context?: Record<string, unknown>,
+    /** Stored data before an update — lets `allowClear: false` reject clearing (#751). */
+    current?: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const compiled = await this.schemaService.getCompiled(collectionName);
     if (!compiled) return data;
-    const result = validateItem(compiled.fields, data, { partial });
+    const layout = parseFormLayout(compiled.meta?.formLayout);
+    // Dynamic zones (#748): resolve the block templates reachable from this
+    // collection so each block validates against its own template schema.
+    const blockTemplates = hasBlocksFields(compiled.fields)
+      ? await resolveBlockTemplates(compiled.fields, (name) => this.schemaService.getCompiled(name))
+      : undefined;
+    const result = validateItem(compiled.fields, data, { partial, layout, context, current, blockTemplates });
     if (!result.ok) {
       throw new ItemServiceError(
         'VALIDATION',
@@ -1127,11 +1629,28 @@ export class ItemService {
         400,
       );
     }
-    return result.data;
+    if (partial || !layout) return result.data;
+    return applyHiddenValuePolicy(compiled.fields, result.data, layout).data;
   }
 
-  async replace(collectionName: string, id: string, body: { data: Record<string, unknown>; status?: string; sort?: number }) {
-    return this.patch(collectionName, id, { data: body.data, status: body.status, sort: body.sort });
+  /** Drop stale values of fields hidden with `hiddenValue: 'clear'` (#750). */
+  private async applyHiddenValues(
+    collectionName: string,
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const compiled = await this.schemaService.getCompiled(collectionName);
+    const layout = parseFormLayout(compiled?.meta?.formLayout);
+    if (!compiled || !layout) return data;
+    return applyHiddenValuePolicy(compiled.fields, data, layout).data;
+  }
+
+  async replace(
+    collectionName: string,
+    id: string,
+    body: { data: Record<string, unknown>; status?: string; sort?: number },
+    opts: ItemWriteOptions = {},
+  ) {
+    return this.patch(collectionName, id, { data: body.data, status: body.status, sort: body.sort }, opts);
   }
 
   async softDelete(collectionName: string, id: string) {
@@ -1163,20 +1682,33 @@ export class ItemService {
       siteId: this.deps.siteId,
     });
 
-    const [row] = await this.deps.db
-      .update(items)
-      .set({ deletedAt: new Date(), userUpdated: this.deps.userId ?? null })
-      .where(
-        and(
-          scopeSite(items.siteId, this.deps.siteId),
-          eq(items.collectionId, coll.id),
-          eq(items.id, id),
-          isNull(items.deletedAt),
-          permClause,
-        ),
-      )
-      .returning({ id: items.id });
-    if (!row) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+    const tree = parseTreeConfig(coll.meta);
+    let cascaded: string[] = [];
+    if (tree) {
+      cascaded = await this.deleteTreeNode(coll.id, tree, id, permClause);
+    } else {
+      const [row] = await this.deps.db
+        .update(items)
+        .set({ deletedAt: new Date(), userUpdated: this.deps.userId ?? null, version: nextItemVersion() })
+        .where(
+          and(
+            scopeSite(items.siteId, this.deps.siteId),
+            eq(items.collectionId, coll.id),
+            eq(items.id, id),
+            isNull(items.deletedAt),
+            permClause,
+          ),
+        )
+        .returning({ id: items.id });
+      if (!row) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+    }
+    // Descendants removed by a `cascade` tree delete get the same side effects.
+    for (const childId of cascaded) {
+      await this.writeActivity('delete', coll.name, childId, { cascadedFrom: id });
+      await this.deindexItem(collectionName, childId);
+      await this.publishRealtimeEvent(collectionName, 'delete', childId);
+      await this.writeCdcEvent(collectionName, 'delete', childId, null);
+    }
     await this.writeActivity('delete', coll.name, id, {});
     await this.deindexItem(collectionName, id);
     await this.publishRealtimeEvent(collectionName, 'delete', id);
@@ -1187,6 +1719,357 @@ export class ItemService {
     hooks?.dispatch('items.delete.after', { collection: collectionName, itemId: id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
     return { ok: true } as const;
+  }
+
+  // ---------- Hierarchical collections (#749) ----------
+
+  private requireTree(coll: { meta: unknown; name: string }): TreeConfig {
+    const tree = parseTreeConfig(coll.meta);
+    if (!tree) {
+      throw new ItemServiceError('TREE_NOT_ENABLED', `Collection "${coll.name}" is not a tree collection.`, 400);
+    }
+    return tree;
+  }
+
+  /**
+   * Tree read scope for {@link list}. The anchor (parent / node) must be
+   * readable under the caller's row rules — otherwise 404, the same answer as
+   * for an id that does not exist, so hidden items cannot be probed. Every row
+   * returned additionally passes the read rule in `list` itself; a hidden
+   * ancestor is therefore simply absent from an `ancestors` answer, and a
+   * readable row's `parentId` / `path` are the only trace of hidden ids
+   * (opaque structural ids, never data).
+   */
+  private async treeListScope(
+    coll: { id: string; name: string; meta: unknown },
+    readClause: SQL | undefined,
+    query: TreeQuery,
+  ): Promise<{ where: SQL | undefined; order: SQL[] }> {
+    this.requireTree(coll);
+    const siblingOrder = [asc(items.sort), asc(items.createdAt), asc(items.id)];
+    const anchorId = query.mode === 'ancestors' ? query.node : query.parent;
+    if (anchorId === null) {
+      return query.mode === 'children'
+        ? { where: isNull(items.parentId), order: siblingOrder }
+        : { where: undefined, order: [asc(depthExpression()), ...siblingOrder] };
+    }
+    const [anchor] = await this.deps.db
+      .select({ id: items.id, path: items.path })
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, coll.id),
+          eq(items.id, anchorId),
+          isNull(items.deletedAt),
+          readClause,
+        ),
+      )
+      .limit(1);
+    if (!anchor) throw new ItemServiceError('NOT_FOUND', `Item "${anchorId}" not found.`, 404);
+    const anchorPath = effectivePath(anchor);
+    if (query.mode === 'children') {
+      return { where: eq(items.parentId, anchor.id), order: siblingOrder };
+    }
+    if (query.mode === 'subtree') {
+      return {
+        where: and(pathPrefixClause(anchorPath), ne(items.id, anchor.id)),
+        order: [asc(depthExpression()), ...siblingOrder],
+      };
+    }
+    const ancestorIds = pathSegments(anchorPath).slice(0, -1);
+    return {
+      where: ancestorIds.length ? inArray(items.id, ancestorIds) : sql`false`,
+      order: [asc(depthExpression())],
+    };
+  }
+
+  /**
+   * Resolve parent/path/sort for a new tree item. Runs inside the create
+   * transaction under the tree lock, so the parent's path cannot change
+   * between this read and the insert.
+   */
+  private async placeNewTreeItem(
+    tx: SiteTransaction,
+    collectionId: string,
+    tree: TreeConfig,
+    recordId: string,
+    opts: { parentId: string | null; sort?: number; parentReadClause?: SQL },
+  ): Promise<{ parentId: string | null; path: string; sort: number }> {
+    await tx.execute(treeLockSql(this.deps.siteId, collectionId));
+    let parentPath: string | null = null;
+    if (opts.parentId) {
+      const [parent] = await tx
+        .select({ id: items.id, path: items.path })
+        .from(items)
+        .where(
+          and(
+            scopeSite(items.siteId, this.deps.siteId),
+            eq(items.collectionId, collectionId),
+            eq(items.id, opts.parentId),
+            isNull(items.deletedAt),
+            opts.parentReadClause,
+          ),
+        )
+        .limit(1);
+      if (!parent) {
+        throw new ItemServiceError('PARENT_NOT_FOUND', `Parent item "${opts.parentId}" not found.`, 404);
+      }
+      parentPath = effectivePath(parent);
+    }
+    let path: string;
+    try {
+      path = pathFor(parentPath, recordId);
+    } catch (err) {
+      throw new ItemServiceError('TREE_INVALID_ID', (err as Error).message, 400);
+    }
+    if (depthOf(path) > tree.maxDepth) {
+      throw new ItemServiceError('TREE_MAX_DEPTH', `Tree depth would exceed ${tree.maxDepth}.`, 409);
+    }
+    let sort = opts.sort;
+    if (sort === undefined) {
+      const [last] = await tx
+        .select({ max: sql<number | null>`max(${items.sort})` })
+        .from(items)
+        .where(
+          and(
+            scopeSite(items.siteId, this.deps.siteId),
+            eq(items.collectionId, collectionId),
+            opts.parentId ? eq(items.parentId, opts.parentId) : isNull(items.parentId),
+            isNull(items.deletedAt),
+          ),
+        );
+      sort = last?.max === null || last?.max === undefined ? 0 : Number(last.max) + 1;
+    }
+    return { parentId: opts.parentId, path, sort };
+  }
+
+  /**
+   * Move an item (and its whole subtree) under `parentId` (null = root),
+   * optionally at `position` among its new siblings (0-based; siblings are
+   * renumbered 0..n-1 — their `sort` is the only column touched). Without
+   * `position` the item keeps its `sort` when the parent is unchanged and is
+   * appended otherwise.
+   *
+   * Requires `update` on the moved item (row rule) and `read` on the new
+   * parent. One transaction under the per-collection tree lock: the cycle
+   * check, the depth check and the descendant path rewrite see one consistent
+   * tree, and concurrent moves are serialised.
+   */
+  async move(
+    collectionName: string,
+    id: string,
+    input: { parentId: string | null; position?: number },
+  ): Promise<{ id: string; parentId: string | null; path: string; sort: number }> {
+    const coll = await this.resolveCollection(collectionName);
+    const tree = this.requireTree(coll);
+    const perm = await this.perm(collectionName, 'update');
+    const updateClause = this.permissions?.whereFor(perm) ?? undefined;
+    const readClause = input.parentId
+      ? this.permissions?.whereFor(await this.perm(collectionName, 'read')) ?? undefined
+      : undefined;
+    if (input.position !== undefined) {
+      // Reordering writes `sort`; a field whitelist that excludes it refuses.
+      assertWritablePermissionFields(perm, await this.getKnownWritableFields(collectionName), {}, { sort: input.position });
+    }
+    if (input.parentId === id) {
+      throw new ItemServiceError('TREE_CYCLE', 'An item cannot be moved under itself.', 409);
+    }
+
+    const result = await runSiteTransaction(this.deps.db, this.deps.siteId, async (tx) => {
+      await tx.execute(treeLockSql(this.deps.siteId, coll.id));
+      const scope = and(scopeSite(items.siteId, this.deps.siteId), eq(items.collectionId, coll.id));
+      const [node] = await tx
+        .select({ id: items.id, parentId: items.parentId, path: items.path, sort: items.sort })
+        .from(items)
+        .where(and(scope, eq(items.id, id), isNull(items.deletedAt), updateClause))
+        .limit(1);
+      if (!node) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+      const oldPath = effectivePath(node);
+
+      let parentPath: string | null = null;
+      if (input.parentId) {
+        const [parent] = await tx
+          .select({ id: items.id, path: items.path })
+          .from(items)
+          .where(and(scope, eq(items.id, input.parentId), isNull(items.deletedAt), readClause))
+          .limit(1);
+        if (!parent) {
+          throw new ItemServiceError('PARENT_NOT_FOUND', `Parent item "${input.parentId}" not found.`, 404);
+        }
+        parentPath = effectivePath(parent);
+        if (isSelfOrDescendant(parentPath, oldPath)) {
+          throw new ItemServiceError('TREE_CYCLE', 'An item cannot be moved under its own descendant.', 409);
+        }
+      }
+      let newPath: string;
+      try {
+        newPath = pathFor(parentPath, id);
+      } catch (err) {
+        throw new ItemServiceError('TREE_INVALID_ID', (err as Error).message, 400);
+      }
+
+      // Depth: the deepest live descendant moves by the same offset.
+      const [deepest] = await tx
+        .select({ depth: sql<number | null>`max(${depthExpression()})` })
+        .from(items)
+        .where(and(scope, pathPrefixClause(oldPath), isNull(items.deletedAt)));
+      const height = Math.max(0, Number(deepest?.depth ?? depthOf(oldPath)) - depthOf(oldPath));
+      if (depthOf(newPath) + height > tree.maxDepth) {
+        throw new ItemServiceError('TREE_MAX_DEPTH', `Tree depth would exceed ${tree.maxDepth}.`, 409);
+      }
+
+      if (newPath !== oldPath) {
+        // Soft-deleted descendants are rebased too, so a later restore stays consistent.
+        await tx
+          .update(items)
+          .set({ path: sql`${newPath} || substr(${items.path}, ${oldPath.length + 1})` })
+          .where(and(scope, pathPrefixClause(oldPath), ne(items.id, id)));
+      }
+
+      const sameParent = (node.parentId ?? null) === (input.parentId ?? null);
+      let sort = node.sort;
+      if (input.position !== undefined || !sameParent) {
+        const siblings = await tx
+          .select({ id: items.id, sort: items.sort })
+          .from(items)
+          .where(
+            and(
+              scope,
+              input.parentId ? eq(items.parentId, input.parentId) : isNull(items.parentId),
+              isNull(items.deletedAt),
+              ne(items.id, id),
+            ),
+          )
+          .orderBy(asc(items.sort), asc(items.createdAt), asc(items.id));
+        if (input.position === undefined) {
+          sort = siblings.reduce((max, s) => Math.max(max, s.sort + 1), 0);
+        } else {
+          const placed = renumberSiblings(siblings, id, input.position);
+          const current = new Map(siblings.map((s) => [s.id, s.sort]));
+          for (const entry of placed) {
+            if (entry.id === id) {
+              sort = entry.sort;
+            } else if (current.get(entry.id) !== entry.sort) {
+              await tx.update(items).set({ sort: entry.sort }).where(and(scope, eq(items.id, entry.id)));
+            }
+          }
+        }
+      }
+
+      const [moved] = await tx
+        .update(items)
+        .set({
+          parentId: input.parentId,
+          path: newPath,
+          sort,
+          userUpdated: this.deps.userId ?? null,
+          updatedAt: new Date(),
+          // The moved item itself changed; descendants' path rebase and
+          // siblings' sort renumbering above are structural side effects and
+          // keep their versions, so an edit elsewhere in the tree does not
+          // fail an unrelated If-Match.
+          version: nextItemVersion(),
+        })
+        .where(and(scope, eq(items.id, id)))
+        .returning({ id: items.id, parentId: items.parentId, sort: items.sort });
+      if (!moved) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+      return { from: node.parentId ?? null, path: newPath, moved };
+    });
+
+    await this.writeActivity('update', coll.name, id, {
+      move: { from: result.from, to: input.parentId, position: input.position ?? null },
+    });
+    await this.publishRealtimeEvent(collectionName, 'update', id);
+    await this.writeCdcEvent(collectionName, 'update', id, null, ['parent_id', 'path', 'sort']);
+    await this.afterWriteInvalidation(collectionName);
+    return {
+      id: result.moved.id,
+      parentId: result.moved.parentId ?? null,
+      path: result.path,
+      sort: result.moved.sort,
+    };
+  }
+
+  /**
+   * Soft-delete a tree node per the collection's `onDelete` policy. Returns
+   * the ids of descendants removed by `cascade` (empty otherwise).
+   *  - `restrict` (default): refuse with 409 while live descendants exist.
+   *  - `cascade`: delete the whole live subtree; every descendant must pass
+   *    the caller's delete rule, or nothing is deleted (403).
+   *  - `reparent`: children move up to the deleted item's parent; descendant
+   *    paths drop the deleted segment.
+   */
+  private async deleteTreeNode(
+    collectionId: string,
+    tree: TreeConfig,
+    id: string,
+    deleteClause: SQL | undefined,
+  ): Promise<string[]> {
+    return runSiteTransaction(this.deps.db, this.deps.siteId, async (tx) => {
+      await tx.execute(treeLockSql(this.deps.siteId, collectionId));
+      const scope = and(scopeSite(items.siteId, this.deps.siteId), eq(items.collectionId, collectionId));
+      const [node] = await tx
+        .select({ id: items.id, parentId: items.parentId, path: items.path })
+        .from(items)
+        .where(and(scope, eq(items.id, id), isNull(items.deletedAt), deleteClause))
+        .limit(1);
+      if (!node) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+      const nodePath = effectivePath(node);
+      const descendants = await tx
+        .select({ id: items.id })
+        .from(items)
+        .where(and(scope, pathPrefixClause(nodePath), ne(items.id, id), isNull(items.deletedAt)));
+      const now = new Date();
+      const userUpdated = this.deps.userId ?? null;
+      let cascaded: string[] = [];
+      if (descendants.length > 0) {
+        if (tree.onDelete === 'restrict') {
+          throw new ItemServiceError(
+            'TREE_HAS_CHILDREN',
+            `Item "${id}" has ${descendants.length} descendant(s); move or delete them first.`,
+            409,
+          );
+        }
+        if (tree.onDelete === 'cascade') {
+          cascaded = descendants.map((d) => d.id);
+          if (deleteClause) {
+            const [allowed] = await tx
+              .select({ n: sql<number>`count(*)::int` })
+              .from(items)
+              .where(and(scope, inArray(items.id, cascaded), isNull(items.deletedAt), deleteClause));
+            if (Number(allowed?.n ?? 0) !== cascaded.length) {
+              throw new ItemServiceError(
+                'FORBIDDEN',
+                'Cascade delete would remove descendants you are not allowed to delete.',
+                403,
+              );
+            }
+          }
+          await tx
+            .update(items)
+            .set({ deletedAt: now, userUpdated, version: nextItemVersion() })
+            .where(and(scope, inArray(items.id, cascaded)));
+        } else {
+          const upPath = parentPathOf(nodePath);
+          await tx
+            .update(items)
+            .set({ parentId: node.parentId ?? null })
+            .where(and(scope, eq(items.parentId, id)));
+          await tx
+            .update(items)
+            .set({ path: sql`${upPath} || substr(${items.path}, ${nodePath.length + 1})` })
+            .where(and(scope, pathPrefixClause(nodePath), ne(items.id, id)));
+        }
+      }
+      const [row] = await tx
+        .update(items)
+        .set({ deletedAt: now, userUpdated, version: nextItemVersion() })
+        .where(and(scope, eq(items.id, id), isNull(items.deletedAt), deleteClause))
+        .returning({ id: items.id });
+      if (!row) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+      return cascaded;
+    });
   }
 
   /**
@@ -1273,7 +2156,7 @@ export class ItemService {
     const coll = await this.resolveCollection(collectionName);
     const updated = await this.deps.db
       .update(items)
-      .set({ dekWrapped: null, updatedAt: new Date() })
+      .set({ dekWrapped: null, updatedAt: new Date(), version: nextItemVersion() })
       .where(and(scopeSite(items.siteId, this.deps.siteId), eq(items.collectionId, coll.id), eq(items.id, id)))
       .returning({ id: items.id });
     return updated.length > 0;
@@ -1363,7 +2246,7 @@ export class ItemService {
         cryptoOut,
       );
       if (primaryKey.id) {
-        await this.assertItemIdAvailable(coll.id, primaryKey.id);
+        await this.assertItemIdAvailable(primaryKey.id);
       }
       prepared.push({
         recordId,
@@ -1428,6 +2311,8 @@ export class ItemService {
         );
       }
       return inserted;
+    }).catch((err: unknown) => {
+      throw itemIdConflict(err, null) ?? err;
     });
 
     for (const row of rows) {
@@ -1564,11 +2449,21 @@ export class ItemService {
     }
     const relatedCollection = await this.resolveCollection(rel.manyCollection);
     const relatedPerm = await this.perm(rel.manyCollection, 'read');
+    // Grouping children by their foreign key reveals that key. When the caller
+    // cannot read the FK field on the child collection, expanding would be a
+    // relational oracle on a hidden field (#738) — expand to nothing instead.
+    if (!(await this.canReadField(rel.manyCollection, relatedPerm, rel.manyField))) {
+      assignRelation(rows, alias, () => []);
+      return;
+    }
     const relatedRows = await this.loadRowsByJsonField(
       relatedCollection.id,
       rel.manyField,
       parentIds,
-      this.permissions?.whereFor(relatedPerm) ?? undefined,
+      and(
+        this.permissions?.whereFor(relatedPerm) ?? undefined,
+        publicationStateClause(this.deps.publicationState),
+      ),
     );
     const projected = await this.projectRelatedRows(rel.manyCollection, relatedRows, relatedPerm, selected.fields);
     const byParent = new Map<string, Record<string, unknown>[]>();
@@ -1599,10 +2494,28 @@ export class ItemService {
       return;
     }
     const junctionCollection = await this.resolveCollection(rel.junctionCollection);
+    // The junction rows are read like any other collection (#738): the caller
+    // needs `read` on the junction, its row rule applies, and both link fields
+    // must be readable — otherwise the expansion would reveal links the caller
+    // cannot see through the items API. Fail closed to an empty expansion.
+    let junctionClause: SQL | undefined;
+    if (this.permissions) {
+      const junctionPerm = await this.permissions.canAccess(rel.junctionCollection, 'read');
+      const readable =
+        junctionPerm !== null &&
+        (await this.canReadField(rel.junctionCollection, junctionPerm, rel.junctionManyField)) &&
+        (await this.canReadField(rel.junctionCollection, junctionPerm, rel.junctionOneField));
+      if (!readable) {
+        assignRelation(rows, alias, () => []);
+        return;
+      }
+      junctionClause = this.permissions.whereFor(junctionPerm);
+    }
     const junctionRows = await this.loadRowsByJsonField(
       junctionCollection.id,
       rel.junctionManyField,
       sourceIds,
+      junctionClause,
     );
     const targetIds = uniqueStrings(junctionRows.map((row) => row.data?.[rel.junctionOneField!]));
     const targetById = targetIds.length > 0
@@ -1620,6 +2533,17 @@ export class ItemService {
       bySource.set(sourceId, list);
     }
     assignRelation(rows, alias, (row) => limitArray(bySource.get(row.id) ?? [], selected.limit));
+  }
+
+  /** Whether `field` on `collectionName` is readable under `perm` (#738). */
+  private async canReadField(
+    collectionName: string,
+    perm: CompiledPermission | null,
+    field: string,
+  ): Promise<boolean> {
+    if (STRUCTURAL_FIELDS.has(field)) return true;
+    const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
+    return isFieldReadable(readableFieldSet(perm, knownFields), field);
   }
 
   private async loadRowsByJsonField(
@@ -1661,6 +2585,7 @@ export class ItemService {
           inArray(items.id, ids),
           isNull(items.deletedAt),
           relatedPermClause,
+          publicationStateClause(this.deps.publicationState),
         ),
       );
     return this.projectRelatedRows(collectionName, relatedRows as ItemRow[], relatedPerm, fields);
@@ -1684,17 +2609,16 @@ export class ItemService {
     return byId;
   }
 
-  private async assertItemIdAvailable(collectionId: string, id: string): Promise<void> {
+  /**
+   * Item ids are unique per site (primary key `(site_id, id)`), across all of
+   * the site's collections. Check the whole site so an id used by another
+   * collection is a clean 409, not a key violation. Other sites never collide.
+   */
+  private async assertItemIdAvailable(id: string): Promise<void> {
     const [existing] = await this.deps.db
       .select({ id: items.id })
       .from(items)
-      .where(
-        and(
-          scopeSite(items.siteId, this.deps.siteId),
-          eq(items.collectionId, collectionId),
-          eq(items.id, id),
-        ),
-      )
+      .where(and(scopeSite(items.siteId, this.deps.siteId), eq(items.id, id)))
       .limit(1);
     if (existing) {
       assertPrimaryKeyAvailable(id, true);
@@ -1713,7 +2637,8 @@ export class ItemService {
   /**
    * Index an item in the search engine after create/update.
    * Uses QueueProvider to enqueue a `search:index` job on the `content-indexing` queue.
-   * Falls back to direct SearchProvider.index() if queue is unavailable.
+   * Falls back to direct SearchProvider.index() if the queue is unavailable or,
+   * on Workers, has no producer binding (B131).
    * Errors are logged but never block the main operation.
    *
    * The queue payload carries `siteId` so the worker can scope the physical
@@ -1721,7 +2646,7 @@ export class ItemService {
    */
   private async indexItem(collectionName: string, id: string, data: Record<string, unknown>): Promise<void> {
     try {
-      if (this.deps.queue) {
+      if (queueAccepts(this.deps.queue, 'content-indexing')) {
         await this.deps.queue.enqueue('content-indexing', 'search:index', {
           siteId: this.deps.siteId,
           collection: collectionName,
@@ -1742,12 +2667,13 @@ export class ItemService {
   /**
    * Remove an item from the search index after soft-delete.
    * Uses QueueProvider to enqueue a `search:remove` job on the `content-indexing` queue.
-   * Falls back to direct SearchProvider.delete() if queue is unavailable.
+   * Falls back to direct SearchProvider.delete() if the queue is unavailable or
+   * has no producer binding (B131).
    * Errors are logged but never block the main operation.
    */
   private async deindexItem(collectionName: string, id: string): Promise<void> {
     try {
-      if (this.deps.queue) {
+      if (queueAccepts(this.deps.queue, 'content-indexing')) {
         await this.deps.queue.enqueue('content-indexing', 'search:remove', {
           siteId: this.deps.siteId,
           collection: collectionName,
@@ -2160,6 +3086,29 @@ export class ItemService {
   }
 
   /** Lists pinned fields for an item. */
+  /**
+   * Full validation of an item as it would be published (#692): its stored
+   * data — or `data`, e.g. a release's pinned snapshot — against the
+   * collection schema, required fields and form-layout conditions included.
+   * The item must be readable by the caller. Returns the issues; `[]` = valid.
+   */
+  async validateForPublish(
+    collectionName: string,
+    id: string,
+    data?: Record<string, unknown>,
+  ): Promise<ValidationIssue[]> {
+    const row = (await this.detail(collectionName, id)) as ItemRow;
+    const subject = data ?? row.data ?? {};
+    const compiled = await this.schemaService.getCompiled(collectionName);
+    if (!compiled) return [];
+    const layout = parseFormLayout(compiled.meta?.formLayout);
+    const blockTemplates = hasBlocksFields(compiled.fields)
+      ? await resolveBlockTemplates(compiled.fields, (name) => this.schemaService.getCompiled(name))
+      : undefined;
+    const result = validateItem(compiled.fields, subject, { partial: false, layout, context: subject, blockTemplates });
+    return result.ok ? [] : result.issues;
+  }
+
   async listPins(collectionName: string, id: string): Promise<{ pinnedFields: string[] }> {
     const coll = await this.resolveCollection(collectionName);
     await this.perm(collectionName, 'read');
@@ -2193,7 +3142,7 @@ export class ItemService {
     const next = pinnedFields.filter((f) => f !== field);
     await this.deps.db
       .update(items)
-      .set({ pinnedFields: next, updatedAt: new Date() })
+      .set({ pinnedFields: next, updatedAt: new Date(), version: nextItemVersion() })
       .where(
         and(
           scopeSite(items.siteId, this.deps.siteId),
@@ -2204,6 +3153,15 @@ export class ItemService {
       );
     await this.writeActivity('pin.release', coll.name, id, { field });
     return { pinnedFields: next };
+  }
+
+  /**
+   * Whether a `patch` records a revision (#693). Callers may opt out with
+   * `saveRevision: false` (autosave, machine writes); agent writes always
+   * keep theirs because the revision carries their provenance.
+   */
+  private shouldSaveRevision(): boolean {
+    return this.deps.saveRevision !== false || this.provenance.authorType === 'agent';
   }
 
   private async writeRevision(
@@ -2361,6 +3319,24 @@ export function resolvePrimaryKey(
   }
 
   return { field, type, storageMode, id: undefined };
+}
+
+/**
+ * Maps a unique violation on the items primary key `(site_id, id)` — a race
+ * with another create, or a bulk payload that repeats an id — to the same
+ * `409 ITEM_ID_EXISTS` the pre-insert check returns. Anything else: `null`.
+ */
+export function itemIdConflict(err: unknown, id: string | null): ItemServiceError | null {
+  let code: unknown;
+  let constraint: unknown;
+  for (let e: unknown = err, depth = 0; e && typeof e === 'object' && depth < 4; depth += 1) {
+    const rec = e as Record<string, unknown>;
+    code ??= rec.code;
+    constraint ??= rec.constraint_name ?? rec.constraint;
+    e = rec.cause;
+  }
+  if (code !== '23505' || constraint !== 'lumibase_items_pkey') return null;
+  return new ItemServiceError('ITEM_ID_EXISTS', id ? `Item "${id}" already exists.` : 'An item id in the payload already exists.', 409);
 }
 
 export function assertPrimaryKeyAvailable(id: string, exists: boolean): void {
@@ -2577,7 +3553,7 @@ function setNested(root: Record<string, unknown>, path: string[], value: unknown
   cur[path[path.length - 1]!] = value;
 }
 
-const ARRAY_OPERATORS = new Set(['_in', '_nin', '_between']);
+const ARRAY_OPERATORS = new Set(['_in', '_nin', '_between', '_within_bbox']);
 
 function coerceFilterValue(operator: string, raw: string): unknown {
   if (ARRAY_OPERATORS.has(operator)) {

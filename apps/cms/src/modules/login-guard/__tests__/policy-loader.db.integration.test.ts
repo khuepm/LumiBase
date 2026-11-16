@@ -45,7 +45,7 @@ describe.skipIf(!hasDbIntegrationUrl)('loadLockoutPolicyFromSettings — row sel
 
   /** Write a policy row for `siteId` whose only distinguishing mark is the IP threshold. */
   async function writePolicy(siteId: string, ipMaxFailedAttempts: number): Promise<void> {
-    await db.insert(sites).values({ id: siteId, name: siteId }).onConflictDoNothing();
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: siteId, name: siteId }).onConflictDoNothing();
     await db.insert(settings).values({
       siteId,
       key: 'login_security_policy',

@@ -50,9 +50,10 @@ function makeFakeDb(
     insert(table: { [k: string]: unknown }) {
       const tableName = getTableName(table);
       return {
-        values() {
+        values(vals: unknown) {
           const builder = {
             async returning() {
+                  if (tableName === 'lumibase_sites') return [vals];
               if (tableName === 'lumibase_roles') {
                 return [{ id: 'role_admin' }];
               }
@@ -69,6 +70,7 @@ function makeFakeDb(
             onConflictDoNothing() {
               return {
                 async returning() {
+                  if (tableName === 'lumibase_sites') return [vals];
                   if (tableName === 'lumibase_roles') {
                     return [{ id: 'role_admin' }];
                   }
@@ -89,7 +91,8 @@ function makeFakeDb(
     },
     select() {
       return {
-        from() {
+        from(table: { [k: string]: unknown }) {
+          const isOrganization = getTableName(table) === 'lumibase_organizations';
           return {
             where() {
               const chain = {
@@ -100,7 +103,7 @@ function makeFakeDb(
                   return Promise.resolve([systemStateRow]);
                 },
                 then(resolve: (v: unknown) => void) {
-                  resolve([]);
+                  resolve(isOrganization ? [{ id: 'org_default' }] : []);
                 },
               };
               return chain;
@@ -274,6 +277,42 @@ describe('SetupService.complete() → audit events (Req 15.1)', () => {
       expect(outcome).toEqual({
         ok: false,
         error: { code: 'SETUP_TOKEN_REQUIRED' },
+      });
+      expect(deriveSpy).not.toHaveBeenCalled();
+      expect(calls).toHaveLength(0);
+    } finally {
+      deriveSpy.mockRestore();
+    }
+  });
+
+  it('reports an unissued token, rather than a missing one, before hashing or audit writes', async () => {
+    // #470: with the gate on and no hash stored — Cloudflare Workers, which
+    // have no startup step to mint one — `SETUP_TOKEN_REQUIRED` sent the
+    // operator looking for a token that was never printed anywhere.
+    const deriveSpy = vi.spyOn(crypto.subtle, 'deriveBits');
+    const { audit, calls } = makeSpyAudit();
+    const db = makeFakeDb({
+      state: 'uninitialized',
+      setupTokenHash: null,
+      adminPath: null,
+    }) as never;
+    const svc = new SetupService({
+      db,
+      requireSetupToken: true,
+      smtpAvailable: false, encryptionAvailable: true,
+      audit,
+    });
+
+    try {
+      // Even a caller who does send something gets the actionable code: with
+      // no stored hash, no value could ever verify.
+      const outcome = await svc.complete(
+        { ...makeInput(), setupToken: 'anything' },
+        { requestId: 'req-not-issued' },
+      );
+      expect(outcome).toEqual({
+        ok: false,
+        error: { code: 'SETUP_TOKEN_NOT_ISSUED' },
       });
       expect(deriveSpy).not.toHaveBeenCalled();
       expect(calls).toHaveLength(0);

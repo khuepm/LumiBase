@@ -119,7 +119,7 @@ Spec này xây trực tiếp trên các lớp đã ship của LumiBase, không p
 
 #### Acceptance Criteria
 
-1. THE Deployment_Integration SHALL cung cấp endpoint Inbound_Webhook `POST /api/v1/deployments/webhook/:provider` nhận sự kiện deployment-status.
+1. THE Deployment_Integration SHALL cung cấp endpoint Inbound_Webhook `POST /api/v1/deployments/webhook/:provider/:siteId` (mang `siteId` trên path để hoạt động trên shared API host khi provider không gửi được custom header) và giữ `POST /api/v1/deployments/webhook/:provider` (qua `withTenant`) nhận sự kiện deployment-status.
 2. WHEN nhận Inbound_Webhook, THE Deployment_Integration SHALL verify chữ ký/secret của Provider trước khi xử lý; IF verify thất bại THEN trả 401 và không cập nhật dữ liệu.
 3. WHEN Inbound_Webhook hợp lệ, THE Deployment_Integration SHALL cập nhật bản ghi `deployments` tương ứng (match theo `providerDeploymentId`), idempotent với Status_Poller.
 4. IF không bật Inbound_Webhook, THEN THE Deployment_Integration SHALL vẫn hoạt động đầy đủ chỉ bằng Status_Poller (Requirement 3) — inbound webhook là bổ trợ, không bắt buộc.

@@ -240,9 +240,9 @@ function EntryRow({ row }: { row: TmEntry }) {
       <td className="py-2 text-xs">{row.quality ?? '—'}</td>
       <td className="py-2 text-xs">
         <SourceBadge source={row.source} />
-        {row.provider ? <span className="ml-1 text-muted-foreground">({row.provider})</span> : null}
+        {row.provider ? <span className="ms-1 text-muted-foreground">({row.provider})</span> : null}
       </td>
-      <td className="py-2 text-right">
+      <td className="py-2 text-end">
         {editing ? (
           <div className="flex justify-end gap-1">
             <button
@@ -391,7 +391,7 @@ export function TranslationMemoryPage() {
           <>
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                <tr className="border-b text-start text-xs uppercase text-muted-foreground">
                   <th className="py-2">Pair</th>
                   <th>Source</th>
                   <th>Target</th>

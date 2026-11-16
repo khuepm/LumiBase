@@ -194,6 +194,21 @@
                 "placeholder": "https://example.com/lumibase/security"
               }
             }
+          },
+          "emailIdentity": {
+            "title": "Định danh email",
+            "description": "Cách các alias email ánh xạ vào tài khoản trên instance này. Áp dụng cho đăng ký, mời và SCIM. Về sau chỉ bootstrap admin đổi được, và chuyển sang một tài khoản cho mỗi hộp thư sẽ bị từ chối khi đang có các tài khoản dùng chung một hộp thư.",
+            "options": {
+              "exact": {
+                "label": "Đúng địa chỉ (mặc định)",
+                "description": "Mỗi địa chỉ khác nhau là một tài khoản riêng: test+a@gmail.com và test+b@gmail.com có thể đăng ký riêng."
+              },
+              "root": {
+                "label": "Một tài khoản cho mỗi hộp thư",
+                "description": "Alias +tag (và với Gmail: dấu chấm và googlemail.com) quy về một tài khoản trên toàn instance. Đăng nhập bằng alias nào cũng vào đúng tài khoản đó."
+              }
+            },
+            "reviewLabel": "Định danh email"
           }
         },
         "submit": "Tiếp tục"

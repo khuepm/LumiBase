@@ -48,3 +48,7 @@ docs/.i18n/parity-report.json
 # put 23 files of third-party MIT code in the tree that nothing here imports —
 # keep them in `~/.claude/skills/` so they follow the developer, not the repo.
 .claude/skills/
+
+# Agent scratch (see .kiro/steering/agent-temp-dir.md) and local worktrees
+.agents/
+.worktrees/

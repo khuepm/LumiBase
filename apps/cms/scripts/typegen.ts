@@ -4,7 +4,7 @@
  * emit a TypeScript types file usable by client apps (Next.js, etc.).
  *
  * Usage:
- *   pnpm lumibase typegen \
+ *   pnpm -F @lumibase/cms typegen \
  *     --site <siteId> \
  *     --out ./apps/web/src/lumibase-types.ts \
  *     --url http://localhost:1989 \

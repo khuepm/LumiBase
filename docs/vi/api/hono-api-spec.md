@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 3
-lastUpdated: 2026-09-01T19:24:38.846Z
+version: 55
+lastUpdated: 2026-11-15T23:40:56.423Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f0c3698b7ea88443
+sourceHash: fb7e23a8ff3b4d56
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-01T19:24:38.846Z
-codeVerifiedHash: f0c3698b7ea88443
-codeVerifiedClaims: 374
+codeVerified: 2026-11-15T23:40:56.423Z
+codeVerifiedHash: fb7e23a8ff3b4d56
+codeVerifiedClaims: 636
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -71,6 +71,15 @@ Phản hồi lỗi:
 | `TOKEN_EXPIRED` | 401 | JWT đã hết hạn — làm mới và thử lại |
 | `SKILL_DENIED` | 403 | AI skill yêu cầu một capability mà phiên làm việc thiếu |
 | `HITL_REQUIRED` | 202 | Thao tác nguy hiểm cần sự phê duyệt của con người (Human-In-The-Loop) |
+| `VALIDATION` | 400 | Payload organization không hợp lệ |
+| `SCOPE_NOT_ALLOWED` | 400 | Organization key phải được tạo qua API organization |
+| `ORGANIZATION_FORBIDDEN` | 403 | Phạm vi credential hoặc role organization không cho phép thao tác |
+| `ORG_SIGNUP_DISABLED` | 403 | Tạo organization bị tắt đối với bên gọi này |
+| `SITE_NOT_IN_ORGANIZATION` | 403 | Site đã chọn không thuộc organization của key |
+| `ORGANIZATION_NOT_EMPTY` | 409 | Organization phải không còn site trước khi xóa |
+| `LAST_OWNER` | 409 | Phải giữ ít nhất một owner |
+| `REQUESTER_REVOKED` | 409 | Bên yêu cầu không còn quyền organization hiện tại |
+| `APPROVAL_ALREADY_DECIDED` | 409 | Quyết định phê duyệt trái ngược đã được commit |
 
 > **Tín hiệu Deprecation.** Một điểm cuối sắp ngưng hoạt động sẽ trả về các header response IETF `Deprecation` và `Sunset` (RFC 8594) cộng với `Link rel="deprecation"` dẫn tới changelog. Phía client nên log các header này và chuyển đổi trước ngày `Sunset`. Xem `docs/en/security/owasp-api-top-10-audit.md` (API9).
 
@@ -107,8 +116,28 @@ Phản hồi lỗi:
 | `_json_contains` | JSONB `@>` — chứa giá trị / sub-object / phần tử mảng |
 | `_has_key` | Trường JSON object có chứa key này |
 | `_has_any_keys`, `_has_all_keys` | Trường JSON object chứa bất kỳ / tất cả các key này (mảng chuỗi) |
+| `_near`, `_within_bbox` | Trường geopoint: trong bán kính `{ lat, lng, radius }` mét / trong khung `[minLng, minLat, maxLng, maxLat]` — xem [Trường geopoint](../features/geopoint.md) |
 
 **Tìm kiếm bên trong JSON.** Một key trường lọc có thể là **đường dẫn dấu chấm** vào trường JSON/JSONB lồng nhau — ví dụ `filter={"metadata.author.country":{"_eq":"VN"}}` biên dịch thành tra cứu `data #>> '{metadata,author,country}'`. Các phân đoạn đường dẫn bị giới hạn trong `[A-Za-z0-9_]` và được bind dưới dạng tham số (an toàn trước SQL injection); độ sâu tối đa là 8. Các toán tử `_json_contains` / `_has_*` chạy trên JSONB và sử dụng index GIN hiện có. Các key cấp cao nhất và các trường cấu trúc hoạt động chính xác như trước.
+
+**So sánh theo kiểu (Cast_Rule).** Giá trị item được lưu dạng JSONB, nên phép so sánh thô là so sánh chuỗi (`'10' > '9'` là false). Vì vậy `_eq`, `_neq`, `_in`, `_nin`, `_gt`, `_gte`, `_lt` và `_lte` ép kiểu cả hai vế theo kiểu dữ liệu:
+
+| Trường / giá trị | Phép so sánh |
+|------------------|--------------|
+| Trường cấp cao nhất kiểu `integer`, `bigInteger`, `decimal`, `float` | `numeric` |
+| Trường cấp cao nhất kiểu `boolean` | `boolean` |
+| Trường cấp cao nhất kiểu `date`, `datetime`, `timestamp` | `timestamptz` |
+| Đường dẫn lồng nhau, trường `json` hoặc key không có trong schema, với giá trị JSON là số / boolean | `numeric` / `boolean`, suy ra từ giá trị |
+| Mọi trường hợp khác (`string`, `text`, `uuid`, giá trị chuỗi trên đường dẫn lồng nhau) | chuỗi, như trước |
+
+Vế dữ liệu được ép kiểu có kiểm tra trước: một dòng có giá trị không giống kiểu đích (ví dụ `"n/a"` trong trường `decimal`) được so sánh như `NULL` và bị loại, thay vì làm hỏng cả truy vấn. Giá trị lọc không ép kiểu được (ví dụ `{"price":{"_gt":"cheap"}}`) bị từ chối với `400 INVALID_FILTER`. Các toán tử chuỗi (`_contains`, `_starts_with`, `_ends_with`) luôn so sánh chuỗi. Sắp xếp theo trường số, boolean hoặc ngày ở cấp cao nhất dùng cùng phép ép kiểu, nên `sort=-price` sắp theo thứ tự số. Các trường cấu trúc (`id`, `status`, `sort`, `created_at`, …) giữ kiểu cột gốc.
+
+```
+GET /api/v1/items/products?filter={"price":{"_gt":10}}&sort=-price
+GET /api/v1/items/products?filter={"metadata.rating":{"_gte":4.5}}
+```
+
+Để một bộ lọc có kiểu trên đường dẫn được truy vấn nhiều dùng được index, hãy hỏi [index advisor](#json-path-index-advisor) để lấy DDL khớp.
 
 ### Định dạng bộ lọc (Filter forms)
 
@@ -154,10 +183,30 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/me/tfa/confirm` | bearer | Xác nhận enroll bằng một code sống → recovery code dùng-một-lần |
 | `POST` | `/api/v1/me/tfa/recovery-codes` | bearer | Tạo lại recovery code (mật khẩu + TOTP code) |
 | `DELETE` | `/api/v1/me/tfa` | bearer | Tắt TOTP (mật khẩu + một TOTP code hoặc một recovery code); thu hồi session và tăng `tokenVersion` |
+| `POST` | `/api/v1/auth/passkey/options` | public | Options xác thực passkey: có `challengeToken` = yếu tố thứ hai, không có = đăng nhập staff không mật khẩu → `{ ceremonyId, options }` |
+| `POST` | `/api/v1/auth/passkey/verify` | public | Hoàn tất nghi thức passkey → cùng payload session với login (`amr` chứa `webauthn`, `tfaVerified`) |
+| `GET` | `/api/v1/me/passkeys` | bearer | Các passkey của người gọi + `recoveryCodesRemaining`, `totpEnabled`, `available` |
+| `POST` | `/api/v1/me/passkeys/registration-options` | bearer | Bắt đầu đăng ký passkey (step-up mật khẩu) → `{ ceremonyId, options }` |
+| `POST` | `/api/v1/me/passkeys` | bearer | Hoàn tất đăng ký → `{ passkey, recoveryCodes }` (chỉ có code khi là yếu tố đầu tiên) |
+| `PATCH` | `/api/v1/me/passkeys/:id` | bearer | Đổi tên passkey |
+| `DELETE` | `/api/v1/me/passkeys/:id` | bearer | Xóa passkey (mật khẩu); yếu tố thứ hai cuối cùng sẽ thu hồi session và tăng `tokenVersion` |
+| `POST` | `/api/v1/me/passkeys/recovery-codes` | bearer | Tạo lại recovery code (mật khẩu + phiên mở bằng passkey) |
 | `POST` | `/api/v1/me/change-password` | bearer | Xác nhận mật khẩu hiện tại, đặt hash mới, thu hồi refresh token + tăng `tokenVersion` |
 | `GET` | `/api/v1/me/sessions` | bearer | Liệt kê các phiên hoạt động của người gọi (live refresh tokens, đã ẩn thông tin nhạy cảm) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Thu hồi một phiên làm việc của người gọi |
-| `DELETE` | `/api/v1/me/sessions` | bearer | Thu hồi tất cả các phiên làm việc của người gọi |
+| `DELETE` | `/api/v1/me/sessions` | bearer | Thu hồi tất cả các phiên làm việc của người gọi; `?scope=others` giữ lại phiên hiện tại |
+| `GET` | `/api/v1/me/security-history` | bearer | Các sự kiện bảo mật của chính người gọi (đăng nhập, thiết bị mới, đổi mật khẩu/MFA, thu hồi phiên), đã che bớt; `?cursor=&limit=&scope=site\|account` — xem [Lịch sử bảo mật](../security/security-history.md) |
+| `GET` | `/api/v1/me/security-history/export` | bearer | Tải về cùng lịch sử đó; `?format=json\|csv&scope=` (tối đa 5.000 dòng, 10 lần xuất / 15 phút) |
+| `GET` | `/api/v1/auth/social/providers` | public | Các provider đăng nhập mạng xã hội đang bật cho site |
+| `POST` | `/api/v1/auth/social/:provider/start` | public | Bắt đầu đăng nhập Google / Apple / GitHub (PKCE) → `authorizationUrl` |
+| `GET`/`POST` | `/api/v1/auth/social/callback/:siteId/:provider` | provider | Callback của provider (`POST` = `form_post` của Apple); redirect về URI trong allow-list kèm code dùng một lần |
+| `POST` | `/api/v1/auth/social/exchange` | public | Đổi code dùng một lần bằng `codeVerifier` của client → phiên (`aud: frontend`) |
+| `GET` | `/api/v1/me/identities` | bearer | Các danh tính đăng nhập đã liên kết + `hasPassword` |
+| `POST` | `/api/v1/me/identities/:provider/link` | bearer | Bắt đầu liên kết một provider với tài khoản đang đăng nhập |
+| `POST` | `/api/v1/me/identities/complete` | bearer | Hoàn tất liên kết (code dùng một lần + `codeVerifier`) |
+| `DELETE` | `/api/v1/me/identities/:id` | bearer | Huỷ liên kết một provider (không bao giờ là cách đăng nhập cuối cùng) |
+| `GET` | `/api/v1/admin/social-providers` | site-admin | Cấu hình provider mạng xã hội theo site (secret chỉ ghi) |
+| `PUT`/`DELETE` | `/api/v1/admin/social-providers/:provider` | site-admin | Cấu hình / xoá một provider — xem [Social login](../security/social-login.md) |
 | `POST` | `/api/v1/users/subscriber-access` | site-admin | Cấp quyền `read` cho subscriber trên một collection (Policy DSL) |
 | `GET`/`DELETE` | `/api/v1/users/subscriber-access[/:collection]` | site-admin | Liệt kê / thu hồi quyền đọc của subscriber |
 | `GET` | `/api/v1/me/preferences` | bearer | Blob tùy chọn của người dùng hiện tại (toàn cục identity) |
@@ -214,6 +263,13 @@ không còn trong cấu hình. Ở trường hợp sau, `DELETE /me/tfa` chấp 
 của nó không còn giải mã được. Xem
 [Vận hành khoá mã hoá](../operations/encryption-keys.md).
 
+**Passkey (WebAuthn).** Khi user có thêm (hoặc chỉ có) passkey, phản hồi
+`mfa_required` có thêm `methods` (`["totp"]`, `["webauthn"]` hoặc cả hai), và
+challenge có thể hoàn tất bằng `POST /auth/passkey/options` +
+`POST /auth/passkey/verify` thay cho `verify-totp`. Cùng hai endpoint đó khi
+không có `challengeToken` cho đăng nhập staff không mật khẩu. Xem
+[Passkey](../security/passkeys.md).
+
 **Quản lý chấp thuận (Consent management)** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
 
 ```jsonc
@@ -242,6 +298,67 @@ Mỗi thay đổi sẽ ghi lại một sự kiện audit `consent_granted` / `co
 Token hủy đăng ký là một HS256 JWT không lưu trạng thái (`{ siteId, email }`, không hết hạn) được ký bằng `JWT_SECRET`. Việc gửi email Marketing (`EmailModuleService.send({ category: 'marketing' })`) sẽ lọc người nhận đối chiếu với `email_suppressions` trước khi gửi. Việc hủy đăng ký / chặn gửi ghi nhận audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
 
 **Tùy chọn & hành động lưu.** `PATCH /api/v1/me/preferences` gộp nông bản vá đã xác thực vào `users.preferences` (các phần khác như `language` / `keybindings` được giữ nguyên). Gửi `{ "saveAction": "stay" | "return" | "create_new" }` để đặt điều hướng sau khi lưu của trình chỉnh sửa Studio; gửi `{ "saveAction": null }` để quay về mặc định của site (`sites.default_save_action`, đặt qua `PATCH /api/v1/site`). Enum không hợp lệ → 400.
+
+### Chính sách định danh email
+
+`users` là bảng định danh toàn cục (một hàng cho mỗi người trên mọi site), nên
+quy tắc quyết định hai địa chỉ có phải cùng một tài khoản hay không được đặt ở
+hai tầng. Một site chỉ có thể **chặt hơn** instance, không bao giờ lỏng hơn.
+
+| Method | Path | Auth | Mô tả |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/admin/email-identity` | site-admin | `{ instanceMode, siteStrict, effective }` của site đang chọn |
+| `PUT` | `/api/v1/admin/email-identity/instance` | bootstrap admin | Đổi mode của instance — body `{ mode: "exact" \| "root", dryRun? }` |
+| `PUT` | `/api/v1/admin/email-identity/site` | site-admin | Bật/tắt strict theo site — body `{ strict: boolean, dryRun? }` |
+
+- **Mode của instance** (`exact` mặc định, `root`). `exact` giữ mỗi địa chỉ
+  khác nhau là một tài khoản riêng. `root` biến một hộp thư gốc thành một tài
+  khoản trên toàn instance: `+tag` bị bỏ trên mọi domain, và với Gmail phần
+  local còn bỏ dấu chấm và `googlemail.com` quy về `gmail.com`. Bỏ `+tag` trên
+  mọi domain là lựa chọn policy, không bảo đảm alias tới cùng hộp thư
+  (sub-addressing là quy ước của nhà cung cấp). Mode được chọn
+  trong Setup Wizard (`emailIdentityMode` trong body
+  `POST /api/v1/setup/complete`; bỏ trống → `exact`) và về sau chỉ bootstrap
+  admin đổi được — phải là user principal, không bao giờ là API key (ngược lại
+  trả `403 FORBIDDEN`).
+- **Strict theo site** (mặc định `false`). Dưới `exact`, một site strict chỉ
+  cho phép một membership cho mỗi hộp thư gốc, được bảo đảm bằng unique index
+  trên `(site_id, identity_key)` thay vì kiểm-tra-rồi-chèn. Dưới `root`, cờ
+  của site không có tác dụng (`effective: "root"`).
+- **Siết chặt** (`exact → root`, `strict: false → true`) kiểm tra dữ liệu hiện
+  có trước và trả `409 IDENTITY_COLLISION` kèm các tài khoản xung đột — không
+  có gì thay đổi. **Nới lỏng** luôn thành công. `dryRun: true` chạy cùng
+  transaction rồi rollback.
+
+```jsonc
+// PUT /api/v1/admin/email-identity/instance  { "mode": "root" }  →  409
+{ "errors": [{ "code": "IDENTITY_COLLISION",
+               "message": "Existing accounts share a root mailbox; resolve them before tightening the policy.",
+               "collisions": [{ "root": "test@gmail.com",
+                                "accounts": [{ "userId": "u_1", "email": "test@gmail.com" },
+                                             { "userId": "u_2", "email": "t.est+news@gmail.com" }] }] }] }
+
+// …sau khi xử lý các tài khoản trùng  →  200
+{ "data": { "previous": "exact", "current": "root", "changed": true, "dryRun": false } }
+```
+
+Mỗi thay đổi được áp dụng đều ghi một audit event (`email_identity_mode_changed`
+/ `site_email_identity_changed`). Ảnh hưởng tới các endpoint khác:
+
+- `POST /api/v1/auth/register` vẫn trả đúng `202` chung khi địa chỉ — hoặc,
+  dưới `root`, bất kỳ alias nào của nó — đã tồn tại, hoặc khi một site strict
+  đã có thành viên cùng hộp thư gốc. Tài khoản và membership được commit trong
+  một transaction, nên membership bị từ chối không bao giờ để lại tài khoản mồ
+  côi.
+- `POST /api/v1/auth/login`, `/forgot-password` và `/resend-verification`
+  resolve tài khoản theo mode của instance: dưới `root`, alias nào cũng tới
+  được tài khoản. Lockout được theo dõi trên hàng tài khoản đã resolve, nên
+  xoay vòng alias không reset hay né được lockout.
+- `POST /api/v1/users/invite` tra tài khoản không phân biệt hoa/thường (và theo
+  hộp thư gốc dưới `root`) và chỉ trả các trường công khai. Mời một alias của
+  thành viên hiện có trên site strict trả `409 EMAIL_IDENTITY_CONFLICT`.
+- SCIM (`/scim/v2/Users`) trả `409` với `scimType: "uniqueness"` khi địa chỉ
+  resolve về một tài khoản đã có hoặc xung đột trên site strict.
 
 ### Xác thực External JWT
 
@@ -288,6 +405,47 @@ CRUD quản trị cho các nhà phát hành tin tưởng (chỉ admin):
 
 ---
 
+## 1b. Organizations (ADR-013)
+
+Request organization dùng danh tính đã xác thực và organization đích, không cần `X-Lumi-Site`. Organization key (`lbo_`) gắn với một organization và có vai trò admin cố định, trừ việc thay đổi ai nắm quyền: `PATCH /orgs/:orgId`, thao tác ghi thành viên và ghi organization key yêu cầu phiên người dùng và trả `403 ORGANIZATION_FORBIDDEN` cho key. Key yêu cầu các thay đổi này qua MCP organization, nơi người dùng duyệt. Danh tính nhân sự dùng membership organization hiện tại. Site key (`lbk_`), publishable key (`lbk_pub_`) và phiên frontend không được vào phạm vi này. Thiếu membership hoặc tài nguyên ngoài organization đã chọn trả `404 NOT_FOUND`.
+
+| Method | Endpoint | Quyền / payload |
+|---|---|---|
+| `GET` | `/api/v1/orgs` | Liệt kê organization của bên gọi; organization key chỉ nhận đúng organization của mình |
+| `POST` | `/api/v1/orgs` | Bootstrap operator, hoặc user Studio với `LUMIBASE_ALLOW_ORG_SIGNUP=true`; `{ name, slug }`; bên gọi thành owner |
+| `GET` | `/api/v1/orgs/:orgId` | `org:read`; kèm role của bên gọi |
+| `PATCH` | `/api/v1/orgs/:orgId` | `org:settings:write`; `{ name?, slug?, settings? }`; chỉ owner được đổi slug |
+| `DELETE` | `/api/v1/orgs/:orgId` | Owner; `X-Confirm-Delete: <orgId>`; organization phải không còn site |
+| `GET` | `/api/v1/orgs/:orgId/sites` | `org:read` |
+| `POST` | `/api/v1/orgs/:orgId/sites` | `org:sites:create`; `{ name, id?, slug? }`; `id` và `slug` phải khớp nếu cùng được gửi |
+| `DELETE` | `/api/v1/orgs/:orgId/sites/:siteId` | Owner; `X-Confirm-Delete: <siteId>` |
+| `POST` | `/api/v1/orgs/:orgId/sites/:siteId/transfer` | Cùng một người phải là owner ở cả hai organization; `{ toOrganizationId }` |
+| `GET` | `/api/v1/orgs/:orgId/members` | `org:read` |
+| `POST` | `/api/v1/orgs/:orgId/members` | `org:members:manage`; `{ userId?, email?, role }`; đúng một trường danh tính |
+| `PATCH` | `/api/v1/orgs/:orgId/members/:userId` | `org:members:manage`; `{ role }` |
+| `DELETE` | `/api/v1/orgs/:orgId/members/:userId` | `org:members:manage` |
+| `GET` | `/api/v1/orgs/:orgId/keys` | `org:read`; chỉ metadata |
+| `POST` | `/api/v1/orgs/:orgId/keys` | `org:keys:manage`; `{ name, description?, expiresAt? }`; token rõ chỉ trả lúc tạo |
+| `POST` | `/api/v1/orgs/:orgId/keys/:keyId/rotate` | `org:keys:manage`; token cũ ngừng hoạt động; token rõ trả lúc xoay |
+| `DELETE` | `/api/v1/orgs/:orgId/keys/:keyId` | `org:keys:manage`; thu hồi key |
+| `GET` | `/api/v1/orgs/:orgId/approvals` | Chỉ người dùng owner/admin; bản tóm tắt không có bí mật trong kết quả |
+| `GET` | `/api/v1/orgs/:orgId/approvals/:approvalId` | Chỉ người dùng owner/admin; key mới không bao giờ được lưu hay trả lại (`tokenRedacted: true`) |
+| `POST` | `/api/v1/orgs/:orgId/approvals/:approvalId/decide` | Người dùng owner/admin; `{ decision: "approved" }` / `{ decision: "rejected" }`; vẫn kiểm tra quyền owner theo thao tác; duyệt `org:create_org_key` trả key dạng rõ chỉ trong response này |
+
+Thao tác tạo trả `201`, các thao tác thành công khác trả `200`, dùng envelope `data` chuẩn. Role organization gồm `owner`, `admin`, `billing` và `member`. Admin không được thêm/đổi/xóa owner; không thể xóa hay hạ cấp owner cuối. Owner/admin kế thừa quyền administrator tại site thuộc organization; billing/member không kế thừa. Organization key luôn là admin và không tự thực thi thao tác dành riêng cho owner. Email thành viên chưa có danh tính sẽ tạo danh tính ở trạng thái invited; membership organization tách biệt với luồng kích hoạt tài khoản nhân sự.
+
+Tạo site dùng cùng provisioning với setup. Khi gửi `settings`, toàn bộ object settings được thay thế, nên phải giữ các trường không liên quan. Owner được đổi slug `default`, sau đó slug này lại có thể dùng. `POST /api/v1/api-keys` vẫn thuộc phạm vi site và từ chối `scope="organization"`; organization key chỉ được tạo site key cho site thuộc organization của mình.
+
+### Phê duyệt MCP organization
+
+MCP organization tắt cho tới khi `settings.contentOs.mcp.allowOrganizationTools=true`; `LUMIBASE_MCP_ORG_TOOLS=off` có quyền tắt ưu tiên. Mọi thao tác ghi organization tạo approval chờ duyệt với cha organization thật. `confirm=true` không thể duyệt thay người dùng, và các tool MCP này không fallback sang REST. Agent nhận `pending_approval`, `approvalId`, `organizationId` và run id; agent không nhận organization key mới.
+
+Phê duyệt kiểm tra lại quyền hiện tại của bên yêu cầu và người duyệt. Thao tác và biên nhận được commit nguyên tử. Lặp cùng quyết định trả lại biên nhận cũ; quyết định trái ngược trả `409 APPROVAL_ALREADY_DECIDED`. Không thể duyệt yêu cầu đã bị thu hồi quyền (`409 REQUESTER_REVOKED`), nhưng vẫn có thể từ chối. Xóa organization đích không chặn việc từ chối yêu cầu chuyển còn chờ hay đọc lại biên nhận đã commit. Thực thi yêu cầu chuyển còn chờ vẫn cần cả hai organization và người sở hữu chúng. Tắt MCP chặn phê duyệt (`403 MCP_DISABLED`) nhưng không chặn từ chối. Discovery khi MCP tắt trả `404 MCP_DISABLED`. Xem [Cài đặt Organization](../features/organizations.md) và [MCP](../mcp/index.md).
+
+Mã lỗi organization bổ sung gồm `400 VALIDATION`, `400 SCOPE_NOT_ALLOWED`, `403 ORGANIZATION_FORBIDDEN`, `403 ORG_SIGNUP_DISABLED`, `403 SITE_NOT_IN_ORGANIZATION`, `404 NOT_FOUND`, `409 LAST_OWNER`, `409 ORGANIZATION_NOT_EMPTY` và `409 CONFLICT`.
+
+---
+
 ## 2. Schema Admin
 
 ### Collections
@@ -302,6 +460,9 @@ CRUD quản trị cho các nhà phát hành tin tưởng (chỉ admin):
 | `GET` | `/api/v1/collections/:name/schema` | Xuất schema collection dạng JSON |
 | `PUT` | `/api/v1/collections/:name/schema` | Áp dụng schema (idempotent, nhận biết diff) |
 | `POST` | `/api/v1/collections/diff` | So sánh schema bundle với hiện tại |
+| `GET` | `/api/v1/collections/:name/index-advice?path=&cast=` | Gợi ý index cho đường dẫn JSON (chỉ đọc, `schema:read`) |
+| `GET` | `/api/v1/collections/:name/form-layout` | Bố cục form item: tab, nhóm, đường phân cách, điều kiện (`schema:read`); xem [Bố cục form](../features/form-layout.md) |
+| `PUT` | `/api/v1/collections/:name/form-layout` | Thay (hoặc với `null` thì xóa) bố cục form (`schema:update`) |
 
 **Request tạo collection:**
 ```json
@@ -315,6 +476,25 @@ CRUD quản trị cho các nhà phát hành tin tưởng (chỉ admin):
   "sort_field": "sort"
 }
 ```
+
+#### JSON path index advisor
+
+`GET /api/v1/collections/:name/index-advice?path=<dot.path>[&cast=numeric|boolean|timestamp|text]` trả về DDL `CREATE INDEX` có biểu thức khớp chính xác với biểu thức mà bộ dựng filter sinh ra cho đường dẫn và kiểu ép đó, để Postgres dùng được index cho các filter `_eq`/`_in`/khoảng có kiểu. Index là partial theo collection (`WHERE collection_id = … AND deleted_at IS NULL`). `cast` mặc định lấy theo kiểu khai báo của trường cấp cao nhất; bắt buộc với đường dẫn lồng nhau hoặc trường `json`. Endpoint không bao giờ tự chạy DDL: người vận hành xem lại rồi chạy ngoài transaction (`CONCURRENTLY`). `timestamp` trả về `ddl: null`, vì phép ép `timestamptz` không `IMMUTABLE` nên Postgres từ chối tạo index.
+
+```json
+{
+  "data": {
+    "path": "price",
+    "cast": "numeric",
+    "indexName": "items_products_price_numeric_idx",
+    "expression": "(case when (data ->> 'price') ~ '…' then (data ->> 'price')::numeric end)",
+    "ddl": "CREATE INDEX CONCURRENTLY IF NOT EXISTS items_products_price_numeric_idx ON lumibase_items ((…)) WHERE collection_id = '…' AND deleted_at IS NULL;",
+    "notes": ["Run outside a transaction (CONCURRENTLY).", "…"]
+  }
+}
+```
+
+Lỗi: `400 VALIDATION` (thiếu/sai `path`, `cast` không hợp lệ, hoặc thiếu `cast` cho đường dẫn lồng nhau), `404 NOT_FOUND` (collection hoặc trường cấp cao nhất).
 
 ### Fields
 
@@ -406,12 +586,16 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 |--------|------|-------------|
 | `GET` | `/api/v1/items/:collection` | Liệt kê các mục (có phân trang, bộ lọc) |
 | `POST` | `/api/v1/items/:collection` | Tạo mục (hoặc mảng cho hàng loạt) |
-| `GET` | `/api/v1/items/:collection/:id` | Lấy một mục duy nhất |
-| `PATCH` | `/api/v1/items/:collection/:id` | Cập nhật một phần |
-| `PUT` | `/api/v1/items/:collection/:id` | Thay thế hoàn toàn |
+| `GET` | `/api/v1/items/:collection/export` | Xuất collection dạng CSV hoặc JSON theo luồng ([Data export](../features/data-export.md)) |
+| `GET` | `/api/v1/items/:collection/:id` | Lấy một mục duy nhất; trả `ETag` |
+| `PATCH` | `/api/v1/items/:collection/:id` | Cập nhật một phần; tôn trọng `If-Match` |
+| `PUT` | `/api/v1/items/:collection/:id` | Thay thế hoàn toàn; tôn trọng `If-Match` |
 | `DELETE` | `/api/v1/items/:collection/:id` | Xóa mục — **409 nếu bị chặn bởi phụ thuộc** |
 | `GET` | `/api/v1/items/:collection/:id/dependents` | Liệt kê các bản ghi tham chiếu tới mục này |
 | `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Xử lý hàng loạt các phụ thuộc của quan hệ |
+| `POST` | `/api/v1/items/:collection/:id/reorder` | Sắp xếp thủ công trên collection có `meta.manualSort`: `{ after: id \| null }` hoặc `{ before: id }` ([Editorial UX](../features/editorial-ux.md#sắp-xếp-thủ-công)) |
+| `POST` | `/api/v1/items/:collection/:id/duplicate` | Lưu thành bản sao: một bản sao `draft` với trường duy nhất được thêm hậu tố (`relations` trong body; xem bên dưới) |
+| `POST` | `/api/v1/items/:collection/:id/move` | Di chuyển một item cùng cây con của nó trong collection dạng cây; liệt kê với `?tree=children\|subtree\|ancestors` ([Collection phân cấp](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | Liệt kê các bản sửa đổi (revisions) |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Khôi phục lại một bản sửa đổi |
 | `GET` | `/api/v1/items/:collection/:id/versions` | Liệt kê các bản nháp có tên (mỗi bản có cờ `mainChanged`) |
@@ -422,7 +606,34 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 | `GET` | `/api/v1/items/:collection/:id/versions/:key/compare` | Diff các trường với main → `{ main, version, changes }` |
 | `POST` | `/api/v1/items/:collection/:id/versions/:key/promote` | Áp dụng bản nháp vào main (ghi một revision); `meta.mainDiverged` |
 
+**Sửa đồng thời (`ETag` / `If-Match`).** Mỗi item có bộ đếm `version`, tăng lên
+sau mỗi lần ghi làm đổi nội dung item. `GET /items/:collection/:id` trả nó dưới
+dạng `ETag` mạnh (`"3"`), và cũng có trong body response dưới tên `version`. Gửi
+lại nó qua `If-Match: "3"` khi `PATCH` hoặc `PUT` để lần ghi có điều kiện: nếu
+người khác đã sửa item trước, lần ghi thất bại với **412 `PRECONDITION_FAILED`**
+và không có gì được ghi. Phép kiểm tra nằm trong cùng câu `UPDATE`, nên hai bên
+ghi cầm cùng một tag không thể cùng thành công. Không có `If-Match` thì lần ghi
+ghi đè vô điều kiện, như trước. `*` chấp nhận mọi version; tag yếu (`W/"3"`)
+không bao giờ khớp. Response `PATCH`/`PUT` thành công mang `ETag` mới. Client
+khác origin gửi được `If-Match` và đọc được `ETag` (cả hai đã có trong danh sách
+allow/expose của CORS). SDK nhận tag qua
+`items(name).patch(id, input, { ifMatch: row.version })`.
+
 **Các bản ghi phụ thuộc (Dependent records).** Vì các tham chiếu item nằm trong JSONB (không phải cột FK vật lý), `onDelete` của một quan hệ được thực thi ở lớp ứng dụng. Khi `DELETE`, nếu một quan hệ khai báo `restrict` vẫn còn bản ghi trỏ tới item, lệnh xóa sẽ bị chặn với **409 `DEPENDENT_RECORDS_EXIST`** và một mảng `dependents`. (`set null`/`cascade` **không** tự động áp dụng khi xóa mềm — điều đó sẽ làm hỏng khả năng phục hồi của xóa mềm; trình biên tập phải xóa chúng một cách tường minh.) `GET …/dependents` trả về `{ data: { blocking, dependents: [{ relation, collection, field, onDelete, count, sample }] } }`. `POST …/resolve-dependents` nhận `{ action: "set_null"|"delete"|"reassign", relation, newTargetId?, hard? }` và chạy trong một transaction (lệnh delete ủy quyền cho đường dẫn xóa item thông thường). Lỗi: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null trên trường bắt buộc), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
+
+**Export.** `GET /items/:collection/export?format=csv|json&fields=&locales=&relations=id|slug|embed&filter=&sort=&status=` xuất theo luồng mọi dòng khớp (phân trang keyset, nên không giới hạn kích thước). Endpoint dùng quyền `read` của người gọi và cú pháp `filter`/`sort` của endpoint danh sách, chạy hook `items.export.before` của extension cho từng dòng, và ghi một mục audit `items_exported`. CSV ghi một cột `field.locale` cho mỗi locale của trường dịch được và vô hiệu hoá công thức bảng tính; JSON có dạng `{ collection, format: "lumibase-export@1", exportedAt, fields, locales, relations, items: [{ id, status, sort, created_at, updated_at, data }] }`. Lỗi trả về trước khi bắt đầu stream: `400 VALIDATION` / `400 UNKNOWN_FIELD` / `400 INVALID_FILTER`, `403 FORBIDDEN`, `404 NOT_FOUND`. Xem [Data export](../features/data-export.md).
+
+**Imports.** Job chạy nền đọc lại các định dạng export:
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `POST` | `/api/v1/imports?collection=&format=csv\|json&mode=create\|upsert` | Upload một file (multipart `file` hoặc body thô) → `202 { data: job }` |
+| `GET` | `/api/v1/imports?collection=&status=&limit=` | Các job gần đây (của mình; admin của site thấy tất cả) |
+| `GET` | `/api/v1/imports/:id` | Tiến độ và các bộ đếm của job |
+| `GET` | `/api/v1/imports/:id/errors` | Lỗi theo dòng; `?format=csv` để tải về |
+| `POST` | `/api/v1/imports/:id/cancel` | Dừng một job đang chờ hoặc đang chạy |
+
+File không hợp lệ bị từ chối với `400 VALIDATION` / `413 PAYLOAD_TOO_LARGE` trước khi tạo job; thiếu quyền `create` (hoặc `update` với `upsert`) trả `403`. Xem [Data import](../features/data-import.md#job-import-chạy-nền).
 
 **Phân trang danh sách & Tổng số.** `GET /items/:collection` chấp nhận `limit` (1–200, mặc định 25), `offset`, và `meta`:
 
@@ -430,6 +641,44 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 - `meta=none` — bỏ qua câu lệnh aggregate `count(*)` để truy vấn rẻ hơn; phản hồi là `{ data, meta: { limit, offset } }` (không có `total`). Dùng cho dạng cuộn vô tận (infinite-scroll) / bảng tin không bao giờ hiển thị tổng số trang.
 
 Mặc định không đổi, nên các client hiện tại tiếp tục nhận `meta.total`. `@lumibase/sdk` `readItems` chấp nhận tùy chọn `meta` tương tự.
+
+**Trạng thái xuất bản, nhóm (cohort) và bản sao (epic #668).**
+
+- **Dấu thời gian xuất bản (#687).** Mỗi item mang `firstPublishedAt` (gán
+  ở lần xuất bản đầu tiên, không bao giờ đổi), `publishedAt` (lần xuất bản gần
+  nhất, giữ nguyên khi gỡ xuất bản) và `hasUnpublishedChanges`. Một lần ghi là
+  *xuất bản* khi item chuyển sang `published`, hoặc khi body gửi rõ
+  `status: "published"` (xuất bản lại). Sửa dữ liệu của item đã từng được xuất
+  bản sẽ đặt `hasUnpublishedChanges: true`; lần xuất bản kế tiếp xoá cờ này.
+  Lưu mà không đổi gì thì không đổi gì. `GET /items/:collection?modifiedSincePublish=true`
+  chỉ liệt kê item đã bị sửa. GraphQL trả các giá trị này qua `_firstPublishedAt`,
+  `_publishedAt` và `_hasUnpublishedChanges`.
+- **Cohort (#688).** `GET /items/:collection` và `GET /items/:collection/:id`
+  nhận `publicationState=live|preview|all`: `live` = `published` và nằm trong
+  khung xuất bản, `preview` = `draft` + `published`, `all` = không lọc theo
+  cohort. Phần mở rộng quan hệ lồng nhau (`fields=rel.*`, `deep`) theo cùng
+  cohort. Người gọi ẩn danh và người dùng realm frontend luôn nhận `live`, bất
+  kể yêu cầu gì. Không truyền tham số thì hành vi không đổi (chỉ RBAC quyết
+  định). Giá trị lạ trả `400 VALIDATION`. Trường danh sách và `_by_id` của
+  GraphQL nhận cùng đối số `publicationState`; quan hệ lồng nhau đi theo nó.
+- **Nhân bản (#689).** `POST /items/:collection/:id/duplicate` với body tuỳ
+  chọn `{ relations?: "reference"|"deep"|"none", translations?: boolean,
+  locale?: string, overrides?: object }` tạo một bản sao `draft` qua đường tạo
+  item thông thường (cần `read` trên bản gốc và `create` trên collection).
+  Trường chuỗi duy nhất (và `slug`) được thêm hậu tố `-copy`, `-copy-2`, …;
+  giá trị duy nhất khác bị bỏ. `reference` (mặc định) sao chép liên kết m2m,
+  `deep` sao chép thêm một tầng item con o2m, `none` chỉ sao chép item.
+  `translations: false` chỉ giữ `locale` (mặc định: locale mặc định của site)
+  của các trường `translatable-text`. Phản hồi `201 { data, meta: { sourceId,
+  related } }`; một mục audit `item_duplicated` ghi lại bản gốc.
+- **Bỏ qua revision (#693).** `PATCH`/`PUT ?saveRevision=false` ghi item mà
+  không tạo dòng revision (autosave, ghi bằng máy). Lần ghi do agent thực hiện
+  luôn ghi revision (provenance). Collection có thể giới hạn lịch sử bằng
+  `meta.revisionRetention: { maxRevisions?, maxAgeDays? }`; một lượt quét mỗi
+  giờ xoá revision cũ nhưng luôn giữ revision mới nhất của mỗi item, revision
+  đang staged, revision được release ghim và revision của agent.
+
+Xem [Editorial UX](../features/editorial-ux.md).
 
 **Header tùy chọn:**
 - `X-Lumi-Draft: true` — lấy phiên bản nháp
@@ -460,6 +709,7 @@ Một **Release** gom các bản sửa đổi mục cụ thể trên nhiều col
 | `GET` | `/api/v1/releases` | Liệt kê các release (`?status=&page=&limit=`) |
 | `GET` | `/api/v1/releases/:id` | Chi tiết release + các mục của nó |
 | `PATCH` | `/api/v1/releases/:id` | Cập nhật meta, `addItems`/`removeItems`, đặt `publishAt` |
+| `GET` | `/api/v1/releases/:id/validate` | Tóm tắt kiểm tra hợp lệ trước khi xuất bản (#692) |
 | `POST` | `/api/v1/releases/:id/publish` | Xuất bản ngay (thủ công) |
 | `DELETE` | `/api/v1/releases/:id` | Xóa release (xóa nối tiếp các mục) |
 
@@ -482,7 +732,54 @@ Một **Release** gom các bản sửa đổi mục cụ thể trên nhiều col
 
 **Mã lỗi:** `EMPTY_RELEASE` (422), `ALREADY_PUBLISHED` (409), `RELEASE_IMMUTABLE` (409, chỉnh sửa các mục của release đã xuất bản), `ITEM_NOT_FOUND` (404), `REVISION_STAGED` (409, ghim bản sửa đổi chưa commit), `VALIDATION_FAILED` (422, bao gồm `publishAt` trong quá khứ). Các yếu tố chặn xuất bản từng mục xuất hiện dưới dạng lý do outcome `EDITORIAL_GATE_REQUIRED` / `ITEM_DELETED`.
 
+**Tóm tắt kiểm tra hợp lệ (#692).** `GET /releases/:id/validate` kiểm tra đầy đủ
+(gồm cả trường bắt buộc và điều kiện form-layout) mọi item mà release sẽ xuất
+bản — dùng snapshot của revision được ghim nếu có. Phản hồi:
+`{ data: { valid, checked, items: [{ collection, itemId, issues: [{ field, code, message }] }] } }`;
+`items` chỉ liệt kê item có vấn đề, và `field` là đường dẫn dạng dấu chấm tới
+trường lỗi. Khi xuất bản, cùng phép kiểm tra này chạy trước: item không hợp lệ
+không bao giờ được xuất bản và nhận lý do outcome `VALIDATION_FAILED` kèm
+`issues`. Ở chế độ `all_or_nothing` điều đó làm cả release thất bại; ở
+`best_effort` các item hợp lệ vẫn được xuất bản. Trang **Releases** của Studio
+hiển thị bản tóm tắt với liên kết mở trình soạn item ngay tại trường lỗi
+(`#field=<name>`).
+
 Các release lên lịch được xuất bản qua nhịp `content-scheduler` dùng chung (`sweepDueReleases`) — idempotent và nhận biết `maintenanceWindow`.
+
+---
+
+## 3c. Live preview (epic #667)
+
+Preview token cho phép frontend đọc nội dung draft trong thời gian ngắn. Mô hình
+bảo mật: [ADR-014](../architecture/decisions/adr-014-preview-bridge-threat-model.md);
+hướng dẫn: [Live preview & visual editing](../features/visual-editing.md).
+
+| Method | Path | Mô tả |
+|--------|------|-------|
+| `POST` | `/api/v1/preview/token` | Mint token (chỉ user principal; 30/phút/user → `429`) |
+| `GET` | `/api/v1/preview/tokens` | Token còn sống (site admin: tất cả; người khác: của mình) |
+| `POST` | `/api/v1/preview/tokens/:id/revoke` | Thu hồi một token (site admin: bất kỳ; người khác: của mình) |
+| `POST` | `/api/v1/preview/tokens/revoke-all` | Xoay vòng — thu hồi mọi token còn sống của site (site admin) |
+| `GET` | `/api/v1/preview/settings` | `{ allowedOrigins, ttlSeconds }` |
+| `PUT` | `/api/v1/preview/settings` | Cập nhật (site admin; chỉ origin chính xác) |
+| `GET` | `/api/v1/deliver/preview/:site_id` | Public: token nhắm tới gì (+ item / thành viên release) |
+| `GET` | `/api/v1/deliver/preview/:site_id/items/:collection` | Public: item đang live + overlay của token (`?limit=&offset=`, tối đa 100) |
+| `GET` | `/api/v1/deliver/preview/:site_id/items/:collection/:id` | Public: một item qua overlay |
+
+**Body khi mint** — một item (+ `versionKey` tuỳ chọn) hoặc một release:
+```json
+{ "collection": "posts", "itemId": "itm_1", "versionKey": "redesign", "locale": "vi", "ttlSeconds": 900 }
+```
+`201 { data: { id, token, expiresAt, url, … } }` — `token` chỉ hiện một lần;
+`url` dựng từ `meta.previewUrl` của collection (hoặc `null`).
+
+**Lần đọc public** nhận token ở header `x-lumibase-preview` hoặc `?__preview=`.
+Mọi lỗi (sai định dạng, site khác, hết hạn, bị thu hồi, người tạo mất quyền) đều
+là `401 { errors: [{ code: "PREVIEW_UNAUTHORIZED" }] }` với body giống hệt nhau.
+Response: `Cache-Control: private, no-store`, `X-Robots-Tag: noindex, nofollow`,
+`Referrer-Policy: no-referrer`. Sự kiện audit: `preview.token_minted`,
+`preview.read`, `preview.token_rejected`, `preview.token_revoked`,
+`preview.tokens_rotated`, `preview.settings_updated`.
 
 ---
 
@@ -528,11 +825,22 @@ Các release lên lịch được xuất bản qua nhịp `content-scheduler` d�
 | Phương thức | Đường dẫn | Mô tả |
 |--------|------|-------------|
 | `POST` | `/api/v1/files/presigned-url` | Lấy URL PUT presigned của R2/S3 |
-| `POST` | `/api/v1/files` | Đăng ký metadata file sau khi upload |
-| `GET` | `/api/v1/files` | Liệt kê các file (có bộ lọc) |
+| `POST` | `/api/v1/files` | Đăng ký metadata file sau khi upload; điền `contentHash` + metadata nhúng, trả `meta.duplicates` |
+| `GET` | `/api/v1/files` | Liệt kê file: `?folder=<id\|root>&subfolders=true&search=&mime=image/*,application/pdf&ids=&limit=&offset=` → `meta.total` |
 | `GET` | `/api/v1/files/:id` | Metadata file |
-| `PATCH` | `/api/v1/files/:id` | Cập nhật metadata (tiêu đề, tag, thư mục) |
-| `DELETE` | `/api/v1/files/:id` | Xóa file |
+| `PATCH` | `/api/v1/files/:id` | Đổi tên (`filenameDownload`), di chuyển (`folder`), `metadata` biên tập; id và storage key không bao giờ đổi |
+| `DELETE` | `/api/v1/files/:id` | Xoá an toàn: `409 FILE_IN_USE` kèm tham chiếu trừ khi `?confirm=true` (policy `confirm`); không bao giờ xoá với policy `block` |
+| `PUT` | `/api/v1/files/:id/content` | Thay byte tại chỗ (cùng id/key/tham chiếu, `version`+1, bản cũ được giữ để hoàn tác); `If-Match: "v<n>"`, `?filename=` |
+| `GET` | `/api/v1/files/:id/content` | Phân phối byte hiện tại; `?v=<version>` → immutable; `423` khi quét mã độc đang chờ/thất bại |
+| `GET` | `/api/v1/files/:id/versions` | Các binary trước đó trong thời gian lưu giữ |
+| `POST` | `/api/v1/files/:id/versions/:versionId/restore` | Khôi phục một binary trước đó (bản thân nó là một lần thay) |
+| `GET` | `/api/v1/files/:id/usage` | Item và page tham chiếu file |
+| `POST` | `/api/v1/files/:id/scan` | Chạy lại quét mã độc (site admin) |
+| `GET` | `/api/v1/files/duplicates?hash=` | File cùng nội dung (SHA-256 hex); cũng có `POST` với `{ hash }` |
+| `POST` | `/api/v1/files/bulk` | `{ ids, folder?, metadata? }` di chuyển / metadata biên tập hàng loạt; `meta.skipped` |
+| `GET/PUT` | `/api/v1/files/settings` | Thiết lập DAM (`files.dam`); `PUT` cần site admin |
+| `GET` | `/api/v1/files/folders` · `/folders/tree` | Thư mục (dạng phẳng / lồng nhau kèm `path`) |
+| `POST/PATCH/DELETE` | `/api/v1/files/folders[/:id]` | Tạo / đổi tên+di chuyển (`409 FOLDER_CYCLE`) / xoá thư mục rỗng (`409 FOLDER_NOT_EMPTY`); site admin |
 | `GET` | `/api/v1/assets/:id` | Phục vụ/biến đổi hình ảnh (tham số query bên dưới) |
 | `POST` | `/api/v1/media/:key` | Upload bytes media thô (RBAC `media:create`; bảo vệ upload áp dụng) |
 | `GET` | `/api/v1/media/:key` | Tải về media (phục vụ dạng `attachment` + `nosniff`); kèm tham số biến đổi → 302 tới file biến đổi |
@@ -551,7 +859,9 @@ Các release lên lịch được xuất bản qua nhịp `content-scheduler` d�
 ```
 Tại `/media/:key`, các tham số biến đổi được xác thực đối với `transformDslSchema` (`@lumibase/contracts`; `MAX_DIM=5000`) và request chuyển hướng 302 tới URL hình ảnh runtime (CF Image Resizing / Imgproxy). Không có tham số → bytes gốc. `?preset=<key>` giải quyết một hàng `transform_presets` đã lưu cho site. Xem `.kiro/specs/image-transform-dsl`.
 
-**Chính sách upload (`/api/v1/uploads/config`).** Được thực thi bởi bộ bảo vệ `file-upload-policy` trên mọi bề mặt upload (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`, `POST /api/v1/media/:key`): role public không thể upload; body bị giới hạn dung lượng trên độ dài byte thực tế; MIME được khai báo phải nằm trong danh sách cho phép và khớp với đuôi file; bytes thô được kiểm tra nội dung (magic bytes) và các file thực thi / SVG nội dung hoạt động bị từ chối; hình ảnh raster được quét payload script/executable chèn vào (polyglot) và bị từ chối. Danh sách cho phép + giới hạn giải quyết `per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*) → default`. Xem spec tính năng `.kiro/specs/upload-file-controls/` và `docs/en/security/runtime-security-guards-plan.md` §3 để biết các đảm bảo đầy đủ.
+**Quyền truy cập `/api/v1/files`.** Site admin có toàn quyền; thành viên khác cần một policy permission `files` mà rule của nó được đánh giá trên từng file theo `folder`, `folder_path`, `uploaded_by`, `mime` và `id` (phân quyền theo thư mục). Xem `docs/en/features/digital-asset-management.md` (epic #670).
+
+**Chính sách upload (`/api/v1/uploads/config`).** Được thực thi bởi bộ bảo vệ `file-upload-policy` trên mọi bề mặt upload (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`, `PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`): role public không thể upload; body bị giới hạn dung lượng trên độ dài byte thực tế; MIME được khai báo phải nằm trong danh sách cho phép và khớp với đuôi file; bytes thô được kiểm tra nội dung (magic bytes) và các file thực thi / SVG nội dung hoạt động bị từ chối; hình ảnh raster được quét payload script/executable chèn vào (polyglot) và bị từ chối. Danh sách cho phép + giới hạn giải quyết `per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*) → default`. Xem spec tính năng `.kiro/specs/upload-file-controls/` và `docs/en/security/runtime-security-guards-plan.md` §3 để biết các đảm bảo đầy đủ.
 
 ```
 GET  /api/v1/uploads/config
@@ -630,6 +940,97 @@ Authorization: Bearer <token>
 
 ---
 
+## 7c. Deployments
+
+Deployment target theo site (Vercel / Netlify), kích hoạt deploy thủ công,
+trạng thái build và log (spec `deployment-integrations`), cùng môi trường, promote
+và phê duyệt deploy (#743, xem `docs/en/features/deployment-environments.md`). Mọi
+route trừ inbound webhook cần site admin hoặc một capability `deploy:*`
+(permission row `lumibase_deploy:<scope>`): `400 TENANT_REQUIRED` khi không
+resolve được site, `403 FORBIDDEN` khi không có cả hai. Tạo/sửa/xoá target,
+`PUT /environments` và `GET /:id/logs` vẫn chỉ dành cho site admin (`requireSiteAdmin`).
+Token của
+Provider được mã hoá khi ghi và không bao giờ được trả về. Body được xác thực bằng
+`DeploymentTargetCreateSchema` / `DeploymentTargetUpdateSchema` /
+`DeployTriggerSchema` (`@lumibase/contracts`); parse lỗi trả về
+`400 VALIDATION`. `400 UNKNOWN_PROVIDER` nghĩa là target đã lưu ghi một
+Provider không được đăng ký trong deployment này (chỉ có `vercel` và
+`netlify`).
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `GET` | `/api/v1/deployments/targets` | Liệt kê target của site (bỏ các cột token) |
+| `POST` | `/api/v1/deployments/targets` | Tạo `{ provider (vercel\|netlify), name, projectId, token, defaultBranch?, productionUrl? }` → `201`. Token được kiểm với Provider trước khi lưu bất cứ thứ gì: `400 TOKEN_INVALID` |
+| `PATCH` | `/api/v1/deployments/targets/:id` | Cập nhật `{ name?, projectId?, token?, defaultBranch?, productionUrl?, status? (active\|inactive) }`. Có `token` thì token được kiểm lại và mã hoá lại (rotation). `404 NOT_FOUND`, `400 TOKEN_INVALID`, `400 UNKNOWN_PROVIDER` (chỉ khi có gửi `token`) |
+| `DELETE` | `/api/v1/deployments/targets/:id` | Xoá target (các deployment của nó bị xoá theo cascade) → `{ data: null }`. `404 NOT_FOUND` |
+| `POST` | `/api/v1/deployments/targets/:id/deploy` | Kích hoạt build `{ branch?, reason? }` → `201` kèm dòng deployment mới (`triggerSource: "manual"`). Cần `deploy:trigger:<targetId>`, `deploy:trigger:<env>` của một môi trường chứa nó, hoặc `deploy:trigger:*`; khi một trong các môi trường đó có `requiresApproval` thì response là `202 { data: { status: "pending_approval", environment, approval } }` và không có gì được dispatch. `403 FORBIDDEN`, `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `400 UNKNOWN_PROVIDER`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (gọi Provider thất bại; vẫn ghi một dòng `error`) |
+| `GET` | `/api/v1/deployments` | Liệt kê deployment, mới nhất trước (`createdAt` giảm dần, `id` giảm dần để phân định khi trùng). Lọc `?targetId=&status=&limit=`. `limit` phải là số nguyên không âm: mặc định 50 khi vắng hoặc rỗng, `0` trả danh sách rỗng, giá trị trên 200 bị giới hạn ở 200. Mọi giá trị khác (`abc`, `-5`, `1.5`) trả `400 VALIDATION`. Không có `meta` |
+| `GET` | `/api/v1/deployments/:id` | Lấy một deployment. `404 NOT_FOUND` |
+| `GET` | `/api/v1/deployments/:id/logs` | Lấy build log từ Provider, đã che secret → `{ data: { log } }`. `404 NOT_FOUND` khi deployment không tồn tại hoặc chưa có id phía Provider, `400 UNKNOWN_PROVIDER` khi target hoặc Provider của nó không khả dụng |
+| `POST` | `/api/v1/deployments/:id/refresh` | Ép đồng bộ trạng thái từ Provider (không làm gì khi trạng thái đã là terminal). `404 NOT_FOUND` khi deployment không tồn tại. Khi chưa có id phía Provider, hoặc target hay Provider không khả dụng, dòng được trả về nguyên trạng (`200`, không bao giờ `UNKNOWN_PROVIDER`) |
+| `GET` | `/api/v1/deployments/access` | `{ admin, capabilities, humanDecider, environments: [{ key, canTrigger, canApprove }] }` của người gọi |
+| `GET` | `/api/v1/deployments/environments` | Bản đồ môi trường (settings key `deployment.environments`, mặc định `preview` / `staging` → `production` / `production` có `requiresApproval`). `500 ENVIRONMENTS_INVALID` khi bản đồ đã lưu không hợp lệ |
+| `PUT` | `/api/v1/deployments/environments` | Site admin. Thay bản đồ `{ environments: [{ key, name, targetIds, requiresApproval, promotesTo }] }` (`DeploymentEnvironmentsUpdateSchema`). `400 VALIDATION` (trùng key, `promotesTo` không tồn tại), `400 UNKNOWN_TARGET` |
+| `POST` | `/api/v1/deployments/environments/:key/deploy` | Deploy mọi target của môi trường `{ branch?, reason? }`. Cần `deploy:trigger:<key>` (hoặc trên mọi target, hoặc `*`). `201 { data: { status: "dispatched", environment, results: [{ targetId, ok, deployment, error? }] } }`, hoặc `202 { data: { status: "pending_approval", environment, approval } }` khi `requiresApproval`. `403 FORBIDDEN`, `404 ENVIRONMENT_NOT_FOUND`, `409 NO_TARGETS` |
+| `POST` | `/api/v1/deployments/environments/:key/promote` | Promote deployment `ready` mới nhất của môi trường (hoặc `{ deploymentId }`) vào môi trường `promotesTo` của nó `{ deploymentId?, reason? }`; dùng đúng bản build khi Provider hỗ trợ promote, nếu không thì kích hoạt lại cùng commit. Cần quyền trigger trên môi trường đích. `201` / `202` như trên. `404 NOT_FOUND` (deployment không thuộc môi trường), `409 NO_PROMOTION_TARGET`, `409 SOURCE_NOT_READY` |
+| `GET` | `/api/v1/deployments/approvals` | Các approval deploy, mới nhất trước, mặc định `?status=pending` (`status=all` cho mọi trạng thái), mỗi cái kèm `canDecide` cho người gọi |
+| `POST` | `/api/v1/deployments/approvals/:id/decide` | `{ decision: "approved" \| "rejected", reason? }` (`DeployApprovalDecisionSchema`). Phê duyệt cần một người đã đăng nhập, không phải người yêu cầu, có `deploy:approve:<env>` hoặc `deploy:approve:*`; người yêu cầu được từ chối (rút lại) yêu cầu của mình. `403 HUMAN_APPROVER_REQUIRED` / `SELF_APPROVAL_FORBIDDEN` / `FORBIDDEN`, `404 NOT_FOUND`, `409 APPROVAL_ALREADY_DECIDED` / `APPROVAL_EXPIRED` / `REQUESTER_REVOKED` / `PLAN_STALE` |
+
+Công khai (không có phiên; xác thực bằng chữ ký):
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `POST` | `/api/v1/deployments/webhook/:provider/:siteId` | Inbound status webhook (`vercel` \| `netlify`) mang tenant trong path (hoạt động trên shared API host mà không cần `X-Lumi-Site`). `404 UNKNOWN_PROVIDER`, `400 TENANT_INVALID` / `TENANT_MISMATCH`, `401 INVALID_SIGNATURE`; còn lại `200 { data: null }`, kể cả khi body không khớp deployment nào |
+| `POST` | `/api/v1/deployments/webhook/:provider` | Inbound status webhook (`vercel` \| `netlify`). Tenant lấy từ `withTenant` (`X-Lumi-Site` hoặc host mapping). `404 UNKNOWN_PROVIDER`, `401 INVALID_SIGNATURE`; còn lại `200 { data: null }`, kể cả khi body không khớp deployment nào |
+
+**Shape của target** (`data` của các route target): `{ id, provider, name, projectId, defaultBranch, productionUrl, status, createdAt, updatedAt }`.
+
+**Shape của deployment** (`data` của các route deployment và của trigger): `{ id, siteId, targetId, provider, providerDeploymentId, status (queued|building|ready|error|canceled), branch, commitSha, commitMessage, url, triggeredBy, triggerSource (manual|auto|agent), errorMessage, logExcerpt, createdAt, updatedAt, completedAt }`.
+
+**Giới hạn tần suất trigger:** mỗi target có ngân sách hai tầng, 5 trigger mỗi 60 s và 30 mỗi 3600 s, khoá theo site và target (`apps/cms/src/services/deployment/trigger-rate-limit.ts`). Giới hạn áp cho mọi `triggerSource` (`manual`, `auto`, `agent`). Một auto trigger được gộp (coalesced) dùng lại build gần đây và không tiêu ngân sách. Khi backend của limiter không truy cập được thì trigger được cho qua (fail-open). Trigger bị từ chối không tạo dòng nào và trả về:
+
+```json
+{
+  "errors": [
+    {
+      "code": "RATE_LIMITED",
+      "message": "Too many deploy triggers for this target. Please try again later.",
+      "retryAfterSeconds": 42
+    }
+  ]
+}
+```
+
+kèm header `Retry-After: 42` tương ứng.
+
+**Chữ ký webhook:** secret là setting theo site `deployment.webhook.<provider>` (giá trị `{ "secret": "…" }`), không bao giờ lấy từ request header. Secret rỗng hoặc vắng thì mọi request bị từ chối (fail-closed). Vercel gửi `x-vercel-signature`, là HMAC-SHA1 dạng hex chữ thường của raw body. Netlify gửi `x-webhook-signature`, một JWS compact (HS256) có claim `sha256` phải bằng SHA-256 hex digest của raw body (JWS có payload chính là raw body cũng được chấp nhận). Cả hai phép so sánh đều thời gian hằng số.
+
+**Kích hoạt một deploy:**
+```bash
+POST /api/v1/deployments/targets/dpt_abc123/deploy
+Content-Type: application/json
+Authorization: Bearer <token>
+X-Lumi-Site: <siteId>
+
+{ "branch": "main", "reason": "Homepage copy update" }
+```
+
+**Response (`201`, rút gọn):**
+```json
+{
+  "data": {
+    "id": "dep_def456",
+    "targetId": "dpt_abc123",
+    "provider": "vercel",
+    "status": "queued",
+    "branch": "main",
+    "triggerSource": "manual"
+  }
+}
+```
+
+---
+
 ## 8. AI Copilot
 
 | Phương thức | Đường dẫn | Mô tả |
@@ -640,6 +1041,25 @@ Authorization: Bearer <token>
 | `GET` | `/api/v1/ai/conversations` | Liệt kê lịch sử hội thoại |
 | `GET` | `/api/v1/ai/conversations/:id/messages` | Lấy danh sách tin nhắn trong một hội thoại |
 | `DELETE` | `/api/v1/ai/conversations/:id` | Xóa một hội thoại |
+| `POST` | `/api/v1/ai/decisions` | Hỏi decision model (TypeSafe Jev hoặc tương đương) các câu hỏi có kiểu |
+| `GET` | `/api/v1/ai/review-profiles` | Liệt kê các review profile đang hoạt động (`?collection=`) |
+| `GET` | `/api/v1/ai/review-profiles/:key` | Lấy một review profile (`?version=` cho phiên bản cũ) |
+| `POST` | `/api/v1/ai/review-profiles` | Tạo phiên bản 1 của một review profile (admin) |
+| `POST` | `/api/v1/ai/review-profiles/:key/versions` | Phát hành phiên bản tiếp theo của một review profile (admin) |
+| `POST` | `/api/v1/ai/reviews` | Review một item hoặc bản nháp chưa lưu theo một profile (chỉ đề xuất) |
+| `GET` | `/api/v1/ai/reviews?collection=&itemId=` | Liệt kê các lần review của một item |
+| `GET` | `/api/v1/ai/reviews/:id` | Lấy một lần review kèm trạng thái stale |
+| `POST` | `/api/v1/ai/reviews/:id/feedback` | Ghi nhận accept / edit / reject cho câu trả lời của một lần review |
+| `GET` | `/api/v1/ai/reviews/rollout?collection=` | Chế độ pilot kiểm tra bản nháp của một collection: `off`, `baseline` hoặc `assisted` |
+| `POST` | `/api/v1/ai/reviews/sessions` | Ghi một phiên kiểm tra của biên tập viên trên collection pilot (đo thời gian) |
+| `GET` | `/api/v1/ai/reviews/metrics?from=&to=` | Số liệu pilot kiểm tra bản nháp (admin) |
+| `GET` | `/api/v1/ai/automation/templates` | Template flow tự động hoá Jev (admin) |
+| `POST` | `/api/v1/ai/automation/templates/:key/build` | Dựng flow thủ công dạng nháp từ template; không ghi gì (admin) |
+| `GET` | `/api/v1/ai/automation/actions` | Lịch sử hành động tự động hoá kèm chuỗi kiểm toán (admin) |
+| `GET` | `/api/v1/ai/automation/actions/:id` | Một hành động tự động hoá kèm chuỗi kiểm toán (admin) |
+| `POST` | `/api/v1/ai/automation/actions/:id/feedback` | Accept / override / reject quyết định đằng sau một hành động (admin) |
+| `POST` | `/api/v1/ai/automation/actions/:id/revert` | Khôi phục giá trị trước một hành động đã áp dụng (admin) |
+| `GET` | `/api/v1/ai/automation/metrics?from=&to=` | Precision và coverage ở chế độ shadow trong vùng tự động (admin) |
 
 **Request chat:**
 ```json
@@ -672,6 +1092,103 @@ Authorization: Bearer <token>
 { "decision": "approved" }
 ```
 
+**Request decision** (`POST /api/v1/ai/decisions`) — **Experimental trong `1.0.0`** (cùng với `/api/v1/ai/review-profiles*`, `/api/v1/ai/reviews*` và `/api/v1/ai/automation*`; nằm ngoài cam kết semver freeze `1.0` theo [`contributing/versioning-policy.md`](../contributing/versioning-policy.md) cho tới khi hoàn tất nghiệm thu dữ liệu live `#548`). 1–32 câu hỏi, key theo `[A-Za-z0-9_-]{1,64}`; `noul` = có/không, `choice` = 2–255 lựa chọn, `score` = 2–10 mức rubric (thấp nhất trước). `state` là string, object hoặc array. Toàn bộ request (state, instructions, criteria và cấu trúc lồng) phải nằm trong budget đầu vào: ≤ `DECISION_MAX_INPUT_BYTES` byte UTF-8 (mặc định 131,072) **và** ≤ `DECISION_MAX_INPUT_TOKENS` token ước lượng (mặc định 24,000), được kiểm tra trước khi gọi provider. Chỉ đọc nên không cần phê duyệt HITL:
+```json
+{
+  "state": { "title": "Summer sale", "body": "Buy now!!!" },
+  "questions": {
+    "spam": {
+      "type": "noul",
+      "instructions": "Is this post spam?",
+      "criteria": { "true": "spam", "false": "legitimate" }
+    },
+    "topic": {
+      "type": "choice",
+      "instructions": "Pick the topic",
+      "criteria": { "promo": "Promotion", "news": null }
+    },
+    "quality": {
+      "type": "score",
+      "instructions": "Rate editorial quality",
+      "criteria": ["poor", "ok", "great"]
+    }
+  }
+}
+```
+
+**Response decision** — `calibrated` là `false` khi `DECISION_PROVIDER=llm`, vì xác suất do chính LLM tự báo. `usage.inputTokens` / `usage.outputTokens` là `null` khi provider không báo số token (không biết, không bao giờ là `0` tự đặt):
+```json
+{
+  "data": {
+    "provider": "typesafe",
+    "model": "jev-1.13",
+    "calibrated": true,
+    "answers": {
+      "spam": { "type": "noul", "noul": 0.12 },
+      "topic": { "type": "choice", "choice": "promo", "probabilities": { "promo": 0.9, "news": 0.1 }, "confidence": 0.9 },
+      "quality": { "type": "score", "score": 1.4, "legend": { "0": "poor", "1": "ok", "2": "great" }, "probabilities": { "0": 0, "1": 0.6, "2": 0.4 }, "confidence": 0.6 }
+    },
+    "usage": { "inputTokens": 120, "outputTokens": 0 }
+  }
+}
+```
+
+Lỗi: `403 FORBIDDEN` (không có `ai:decide`, hoặc caller là publishable API key hay session `frontend`), `403 DECISION_DISABLED`, `422 DECISION_FIELD_NOT_ALLOWED`, `429 DECISION_QUOTA_EXCEEDED` / `DECISION_CONCURRENCY_LIMITED`, `503 DECISION_QUOTA_UNAVAILABLE` (xem phần Governance bên dưới), `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (vượt budget byte hoặc token; message chỉ nêu kích thước), `503 DECISION_NOT_CONFIGURED` (chưa đặt `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream quá tải hoặc không kết nối được), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (client đã đóng request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
+
+Deadline và retry: mỗi decision có một deadline tổng (`DECISION_TIMEOUT_MS`, mặc định 20 giây) bao gồm mọi lần retry và thời gian chờ backoff, và mỗi lần gọi upstream có timeout riêng (`DECISION_ATTEMPT_TIMEOUT_MS`, mặc định 8 giây, không vượt phần còn lại của deadline). Chỉ `429`/`503`/`529`, lỗi mạng và timeout của một lần gọi mới được retry, tối đa `DECISION_MAX_RETRIES` lần (mặc định 2), với exponential backoff có full jitter và tôn trọng `Retry-After`. Lần chờ nào sẽ vượt deadline thì không bắt đầu. Lỗi auth, validation và parse không bao giờ được retry. Khi client ngắt kết nối, lần gọi upstream đang chạy bị huỷ và không retry nữa. Provider `llm` bị giới hạn bởi cùng deadline và budget nhưng chỉ gọi một lần; deadline và việc client ngắt kết nối sẽ huỷ request LLM đó.
+
+Số token là ước lượng, không phải tokenizer của provider: khoảng 4 ký tự ASCII cho một token, và mỗi code point không phải ASCII (ví dụ chữ tiếng Việt có dấu) tính là một token. Cách đếm cố ý đếm dư; mặc định 24,000 chừa 25% dư địa dưới context 32,000 token của Jev.
+
+CMS kiểm tra câu trả lời upstream trước khi trả về: giá trị bắt buộc phải hữu hạn và nằm trong miền hợp lệ, phân phối Choice/Score phải có đúng các phương án/mức đã khai báo và có tổng bằng 1 với sai số tuyệt đối tối đa `1e-6`, Score phải nằm trong `0..N-1`. Câu trả lời thiếu hoặc sai định dạng trả `502 DECISION_PARSE_FAILED`; giá trị không bị ép miền hoặc gán mặc định thành quyết định. Choice/Score bắt buộc có confidence, không suy ra từ xác suất của phương án thắng. Provider LLM áp dụng cùng validation.
+
+**`DECISION_PROVIDER=llm`** là provider tương đương do bạn chọn qua cấu hình; nó **không** phải cơ chế tự động chuyển khi lỗi (failover), và không có gì tự chuyển sang nó khi Jev lỗi. Nó gọi `LLM_PROVIDER` ở chế độ decision có cấu trúc: system prompt riêng cho decision, không có skill của Copilot và không cho tool calling. Câu trả lời Score từ LLM là mức kỳ vọng có trọng số `Σ i·p(i)` tính từ xác suất các mức đã được kiểm tra, cùng thang `0..N-1` với Jev và không làm tròn; mức mà model tự nêu bị bỏ qua, nên cùng một phân phối cho cùng một score trên mọi adapter. Vì xác suất không được hiệu chuẩn, không dùng nguyên ngưỡng đã chỉnh cho Jev cho `llm`. Câu trả lời chỉ có tool call hoặc không phải JSON sẽ lỗi `502 DECISION_PARSE_FAILED`. Với `llm`, kích thước ước lượng của câu trả lời đầy đủ cũng được so với `DECISION_LLM_MAX_OUTPUT_TOKENS` trước khi gọi (`413 DECISION_INPUT_TOO_LARGE`), câu trả lời 2xx không phải JSON hoặc sai envelope là `502 DECISION_PARSE_FAILED` (giống Jev), provider không kết nối được là `503 DECISION_UNAVAILABLE`, status HTTP của upstream được map sang cùng mã như Jev, và body lỗi của upstream không bao giờ được ghi log hay trả về.
+
+**Governance (#511).** Mọi cổng dưới đây chạy trước khi gọi provider, theo đúng thứ tự này; request bị chặn ở một cổng thì không bao giờ tới provider:
+
+1. **Capability `ai:decide`.** Cấp bằng permission `create` của policy trên collection dành riêng `lumibase_ai_decisions`; site admin đã có sẵn. Permission này không cấp thêm quyền nào khác (không có `items:write`). Không có → `403 FORBIDDEN`. Caller ẩn danh, member không có capability và principal của site khác đều bị từ chối ở bước này. Publishable API key (`lbk_pub_…`) và session có audience `frontend` luôn bị từ chối ở bước này với `403 FORBIDDEN`, kể cả khi role hay policy cấp `create` trên `lumibase_ai_decisions` hoặc quyền admin (#562). Các credential này nằm trong trình duyệt và app, nên lời gọi decision trả phí phải đến từ người dùng Studio hoặc từ một server giữ secret API key. Việc từ chối xảy ra trước khi đọc body. Nó áp dụng cho mọi route `ai:decide` (decisions, review profiles, reviews, feedback, rollout, sessions) và cho node Flows `ai:decision`. Các lần từ chối ở bước này được ghi audit gộp, không phải một event mỗi request (xem đoạn audit bên dưới).
+2. **Đã cấu hình provider** → nếu chưa thì `503 DECISION_NOT_CONFIGURED`.
+3. **Site opt-in.** Site chỉ gửi nội dung tới provider sau khi site admin lưu setting `aiDecisions` với `enabled: true` (`POST /api/v1/settings`). Mặc định là tắt, và giá trị sai định dạng được coi là tắt. Đặt lại `false` (hoặc xoá key) là kill switch theo site: request kế tiếp nhận `403 DECISION_DISABLED`. Chỉ các endpoint decision, draft review và node Flows `ai:decision` đọc setting này, nên việc soạn thảo, publish và chat Copilot không bị ảnh hưởng. Bỏ đặt `DECISION_PROVIDER` là công tắc cho toàn nền tảng.
+4. **Danh sách field được phép.** Khi đặt `allowedStateFields`, `state` phải là object và mọi key cấp đầu đều nằm trong danh sách; nếu không thì `422 DECISION_FIELD_NOT_ALLOWED`.
+5. **Budget đầu vào** → `413 DECISION_INPUT_TOO_LARGE` (ở trên).
+6. **Quota theo site**, hạch toán atomic bằng counter của runtime (Redis `INCRBY` trên Docker, Durable Object `PageviewCounter` theo site trên Cloudflare): số decision được nhận mỗi giờ, số decision đang chạy, và số token ước lượng mỗi ngày UTC. Lượng token giữ chỗ là trường hợp xấu nhất, tính cả mọi lần gọi mà provider có thể gửi: với Jev/OpenRouter là (input ước lượng + output ước lượng) × (`DECISION_MAX_RETRIES` + 1); với `llm`, vốn chỉ gửi một request và không bao giờ retry, là input ước lượng + trần output gửi lên upstream (đã gồm headroom thinking). Khi provider trả lời, site bị tính usage đã báo cộng với ước lượng cho mỗi lần gọi lỗi trước đó, phần còn lại được hoàn. Số token không biết được tính theo ước lượng, không bao giờ coi là miễn phí. Timeout hoặc lỗi sau khi đã gửi request thì tính theo từng lần gọi; request chưa tới provider được hoàn toàn bộ. Nếu sẽ vượt giới hạn → `429 DECISION_QUOTA_EXCEEDED` hoặc `429 DECISION_CONCURRENCY_LIMITED` kèm `Retry-After`. Request mà riêng lượng giữ chỗ xấu nhất đã vượt budget token cả ngày thì không bao giờ được nhận, nên `429 DECISION_QUOTA_EXCEEDED` của nó không kèm `Retry-After`. Nếu backend counter không hoạt động hoặc trả về giá trị không phải số, request bị chặn (fail closed) với `503 DECISION_QUOTA_UNAVAILABLE`. `Retry-After` có trong `Access-Control-Expose-Headers`, nên caller cross-origin (Studio trên Pages, shell desktop, SDK trên trình duyệt) đọc được nó.
+
+Setting `aiDecisions` của site có thể siết các mức trần của nền tảng, nhưng không thể nâng lên:
+
+```json
+{ "key": "aiDecisions", "value": { "enabled": true, "allowedStateFields": ["title", "body"], "requestsPerHour": 100, "maxConcurrent": 2, "budgetPerDay": 200000 } }
+```
+
+Mỗi lần gọi được nhận, và mỗi lần gọi bị từ chối sau bước đầu tiên này, ghi một audit event `ai_decision` gồm request ID, principal (loại và ID), provider, model, dấu vân tay rubric (`sha256:` của questions, nên cùng rubric thì cùng version), loại câu hỏi, outcome, HTTP status, latency, usage đã báo, số lần gọi, và số token đã giữ chỗ và đã tính. Event không bao giờ ghi `state`, instructions, criteria, câu trả lời, email của người gọi hay IP của client. Audit tuân theo thời hạn lưu của audit log (`LUMIBASE_AUDIT_RETENTION_DAYS`, mặc định 90 ngày). `POST /ai/decisions` không lưu nội dung decision. Các lần review bản nháp (bên dưới) lưu câu trả lời, không bao giờ lưu nội dung được review. Việc provider giữ lại gì do điều khoản của chính provider quy định.
+
+**Lần từ chối được ghi audit gộp (#564).** Một `403 FORBIDDEN` ở bước 1 không ghi một event cho mỗi request, nên một loạt request bị từ chối không thể làm ngập audit log. Lần từ chối được đếm theo site, lý do từ chối và chủ thể: principal (loại và ID), hoặc hash có khoá của IP client khi không có principal. Lần từ chối đầu tiên trong mỗi cửa sổ `DECISION_REFUSAL_AUDIT_WINDOW_SECONDS` (mặc định 300 giây) ghi một event với `refusal.count: 1`. Các lần từ chối sau trong cùng cửa sổ chỉ ghi lại khi bộ đếm đạt 10, 100, 1000, v.v. Event đầu tiên của cửa sổ kế tiếp mang `refusal.previousWindowCount`, số đếm chính xác của cửa sổ trước. Nếu không có lần từ chối nào tiếp theo, số đếm của event cuối là cận dưới, còn metric `lumibase_ai_decision_refusals_total{reason,principal,audit}` có số chính xác của mọi lần từ chối. Nếu kho bộ đếm không dùng được, mọi lần từ chối đều ghi event (không bao giờ bỏ bằng chứng). `0` tắt việc gộp. Mỗi event từ chối có `metadata.refusal` (`reason`, `count`, `dedup`: `first` / `checkpoint` / `unbounded`, `windowStart`, `windowSeconds`) và `clientIpHash`: HMAC-SHA256 của site và IP với khoá `JWT_SECRET`, 16 ký tự hex, hoặc `null` khi không biết IP. Cột `ip` để trống. Đổi `JWT_SECRET` thì hash đổi theo. `refusal.reason` là một trong `publishable_api_key`, `frontend_session`, `unclassified_caller`, `capability_missing`, `principal_unresolved`, `principal_site_mismatch`, `principal_not_found`, `principal_inactive`, `principal_not_member`, `api_key_revoked`, `api_key_expired`, `dev_principal_forbidden`, `principal_denied`, `other`. Key của site khác được báo là `principal_not_found`.
+
+**Giới hạn chống lạm dụng cho `/api/v1/ai/*` (#564).** Mọi request dưới `/api/v1/ai` được tính vào giới hạn theo IP client và theo site, `LUMIBASE_AI_IP_RATE_LIMIT` (mặc định 300 mỗi phút, cửa sổ 60 giây, `0` = tắt). Nó chạy sau bước kiểm tra site và trước xác thực, nên request bị chặn không tốn kiểm tra token hay API key, không giữ chỗ quota, không gọi provider và không ghi audit event. Vượt giới hạn → `429 RATE_LIMITED` kèm `Retry-After` (có trong `Access-Control-Expose-Headers`); bộ đếm là `lumibase_ai_ip_rate_limited_total`. Nếu kho của limiter không dùng được, request được cho qua, hoặc nhận `503 RATE_LIMIT_UNAVAILABLE` khi `LUMIBASE_RATE_LIMIT_FAIL_CLOSED=true` (cùng quy tắc với các limiter khác). Giới hạn được bỏ qua khi không xác định được IP client. Trên Docker sau reverse proxy, proxy phải **ghi đè** `CF-Connecting-IP` bằng IP thật của client: CMS tin header này đúng như được gửi, nên không bao giờ được để giá trị do client gửi đi qua.
+
+Làm lớp phòng thủ bên ngoài, thêm một rule rate limiting của Cloudflare WAF trước Worker hoặc origin Docker: biểu thức `(http.request.uri.path wildcard "/api/v1/ai/*")` (tuỳ chọn thêm `and http.request.method eq "POST"`), đếm theo IP, ví dụ 120 request mỗi 1 phút, hành động **Block** trong 1 phút (chặn, không phải challenge, vì caller là API). Các giới hạn của CMS vẫn có hiệu lực phía sau.
+
+**Review bản nháp (#512).** Review profile là một rubric có phiên bản: các field cấp cao nhất mà review đọc và các câu hỏi Decision mà nó hỏi (cùng dạng như trên). Một lần review (run) áp một phiên bản profile lên một item, hoặc lên một bản nháp chưa lưu, qua đường đi có governance ở trên (nên capability `ai:decide`, opt-in của site, allowlist field, các budget và audit event `ai_decision` đều áp dụng), rồi lưu câu trả lời cùng provenance. Review chỉ đề xuất: không endpoint nào ở đây thay đổi item.
+
+- **Profile.** Đọc cần `ai:decide`; tạo và tạo phiên bản cần site admin. Các dòng là bất biến: `POST /review-profiles/:key/versions` thêm phiên bản + 1 và archive phiên bản đang hoạt động trước đó trong cùng một transaction, nên một run luôn trỏ tới đúng bộ câu hỏi đã được trả lời. Profile có thể gắn với một `collection` (collection khác nhận `422 REVIEW_COLLECTION_MISMATCH`) và có thể đặt `minConfidence`.
+- **Preset.** `taxonomy` là một câu `choice` trên `presetOptions.categories` cộng thêm `other` và `unknown`. `brand-voice` chấm độ khớp giọng điệu và độ rõ ràng theo rubric 5 mức nguyên tử (so với `presetOptions.voice`) và thêm cờ `needs_review`. `brief-alignment` đối chiếu nội dung với `sourceField` (brief hoặc nguồn do biên tập viên cung cấp). Không có `sourceField` thì nó chỉ kiểm tra tính nhất quán nội tại và profile lưu ghi chú `no source — not a fact-check`. Không preset nào tuyên bố kiểm chứng sự thật.
+- **Đọc nội dung.** Với `itemId`, server đọc các field của profile bằng chính quyền row và field của người gọi. Field mà người gọi không đọc được sẽ không được gửi đi và được liệt kê trong `omittedFields`. Với `snapshot` (bản nháp chưa lưu), mỗi key phải là một field của profile và là field người gọi được đọc và ghi (`create`, hoặc `update` khi có cả `itemId`). Nếu không, request lỗi `422 REVIEW_FIELD_NOT_ALLOWED` trước mọi lần gọi provider. Nội dung chỉ đi trong `state` và câu hỏi lấy từ profile đã lưu, nên văn bản bên trong nội dung không thể thay đổi điều được hỏi.
+- **Provenance và stale.** Một run ghi provider, model thực tế, `calibrated`, key và phiên bản profile, revision live mới nhất, principal, latency, usage và `contentHash` (`sha256:` của JSON chuẩn hoá của các field được review). `GET /reviews/:id` tính lại hash và revision. Khi một trong hai thay đổi, run trả về `stale: true` kèm `staleReason` là `content_changed`, `revision_changed` hoặc `item_unavailable`. Người gọi không còn đọc được một field mà run đã review sẽ nhận `404`. Run từ snapshot chỉ hiển thị cho người tạo và admin.
+- **Abstain.** `status` là `abstained` khi mọi câu trả lời `choice` là `other`/`unknown`, hoặc khi có confidence thấp hơn `minConfidence` của profile.
+- **Idempotency.** Key được giới hạn theo người gọi: cùng `idempotencyKey` (body) hoặc header `Idempotency-Key` từ cùng principal trả về cùng run (`200`) mà không gọi provider lần hai, còn principal khác dùng cùng key sẽ có run riêng. Run kết thúc bằng `error` được thử lại tại chỗ, nên không bao giờ thành dòng thứ hai. Lần thử lại đọc lại item và gắn lại run (content hash, revision, phiên bản profile, các trường bị bỏ qua) với đúng nội dung đã được review. Run vẫn `running` sau năm phút kể từ khi bắt đầu (tiến trình đã chết) cũng được lấy lại như vậy; trước thời điểm đó, replay trả về run ở trạng thái `running`. Nếu lần gọi ban đầu vẫn hoàn tất sau đó, câu trả lời của nó bị bỏ: run chỉ được hoàn tất bởi lần thử đang giữ claim hiện tại, nên response của lần gọi trễ là run như đang lưu.
+- **Feedback.** `POST /reviews/:id/feedback` nhận `entries` dạng `{ questionKey, verdict: accept | edit | reject, editedValue? }`. Mỗi run, câu hỏi và principal chỉ có một dòng; gửi lại không thêm dòng nào và trả về các dòng đã lưu. Verdict đầu tiên là cuối cùng: gửi lại verdict (hoặc `editedValue`) khác cho cùng câu hỏi không ghi đè, và response chứa verdict đã lưu, nên hãy so sánh với giá trị bạn đã gửi. `accept` hoặc `edit` trên run đã stale trả `409 REVIEW_STALE` trừ khi body có `acknowledgeStale: true`, nên review không bao giờ được âm thầm áp vào một revision khác. Với run từ snapshot, gửi `contentHash` của bản nháp hiện tại để có cùng kiểm tra. `reject` luôn được chấp nhận.
+- **Thời hạn lưu.** Job chạy mỗi giờ xoá các run cũ hơn `DECISION_REVIEW_RETENTION_DAYS` (mặc định 180), feedback bị xoá theo. Profile được giữ lại.
+- **Rollout pilot (#516).** Setting `aiDecisions` có object `review`: `{ enabled, pilotCollections, mode: 'baseline' | 'assisted' }`. Thiếu hoặc sai định dạng thì coi là tắt. `POST /reviews` và feedback mới cần collection nằm trong pilot ở chế độ `assisted` (chế độ này cũng cần `aiDecisions.enabled`); nếu không thì trả `403 DECISION_DISABLED` trước khi đọc nội dung. `GET /reviews/rollout?collection=` báo chế độ hiện tại (`ai:decide`). Tắt pilot không xoá gì: run, feedback và session vẫn đọc được.
+- **Flows (#517).** Node flow `ai:decision` chạy một review với `profileVersion` cố định trên một item và trả `branch`: `true`/`false`/`unknown` cho câu hỏi `noul` (`noulThreshold`), key của lựa chọn hoặc `unknown` cho câu hỏi `choice` (`minConfidence`, abstention), hoặc `error`. Node cần setting `aiDecisions` có cả `enabled: true` lẫn `flows: true`; `flows` mặc định tắt. Khi node chạy, server resolve lại principal đã khởi chạy run, kiểm `ai:decide` trên grant hiện hành và đọc lại cả hai công tắc, nên grant bị thu hồi hay kill switch bật sau đó cũng dừng các run đang trong hàng đợi. Chỉ run thủ công (`POST /flows/:id/run`) mang principal; run từ event, schedule và webhook bị từ chối (`FORBIDDEN`). Lỗi (forbidden, disabled, quota, timeout, cancel, lỗi provider) đi vào nhánh `error` của node nếu nhánh đó được nối, nếu không thì node thất bại (`onError`); không bao giờ thành `true`. Idempotency key của review là `flow:<flowRunId>:<nodeId>`, nên chạy lại cùng một run sẽ replay quyết định đã lưu mà không gọi provider lần hai. Xem [Flows](../features/flows-automation.md).
+- **Session.** `POST /reviews/sessions` (`ai:decide`, chỉ người dùng đã đăng nhập: API key và dev principal nhận `403 FORBIDDEN`) ghi `{ collection, itemId?, mode, runId?, viewedQuestions?, durationMs, locale? }`: một phiên biên tập từ lúc mở trình soạn thảo tới lần lưu đầu tiên. Chế độ phải khớp chế độ hiện tại của collection (`409 REVIEW_SESSION_MODE_MISMATCH`), collection phải nằm trong pilot (`403 DECISION_DISABLED`), và `runId` phải là run của chính người gọi trên cùng collection và item, với `viewedQuestions` là các câu nó đã trả lời (`422 REVIEW_SESSION_RUN_INVALID`). Không lưu nội dung. Job xoá run theo thời hạn lưu set `run_id` về null và giữ session.
+- **Số liệu.** `GET /reviews/metrics?from=&to=` (site admin, khoảng tối đa 366 ngày, mặc định 30 ngày gần nhất) trả thời gian mỗi item (baseline so với assisted, p50/p95), tỷ lệ accept/edit/reject/không phản hồi chỉ trên các gợi ý **đã được xem** kèm khoảng Wilson 95%, coverage, abstention, tỷ lệ lỗi, latency p50/p95, token mỗi run, tách theo locale, provider và phiên bản profile, số mẫu (kèm số biên tập viên và item khác nhau mỗi chế độ), và các tiêu chí đăng ký trước của protocol `jev-pilot-v1` kèm cờ `insufficientSample`. Chỉ phiên và phán quyết của principal `user` được tính. Số run chỉ là mẫu số vận hành, không bao giờ là giá trị người dùng. Xem [Pilot kiểm tra bản nháp](../features/jev-draft-review-pilot.md).
+- **Tự động hoá (#518).** Node flow `ai:apply-tags` và `editorial:route` đọc một `ai:decision` phía trước và ghi một dòng cho mỗi flow run, node và item vào `lumibase_ai_automation_actions`. Mặc định là **shadow**: đề xuất được ghi lại và không ghi gì vào item. Một đề xuất chỉ live khi `aiDecisions.automation` có `mode: 'live'`, một `gate` (`approvedBy`, `approvedAt`, `evidenceRef`) và một ngưỡng cho locale của item và hành động, với `provider`, `model`, `profileKey`, `profileVersion` và `questionKey` khớp quyết định (đọc từ review run đã lưu, run này phải nói về đúng item của node), và độ tin cậy đạt `minConfidence` của ngưỡng đó; mọi trường hợp khác (kể cả khối cấu hình sai định dạng) là shadow. Đề xuất live đi qua harness có quản trị (`updateItem`, agent `jev-automation`, `autonomyCap: 1`), nên nó thành một approval hoặc bị từ chối ở L0; tự động hoá không bao giờ ghi trực tiếp. Lời gọi `updateItem` mang `expect: { <field>: <giá trị mà đề xuất được tính từ đó> }`, harness kiểm lại khi lần ghi đã duyệt chạy; field mà một người đã đổi ở giữa làm approval thất bại với `ITEM_PRECONDITION_FAILED` và không có gì được ghi (dòng `denied`, lý do `stale_at_approval`). `expect` là tham số tuỳ chọn của `updateItem` cho mọi caller. Chỉ field đích được đề xuất, không bao giờ `status`, xoá hay schema; chuyển trạng thái `submit_review` chỉ được đề xuất. Quyết định stale, quyết định biên tập viên đã override, field bị ghim hoặc không đọc được đều bị bỏ qua và được ghi lại. `/api/v1/ai/automation/*` là control plane (site admin). `POST /automation/actions/:id/revert` khôi phục `previous` của một hành động đã áp dụng qua ItemService của người gọi, và từ chối bằng `409 AUTOMATION_REVERT_CONFLICT` khi field đã đổi sau đó. `GET /automation/metrics` báo precision và coverage trong vùng tự động kèm `insufficientSample` và `shadowRequired`; nó không bật gì cả. Xem [Tự động hoá Jev](../features/jev-automation.md).
+
+```json
+POST /api/v1/ai/reviews
+{ "profile": "spam-check", "collection": "posts", "itemId": "itm_1", "idempotencyKey": "review-itm_1-0001" }
+```
+
+Lỗi: `403 FORBIDDEN`, `404 REVIEW_PROFILE_NOT_FOUND` / `REVIEW_ITEM_NOT_FOUND` / `REVIEW_RUN_NOT_FOUND`, `409 REVIEW_PROFILE_EXISTS` / `REVIEW_PROFILE_CONFLICT` / `REVIEW_STALE` / `REVIEW_NOT_COMPLETE`, `422 REVIEW_FIELD_NOT_ALLOWED` / `REVIEW_COLLECTION_MISMATCH` / `REVIEW_SESSION_RUN_INVALID`, `409 REVIEW_SESSION_MODE_MISMATCH`, `400 VALIDATION`, cùng mọi lỗi decision ở trên.
+
 ### Agent API (Content OS)
 
 Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các role của token là tập hợp capability.
@@ -681,15 +1198,36 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `GET/POST` | `/api/v1/agent/goals` | Liệt kê / tạo goal (`execution: 'async'` xếp hàng chạy) |
 | `POST` | `/api/v1/agent/goals/:id/decompose` | Planner: tạo sub-goal theo vai trò kế thừa ngân sách còn lại |
 | `POST` | `/api/v1/agent/goals/:id/settle` | Giải quyết goal cha từ trạng thái kết thúc của các goal con |
+| `POST` | `/api/v1/agent/runs/:id/retry` | Chạy lại một run `failed`/`cancelled` dưới dạng run mới ở `queued` (`retryOfRunId` → run gốc), đưa vào hàng đợi `agent-runs` với quyền của người yêu cầu thử lại, được resolve lại. Chỉ lần thử mới nhất của goal, chỉ khi goal không còn run nào đang chạy — mỗi request sinh nhiều nhất một lần thực thi mới. `201` `{ goalId, runId, agentName, status, retryOfRunId }`; `404` run không tồn tại hoặc thuộc tenant khác; `409` không thử lại được, đang chạy, tác động đã được ghi (`RUN_EFFECT_RECORDED`), đã bị thay thế, goal đã đóng hoặc đang bận, intent không active, hoặc không khôi phục được tác vụ; `423` đang đóng băng; `400` không có queue adapter; `503` enqueue thất bại. Xem [agent harness](../features/agent-harness-layer.md) |
 | `GET/POST/PATCH/DELETE` | `/api/v1/agent/roles[/:name]` | CRUD thư viện vai trò Agent (admin) — khởi tạo sẵn với Planner, Writer, … |
 | `GET` | `/api/v1/agent/autonomy` | Sổ bộ tin cậy: quyền hạn + sự cố đang mở |
 | `GET/POST` | `/api/v1/agent/autonomy/promotions[...]` | Đề xuất thăng cấp; `POST :id/decide` là con đường duy nhất lên cấp cao hơn (admin) |
+| `GET` | `/api/v1/agent/receipts` | Agent receipts (#713): tổng hợp chỉ-đọc về run (theo status/agent, tỉ lệ lỗi), tool call theo skill × kết cục kèm latency p50, approval (status, người duyệt, latency p50/p90/trung bình), veto, câu hỏi `askUser`, lần con người bác bỏ, chi phí token/USD, drift, incident, autonomy grant và thăng cấp, chuỗi theo ngày và các ngưỡng cảnh báo bị vượt. `?since&until` (ISO, mặc định 30 ngày gần nhất, tối đa 180 ngày; `400 VALIDATION` / `WINDOW_TOO_WIDE`). Admin (control plane). Xem [agent receipts](../features/agent-receipts.md) |
+| `GET` | `/api/v1/agent/receipts/export` | CSV (`text/csv`) của `?kind=runs` (mặc định) \| `tool_calls` \| `approvals` trong cùng cửa sổ, tối đa 10.000 dòng (`X-Export-Rows`, `X-Export-Truncated`). Không bao giờ xuất input/output của tool; ô văn bản bắt đầu bằng `= + - @` được thêm tiền tố `'` |
+| `GET/PUT` | `/api/v1/agent/receipts/alerts` | Ngưỡng cảnh báo (`maxRunFailureRate`, `maxVetoRate`, `maxOverrideRate`, `maxApprovalLatencyP90Minutes`, `maxCostUsd`, `maxTokens`, `maxOpenDrift`, `maxIncidents`); khoá vắng thì không kiểm. Lưu ở setting `agent.receipts.alerts`; khoá lạ hoặc tỉ lệ ngoài 0–1 → `400 VALIDATION` |
+| `POST` | `/api/v1/locale-generation/jobs` | Trình tạo bản dịch một lần cho locale mới (#714). Body `{ locale, sourceLocale? = 'en', collections, includeUi? = true, provider? }`; thêm locale vào setting `locales` và xếp hàng một job dịch các giá trị `translatable-text` và UI string `ui` còn thiếu (translation memory → glossary → MT) vào hàng đợi review. `202` kèm job; `400` `VALIDATION` / `NO_TRANSLATABLE_FIELDS` / `PROVIDER_UNAVAILABLE`; `409 JOB_ACTIVE`. Control plane (site administrator). Xem [locale generator](../features/locale-generator.md) |
+| `GET` | `/api/v1/locale-generation/jobs[/:id]` | Danh sách job với `status`, `cursor`, `counters`; một job có thêm `review` (suggestion theo trạng thái) |
+| `POST` | `/api/v1/locale-generation/jobs/:id/cancel` \| `/resume` | Huỷ job queued/running giữa hai chunk; đưa job failed/cancelled trở lại hàng đợi tại cursor (`409` nếu không) |
+| `GET` | `/api/v1/locale-generation/suggestions` | Hàng đợi review, `?locale&status&jobId&collection&limit&offset`, `{ data, meta: { total, limit, offset } }` |
+| `POST` | `/api/v1/locale-generation/suggestions/:id/decide` | `{ decision: 'approve', text? }` \| `{ decision: 'reject' }`. Duyệt ghi qua item service của reviewer (RBAC, validation, revision); `{ status: 'stale' }` khi nguồn đã đổi hoặc locale đã được ghi; `409 ALREADY_DECIDED`; `422` khi lần ghi bị từ chối (suggestion vẫn pending) |
+| `POST` | `/api/v1/locale-generation/suggestions/decide-bulk` | `{ decision, locale, ids?, jobId?, collection?, limit? ≤ 200 }` → `{ approved, rejected, stale, failed, processed, failures }` |
 | `GET/POST` | `/api/v1/agent/staged[...]` | Cửa sổ veto: các bản staging đang chờ bổ sung `approvalId/collection/itemId/patch/agentRole` từ bản sửa đổi staging (trường null khi staging không còn); `POST :id/veto` loại bỏ một staging |
+| `GET` | `/api/v1/agent/approvals` | Hộp thư approval (bộ lọc `status`; mặc định `pending`) |
+| `POST` | `/api/v1/agent/approvals/:id/decide` | Quyết định của con người cho một hành động đang bị giữ. Body `{ decision: 'approved' \| 'rejected', reason? }`; cần `approvals:decide` (nếu không thì 403), `404` cho id không tồn tại hoặc thuộc tenant khác, `409` khi approval đã rời `pending`. Với `approved`, harness là nơi duy nhất đổi trạng thái, nên việc thực thi và việc ghi status xảy ra đúng một lần. Lúc thực thi, quyền của **người yêu cầu** được resolve lại và hành động chạy với `requester ∩ decider`: approval mà người yêu cầu đã bị thu hồi, hạ quyền hay rời site sẽ bị từ chối, và approval không có thông tin người yêu cầu (bị giữ từ trước khi có cột provenance) bị từ chối với `APPROVAL_PROVENANCE_MISSING`. Approval lưu với `approvalPolicy: human_required` (mọi [external-action tool](../features/external-action-tools.md)) chỉ được giải phóng bởi một người dùng đã đăng nhập: API key, connector token hoặc agent nhận `409 EXECUTION_FAILED` kèm `HUMAN_APPROVAL_REQUIRED`, và approval vẫn ở `pending` |
+| `POST` | `/api/v1/agent/approvals/:id/reopen` | Đưa một approval đang ở `failed` về `pending` để quyết định lại. Body `{ reason }` là **bắt buộc** và được ghi audit; cần `approvals:decide`. Một skill đã chạm tới service rồi mới lỗi thì bị giữ lại chứ không tự mời lại, vì thử lại có thể lặp một phép ghi không idempotent — đây là đường về có chủ ý. Một approval `veto` mà patch đã staged của nó đã live (một lần commit chết sau khi áp patch) thì trả `409 VETO_ALREADY_APPLIED`, vì reopen sẽ áp patch đó lần thứ hai |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Quyết định của Agent với tư cách người đánh giá (cần `review:<domain>`; cấm tự đánh giá) |
+| `GET` | `/api/v1/agent/questions` | Các câu hỏi làm rõ `askUser`, mới nhất trước. `?status=pending` (mặc định) \| `answered` \| `expired` \| `cancelled` \| `all`. Mỗi phần tử: `{ id, runId, goalId, toolCallId, agentName, question, options, allowFreeText, context, status, expiresAt, createdAt, answer, answeredAt, answeredBy }`. Câu hỏi không xuất hiện trong `/approvals`, và `/approvals/:id/decide` cùng `/reopen` trả `409 NOT_AN_APPROVAL` cho id của câu hỏi. Xem [agent harness](../features/agent-harness-layer.md#54-hỏi-người-dùng-askuser-710) |
+| `GET` | `/api/v1/agent/questions/:id` | Một câu hỏi; `404` cho id không tồn tại hoặc thuộc tenant khác |
+| `POST` | `/api/v1/agent/questions/:id/answer` | Trả lời một câu hỏi và tiếp tục run `waiting_user` của nó. Body `{ answer }` (1–2000 ký tự, đã trim; phải là một trong `options` khi `allowFreeText` là false). Chỉ user đã đăng nhập mới trả lời được: mọi API key, scope site hay organization và dù mang capability gì, đều nhận `403`. Được phép với người giữ `approvals:decide` (hoặc control-plane admin) và với **user** đã yêu cầu run; hiện tại chỉ quản trị viên site tới được route (control-plane guard), nên quy tắc người yêu cầu có hiệu lực khi backlog B207 đưa route ra khỏi control plane. Việc claim và việc tiếp tục run là một transaction. `200` kèm câu hỏi đã trả lời (run `succeeded`); `400` `VALIDATION` / `ANSWER_INVALID` / `ANSWER_NOT_AN_OPTION`; `403`; `404`; `409` `ALREADY_ANSWERED`, `EXPIRED`, `QUESTION_CLOSED`, `RUN_NOT_WAITING`, `REQUESTER_REVOKED` (người yêu cầu đã mất quyền; run bị fail); `423` `FROZEN` (run bị huỷ) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Các phiên bản, bản nháp, `/compile` (NL→đánh giá), `:id/dry-run`, `:id/activate` |
-| `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Dừng ở 4 phạm vi (`run/intent/role/site`); việc đóng đóng băng cần `agents:freeze` |
+| `*` | `/api/v1/agent/skills[...]` | Site Skills — playbook được chèn vào các agent run khớp: CRUD theo id hoặc slug, `:id/activate\|archive\|draft`, `:id/versions`, `:id/versions/:version/restore`, `/import`, `/export`, `/match`. Mọi thao tác ghi cần control-plane admin (nếu không thì `403 FORBIDDEN`; không có tác giả được uỷ quyền và `riskClass` chỉ là nhãn). `PATCH` nhận `expectedVersion` và các thao tác status nhận `version` (`409 VERSION_MISMATCH`); `DELETE` từ chối skill đã từng active (`409 SKILL_HAS_BEEN_ACTIVE`); `/import` từ chối thay đổi nội dung của skill active trừ khi `updateActive: true` (`ACTIVE_SKILL_CHANGE`). Xem [features/site-skills.md](../features/site-skills.md) |
+| `GET/PUT/DELETE` | `/api/v1/agent/tool-secrets[/:name]` | Bí mật của external-action tool, theo site. `GET` liệt kê tên, phiên bản khoá và mốc thời gian; `PUT /:name` với `{ value }` (8 đến 8192 ký tự) lưu hoặc thay thế; `DELETE /:name` xoá. Không route nào trả giá trị. Tất cả cần một quản trị viên site đã đăng nhập: API key hoặc connector token nhận `403 FORBIDDEN` kể cả khi có quyền quản trị. `400` khi tên hoặc giá trị không hợp lệ, `404` khi xoá tên không tồn tại, `503 KEYS_UNAVAILABLE` khi chưa cấu hình `KeyProvider`. Xem [features/external-action-tools.md](../features/external-action-tools.md) |
+| `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Dừng ở 4 phạm vi (`run/intent/role/site`); việc đóng đóng băng cần `agents:freeze`. Đóng băng một role hoặc cả site, tạm dừng một intent và huỷ một run cũng huỷ các run đang chờ câu hỏi `askUser` trong phạm vi đó (`stopReason: frozen`) và đóng câu hỏi của chúng |
 | `*` | `/api/v1/agent/intents[...]` | CRUD ý định nội dung, `:id/pause|resume|scan|drifts`, `/compile` |
-| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — được bảo vệ bởi cờ `contentOs.mcp` |
+| `POST` | `/api/v1/intents/:id/scan` | Một chu kỳ reconcile: `{ scan, reconcile, dispatch }`. `dispatch` đẩy mỗi reconciler goal tiến một bước (draft → promote → verify) và báo `dispatched/completed/skipped/blocked` cùng `queueUnavailable` trên runtime không có queue adapter. Xem [vòng sửa của reconciler](../features/reconciler-repair-loop.md). Khi intent có rule `semantic`, `scan.semantic` báo pass ngữ nghĩa có budget riêng (`status` `ran`/`off`/`unavailable`, các số đếm, `completed`, `cursor`), và `scan.semanticOrphansResolved` đếm các hàng của rule ngữ nghĩa bị gỡ mà scan đã resolve. Cập nhật intent làm một rule ngữ nghĩa đã lưu đổi profile, câu hỏi, context hoặc fields mà không tăng `version` trả về `422 SEMANTIC_RULE_VERSION_REQUIRED`; xem [drift ngữ nghĩa](../features/jev-semantic-drift.md) |
+| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — được bảo vệ bởi cờ `contentOs.mcp`. Ngoài `tools/*`, `prompts/list` và `prompts/get` phơi bày các skill active của site cho control-plane admin (rỗng với mọi caller khác). Một `tools/call` tới `askUser` trả về một tool result bình thường với `status: "waiting_user"`, `questionId` và `runId` |
+| `POST` | `/api/v1/mcp/sites/:siteId` | Cùng MCP server, site lấy từ path (cho OAuth connector được host không gửi được `X-Lumi-Site`) |
+| `GET` | `/.well-known/oauth-protected-resource/api/v1/mcp[/sites/:siteId]` | RFC 9728 Protected Resource Metadata (public; `404` trừ khi MCP bật và có trusted issuer liệt kê resource URI trong `audience`) — xem [OAuth connector](../agent-setup/oauth-connector.md) |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Ghim Law Zero: liệt kê / giải phóng |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Chỉ mục llms.txt công khai mỗi site |
 
@@ -966,6 +1504,14 @@ Dashboard do người dùng xây dựng gồm các panel tổng hợp trên các
 
 `PanelQuery` (hợp đồng dùng chung `@lumibase/contracts`): `{ collection, aggregate (count|sum|avg|min|max), field?, groupBy?, filter? (quy tắc điều kiện), dateRange?, limit? }`. `field` is required for non-`count` aggregates. Trường nằm ngoài danh sách trắng của collection sẽ trả về `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
 
+### Mốc kích hoạt
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `GET` | `/api/v1/activation` | Phễu mốc của site đang hoạt động → `{ data: { siteId, milestones, reached, total } }`. Chỉ admin site (`403 FORBIDDEN`). |
+
+Mỗi phần tử của `milestones` là `{ key, reachedAt, source, secondsSinceSiteCreated }`, với `key` là một trong `site_created`, `item_published`, `delivery_request`, `agent_run`. Mốc chỉ ghi một lần và theo phạm vi site. Xem [Mốc kích hoạt và telemetry sử dụng](../operations/usage-telemetry.md).
+
 ---
 
 ## 12c. Git Integration (GitHub / GitLab)
@@ -1035,6 +1581,11 @@ Các biến có thể điều chỉnh (env): `LUMIBASE_DELIVER_SMAXAGE` (giây, 
 | `POST` | `/api/v1/utils/render-template` | Render một display template phía server |
 | `POST` | `/api/v1/utils/jsonata/test` | Đánh giá biểu thức JSONata |
 | `GET` | `/api/v1/metrics` | Prometheus metrics (chỉ ở chế độ Docker) |
+| `GET` | `/api/v1/openapi.json` | Tài liệu OpenAPI 3.1 trực tiếp theo site và quyền của người gọi — `404` cho tới khi được bật |
+| `GET` | `/api/v1/openapi/config` | Đọc công tắc OpenAPI trực tiếp (site admin) |
+| `PUT` | `/api/v1/openapi/config` | `{ enabled, realms }` — bật và chọn realm (site admin, có audit) |
+
+Tài liệu OpenAPI trực tiếp được mô tả trong [Tài liệu OpenAPI trực tiếp](live-openapi.md).
 
 **Phản hồi sức khỏe (Health response):**
 ```json
@@ -1066,6 +1617,7 @@ Các biến có thể điều chỉnh (env): `LUMIBASE_DELIVER_SMAXAGE` (giây, 
 | Upload File | 100 req/phút mỗi người dùng |
 | Kết nối Realtime | 50 đồng thời mỗi site |
 | AI Chat | 60 req/phút mỗi người dùng |
+| Route AI (`/api/v1/ai/*`), trước xác thực | 300 req/phút mỗi IP client mỗi site (`LUMIBASE_AI_IP_RATE_LIMIT`) |
 
 Header rate limit:
 ```

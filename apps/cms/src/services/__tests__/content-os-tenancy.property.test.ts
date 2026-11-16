@@ -7,7 +7,7 @@ import { AgentRoleService } from '../agent-role-service';
 import { ConstitutionService } from '../constitution-service';
 import { PlannerService } from '../planner-service';
 import { ReviewerService } from '../reviewer-service';
-import { maskSecrets } from '../agent-run-service';
+import { maskSecrets, redactTraceText } from '../agent-run-service';
 
 /**
  * Feature: content-os, Property 1: tenant isolation for the new Module C/D
@@ -206,17 +206,23 @@ describe('Feature: content-os, Req 17.6: secrets are masked in guard/denial audi
         expect(masked[key]).toBe('[masked]');
         const nested = (masked['nested'] as Record<string, Record<string, unknown>>)['detail']!;
         expect(nested[key]).toBe('[masked]');
-        expect(nested['safe']).toBe(plain);
+        // Non-secret keys keep their value, apart from the in-string redaction
+        // (emails, `token=...`) that maskSecrets applies to every string.
+        expect(nested['safe']).toBe(redactTraceText(plain));
         expect((masked['list'] as Array<Record<string, unknown>>)[0]![key]).toBe('[masked]');
       }),
       { numRuns: 150 },
     );
   });
 
-  it('non-secret keys survive masking untouched', () => {
+  it('non-secret keys are not key-masked (only in-string redaction applies)', () => {
     fc.assert(
       fc.property(fc.dictionary(fc.constantFrom('reason', 'comment', 'detail', 'status'), valueArb), (payload) => {
-        expect(maskSecrets(payload)).toEqual(payload);
+        // maskSecrets also redacts emails / `token=...` inside any string (e.g. "0@-.AA",
+        // seed -1599438682), so the contract is per-string redaction, never `[masked]`
+        // wholesale because of the key.
+        const expected = Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, redactTraceText(v)]));
+        expect(maskSecrets(payload)).toEqual(expected);
       }),
       { numRuns: 50 },
     );

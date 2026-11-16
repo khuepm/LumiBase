@@ -1,3 +1,6 @@
+import type { RuntimeContext } from '@lumibase/runtime';
+import type { AppEnv } from '../../env';
+import { provisionSite, finalizeSiteProvisioning } from '../../services/site-provisioning';
 /**
  * SetupService — implements the three public surfaces of the Setup
  * Wizard backend (design §6.5):
@@ -39,6 +42,8 @@ import {
   roles,
   settings,
   sites,
+  organizations,
+  organizationMembers,
   systemState,
   userRoles,
   userSites,
@@ -67,6 +72,8 @@ import {
   validateAdminPath,
 } from './path-validator';
 import { verifySetupToken } from './setup-token';
+import { canonicalEmail, type EmailIdentityMode } from '../email-identity/normalize';
+import { userEmailCondition } from '../email-identity/service';
 
 // ── public types ────────────────────────────────────────────────────────
 
@@ -105,6 +112,11 @@ export interface SetupCompleteInput {
   readonly policy: LockoutPolicy;
   readonly project?: SetupCompleteProject;
   readonly invites?: ReadonlyArray<SetupCompleteInvite>;
+  /**
+   * Instance email identity mode (#794). Omitted → `exact` (every distinct
+   * address is its own account — the pre-#794 behaviour).
+   */
+  readonly emailIdentityMode?: EmailIdentityMode;
 }
 
 export interface SetupCompleteInvite {
@@ -121,7 +133,12 @@ export interface SetupCompleteProject {
 
 interface NormalizedProjectConfiguration {
   readonly defaultLanguage: string;
-  readonly siteUrl: string;
+  /**
+   * `null` when the wizard sent no project block. Never a localhost
+   * placeholder: the CMS cannot know its public origin here, and a guessed
+   * `http://localhost:*` leaks into production Settings → Site.
+   */
+  readonly siteUrl: string | null;
   readonly displayTitle: string;
   readonly theme: null;
 }
@@ -131,7 +148,38 @@ export interface SetupCompleteContext {
   readonly requestId?: string;
   readonly ip?: string;
   readonly userAgent?: string;
+  /**
+   * When the HTTP request reached the handler, before any queueing for a
+   * connection or the singleton row lock (#732). Lets a caller that raced the
+   * winning setup be told `SETUP_RACE_LOST` (409) instead of the post-setup
+   * `ALREADY_INITIALIZED` (indistinguishable 404). Omit it and every
+   * initialized outcome is `ALREADY_INITIALIZED`, as before.
+   */
+  readonly receivedAt?: Date;
 }
+
+/**
+ * Classify a caller that found the singleton already `initialized` once it
+ * held the row lock (#732).
+ *
+ * A request that arrived *before* the winner flipped the state was in flight
+ * during setup — it lost the race, and `409` tells it so (Strapi #26494
+ * acceptance: "parallel first-admin registration yields exactly one admin;
+ * others 409"). A request that arrived after setup finished gets the
+ * indistinguishable `ALREADY_INITIALIZED` (404) the wizard spec requires, so the
+ * endpoint stays invisible on an initialized instance. Without both
+ * timestamps there is nothing to compare, and the answer is the safe 404.
+ */
+export function classifyInitializedLock(
+  receivedAt: Date | undefined,
+  initializedAt: Date | null | undefined,
+): 'ALREADY_INITIALIZED' | 'SETUP_RACE_LOST' {
+  if (!receivedAt || !initializedAt) return 'ALREADY_INITIALIZED';
+  return receivedAt.getTime() < initializedAt.getTime() ? 'SETUP_RACE_LOST' : 'ALREADY_INITIALIZED';
+}
+
+/** The partial unique index guaranteeing one bootstrap admin per instance. */
+const BOOTSTRAP_UNIQUE_CONSTRAINT = 'users_is_bootstrap_unique';
 
 export interface PublicUser {
   readonly id: string;
@@ -172,9 +220,23 @@ export interface SetupCompleteResult {
 
 export type SetupServiceError =
   | { readonly code: 'ALREADY_INITIALIZED' }
+  /**
+   * The caller was in flight while a concurrent request completed setup: it
+   * waited on the singleton lock and found the instance initialized, or its
+   * bootstrap-admin insert hit `users_is_bootstrap_unique` (#732).
+   */
+  | { readonly code: 'SETUP_RACE_LOST' }
   | { readonly code: 'SETUP_IN_PROGRESS' }
   | { readonly code: 'SETUP_TOKEN_REQUIRED' }
   | { readonly code: 'SETUP_TOKEN_INVALID' }
+  /**
+   * The gate is on but `system_state.setup_token_hash` is empty, so no token
+   * can match. Happens where nothing minted one — Cloudflare Workers, which
+   * have no process startup — and is surfaced as an operator error rather
+   * than as `SETUP_TOKEN_REQUIRED`, which reads as "send the token you were
+   * given" when none was ever given (#470).
+   */
+  | { readonly code: 'SETUP_TOKEN_NOT_ISSUED' }
   | {
       readonly code: 'VALIDATION_ERROR';
       readonly issues: ReadonlyArray<{
@@ -222,6 +284,8 @@ export type GeoipProbe = () => boolean;
 
 export interface SetupServiceDeps {
   readonly db: Database;
+  readonly env?: AppEnv['Bindings'];
+  readonly runtime?: RuntimeContext;
   readonly requireSetupToken: boolean;
   readonly smtpAvailable: boolean;
   readonly encryptionAvailable: boolean;
@@ -406,7 +470,8 @@ export class SetupService {
     //        the tx. We lowercase emails, drop exact duplicates, and reject
     //        any invite that collides with the bootstrap admin (that account
     //        is created separately and owns the only `is_bootstrap` row).
-    const inviteCheck = normalizeInvites(input.invites, input.account.email);
+    const emailIdentityMode: EmailIdentityMode = input.emailIdentityMode ?? 'exact';
+    const inviteCheck = normalizeInvites(input.invites, input.account.email, emailIdentityMode);
     if (!inviteCheck.ok) {
       return {
         ok: false,
@@ -462,6 +527,7 @@ export class SetupService {
             state: systemState.state,
             setupTokenHash: systemState.setupTokenHash,
             adminPath: systemState.adminPath,
+            initializedAt: systemState.initializedAt,
           })
           .from(systemState)
           .where(eq(systemState.id, 'singleton'))
@@ -483,7 +549,11 @@ export class SetupService {
         //       a previously-killed process could have left it stuck
         //       and the operator deserves a clear signal.
         if (locked.state === 'initialized') {
-          throw new SetupAbort({ code: 'ALREADY_INITIALIZED' });
+          // Losers of a parallel first-admin race block on the lock above
+          // and land here once the winner commits (#732): 409, not 404.
+          throw new SetupAbort({
+            code: classifyInitializedLock(ctx.receivedAt, locked.initializedAt),
+          });
         }
         if (locked.state === 'initializing') {
           throw new SetupAbort({ code: 'SETUP_IN_PROGRESS' });
@@ -491,6 +561,11 @@ export class SetupService {
 
         // ── 3. Setup token gate (Req 2.6).
         if (this.deps.requireSetupToken) {
+          // Checked before the caller's input: with no stored hash, no token
+          // can ever verify, and saying so is the only actionable answer.
+          if (!locked.setupTokenHash) {
+            throw new SetupAbort({ code: 'SETUP_TOKEN_NOT_ISSUED' });
+          }
           if (!input.setupToken) {
             throw new SetupAbort({ code: 'SETUP_TOKEN_REQUIRED' });
           }
@@ -502,6 +577,14 @@ export class SetupService {
             throw new SetupAbort({ code: 'SETUP_TOKEN_INVALID' });
           }
         }
+
+        // ── 5a-bis. Persist the email identity mode (#794) BEFORE any
+        //        account is inserted: the users trigger derives
+        //        `email_canonical` from this column at insert time.
+        await tx
+          .update(systemState)
+          .set({ emailIdentityMode, updatedAt: new Date() })
+          .where(eq(systemState.id, 'singleton'));
 
         // ── 5b. `setup_started` audit entry (Req 15.1; task 11.2). Emit it
         //        only after the cheap initialized/token gates pass so an
@@ -552,16 +635,20 @@ export class SetupService {
         // settings key below is kept for back-compat readers). Theme/branding
         // are left at their column defaults and configured later via
         // Studio → Settings → Site.
-        await tx
-          .insert(sites)
-          .values({
-            id: DEFAULT_SITE_ID,
-            name: projectValue.displayTitle,
-            displayTitle: projectValue.displayTitle,
-            siteUrl: projectValue.siteUrl,
-            defaultLanguage: projectValue.defaultLanguage,
-          })
-          .onConflictDoNothing();
+        // Create the parent before inserting the NOT NULL organization_id.
+        // Migration may already have seeded it on a fresh, uninitialized install.
+        await tx.insert(organizations).values({
+          slug: 'default', name: projectValue.displayTitle,
+        }).onConflictDoNothing({ target: organizations.slug });
+        const [personalOrg] = await tx.select({ id: organizations.id }).from(organizations)
+          .where(eq(organizations.slug, 'default'));
+        if (!personalOrg) throw new SetupAbort({ code: 'INTERNAL' });
+        const provisioned = await provisionSite(tx, {
+          id: DEFAULT_SITE_ID, organizationId: personalOrg.id,
+          name: projectValue.displayTitle, displayTitle: projectValue.displayTitle,
+          siteUrl: projectValue.siteUrl, defaultLanguage: projectValue.defaultLanguage,
+          allowExisting: true,
+        });
 
         // ── 8b. Seed the agent role library (Setup Impact Registry #1;
         //        content-os Req 10.3). Without this, `agent_roles` stays
@@ -619,6 +706,10 @@ export class SetupService {
           throw new SetupAbort({ code: 'INTERNAL' });
         }
 
+        await tx.insert(organizationMembers).values({
+          userId: newUser.id, organizationId: personalOrg.id, role: 'owner',
+        }).onConflictDoNothing();
+
         // ── 9a. Create the platform `Administrator` role (admin bypass) and
         //        bind the bootstrap admin to it. requirements.md Req 3 states
         //        the initialized state requires a user with role `admin` and
@@ -627,10 +718,10 @@ export class SetupService {
         //        schema/items request 403s. `systemKey: 'administrator'` keeps
         //        a re-entrant wizard run idempotent via the
         //        `roles_site_system_key_unique` index.
-        const adminRoleId = await this.upsertAdministratorRole(
-          tx,
-          DEFAULT_SITE_ID,
-        );
+        const adminRoleId = provisioned.administratorRoleId;
+        await tx.insert(userSites).values({
+          userId: newUser.id, siteId: DEFAULT_SITE_ID, roleId: adminRoleId,
+        }).onConflictDoNothing();
         await tx
           .insert(userRoles)
           .values({
@@ -657,20 +748,19 @@ export class SetupService {
           // it. Idempotent via the `roles_site_system_key_unique` index.
           const needsMember = normalizedInvites.some((i) => i.role === 'member');
           const memberRoleId = needsMember
-            ? await this.upsertMemberRole(tx, DEFAULT_SITE_ID)
+            ? provisioned.memberRoleId
             : null;
 
           for (const invite of normalizedInvites) {
-            // `users.email` has no unique index (only `external_id` does), so
-            // we cannot rely on an email upsert — look the account up first,
-            // mirroring `routes/users.ts`. On a fresh instance the only
+            // Look the account up first (identity-aware, #794) rather than
+            // relying on an email upsert, mirroring `routes/users.ts`. On a fresh instance the only
             // pre-existing email is the bootstrap admin, already rejected by
             // `normalizeInvites`, but the lookup keeps this safe if that ever
             // changes.
             const existing = await tx
               .select({ id: users.id })
               .from(users)
-              .where(eq(users.email, invite.email))
+              .where(userEmailCondition(invite.email, emailIdentityMode))
               .limit(1);
 
             let invitedUserId = existing[0]?.id;
@@ -869,6 +959,11 @@ export class SetupService {
       // users.is_bootstrap → translate to a user-facing code.
       const pgCode = pgErrorCode(err);
       if (pgCode === '23505') {
+        // A second bootstrap admin is refused by the partial unique index
+        // whatever the state machine thought (#732): the caller lost a race.
+        if (pgConstraintName(err) === BOOTSTRAP_UNIQUE_CONSTRAINT) {
+          return { ok: false, error: { code: 'SETUP_RACE_LOST' } };
+        }
         return { ok: false, error: { code: 'PATH_TAKEN' } };
       }
       // statement_timeout while waiting on the row lock → treat as
@@ -899,6 +994,9 @@ export class SetupService {
     //        the raw path (it is a secret — design §7.3); the policy is
     //        the canonical JSON. No password/hash/token is in scope.
     if (outcome.ok) {
+      if (this.deps.env) await finalizeSiteProvisioning(
+        this.deps.db, this.deps.env, this.deps.runtime, DEFAULT_SITE_ID,
+      ).catch(() => undefined);
       const audit = this.resolveAuditLogger();
       const adminPathHash = await sha256ShortHex(outcome.value.adminPath);
       const base = {
@@ -935,7 +1033,7 @@ export class SetupService {
           ...base,
           event: 'setup_completed',
           targetEmail: outcome.value.user.email,
-          metadata: { adminPathHash, policy: policyValue },
+          metadata: { adminPathHash, policy: policyValue, emailIdentityMode },
         }),
         // One `user_invited` entry per teammate created in this run. Same
         // best-effort guarantees as the events above (never throws).
@@ -968,89 +1066,7 @@ export class SetupService {
     return this.deps.audit ?? new AuditLogger({ db: this.deps.db });
   }
 
-  /**
-   * Upsert the platform `Administrator` role for a site and return its id.
-   * Idempotent across re-entrant wizard runs via the
-   * `roles_site_system_key_unique` index — a second run reuses the existing
-   * row rather than inserting a duplicate. `adminAccess: true` makes the
-   * PermissionService bundle short-circuit to full bypass (see
-   * docs permissions-rbac.md §"adminAccess=true là bypass toàn bộ").
-   */
-  private async upsertAdministratorRole(
-    tx: any,
-    siteId: string,
-  ): Promise<string> {
-    const inserted = await tx
-      .insert(roles)
-      .values({
-        siteId,
-        key: 'administrator',
-        systemKey: 'administrator',
-        name: 'Administrator',
-        description: 'Full platform access. Created during first-run setup.',
-        adminAccess: true,
-        appAccess: true,
-      })
-      .onConflictDoNothing()
-      .returning({ id: roles.id });
 
-    if (inserted[0]?.id) return inserted[0].id;
-
-    // Conflict path: row already exists (re-entrant run) — read it back.
-    const existing = await tx
-      .select({ id: roles.id })
-      .from(roles)
-      .where(
-        and(eq(roles.siteId, siteId), eq(roles.systemKey, 'administrator')),
-      )
-      .limit(1);
-
-    const adminRoleId = existing[0]?.id;
-    if (!adminRoleId) {
-      throw new SetupAbort({ code: 'INTERNAL' });
-    }
-    return adminRoleId;
-  }
-
-  /**
-   * Create (or read back) the platform `Member` role — a non-admin role
-   * with Studio access, used as the lower-privilege preset for invited
-   * teammates. Mirrors {@link upsertAdministratorRole}: idempotent via the
-   * `roles_site_system_key_unique` index so a re-entrant wizard run reuses
-   * the existing row. Distinct from `appAccess`-only here: `adminAccess` is
-   * false, so the PermissionService bundle resolves `admin=false` and the
-   * member only gets whatever explicit permissions the operator later grants.
-   */
-  private async upsertMemberRole(tx: any, siteId: string): Promise<string> {
-    const inserted = await tx
-      .insert(roles)
-      .values({
-        siteId,
-        key: 'member',
-        systemKey: 'member',
-        name: 'Member',
-        description:
-          'Standard Studio access without admin privileges. Created during first-run setup.',
-        adminAccess: false,
-        appAccess: true,
-      })
-      .onConflictDoNothing()
-      .returning({ id: roles.id });
-
-    if (inserted[0]?.id) return inserted[0].id;
-
-    const existing = await tx
-      .select({ id: roles.id })
-      .from(roles)
-      .where(and(eq(roles.siteId, siteId), eq(roles.systemKey, 'member')))
-      .limit(1);
-
-    const memberRoleId = existing[0]?.id;
-    if (!memberRoleId) {
-      throw new SetupAbort({ code: 'INTERNAL' });
-    }
-    return memberRoleId;
-  }
 }
 
 // ── internal helpers ────────────────────────────────────────────────────
@@ -1090,13 +1106,16 @@ type NormalizeInvitesResult =
 function normalizeInvites(
   invites: ReadonlyArray<SetupCompleteInvite> | undefined,
   adminEmail: string,
+  mode: EmailIdentityMode = 'exact',
 ): NormalizeInvitesResult {
   if (!invites || invites.length === 0) {
     return { ok: true, value: [] };
   }
 
   const issues: Array<{ path: Array<string>; message: string }> = [];
-  const adminLower = adminEmail.trim().toLowerCase();
+  // Compare on the account key for the chosen mode (#794): under `root`, an
+  // alias of the admin or of an earlier invite is the same account.
+  const adminKey = canonicalEmail(adminEmail, mode);
   const seen = new Set<string>();
   const value: SetupCompleteInvite[] = [];
 
@@ -1110,19 +1129,20 @@ function normalizeInvites(
       issues.push({ path: ['invites', String(index), 'role'], message: 'invalid role' });
       return;
     }
-    if (email === adminLower) {
+    const key = canonicalEmail(email, mode);
+    if (key === adminKey) {
       issues.push({
         path: ['invites', String(index), 'email'],
         message: 'cannot invite the admin email',
       });
       return;
     }
-    if (seen.has(email)) {
+    if (seen.has(key)) {
       // Silently drop later duplicates rather than erroring — the wizard may
       // submit the same row twice; first one wins.
       return;
     }
-    seen.add(email);
+    seen.add(key);
     value.push({ email, role: invite.role });
   });
 
@@ -1201,7 +1221,7 @@ function validateProject(project: SetupCompleteProject | undefined):
       ok: true,
       value: {
         defaultLanguage: 'en',
-        siteUrl: 'http://localhost:5173',
+        siteUrl: null,
         displayTitle: 'LumiBase',
         theme: null,
       },
@@ -1314,9 +1334,22 @@ function defaultGeoipProbe(): boolean {
 }
 
 function pgErrorCode(err: unknown): string | undefined {
-  if (typeof err === 'object' && err !== null) {
-    const candidate = (err as { code?: unknown }).code;
-    if (typeof candidate === 'string') return candidate;
+  return pgErrorField(err, 'code');
+}
+
+function pgConstraintName(err: unknown): string | undefined {
+  return pgErrorField(err, 'constraint_name');
+}
+
+/**
+ * Read a Postgres error field, following `cause` (drizzle wraps the driver
+ * error in a `DrizzleQueryError`, so the SQLSTATE can sit one level down).
+ */
+function pgErrorField(err: unknown, field: 'code' | 'constraint_name'): string | undefined {
+  for (let e: unknown = err, depth = 0; typeof e === 'object' && e !== null && depth < 4; depth += 1) {
+    const value = (e as Record<string, unknown>)[field];
+    if (typeof value === 'string') return value;
+    e = (e as { cause?: unknown }).cause;
   }
   return undefined;
 }

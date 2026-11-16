@@ -1,12 +1,12 @@
 ---
 title: LumiBase CLI
-version: 4
-lastUpdated: 2026-09-14T21:26:08.525Z
+version: 12
+lastUpdated: 2026-11-15T21:57:22.334Z
 sourceLang: en
-contentHash: 1efeb2d4feffe788
-codeVerified: 2026-09-14T21:33:46.476Z
-codeVerifiedHash: 1efeb2d4feffe788
-codeVerifiedClaims: 20
+contentHash: 6f43a3732ad7e73f
+codeVerified: 2026-11-15T21:57:22.334Z
+codeVerifiedHash: 6f43a3732ad7e73f
+codeVerifiedClaims: 22
 ---
 
 # LumiBase CLI
@@ -39,7 +39,9 @@ Node.js 22+ is required for the CLI; the launcher in `packages/cli/bin/lumibase.
 | --- | --- |
 | `lumibase init [name]` | Scaffold a new project |
 | `lumibase types` | Generate TypeScript types from a running CMS |
-| `lumibase doctor` | Report resolved configuration and probe connectivity |
+| `lumibase doctor` | Report resolved configuration and probe connectivity (`--security`: audit the config against the production checklist) |
+| `lumibase skills <list\|pull\|push\|install>` | Sync Site Skills (agent playbooks) with a site |
+| `lumibase migrate <source>` | Migrate content from another CMS (Contentful); dry run unless `--apply` |
 
 `lumibase help` and `lumibase version` are also accepted, as are `--help` / `-h` and `--version` / `-v`.
 
@@ -81,6 +83,8 @@ lumibase init my-site --template cloudflare --pm pnpm
 Three templates are accepted — `nextjs`, `default`, and `cloudflare` (`TEMPLATES` in `packages/create-lumibase/src/index.ts`). Passing no `--template` leaves the choice to the prompt, where **`nextjs`** is preselected: a Next.js website plus the CMS and Studio in Docker, seeded content, and a publishable key. The template *named* `default` is the Hono + Drizzle starter, not the default choice. [Getting started](../getting-started.md) walks through each one.
 
 The scaffolder is **not** a dependency of `lumibase` — it runs once per project, and its prompt/template libraries have no place in every install of a runtime package. `resolveScaffoldCommand` in `packages/cli/src/commands/init.ts` fetches it through the one-off runner of the package manager that invoked the CLI (`npx --yes` / `pnpm dlx` / `yarn dlx` / `bunx`, from `npm_config_user_agent`; yarn classic falls back to `npx`), pinned to the CLI's own version (`create-lumibase@<version>`) so both binaries always come from the same release.
+
+That pin has one consequence worth knowing before it surprises you: `init` resolves the scaffolder from the **registry**, not from this repository. A template that exists in the source tree is therefore not reachable through `lumibase init` until a `create-lumibase` that contains it has been published at the CLI's version. How that fails depends on the age of the published scaffolder: releases up to `1.0.0-rc.1` do not validate `--template`, so the command fails *inside* the scaffolder with a missing-template-directory error; later releases reject the name up front with `Unknown template`, listing only the templates that release ships. Either way the name is valid — the published artifact simply predates it. `npm create lumibase@latest` has the same constraint for the same reason. If you are working from a checkout and need a template that is not published yet, run the scaffolder from the repo instead of going through either entry point.
 
 ## `lumibase types`
 
@@ -126,8 +130,66 @@ The health probe calls the unauthenticated `/health` endpoint (`apps/cms/src/rou
 
 `doctor` exits non-zero if any check fails.
 
+### `lumibase doctor --security`
+
+`--security` replaces the connectivity checks with an offline audit of the project's configuration. It reads `.env`, `.env.local`, `.dev.vars`, `wrangler.toml` `[vars]` and the compose `environment:` entries. Each finding has a severity (`critical`, `warning`, `info`), the rule it applies and a fix hint. Secret values are never printed.
+
+| Flag | Effect |
+| --- | --- |
+| `--production` | Apply the production checklist even when `NODE_ENV` / `LUMIBASE_ENV` is not `production` |
+| `--env-file <a,b>` | Read these dotenv files instead of the defaults |
+| `--json` | Print the report as JSON (`ok`, `mode`, `runtime`, `sources`, `summary`, `findings`) |
+
+The command exits `1` when any finding is critical. A fresh `create-lumibase` scaffold passes with zero critical findings. For the full rule list, see [Secure defaults](../security/secure-defaults.md).
+
+## `lumibase skills`
+
+Syncs [Site Skills](../features/site-skills.md) — Markdown playbooks for the site's agents — between a directory in your repository and a site. The CLI only moves files: the CMS parses and validates each document, so the format has one implementation.
+
+| Command | What it does |
+| --- | --- |
+| `lumibase skills list` | Table of the site's skills. `--status <s>` filters; `--json` prints the raw rows. |
+| `lumibase skills pull` | Writes every skill to `<dir>/<slug>.skill.md`. `--dir` (default `skills`), `--status`. |
+| `lumibase skills push` | Creates or updates skills from the `*.md` files in `<dir>` (`README.md` is skipped), including skills that are already active. `--activate`, `--dry-run`, `--check`. |
+| `lumibase skills install <src>` | Adds skills from a directory, a single `.md` file, or an npm package that is already installed locally. Never changes a skill that is already active. `--activate`, `--dry-run`. |
+
+```bash
+lumibase skills pull
+lumibase skills push --dry-run
+lumibase skills push --check      # CI: exit 1 if the site differs from the directory
+lumibase skills install @acme/lumibase-skills
+```
+
+- **New skills land as drafts.** Pass `--activate` to activate them; otherwise review and activate in Studio (Mission Control → Skills). Existing skills keep their status.
+- **`push` deploys; `install` does not touch live skills.** `push` treats the directory as the source of truth and sends `updateActive: true`, so pushing an edit to an active skill changes agent behaviour immediately. `install` does not: a file that would change an active skill is reported as `ACTIVE_SKILL_CHANGE` and the live skill is left as it was — review it in Studio, or deploy it with `push`.
+- **Idempotent.** A file whose content matches the stored version is reported `unchanged` and writes nothing.
+- **Exit codes.** `push` and `install` exit `1` when any document is rejected; the other documents are still applied. `--check` also exits `1` when anything would be created or updated.
+- **`install` downloads nothing.** A path that exists wins; otherwise the name is resolved under `node_modules`, walking up from the working directory. Inside a package the skills directory is `package.json` → `lumibase.skills`, or `skills/` when that key is absent. The package name and version are recorded as the version's source — a label the CLI declares; the server-recorded author is the authoritative "who".
+- **One direction.** `push` never deletes: a skill that exists on the site but not in the directory is left alone, and `--check` does not report it.
+- **Token.** The endpoints are under `/api/v1/agent`, and every skill read and write needs a control-plane admin, so the token needs admin access to the site. Non-admin skill authors are not supported.
+
+## `lumibase migrate contentful`
+
+Moves a Contentful space into the connected site: content types become
+collections, entries become items with their Contentful ids, assets are uploaded
+as files, and rich text becomes LumiBase's portable rich-text JSON.
+
+```bash
+lumibase migrate contentful --file space.json                 # dry run: prints the plan
+lumibase migrate contentful --file space.json --apply         # asks, then writes
+lumibase migrate contentful --file space.json --apply --yes   # CI
+```
+
+Without `--apply` nothing is written. `--apply` asks for confirmation before it
+changes the schema; a non-interactive shell needs `--yes`. Re-running is safe:
+existing items are updated, uploaded assets are skipped. Flags, the field mapping
+and limits: [Content migration](../features/content-migration.md).
+
 ## Related
 
 - [SDK — typegen](../sdk/typegen.md) — the programmatic API behind `lumibase types`
-- [Getting started](../getting-started.md) — running a CMS to point the CLI at
+- [Typegen configs and targets](./typegen-config.md) — `lumibase.typegen.config.ts`: several configs, Zod / GraphQL SDL / OpenAPI outputs, `--watch`
+- [Getting started](../getting-started.md#which-one-do-you-actually-want) — starter vs platform vs consumer client, and where `lumibase` fits
+- [Local development](../deployment/local-development.md) — running the CMS and Studio this CLI points at
 - [npm publishing](../release/npm-publishing.md) — how the package is released
+- [Content migration](../features/content-migration.md) — `lumibase migrate` in full

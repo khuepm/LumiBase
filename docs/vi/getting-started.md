@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-09-14T21:26:07.815Z
+version: 10
+lastUpdated: 2026-11-15T18:05:23.927Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 99526fe6886264cb
+sourceHash: 7f3f8abe9f146aab
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-14T21:26:07.815Z
-codeVerifiedHash: 99526fe6886264cb
+codeVerified: 2026-11-15T18:05:23.927Z
+codeVerifiedHash: 7f3f8abe9f146aab
 codeVerifiedClaims: 8
 ---
 
@@ -39,7 +39,9 @@ npm install -D lumibase     # ❌ the import disappears in production installs
 ```
 
 Cùng package đó mang theo CLI, nên không phải cài thêm gì cho `lumibase types`
-hay `lumibase doctor`.
+hay `lumibase doctor`. Trường hợp duy nhất `-D` là đúng: một repo cài nó **chỉ**
+để chạy `lumibase types --check` trong CI và không bao giờ import client — ở đó
+CLI là công cụ build, không phải code chạy lúc runtime.
 
 > **Package:** [`create-lumibase`](../../packages/create-lumibase) ·
 > **Published as:** `create-lumibase` trên npm ·
@@ -49,27 +51,41 @@ hay `lumibase doctor`.
 
 ```bash
 # any of these work — npx resolves the create-* convention
-npm create lumibase@latest my-project
-npx create-lumibase@latest my-project
-pnpm create lumibase my-project
+npm create lumibase@next my-project
+npx create-lumibase@next my-project
+pnpm create lumibase@next my-project
 ```
+
+> **Dùng `@next` trong giai đoạn release candidate của 1.0.** Tag `latest` trên
+> npm vẫn trỏ về scaffolder 0.x, bản không có template Next.js và không ghim CMS.
+> `@next` là release candidate hiện tại. Các lệnh sẽ quay về `@latest` khi 1.0.0
+> phát hành.
 
 Khi không có tham số nào, CLI sẽ chạy ở chế độ tương tác và hỏi mọi thông tin cần
 thiết. Câu hỏi đầu tiên là câu quan trọng nhất — nó chọn template, và lựa chọn
 Next.js được chọn sẵn.
 
+Nếu project đã có CLI `lumibase` thì `lumibase init` là **cùng một** scaffold,
+không phải một cái thứ hai: nó chạy `create-lumibase` và chuyển tham số của bạn
+đi nguyên văn, nên hai đường vào không thể có bộ template khác nhau hay trôi lệch
+khỏi nhau. Dùng cái nào đang có sẵn — `npm create lumibase@next` thì không cần
+cài gì cả. Xem [`lumibase init`](./cli/index.md#lumibase-init) để biết cơ chế uỷ
+quyền và vì sao scaffolder không phải dependency của `lumibase`.
+
 ## Điều gì diễn ra, theo từng bước
 
 ```
-npx create-lumibase@latest my-blog
+npx create-lumibase@next my-blog
 │
 ├─ 1. npx downloads the create-lumibase package from npm
 │
 ├─ 2. Interactive prompts (skipped when flags are passed)
 │     ? Project name          my-blog
-│     ? Deployment target      › Next.js website  + CMS, Studio and seed content (recommended)
-│                                Docker           Node.js + PostgreSQL
-│                                Cloudflare Workers  Edge + D1
+│     ? Template               › Next.js website  + CMS, Studio and seed content (recommended)
+│                                Astro static site  build-time content, static export to Cloudflare Pages
+│                                SvelteKit site     server loads + draft preview on Cloudflare Pages
+│                                Docker starter     Hono + Node.js + PostgreSQL (no CMS)
+│                                Cloudflare Workers starter  Hono + Edge + D1 (no CMS)
 │     ? Package manager        › pnpm / npm / yarn / bun  (auto-detected)
 │     ? Install dependencies   › Yes
 │     ? Initialize git         › Yes
@@ -96,6 +112,8 @@ npx create-lumibase@latest my-blog
 | Template | Flag | Stack | Phù hợp nhất cho |
 | --- | --- | --- | --- |
 | **Next.js website + CMS** (chọn sẵn) | `--template nextjs` | Next.js 15 + React 19, client `lumibase`, và image CMS (đã kèm Studio) + PostgreSQL + Redis qua `docker-compose.yml` | Xuất bản một site thật: editor có Studio, trình duyệt chỉ có key chỉ-đọc |
+| **Astro static site** | `--template astro` | Astro 7 xuất tĩnh, nội dung đọc lúc build qua client `lumibase`, `wrangler pages deploy dist` | Một site tĩnh nhanh trên Cloudflare Pages, build lại bằng deploy hook — xem [Astro starter](./tutorials/astro-starter.md) |
+| **SvelteKit site** | `--template sveltekit` | SvelteKit 3 + `@sveltejs/adapter-cloudflare`, load phía server, draft preview bằng cookie có chữ ký | Một site trên Pages hiển thị nội dung vừa xuất bản mà không cần build lại — xem [SvelteKit starter](./tutorials/sveltekit-starter.md) |
 | **Docker starter** | `--template default` | Hono + `@hono/node-server`, Drizzle ORM, PostgreSQL, Redis, `docker-compose.yml` | Tự xây API của bạn theo quy ước LumiBase |
 | **Cloudflare Workers starter** | `--template cloudflare` | Hono, Drizzle ORM, D1, `wrangler.toml` | Vẫn starter đó, nhưng triển khai ở edge |
 
@@ -161,7 +179,7 @@ response trong `{ data }` / `{ errors }`, và xác thực request bằng Zod.
 Truyền các cờ (flag) để bỏ qua hoàn toàn các câu hỏi tương tác:
 
 ```bash
-npx create-lumibase@latest my-blog \
+npx create-lumibase@next my-blog \
   --template nextjs \
   --pm pnpm \
   --no-install \
@@ -170,7 +188,7 @@ npx create-lumibase@latest my-blog \
 
 | Cờ (Flag) | Mô tả |
 | --- | --- |
-| `--template <nextjs\|default\|cloudflare>` | Template dự án. Tên không hợp lệ bị từ chối ngay từ đầu, kèm giá trị bạn đã truyền. |
+| `--template <nextjs\|astro\|sveltekit\|default\|cloudflare>` | Template dự án. Tên không hợp lệ bị từ chối ngay từ đầu, kèm giá trị bạn đã truyền. |
 | `--pm <pnpm\|npm\|yarn\|bun>` | Package manager dùng để cài đặt. Tự động phát hiện từ `npm_config_user_agent` khi bỏ trống. |
 | `--install` / `--no-install` | Bắt buộc bật hoặc bỏ qua bước cài đặt dependency. |
 | `--git` / `--no-git` | Bắt buộc bật hoặc bỏ qua `git init` + commit đầu tiên. |
@@ -188,8 +206,7 @@ dưới dùng `npm run`; `pnpm cms:up`, `yarn cms:up` và `bun run cms:up` là t
 ### Template Next.js
 
 ```bash
-cd my-blog
-cp .env.example .env       # fill in secrets
+cd my-blog                 # .env already holds generated secrets (see security/secure-defaults)
 npm install                # only if you used --no-install
 npm run cms:up             # CMS + Studio + Postgres + Redis
 npm run cms:bootstrap      # first admin, public read grant, publishable key
@@ -219,18 +236,19 @@ npm run cms:verify
 
 Nó dùng publishable key — không bao giờ dùng admin token — để cho thấy nó đọc được
 các post đã publish, **không** thấy được bản draft đã seed (qua list, qua id trực
-tiếp, và khi hỏi thẳng `status=draft`), và không ghi được. Phần seed cố ý để lại
+tiếp, và khi hỏi thẳng `status=draft`), không ghi được, và bị từ chối với một site
+id không tồn tại — sau đó kiểm tra lại rằng CMS vẫn healthy. Phần seed cố ý để lại
 một post chưa publish để bước kiểm tra này có thứ thật để bắt. Các kiểm tra không
-chạy được sẽ báo SKIPPED chứ không bị gộp vào số lượt pass.
+chạy được sẽ báo SKIPPED chứ không bị gộp vào số lượt pass. Việc kiểm tra cô lập
+tenant với một site thứ hai *thật* chạy khi đặt `LUMIBASE_VERIFY_OTHER_SITE`.
 
-Hai vấn đề upstream của CMS định hình template này, cả hai đều được ghi trong
-`README.md` được sinh ra: cổng chặn setup-token đòi một token mà server không bao
-giờ in ra ([#470](https://github.com/khuepm/lumibase/issues/470)), nên compose file
-để cờ đó tắt và bind mọi port công bố vào `127.0.0.1`; và một header `X-Lumi-Site`
-trỏ tới site không tồn tại có thể làm chết tiến trình CMS
-([#469](https://github.com/khuepm/lumibase/issues/469)), nên phép thử đó nằm sau
-`LUMIBASE_VERIFY_CROSS_TENANT=1`. Việc kiểm tra cô lập tenant với một site thứ hai
-*thật* vẫn chạy bình thường, qua `LUMIBASE_VERIFY_OTHER_SITE`.
+Project được sinh ra ghim client `lumibase` và image CMS vào **đúng** phiên bản
+`create-lumibase` đã tạo ra nó, nên API, Studio và client luôn đến từ cùng một bản
+phát hành. Phiên bản được ghim chính xác chứ không dùng khoảng `^`: npm resolve một
+khoảng về phiên bản mới nhất mang tag `latest` thỏa khoảng đó, mà trong giai đoạn
+prerelease thì đó có thể là một release candidate cũ hơn. Compose file để cổng chặn
+setup-token tắt và bind mọi port công bố vào `127.0.0.1`; `README.md` được sinh ra
+hướng dẫn cách bật cổng này (CMS in `SETUP_TOKEN=…` một lần khi khởi động).
 
 #### Trỏ nó vào một CMS bạn đã chạy sẵn
 
@@ -254,8 +272,7 @@ Studio hiện "No editable fields". `README.md` được sinh ra nói kỹ từn
 ### Docker starter
 
 ```bash
-cd my-blog
-cp .env.example .env       # fill in secrets
+cd my-blog                 # .env already holds generated secrets (see security/secure-defaults)
 pnpm install               # only if you used --no-install
 docker compose up -d       # Postgres + Redis
 pnpm run db:generate       # generate the first migration from schema.ts

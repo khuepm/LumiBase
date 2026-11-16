@@ -1,11 +1,34 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
-import { ItemServiceError, parseDeepQueryParams, parseFilterQueryParams, bulkMaxItems } from '../services/item-service';
+import {
+  ItemServiceError,
+  parseDeepQueryParams,
+  parseFilterQueryParams,
+  bulkMaxItems,
+  type ItemDetailMeta,
+  type ItemWriteOptions,
+} from '../services/item-service';
+import { expectedVersionsFrom, formatItemEtag, parseIfMatch } from '../services/item-etag';
+import type { TreeQuery } from '../services/tree-service';
 import { itemServiceForRequest, permissionServiceForRequest } from '../services/item-service-factory';
 import { ContentVersionError, ContentVersionService } from '../services/content-version-service';
 import { DependentsError, DependentsService, type ResolveAction } from '../services/dependents-service';
 import { formatSafeError } from '@lumibase/contracts/utils';
+import { and, eq } from 'drizzle-orm';
+import { scopeSite, settings } from '@lumibase/database';
+import {
+  ExportError,
+  planExport,
+  streamExport,
+  type ExportOptions,
+  type ExportRecord,
+} from '../services/export-service';
+import { AuditLogger } from '../modules/audit/logger';
+import { isPublicationState, PUBLICATION_STATES, type PublicationState } from '../services/publication-state';
+import { ItemDuplicateService } from '../services/item-duplicate';
+import { ItemReorderService, isManualSort } from '../services/item-reorder';
+import { SchemaService } from '../services/schema-service';
 
 /**
  * /items/:collection — generic CRUD over the items store.
@@ -28,7 +51,24 @@ const listQuerySchema = z.object({
   // Opt out of the `count(*)` total (high-load-cache-readiness Req 5).
   // Defaults to `total_count` to preserve the historical response shape.
   meta: z.enum(['total_count', 'none']).optional(),
+  // Tree navigation (#749): `?tree=children&parent=<id|null>`,
+  // `?tree=subtree&parent=<id|null>`, `?tree=ancestors&node=<id>`.
+  tree: z.enum(['children', 'subtree', 'ancestors']).optional(),
+  parent: z.string().optional(),
+  node: z.string().min(1).optional(),
+  // Cohort (#688) — read by `requestItemOptions`; declared so it validates here too.
+  publicationState: z.enum(PUBLICATION_STATES).optional(),
+  // "Modified since publish" (#687).
+  modifiedSincePublish: z.enum(['true', 'false']).optional(),
 });
+
+/** Map the tree query params to the service shape; `parent` absent/`null`/empty = roots. */
+function treeQueryFrom(q: z.infer<typeof listQuerySchema>): TreeQuery | undefined | 'invalid' {
+  if (!q.tree) return q.parent !== undefined || q.node !== undefined ? 'invalid' : undefined;
+  if (q.tree === 'ancestors') return q.node ? { mode: 'ancestors', node: q.node } : 'invalid';
+  const parent = q.parent === undefined || q.parent === '' || q.parent === 'null' ? null : q.parent;
+  return { mode: q.tree, parent };
+}
 
 const scheduleSchema = {
   publishAt: z.string().datetime().nullable().optional(),
@@ -39,7 +79,14 @@ const createSchema = z.object({
   data: z.record(z.string(), z.unknown()),
   status: z.string().optional(),
   sort: z.number().int().optional(),
+  /** Tree collections (#749): parent item id; null/absent = root. */
+  parentId: z.string().min(1).nullable().optional(),
   ...scheduleSchema,
+});
+
+const moveSchema = z.object({
+  parentId: z.string().min(1).nullable(),
+  position: z.number().int().min(0).optional(),
 });
 
 const patchSchema = z.object({
@@ -54,7 +101,47 @@ const bulkSchema = z.object({
   items: z.array(z.record(z.string(), z.unknown())),
 });
 
-const buildService = (c: Context<AppEnv>) => itemServiceForRequest(c);
+/**
+ * Per-request read/write options carried on the query string, so every
+ * handler picks them up through `buildService` without changing its body:
+ *
+ * - `publicationState=live|preview|all` (#688) on reads — the cohort applies to
+ *   the list, the single-item read and nested relation expansion. Anonymous
+ *   callers are clamped to `live` by `itemServiceForRequest`.
+ * - `saveRevision=false` (#693) on PATCH/PUT — skip the revision row for
+ *   autosave / machine writes.
+ */
+export function requestItemOptions(
+  c: Context<AppEnv>,
+): { publicationState?: PublicationState; saveRevision?: boolean } {
+  const out: { publicationState?: PublicationState; saveRevision?: boolean } = {};
+  const method = c.req.method.toUpperCase();
+  if (method === 'GET' || method === 'HEAD') {
+    const state = c.req.query('publicationState');
+    if (state !== undefined) {
+      if (!isPublicationState(state)) {
+        throw new ItemServiceError(
+          'VALIDATION',
+          'publicationState must be one of: live, preview, all.',
+          400,
+        );
+      }
+      out.publicationState = state;
+    }
+  }
+  if (method === 'PATCH' || method === 'PUT') {
+    const save = c.req.query('saveRevision');
+    if (save !== undefined) {
+      if (save !== 'true' && save !== 'false') {
+        throw new ItemServiceError('VALIDATION', 'saveRevision must be true or false.', 400);
+      }
+      out.saveRevision = save === 'true';
+    }
+  }
+  return out;
+}
+
+const buildService = (c: Context<AppEnv>) => itemServiceForRequest(c, requestItemOptions(c));
 
 const toError = (err: unknown) => {
   if (err instanceof ItemServiceError || err instanceof ContentVersionError) {
@@ -82,6 +169,10 @@ itemsRouter.get('/:collection', async (c) => {
   } catch {
     return c.json({ errors: [{ code: 'VALIDATION', message: 'Invalid filter: expected JSON or filter[field][_op]=value syntax.' }] }, 400);
   }
+  const tree = treeQueryFrom(parsed.data);
+  if (tree === 'invalid') {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'Tree query: use tree=children|subtree with parent, or tree=ancestors with node.' }] }, 400);
+  }
   try {
     const fields = parsed.data.fields ? parsed.data.fields.split(',') : undefined;
     const deep = parseDeepQueryParams(searchParams);
@@ -95,6 +186,8 @@ itemsRouter.get('/:collection', async (c) => {
       offset: parsed.data.offset,
       status: parsed.data.status,
       withTotal: parsed.data.meta !== 'none',
+      tree,
+      modifiedSincePublish: parsed.data.modifiedSincePublish === 'true',
     });
     return c.json(result);
   } catch (err) {
@@ -136,12 +229,137 @@ itemsRouter.post('/:collection/bulk', async (c) => {
   }
 });
 
+// ---------- Export (#727) ----------
+// Registered before `/:collection/:id` so `export` is never read as an item id.
+
+const exportQuerySchema = z.object({
+  format: z.enum(['csv', 'json']).default('csv'),
+  fields: z.string().optional(),
+  locales: z.string().optional(),
+  relations: z.enum(['id', 'slug', 'embed']).default('id'),
+  filter: z.string().optional(),
+  sort: z.string().optional(),
+  status: z.string().optional(),
+});
+
+const csvList = (v: string | undefined) =>
+  v ? v.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
+
+/** Site locales from the `locales` setting (`value.supported`), as Studio reads them. */
+async function siteLocales(c: Context<AppEnv>): Promise<string[]> {
+  const [row] = await c
+    .get('db')
+    .select({ value: settings.value })
+    .from(settings)
+    .where(and(eq(settings.key, 'locales'), scopeSite(settings.siteId, c.get('siteId'))))
+    .limit(1);
+  const supported = (row?.value as { supported?: unknown } | undefined)?.supported;
+  return Array.isArray(supported) ? supported.filter((l): l is string => typeof l === 'string') : ['en', 'vi'];
+}
+
+/**
+ * GET /items/:collection/export — stream the collection as CSV or JSON.
+ * Uses the caller's `read` permission (row filters and field masks apply), the
+ * same filter/sort syntax as the list endpoint, and the extensions'
+ * `items.export.before` hook per row.
+ */
+itemsRouter.get('/:collection/export', async (c) => {
+  const collection = c.req.param('collection');
+  const searchParams = new URL(c.req.url).searchParams;
+  const parsed = exportQuerySchema.safeParse(Object.fromEntries(searchParams));
+  if (!parsed.success) {
+    return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
+  }
+  let filter: ExportOptions['filter'];
+  try {
+    filter = parseFilterQueryParams(searchParams, parsed.data.filter) as ExportOptions['filter'];
+  } catch {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'Invalid filter: expected JSON or filter[field][_op]=value syntax.' }] }, 400);
+  }
+  const options: ExportOptions = {
+    format: parsed.data.format,
+    fields: csvList(parsed.data.fields),
+    locales: csvList(parsed.data.locales),
+    relations: parsed.data.relations,
+    filter,
+    sort: csvList(parsed.data.sort),
+    status: parsed.data.status,
+  };
+
+  const svc = buildService(c);
+  let plan;
+  let transform: Awaited<ReturnType<typeof svc.exportRowTransformer>>;
+  try {
+    const meta = await svc.describeForExport(collection);
+    plan = planExport({
+      collection,
+      schemaFields: meta.fields,
+      relations: meta.relations,
+      siteLocales: await siteLocales(c),
+      options,
+    });
+    // Probe once so a bad filter/sort is a 400 now, not a broken stream later.
+    await svc.list(collection, { filter, sort: options.sort, status: options.status, limit: 1, withTotal: false });
+    transform = await svc.exportRowTransformer(collection);
+  } catch (err) {
+    if (err instanceof ExportError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, 400);
+    }
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+
+  const auth = c.get('auth');
+  await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
+    event: 'items_exported',
+    actorEmail: auth?.email ?? null,
+    targetEmail: null,
+    ip: c.get('ip') ?? null,
+    userAgent: c.get('userAgent') ?? null,
+    requestId: c.get('requestId') ?? null,
+    metadata: {
+      collection,
+      format: plan.format,
+      fields: plan.fields,
+      locales: plan.locales,
+      relations: plan.relations,
+      filtered: Boolean(filter),
+      apiKeyId: auth?.apiKeyId ?? null,
+    },
+  });
+
+  const body = streamExport(plan, options, {
+    list: async (params) => (await svc.list(collection, params)).data as never,
+    transform: transform
+      ? async (record) => {
+          const out = (await transform!(record as unknown as Record<string, unknown>)) as Partial<ExportRecord>;
+          // A hook that returns a malformed item keeps the original row rather
+          // than breaking the stream half-way.
+          const ok = typeof out?.data === 'object' && out.data !== null && !Array.isArray(out.data);
+          return ok ? ({ ...record, ...out } as ExportRecord) : record;
+        }
+      : undefined,
+  });
+  const stamp = new Date().toISOString().slice(0, 10);
+  const safeName = collection.replace(/[^A-Za-z0-9_-]/g, '_');
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'content-type': plan.format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8',
+      'content-disposition': `attachment; filename="${safeName}-${stamp}.${plan.format}"`,
+      'cache-control': 'no-store',
+    },
+  });
+});
+
 itemsRouter.get('/:collection/:id', async (c) => {
   const searchParams = new URL(c.req.url).searchParams;
   const fields = c.req.query('fields')?.split(',');
   const deep = parseDeepQueryParams(searchParams);
   try {
-    const data = await buildService(c).detail(c.req.param('collection'), c.req.param('id'), fields, deep);
+    const meta: ItemDetailMeta = {};
+    const data = await buildService(c).detail(c.req.param('collection'), c.req.param('id'), fields, deep, meta);
+    setItemEtag(c, meta.version);
     return c.json({ data });
   } catch (err) {
     const { status, body } = toError(err);
@@ -149,13 +367,114 @@ itemsRouter.get('/:collection/:id', async (c) => {
   }
 });
 
+/**
+ * Write precondition from `If-Match` (content-environments Req 6). Absent →
+ * no precondition; `*` → any version; otherwise the listed strong tags.
+ */
+const writeOptionsFrom = (c: Context<AppEnv>): ItemWriteOptions => ({
+  expectedVersions: expectedVersionsFrom(parseIfMatch(c.req.header('if-match'))),
+});
+
+const setItemEtag = (c: Context<AppEnv>, version: unknown) => {
+  if (typeof version === 'number') c.header('ETag', formatItemEtag(version));
+};
+
 itemsRouter.patch('/:collection/:id', async (c) => {
   const parsed = patchSchema.safeParse(await c.req.json());
   if (!parsed.success) {
     return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
   }
   try {
-    const data = await buildService(c).patch(c.req.param('collection'), c.req.param('id'), parsed.data);
+    const data = await buildService(c).patch(c.req.param('collection'), c.req.param('id'), parsed.data, writeOptionsFrom(c));
+    setItemEtag(c, (data as { version?: unknown }).version);
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+/**
+ * POST /items/:collection/:id/move — move an item and its subtree under
+ * `parentId` (null = root), optionally at `position` among the new siblings
+ * (#749). Requires `update` on the item and `read` on the new parent; cycles
+ * and depth overflows are 409.
+ */
+/**
+ * POST /items/:collection/:id/duplicate — save-as-copy (#689). The copy is a
+ * draft written through `create` (permissions, validation, hooks, revision);
+ * unique fields get a `-copy` suffix; `relations` picks how links are copied.
+ */
+const duplicateSchema = z.object({
+  relations: z.enum(['none', 'reference', 'deep']).optional(),
+  translations: z.boolean().optional(),
+  locale: z.string().min(1).optional(),
+  overrides: z.record(z.string(), z.unknown()).optional(),
+});
+
+itemsRouter.post('/:collection/:id/duplicate', async (c) => {
+  const parsed = duplicateSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
+  }
+  try {
+    const siteId = c.get('siteId');
+    const result = await new ItemDuplicateService({
+      db: c.get('db'),
+      siteId,
+      userId: c.get('auth')?.userId ?? null,
+      items: buildService(c),
+      schema: new SchemaService({ db: c.get('db'), siteId, cache: c.get('runtime').cache }),
+    }).duplicate(c.req.param('collection'), c.req.param('id'), parsed.data);
+    return c.json({ data: result.item, meta: { sourceId: result.sourceId, related: result.related } }, 201);
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+/**
+ * POST /items/:collection/:id/reorder — manual ordering (#690) on a
+ * `meta.manualSort` collection. Body `{ after: id | null }` (null = first) or
+ * `{ before: id }`. One write in the common case; no revision is recorded.
+ */
+const reorderSchema = z.union([
+  z.object({ after: z.string().min(1).nullable() }).strict(),
+  z.object({ before: z.string().min(1) }).strict(),
+]);
+
+itemsRouter.post('/:collection/:id/reorder', async (c) => {
+  const parsed = reorderSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'Body must be { after: id | null } or { before: id }.' }] }, 400);
+  }
+  try {
+    const collection = c.req.param('collection');
+    const schema = new SchemaService({ db: c.get('db'), siteId: c.get('siteId'), cache: c.get('runtime').cache });
+    const compiled = await schema.getCompiled(collection);
+    if (!compiled) return c.json({ errors: [{ code: 'NOT_FOUND', message: `Collection "${collection}" not found.` }] }, 404);
+    if (!isManualSort(compiled.meta)) {
+      return c.json({ errors: [{ code: 'MANUAL_SORT_DISABLED', message: `Collection "${collection}" does not use manual ordering.` }] }, 400);
+    }
+    const data = await new ItemReorderService({
+      db: c.get('db'),
+      siteId: c.get('siteId'),
+      items: itemServiceForRequest(c, { saveRevision: false }),
+    }).reorder(collection, compiled.id, c.req.param('id'), parsed.data);
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+itemsRouter.post('/:collection/:id/move', async (c) => {
+  const parsed = moveSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
+  }
+  try {
+    const data = await buildService(c).move(c.req.param('collection'), c.req.param('id'), parsed.data);
     return c.json({ data });
   } catch (err) {
     const { status, body } = toError(err);
@@ -169,7 +488,8 @@ itemsRouter.put('/:collection/:id', async (c) => {
     return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
   }
   try {
-    const data = await buildService(c).replace(c.req.param('collection'), c.req.param('id'), parsed.data);
+    const data = await buildService(c).replace(c.req.param('collection'), c.req.param('id'), parsed.data, writeOptionsFrom(c));
+    setItemEtag(c, (data as { version?: unknown }).version);
     return c.json({ data });
   } catch (err) {
     const { status, body } = toError(err);

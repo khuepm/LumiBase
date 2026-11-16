@@ -1,3 +1,4 @@
+import { isOrganizationPath, isMcpPath } from '../services/organization-access';
 import type { MiddlewareHandler } from 'hono';
 import { eq } from 'drizzle-orm';
 import { users } from '@lumibase/database';
@@ -5,6 +6,7 @@ import type { AppEnv, AuthPrincipal } from '../env';
 import { PermissionService, type PermissionBundle } from '../services/permission-service';
 import { isFrontendAudience } from '../services/auth/token-audience';
 import { getRequestContext, mergeRequestContext } from './request-context';
+import { isSocialAuthPublicPath } from '../modules/social-auth/paths';
 
 const STUDIO_CLIENT_HEADER = 'x-lumi-client';
 const STUDIO_CLIENT_VALUE = 'studio';
@@ -19,9 +21,12 @@ const PUBLIC_AUTH_PATHS = new Set([
   '/api/v1/auth/resend-verification',
   '/api/v1/auth/forgot-password',
   '/api/v1/auth/reset-password',
+  '/api/v1/auth/password-policy',
   '/api/v1/auth/refresh',
   '/api/v1/auth/logout',
   '/api/v1/auth/verify-totp',
+  '/api/v1/auth/passkey/options',
+  '/api/v1/auth/passkey/verify',
 ]);
 
 const STUDIO_ACCESS_PATH_PREFIXES = [
@@ -30,7 +35,13 @@ const STUDIO_ACCESS_PATH_PREFIXES = [
   '/api/v1/agent',
   '/api/v1/api-keys',
   '/api/v1/collections',
+  '/api/v1/domains',
   '/api/v1/extensions',
+  // Admin switch for the live OpenAPI document (#745). Prefix-matched on
+  // `/openapi/…` only — `/api/v1/openapi.json` is NOT under it, so the
+  // document itself stays reachable by the realms the site allows.
+  '/api/v1/openapi',
+  '/api/v1/pages',
   '/api/v1/permissions',
   '/api/v1/policies',
   '/api/v1/presets',
@@ -56,12 +67,15 @@ const STUDIO_ACCESS_PATH_PREFIXES = [
  * collection/action permissions.
  */
 export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next) => {
+  // Organization authorization is independent of a site appAccess bundle.
+  if (isOrganizationPath(c.req.path)) return next();
+  if (isMcpPath(c.req.path) && !c.get('siteId') && c.get('auth')?.apiKey?.scope === 'organization') return next();
   const studioClient = isStudioClientRequest(c.req.header(STUDIO_CLIENT_HEADER), c.req.header('user-agent'));
   if (!studioClient && !isStudioAccessPath(c.req.path)) {
     return next();
   }
 
-  if (PUBLIC_AUTH_PATHS.has(c.req.path)) {
+  if (PUBLIC_AUTH_PATHS.has(c.req.path) || isSocialAuthPublicPath(c.req.path)) {
     return next();
   }
 
@@ -81,6 +95,9 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
     );
   }
 
+  // Organization keys inherit the selected site's administrator bundle.
+  if (auth?.apiKeyId && auth.apiKey?.scope === 'organization' && c.get('access')?.admin) return next();
+
   if (!auth?.userId) {
     return c.json(
       { errors: [{ code: 'APP_ACCESS_DENIED', message: 'Studio access requires a user principal.' }] },
@@ -99,6 +116,15 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
 
   if (bundle.tfaRequired) {
     const user = await loadUserTfaState(c.get('db'), auth.userId);
+    // A user who must have 2FA but has none yet needs to reach the enrollment
+    // endpoints, or `enforceTfa` is a lockout rather than a requirement (#735).
+    // Only enrolling is let through — once a factor exists, the session must
+    // be TFA-verified like everywhere else.
+    if (!user.enrolled && isTfaEnrollmentRequest(c.req.method, c.req.path)) {
+      c.set('access', bundle);
+      mergeRequestContext(c, { accessBundle: bundle });
+      return next();
+    }
     if (!user.enrolled) {
       return c.json(
         { errors: [{ code: 'TFA_REQUIRED', message: 'Two-factor authentication enrollment is required for Studio access.' }] },
@@ -157,8 +183,13 @@ declare module '../env' {
   }
 }
 
-function isStudioAccessPath(path: string): boolean {
-  return STUDIO_ACCESS_PATH_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+/**
+ * `prefixes` exists only so tripwire tests can run this exact matcher against
+ * a scratch list (decision-governance.wiring.test.ts); the middleware always
+ * uses the default.
+ */
+export function isStudioAccessPath(path: string, prefixes: readonly string[] = STUDIO_ACCESS_PATH_PREFIXES): boolean {
+  return prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 }
 
 function isStudioClientRequest(clientHeader: string | undefined, userAgent: string | undefined): boolean {
@@ -177,6 +208,24 @@ function collectHeaders(headers: Headers): Record<string, string> {
 async function loadUserTfaState(db: AppEnv['Variables']['db'], userId: string): Promise<{ enrolled: boolean }> {
   const [row] = await db.select({ tfa: users.tfa }).from(users).where(eq(users.id, userId)).limit(1);
   return { enrolled: isTfaEnrolled(row?.tfa) };
+}
+
+/**
+ * Endpoints an un-enrolled user may call under `enforceTfa`: read their own
+ * second-factor status and enroll a first factor (TOTP or passkey). Exact
+ * method + path pairs, so nothing else under `/me` slips through.
+ */
+const TFA_ENROLLMENT_REQUESTS = new Set([
+  'GET /api/v1/me/tfa',
+  'POST /api/v1/me/tfa/setup',
+  'POST /api/v1/me/tfa/confirm',
+  'GET /api/v1/me/passkeys',
+  'POST /api/v1/me/passkeys/registration-options',
+  'POST /api/v1/me/passkeys',
+]);
+
+export function isTfaEnrollmentRequest(method: string, path: string): boolean {
+  return TFA_ENROLLMENT_REQUESTS.has(`${method.toUpperCase()} ${path.replace(/\/+$/, '')}`);
 }
 
 export function isTfaEnrolled(value: unknown): boolean {

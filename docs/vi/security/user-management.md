@@ -1,14 +1,14 @@
 ---
-version: 3
-lastUpdated: 2026-08-30T09:36:15.719Z
+version: 13
+lastUpdated: 2026-11-14T02:32:19.524Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 644f0f4b2f32179b
+sourceHash: 5fc1233101995b59
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-30T09:36:15.719Z
-codeVerifiedHash: 644f0f4b2f32179b
-codeVerifiedClaims: 112
+codeVerified: 2026-11-14T02:32:19.524Z
+codeVerifiedHash: 5fc1233101995b59
+codeVerifiedClaims: 122
 ---
 
 # User Management Best Practices
@@ -51,6 +51,7 @@ có sự trôi dạt do tài khoản trùng lặp.
 | **Staff** | editor, admin, đồng đội | `administrator`, `member` | `true` | Invite-only (`POST /users/invite`) | CF Access JWT, hoặc password `/login` (Studio token) |
 | **Frontend end-user** | khách công khai / subscriber | `subscriber` | `false` | Tự phục vụ công khai (`POST /auth/register`) | password `/login` (frontend token) |
 | **Integration** | server-to-server (ISR, build) | n/a (API key) | theo policy đính kèm | Admin tạo API key | `Authorization: Bearer lbk_…` |
+| **Organization key** | tự động hóa organization | `admin` cố định | kế thừa administrator tại site | Owner/admin tạo qua `/orgs/:orgId/keys` | `Authorization: Bearer lbo_…` |
 
 ---
 
@@ -65,11 +66,13 @@ user_sites (membership N–N)     ← which sites + the PRIMARY role there
 roles (per site)                ← administrator | member | subscriber | custom
   └─ adminAccess, appAccess, systemKey
 policies → permissions          ← what a role can actually do (Policy DSL, ADR-008)
-api_keys → api_key_roles/policies  ← integration principals, scoped per site
+organization_members (membership N–N)
+  └─ (userId, organizationId) → owner | admin | billing | member
+organizations → sites.organizationId
+api_keys → site role/policy links OR fixed organization admin (scope=organization)
 ```
 
-- Luật domain: mọi bảng domain có `site_id` và mọi query lọc theo nó (Strict
-  Rule #2). RLS (`withRls`) là lớp phòng thủ chiều sâu dự phòng.
+- Query thuộc site lọc theo `site_id`; query thuộc organization lọc theo `organization_id`. Postgres RLS là lớp phòng thủ chiều sâu khi `LUMIBASE_DB_RLS=enforce` (B130; mặc định tắt).
 - **`subscriber`** là role frontend đặc quyền tối thiểu. Nó không cấp gì cho
   tới khi bạn gắn quyền đọc nội dung vào nó (ví dụ `articles::read WHERE
   status = 'published'`). Nó được tạo idempotent ở lần đăng ký đầu tiên
@@ -77,6 +80,75 @@ api_keys → api_key_roles/policies  ← integration principals, scoped per site
 
 > ⚠️ **Không bao giờ gắn policy Studio/admin vào `subscriber`.** Toàn bộ mục
 > đích của role đó là làm mặt sàn an toàn cho các đăng ký tự phục vụ.
+
+---
+
+## 2b. Chính sách định danh email (alias)
+
+`users` là định danh toàn cục, nên câu hỏi "hai địa chỉ này có phải cùng một
+tài khoản không?" là câu hỏi ở cấp instance. Trước #794 quy tắc duy nhất là
+`lower(email)`: `test+a@gmail.com`, `test+b@gmail.com` và `t.est@gmail.com` là
+ba tài khoản cùng nhận thư vào một hộp thư. Giờ policy được chọn tường minh, ở
+hai tầng — và một site chỉ có thể **chặt hơn** instance:
+
+| Mode của instance | Site `strict` | Kết quả |
+|---|---|---|
+| `exact` (mặc định) | tắt (mặc định) | Hành vi trước #794: mỗi địa chỉ khác nhau là một tài khoản riêng |
+| `exact` | bật | Alias vẫn tồn tại toàn cục, nhưng site chỉ nhận một membership cho mỗi hộp thư gốc |
+| `root` | bất kỳ | Một hộp thư gốc = một tài khoản trên toàn instance; cờ của site không có tác dụng |
+
+Hộp thư gốc: `+tag` bị bỏ khỏi phần local trên mọi domain (giữ `+` ở đầu);
+với Gmail phần local còn bỏ dấu chấm và `googlemail.com` quy về `gmail.com`.
+
+> **Đây là một policy, không phải bảo đảm về việc giao thư.** Sub-addressing
+> (`+tag`) là quy ước của từng nhà cung cấp. Trên domain không hỗ trợ nó,
+> `a+b@example.com` có thể là hộp thư khác với `a@example.com`, nhưng mode
+> `root` (hoặc site strict) vẫn coi chúng là một định danh — nên các chủ hộp thư
+> đó tranh nhau một tài khoản hoặc một membership. Chỉ chọn `root` / strict khi
+> chấp nhận được đánh đổi này với tập người dùng của mình; mode mặc định `exact`
+> không bao giờ áp dụng nó.
+
+Quy tắc nằm ở hai nơi, `emailRoot()`
+(`apps/cms/src/modules/email-identity/normalize.ts`) và hàm SQL
+`lumibase_email_root()` (migration `0027`); một integration test ghim cả hai
+vào cùng một danh sách fixture. Trigger database ghi `users.email_canonical` /
+`users.email_root` và `user_sites.identity_key`, nên mọi writer — register,
+invite, SCIM, setup, seed — đều gán khoá giống nhau, và unique index (không
+phải kiểm-tra-rồi-chèn) bảo đảm kết quả.
+
+**Chọn và thay đổi.** Mode của instance được chọn trong Setup Wizard (bước
+Security, hoặc bước review của quick setup); instance hiện có được backfill
+thành `exact`, nên nâng cấp không thay đổi gì. Về sau chỉ bootstrap admin đổi
+được (`PUT /api/v1/admin/email-identity/instance`); site admin bật/tắt strict
+cho site của mình (`PUT /api/v1/admin/email-identity/site`). Siết chặt sẽ kiểm
+tra trước và từ chối bằng `409 IDENTITY_COLLISION` kèm danh sách tài khoản xung
+đột — gộp hoặc đổi địa chỉ các tài khoản đó rồi thử lại. Nới lỏng luôn thành
+công. Cả hai nhận `dryRun: true`, và mọi thay đổi được áp dụng đều có audit log.
+
+**Quyết định.**
+
+- **Dưới `root`, đăng nhập bằng alias nào cũng được.** `POST /auth/login` (và
+  forgot-password / resend-verification) resolve địa chỉ được gõ về tài khoản
+  theo hộp thư gốc, nên `test+anything@gmail.com` đăng nhập vào tài khoản
+  `test@gmail.com` bằng mật khẩu của tài khoản đó. Đây là hệ quả của "một hộp
+  thư = một tài khoản": mọi alias đều giao thư vào cùng inbox, nên không cấp
+  thêm quyền nào mà chủ hộp thư chưa có.
+- **Lockout theo từng hàng tài khoản, không theo địa chỉ được gõ.** Lần thất
+  bại được đếm theo địa chỉ đã lưu của tài khoản được resolve và khoá được đặt
+  lên chính hàng đó theo khoá chính; bước pre-check đọc khoá qua cùng phép
+  resolve. Xoay vòng alias không reset bộ đếm và không né được khoá. Lần thử với
+  địa chỉ không khớp tài khoản nào vẫn được đếm theo địa chỉ được gõ (và theo
+  IP) như trước.
+- **Chống dò tài khoản (anti-enumeration) không đổi.** `/register` trả cùng
+  `202` chung dù địa chỉ, một alias của nó, hay một alias trên site strict đã
+  tồn tại; tài khoản và membership được commit trong một transaction, nên
+  membership bị từ chối không bao giờ để lại tài khoản mồ côi.
+
+Có thể liên kết nhiều định danh ngoài vào một tài khoản qua bảng
+`lumibase_user_identities` (mỗi cặp `(issuer, subject)` một dòng). Thành viên
+dùng bảng này cho đăng nhập mạng xã hội — xem [Social login](./social-login.md);
+việc tự động liên kết ở đó chỉ xảy ra khi provider khẳng định email đã được
+xác minh, và việc so khớp email theo chế độ ở trên.
 
 ---
 
@@ -158,8 +230,8 @@ Visitor (Next.js)            CMS                              Email
 | `POST /api/v1/auth/logout` | public | Revoke family của refresh token được trình ra và xóa cookie. Idempotent. |
 | `POST /api/v1/me/change-password` | bearer | Body `{currentPassword,newPassword}`. Xác minh mật khẩu hiện tại, đặt hash mới, revoke tất cả refresh token. |
 | `GET /api/v1/me/sessions` | bearer | Các session đang hoạt động của caller (refresh token còn sống), đã redact. |
-| `DELETE /api/v1/me/sessions/:id` | bearer | Revoke một trong các session của chính caller. |
-| `DELETE /api/v1/me/sessions` | bearer | Revoke TẤT CẢ session của caller (logout mọi nơi). |
+| `DELETE /api/v1/me/sessions/:id` | bearer | Revoke một trong các session của chính caller (`:id` = `sessionId`); có hiệu lực ngay. |
+| `DELETE /api/v1/me/sessions` | bearer | Revoke TẤT CẢ session của caller (logout mọi nơi); `?scope=others` giữ lại session hiện tại. |
 | `GET /api/v1/auth/me` | bearer | Principal hiện tại kèm `isFrontendUser`. |
 
 ### Guardrail được nướng sẵn vào
@@ -310,6 +382,34 @@ nó (bất kỳ giá trị non-empty nào).
   vật liệu token), `DELETE /me/sessions/:id` revoke một cái, và
   `DELETE /me/sessions` revoke tất cả (logout mọi nơi). Các hàng đã
   hết-hạn/revoke được dọn bởi tiến trình prune hằng giờ (§4d).
+- **Session & thiết bị (#730).** Một *session* là một rotation family của
+  refresh token. Mỗi lần login và refresh đều ký family id vào access JWT
+  dưới dạng `sid`, nên:
+  - mỗi hàng của `GET /me/sessions` có `sessionId` ổn định (giữ nguyên qua
+    rotation), `startedAt` (token cũ nhất còn lưu của session),
+    `lastSeenAt` (lần refresh gần nhất), `lastIp`, `lastUserAgent` và
+    `current: true` cho session đang gửi request;
+  - `DELETE /me/sessions/:id` nhận `sessionId` (row `id` đang sống vẫn dùng
+    được cho client cũ) và trả về `{ sessionId, revoked, current }`; revoke
+    session hiện tại thì cookie refresh cũng bị xoá;
+  - `DELETE /me/sessions?scope=others` đăng xuất mọi session trừ session
+    hiện tại (`{ status: 'other_sessions_revoked', revoked }`). Token không
+    có `sid` nhận `409 NO_CURRENT_SESSION` thay vì bị coi là "all";
+  - **revoke có hiệu lực ngay trên cả hai runtime**: `withAuth` từ chối
+    access JWT có `sid` không còn hàng refresh nào sống (một lookup có index
+    mỗi request bearer, chạy trên system handle để token Studio thao tác ở
+    site anh em vẫn resolve được). Access token ký trước khi có `sid` bỏ qua
+    kiểm tra này cho tới khi hết hạn;
+  - **xác nhận enroll TOTP** (`POST /me/tfa/confirm`) đăng xuất mọi session
+    *khác* — chúng được xác thực chỉ bằng mật khẩu — và giữ lại thiết bị vừa
+    enroll. Đổi/reset mật khẩu vẫn huỷ mọi session, kể cả session hiện tại
+    (tăng `tokenVersion`);
+  - audit event: `session_revoked` (`sessionId`, `current`) và
+    `sessions_revoked` (`scope: all | others`, `revoked`); `mfa_enrolled`
+    có thêm `revokedOtherSessions`.
+
+  Studio hiển thị danh sách ở **Settings → Security → Active sessions**,
+  với nút "Sign out" cho từng thiết bị và "Sign out other sessions".
 
 ## 4f. Xác thực hai yếu tố (TOTP)
 
@@ -376,6 +476,12 @@ request, và tháo 2FA thu hồi refresh token của site hiện tại. Các env
 ở mức deployment: `ENCRYPTION_KEY` (bắt buộc để enroll) và
 `LUMIBASE_TOTP_ISSUER` (nhãn trong app authenticator, mặc định `LumiBase`).
 
+**Passkey.** Passkey (WebAuthn) đứng cạnh TOTP: là yếu tố thứ hai sau mật khẩu
+(`amr: ["pwd","webauthn"]`) hoặc đăng nhập staff không mật khẩu
+(`amr: ["webauthn"]`), cả hai đều đặt `tfaVerified`. Khi người dùng có passkey,
+`/auth/login` trả `methods` trong phản hồi `mfa_required`. Mã khôi phục dùng
+chung với TOTP. Xem [Passkey](./passkeys.md).
+
 ## 5. Onboarding staff (KHÔNG dùng tự phục vụ)
 
 Staff được tạo **invite-only**:
@@ -408,71 +514,31 @@ TFA).
 
 ---
 
-## 7. Phơi bày user management qua MCP (tính khả thi tương lai)
+## 7. Quản lý user và organization qua MCP
 
-> Bề mặt này có thể được phơi bày sau qua **MCP** (Model Context Protocol)
-> không? Đánh giá bên dưới. [Inference] — một đánh giá thiết kế, không phải
-> một năng lực đã ship.
+Stdio server trong `packages/mcp-server` đã có quản lý user/team của site, gồm `list_users`, `get_user`, `invite_user`, `update_user` và `remove_user`. ADR-013 thêm phạm vi organization riêng; cấp administrator ở site không cấp quyền organization.
 
-**Nền tảng (Grounding):** LumiBase đã ship sẵn một MCP server —
-`packages/mcp-server` (`name: 'lumibase'`, stdio transport). Nó phơi bày các
-công cụ **items / collections / fields** hôm nay và xác thực đúng theo cách
-đánh giá này khuyến nghị: một `LumiBaseClient` mang
-`Authorization: Bearer <api key>` + `X-Lumi-Site: <siteId>`
-(`packages/mcp-server/src/client.ts`). Vậy "phơi bày user management qua MCP"
-một cách cụ thể nghĩa là **thêm một `tools/users.ts` bên cạnh các module công
-cụ hiện có**, tái sử dụng cùng client dùng API key — không phải xây hạ tầng
-mới.
+### Cấu hình credential
 
-**MCP ở đây sẽ là gì:** một *server* MCP phơi bày các thao tác user/role dưới
-dạng công cụ mà một AI agent (hoặc một MCP client bên ngoài) có thể gọi.
+| Credential | Tool được công bố | Định tuyến site |
+|---|---|---|
+| `lbk_` | Danh sách tool site hiện có | Bắt buộc `LUMIBASE_SITE_ID` |
+| `lbo_` ghim site | Tool site cộng `get_organization`, `list_sites` | Site đã ghim |
+| `lbo_` không ghim | Tám tool organization cộng tool site | Mỗi tool site cần `site`; lời gọi organization không gửi header site |
 
-### Cách chia được khuyến nghị
+`LUMIBASE_READ_ONLY=true` ẩn tool ghi ở mọi cấu hình. Role organization cố định: owner/admin quản trị organization, billing/member không kế thừa quyền site. Organization key luôn là admin, không bao giờ là owner, và không thể thay đổi ai nắm quyền: thao tác ghi thành viên, organization key và settings organization yêu cầu phiên người dùng, nên key bị lộ không thể thêm người giữ nó làm admin, tạo key thay thế hay tự bật tool MCP của mình. Key yêu cầu các thay đổi này qua MCP organization để người dùng duyệt; `create_org_key` được duyệt hiển thị key mới một lần cho người duyệt và biên nhận được lưu không chứa key dạng rõ. Cùng một người phải sở hữu cả hai organization để duyệt chuyển site. Owner được đổi slug `default` của personal organization. Settings hiển thị Organization cho owner/admin ngay cả khi chỉ có một organization; chỉ switcher được ẩn trong trường hợp đó.
 
-| Bề mặt | Phơi-bày-được qua MCP? | Lý do |
-|---------|----------------|-----------|
-| **Read** — liệt kê user, đọc role/policy, truy vấn audit | ✅ Rủi ro thấp | Chỉ-đọc, đã được admin-gate; ánh xạ gọn gàng sang công cụ MCP. |
-| **Management** — mời user, gán/thu hồi role, suspend, rotate API key | ⚠️ Với gating mạnh | Tác động lớn. Chỉ phơi bày phía sau một API key gắn với một admin policy tường minh, scope theo từng site, và định tuyến các lời gọi thay đổi đặc quyền qua đường HITL `ai_approvals`. |
-| **Public auth** — `register`, `login`, `verify-email` | ❌ Không phơi bày | Đây là các *luồng thông tin xác thực của người dùng cuối*, không phải năng lực của agent. Một agent không bao giờ nên tự đăng ký tài khoản hay xử lý mật khẩu user. |
+### Phê duyệt organization bắt buộc
 
-### Vì sao nó khớp gọn với LumiBase
+Tool organization chịu gate `contentOs.mcp.allowOrganizationTools` (mặc định tắt), có thể bị ép tắt bằng `LUMIBASE_MCP_ORG_TOOLS=off`. Thao tác ghi luôn dùng harness organization và `ai_approvals`, bất kể chế độ quản trị site cũ. `confirm=true` không thể cấp quyền phê duyệt hay kích hoạt fallback sang REST.
 
-- **Capability + HITL đã tồn tại.** Strict Rule #4 yêu cầu các skill có
-  capability nhóm `schema:write` hoặc `delete*` phải đi qua `ai_approvals`
-  trước. Các công cụ đột biến user (gán admin role, xóa user) đúng là nhóm
-  nguy hiểm đó — tái dùng gate ấy; đừng phát minh một side channel.
-- **Scope theo từng site là native.** Mọi bảng được scope theo `site_id` và
-  API key được bind với một site, nên một công cụ MCP kế thừa sự cô lập
-  tenant.
-- **Audit là native.** `audit_log` đã ghi `user_registered`, `email_verified`,
-  `api_key_*`, các thay đổi role — các hành động khởi từ MCP nhận cùng
-  provenance miễn phí (đặt `actorEmail`/metadata thành agent).
-- **Earned autonomy (L0–L4).** Các công cụ user-management qua MCP ánh xạ lên
-  thang tự chủ Content OS: bắt đầu ở L1 (đề xuất → con người duyệt), thăng lên
-  veto-window/autopilot chỉ cho các thao tác rủi ro thấp (ví dụ read, gửi lại
-  invite), không bao giờ cho việc leo thang role.
+User/key yêu cầu được lưu và kiểm tra lại trước khi thực thi. Một người dùng owner/admin quyết định qua API approval organization hoặc Studio. Thay đổi dành riêng cho owner vẫn cần owner, và organization key không được đọc hay quyết định biên nhận dành cho người dùng. Ghi domain và biên nhận commit nguyên tử nên retry không tạo site hay key trùng. Organization key mới chỉ hiện trong biên nhận của người duyệt. Audit run chứa `organizationId` và `runId`, kể cả request organization không có site.
 
-### Ràng buộc cứng nếu/khi hiện thực
+### Quản lý site và ranh giới xác thực
 
-1. **Không bao giờ tạo mới hay leo thang một principal mà không có HITL.** Bất
-   kỳ công cụ nào có thể cấp `appAccess`/`adminAccess`, tạo một admin, hay phát
-   một API key PHẢI tạo một hàng `ai_approvals` trước.
-2. **Toàn vẹn audience.** Các công cụ MCP xác thực với tư cách một principal
-   dùng API key (hoặc `studio`), không bao giờ bằng cách giả mạo một user JWT;
-   bức tường audience `frontend` giữ nguyên vẹn.
-3. **Không xử lý mật khẩu.** Các công cụ MCP không được nhận, lưu, hay chuyển
-   tiếp mật khẩu người dùng cuối; verify/login vẫn chỉ-HTTP.
-4. **Rate + scope.** Bind API key của MCP server với một policy hẹp (ví dụ
-   `users::read` + `users::update` chỉ trên `status`/`roleId`) thay vì bypass
-   admin.
+Tool site cũ giữ các chế độ quản trị hiện có. `LUMIBASE_MCP_GOVERNED=on` từ chối thao tác ghi thiếu mapping quản trị canonical; chế độ tương thích có thể dùng REST. Không được coi các chế độ site đó là hợp đồng phê duyệt organization bắt buộc. Xem [Hợp đồng tool có quản trị](../mcp/governed-tool-contract.md).
 
-**Kết luận:** bề mặt *management* là một ứng viên MCP tương lai tốt vì các
-primitive an toàn (capability gating, HITL, scope theo từng site, audit, các
-mức tự chủ) đã có sẵn — và phương tiện chuyển giao (`packages/mcp-server` +
-client dùng API key của nó) cũng đã tồn tại, nên công việc là một module
-`tools/users.ts` mới cộng với một key scope-admin, không phải hạ tầng mới. Bề
-mặt *public auth* nên vẫn là HTTP thông thường và không bao giờ trở thành một
-công cụ của agent.
+Đăng ký công khai, đăng nhập mật khẩu, xác minh và reset vẫn là luồng xác thực HTTP thay vì tool MCP. Kích hoạt danh tính nhân sự và membership organization là thao tác riêng. Dùng luồng mời hiện có để kích hoạt tài khoản nhân sự mới. Xem [Cài đặt Organization](../features/organizations.md) về quy trình của người dùng và giới hạn phục hồi khi không còn site.
 
 ---
 
@@ -490,6 +556,7 @@ công cụ của agent.
 | Refresh token xoay vòng (issue/rotate/revoke) | `apps/cms/src/services/auth/refresh-token.ts` (bảng `lumibase_refresh_tokens`) |
 | Token email-verify / password-reset | `apps/cms/src/services/auth/{email-verification,password-reset}.ts` |
 | Rate limit theo IP (register/resend/forgot) | `apps/cms/src/modules/auth/registration-guard.ts` |
+| Chính sách định danh email (chuẩn hoá, tra cứu, đổi mode có kiểm soát, invite) | `apps/cms/src/modules/email-identity/` · `apps/cms/src/routes/admin-email-identity.ts` |
 | Email verification / reset | `apps/cms/src/modules/email/{verify-email,password-reset}.ts` |
 | Bản ghi quyết định | `docs/en/architecture/decisions/adr-011-user-management-realms.md` |
 

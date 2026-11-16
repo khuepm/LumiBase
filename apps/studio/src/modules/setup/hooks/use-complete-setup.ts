@@ -1,11 +1,24 @@
+import { getApiBaseUrl } from '@/lib/api-base';
 import {
   useMutation,
   type UseMutationResult,
 } from '@tanstack/react-query';
-import { clearAccountDraft, getAccountDraft } from '../steps/step-account';
-import { clearPathDraft, getPathDraft } from '../steps/step-path';
-import { clearPolicyDraft, getPolicyDraft } from '../steps/step-security';
-import { clearProjectDraft, getProjectDraft } from '../steps/step-project';
+// Drafts come from `setup-drafts`, NOT the step components: this hook is on
+// the router's boot path, and importing the steps here would pull every step
+// (plus Zod and React Hook Form) into the initial bundle (#757).
+import {
+  clearAccountDraft,
+  clearEmailIdentityModeDraft,
+  clearPathDraft,
+  clearPolicyDraft,
+  clearProjectDraft,
+  getAccountDraft,
+  getEmailIdentityModeDraft,
+  getPathDraft,
+  getPolicyDraft,
+  getProjectDraft,
+  type EmailIdentityMode,
+} from '../setup-drafts';
 import { SETUP_TOKEN_STORAGE_KEY } from '../setup-state-gate';
 import { useSetupStore } from '../setup-store';
 
@@ -297,6 +310,8 @@ async function completeSetup(
     adminPath: string;
     policy: NonNullable<ReturnType<typeof getPolicyDraft>>;
     project: NonNullable<ReturnType<typeof getProjectDraft>>;
+    /** Instance email identity mode (#794); the server defaults to `exact`. */
+    emailIdentityMode: EmailIdentityMode;
     setupToken?: string;
   } = {
     account: {
@@ -308,6 +323,7 @@ async function completeSetup(
     adminPath: path.adminPath,
     policy,
     project,
+    emailIdentityMode: getEmailIdentityModeDraft(),
   };
 
   if (token !== null) {
@@ -316,7 +332,7 @@ async function completeSetup(
 
   let response: Response;
   try {
-    response = await fetch('/api/v1/setup/complete', {
+    response = await fetch(`${getApiBaseUrl()}/api/v1/setup/complete`, {
       method: 'POST',
       credentials: 'same-origin',
       headers: {
@@ -422,6 +438,7 @@ export function useCompleteSetup(): UseMutationResult<
       clearPathDraft();
       clearPolicyDraft();
       clearProjectDraft();
+      clearEmailIdentityModeDraft();
 
       // 3. Remove the cached setup token (it's invalid server-side now too).
       clearSetupToken();

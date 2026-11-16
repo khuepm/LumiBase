@@ -2,28 +2,44 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { getApiClient } from './api';
 import { formatSafeError } from '@lumibase/contracts/utils';
+import { CONTENT_NS, registerContentBundles } from '@/modules/content/draft-review-i18n';
+import { applyDocumentLanguage } from './text-direction';
+import { readStoredUiLanguage } from './ui-language';
 
 /**
  * Initializes i18next for the Studio UI.
- * Fetches the 'ui' namespace translations from the backend API.
+ * Fetches the 'ui' namespace translations from the backend API, and registers
+ * the bundled `content` namespace (`locales/{en,vi}/content.json`).
  */
 export async function initI18n() {
   if (i18n.isInitialized) return;
 
   const client = getApiClient();
+  // The last language this browser resolved (see `SiteLanguageSync`), so the
+  // login page and the first paint after a reload use the right direction.
+  const initialLanguage = readStoredUiLanguage() ?? 'en';
+
+  // `<html lang dir>` follows every language switch, from any caller (#761).
+  i18n.on('languageChanged', (lng) => {
+    applyDocumentLanguage(lng);
+  });
 
   i18n
     .use(initReactI18next)
     .init({
       fallbackLng: 'en',
-      lng: 'en', // Can be derived from local storage or settings later
-      ns: ['ui'],
+      // Before sign-in. Once a session exists, `SiteLanguageSync` (mounted in
+      // the admin layout) switches to the user's or the site's language.
+      lng: initialLanguage,
+      ns: ['ui', CONTENT_NS],
       defaultNS: 'ui',
       interpolation: {
         escapeValue: false, // React already escapes
       },
       resources: {}, // We will load dynamically or inject
     });
+  registerContentBundles(i18n);
+  applyDocumentLanguage(initialLanguage);
 
   try {
     // Fetch supported locales from settings, or default to just 'en' for now

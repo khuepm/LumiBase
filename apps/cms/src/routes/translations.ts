@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import { translations, scopeSite } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -76,7 +77,7 @@ translationsRouter.patch('/:id', async (c) => {
   const siteId = c.get('siteId');
   const db = c.get('db');
   const body = await c.req.json();
-  const input = translationSchema.partial().parse(body);
+  const input = patchSchema(translationSchema).parse(body);
 
   const [row] = await db
     .update(translations)

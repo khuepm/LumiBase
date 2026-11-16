@@ -4,6 +4,16 @@ import type { MagicContext } from './permission-dsl';
 import { ItemService, type ItemServiceDeps } from './item-service';
 import { resolveNegativeTtl } from './negative-cache';
 import { PermissionService } from './permission-service';
+import { effectivePublicationState } from './publication-state';
+
+/** No user and no API key: the public realm. */
+export function isAnonymousPrincipal(auth: AuthPrincipal | undefined): boolean {
+  if (!auth) return true;
+  if (auth.type === 'anonymous') return true;
+  // Frontend-realm end users are site visitors, not staff: same cohort as anonymous.
+  if (auth.isFrontendUser) return true;
+  return !auth.userId && !auth.apiKeyId && !auth.apiKey;
+}
 
 /**
  * ItemService construction helpers that make the RBAC posture *explicit*.
@@ -123,7 +133,9 @@ export function itemServiceForRequest(
       c.env.ENCRYPTION_KEY || (typeof process !== 'undefined' ? process.env.ENCRYPTION_KEY : undefined),
     ...overrides,
     // siteId + permissionCtx applied last so overrides can never cross tenants
-    // or drop the enforcement context.
+    // or drop the enforcement context. The publication cohort is clamped here
+    // too: an anonymous caller only ever reads the `live` cohort (#688).
+    publicationState: effectivePublicationState(overrides.publicationState, isAnonymousPrincipal(auth)),
     siteId,
     permissionCtx: buildRequestPermissionContext({
       auth,
@@ -168,7 +180,14 @@ export type SystemContextReason =
   /** Background queue worker executing already-authorized work (veto commit, agent run). */
   | 'background-worker'
   /** GDPR erasure / SAR — gated by admin + dual-control at the service layer. */
-  | 'compliance-erasure';
+  | 'compliance-erasure'
+  /**
+   * Semantic drift pass of a Content Intent scan (J12, #519). Reads only the
+   * fields a site-admin-pinned review profile lists, minus pinned fields, and
+   * writes nothing to items (only drift rows). Sending content to the provider
+   * is gated by the site's `aiDecisions.enabled` + `aiDecisions.drift`.
+   */
+  | 'semantic-drift-scan';
 
 /**
  * Construct an ItemService that intentionally runs with system privileges
@@ -187,4 +206,26 @@ export function itemServiceForSystem(
   reason: SystemContextReason,
 ): ItemService {
   return new ItemService(deps);
+}
+
+/**
+ * Construct an ItemService bound to a principal resolved **off** the request
+ * path — a queue worker, or an approval being resumed.
+ *
+ * The third posture, and it exists because the first two did not cover this case.
+ * `itemServiceForRequest(c)` needs a Hono context a worker does not have, and
+ * `itemServiceForSystem` is fail-open by definition. A worker that re-resolved
+ * the caller's grant (see `EffectiveCapabilityService`) has a real
+ * `MagicContext` and should enforce with it, so neither of the other two is
+ * honest for it.
+ *
+ * `siteId` and `permissionCtx` are applied last, exactly as in
+ * `itemServiceForRequest`, so `deps` can neither cross tenants nor drop the
+ * enforcement context.
+ */
+export function itemServiceForPrincipal(
+  deps: Omit<ItemServiceDeps, 'permissionCtx'>,
+  permissionCtx: MagicContext,
+): ItemService {
+  return new ItemService({ ...deps, siteId: permissionCtx.siteId, permissionCtx });
 }

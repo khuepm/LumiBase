@@ -88,7 +88,7 @@ async function main() {
 
   // Base rows the demo depends on (same upserts as seed-dev — harmless re-run).
   await db.execute(
-    sql`INSERT INTO lumibase_sites (id, name, domain) VALUES (${SITE}, 'Demo Site', 'localhost')
+    sql`INSERT INTO lumibase_sites (organization_id, id, name, domain) VALUES ((SELECT id FROM lumibase_organizations WHERE slug='default'), ${SITE}, 'Demo Site', 'localhost')
         ON CONFLICT (id) DO NOTHING`,
   );
   await db.execute(

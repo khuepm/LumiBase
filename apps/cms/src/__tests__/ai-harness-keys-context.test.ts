@@ -161,7 +161,7 @@ describe('deployment skills depend on the KeyProvider', () => {
   }
 
   it.each(DEPLOYMENT_SKILLS)('%s fails without a KeyProvider', async (skill) => {
-    const result = await harness().runSkill(skill, {});
+    const result = await harness().runSkill(skill, skill === 'triggerDeployment' ? { targetId: 'target_1' } : {});
     expect(result.success).toBe(false);
     expect(result.success === false && result.error).toContain('DEPLOYMENTS_NOT_CONFIGURED');
   });
@@ -171,7 +171,7 @@ describe('deployment skills depend on the KeyProvider', () => {
       getActiveKey: async () => ({ keyId: 'v0', key: '' }),
       getKey: async () => '',
       listKeys: async () => [],
-    }).runSkill(skill, {});
+    }).runSkill(skill, skill === 'triggerDeployment' ? { targetId: 'target_1' } : {});
     // The stub db makes these fail *later* (inside DeploymentService); what
     // matters is that the missing-provider guard no longer short-circuits.
     expect(result.success === false && result.error).not.toContain('DEPLOYMENTS_NOT_CONFIGURED');

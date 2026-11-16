@@ -64,7 +64,7 @@ async function emailFetch<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(site ? { 'x-site-id': site } : {}),
+      ...(site ? { 'X-Lumi-Site': site } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -447,7 +447,7 @@ function TemplateEditor({
           </label>
           {detectedVars.length > 0 && (
             <p className="text-xs text-muted-foreground">
-              Variables: {detectedVars.map((v) => <code key={v} className="mr-1">{`{{${v}}}`}</code>)}
+              Variables: {detectedVars.map((v) => <code key={v} className="me-1">{`{{${v}}}`}</code>)}
             </p>
           )}
         </div>

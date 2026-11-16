@@ -3,12 +3,16 @@ import { SiteConfigUpdateSchema } from '@lumibase/contracts/schemas';
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
+import { requireSiteAdmin } from '../middleware/site-admin';
 
 /**
  * Site (tenant) configuration surface. Reads/writes the row in `sites` for the
  * active tenant resolved by `withTenant` (header `X-Lumi-Site`). Identity +
  * branding + theme live directly on the row; per-user appearance overrides
  * live in `users.preferences` and are resolved client-side.
+ *
+ * `GET /` is readable by any authenticated tenant member; `PATCH /` mutates
+ * tenant configuration and host routing, so it requires a site admin.
  */
 export const siteRouter = new Hono<AppEnv>();
 
@@ -25,7 +29,7 @@ siteRouter.get('/', async (c) => {
   return c.json({ data: row });
 });
 
-siteRouter.patch('/', async (c) => {
+siteRouter.patch('/', requireSiteAdmin(), async (c) => {
   const siteId = c.get('siteId');
   const db = c.get('db');
 

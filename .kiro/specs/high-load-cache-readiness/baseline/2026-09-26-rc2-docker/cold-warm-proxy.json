@@ -1,0 +1,259 @@
+{
+  "method": "20 distinct query-keyed pages, each fetched twice sequentially from host via localhost. Cold means proxy MISS, not cold CMS cache or DB. Python perf_counter includes connection and body read. No concurrent benchmark.",
+  "rows": [
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 189.539917
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.2084580000000233
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 1385.470625
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.2365420000000071
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 224.97266699999986
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.2471249999999046
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 82.24695800000026
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.76699999999963
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 75.80804200000024
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.9358750000000313
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 74.45049999999975
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.9690410000001712
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 67.60270899999998
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.1882920000001462
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 63.349333000000115
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 0.9015830000000946
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 68.49674999999999
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.23950000000006
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 71.10925000000012
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.425291999999967
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 71.49562499999985
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.1849580000000692
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 68.0568749999999
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.2326250000000982
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 64.62995800000027
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.293624999999743
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 61.32970899999979
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.8729159999999467
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 62.390375000000105
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.8853330000001556
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 63.73558300000015
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.6401249999997702
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 60.511500000000055
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 4.883958999999827
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 76.52120799999994
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.0864170000002282
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 61.49745800000028
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.10833300000035
+    },
+    {
+      "phase": "cold-proxy",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 60.308500000000095
+    },
+    {
+      "phase": "warm-proxy",
+      "status": 200,
+      "cache": "HIT",
+      "ms": 1.0965419999999781
+    }
+  ],
+  "summary": {
+    "cold-proxy": {
+      "count": 20,
+      "p50": 68.27681249999995,
+      "p95": 282.99756490000067,
+      "p99": 1164.9760129799984
+    },
+    "warm-proxy": {
+      "count": 20,
+      "p50": 1.2433124999999823,
+      "p95": 2.1147869000001562,
+      "p99": 4.330124579999889
+    }
+  }
+}

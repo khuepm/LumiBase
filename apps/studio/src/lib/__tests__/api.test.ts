@@ -57,3 +57,46 @@ describe('Studio api token storage', () => {
     expect(localStorage.getItem('lumibase.dev.token')).toBeNull();
   });
 });
+
+describe('organization transport and switched-site sessions', () => {
+  const access = (siteId: string, marker: string) => `eyJhbGciOiJIUzI1NiJ9.${btoa(JSON.stringify({ siteId, marker, aud: 'studio' }))}.signature`;
+  beforeEach(() => { localStorage.clear(); vi.restoreAllMocks(); });
+  afterEach(() => { localStorage.clear(); vi.restoreAllMocks(); });
+
+  it('omits site headers only on the organization plane', async () => {
+    const { getApiClient, setActiveSite } = await import('@/lib/api');
+    setActiveToken(access('site_a', 'current')); setActiveSite('site_b');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ data: [] }));
+    const client = getApiClient();
+    await client.orgs.list();
+    await client.orgs.keys.list('org_a');
+    await client.rawRequest('/api/v1/items/posts');
+    expect(fetchMock.mock.calls.slice(0, 2).every(([, init]) => !new Headers(init?.headers).has('X-Lumi-Site'))).toBe(true);
+    expect(String(fetchMock.mock.calls[1]![0])).toContain('/api/v1/orgs/org_a/keys');
+    expect(new Headers(fetchMock.mock.calls[2]![1]?.headers).get('X-Lumi-Site')).toBe('site_b');
+  });
+
+  it('refreshes the original session after switching sites, then retries the organization request', async () => {
+    const { getApiClient, getActiveToken, setActiveSite } = await import('@/lib/api');
+    setActiveToken(access('site_a', 'expired')); setActiveRefreshToken('refresh_a'); setActiveSite('site_b');
+    let orgCalls = 0;
+    const fresh = access('site_a', 'fresh');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (String(url).endsWith('/auth/refresh')) return Response.json({ data: { token: fresh, refreshToken: 'refresh_a2' } });
+      orgCalls++;
+      return orgCalls === 1 ? Response.json({ errors: [{ code: 'UNAUTHENTICATED' }] }, { status: 401 })
+        : Response.json({ data: [{ id: 'org_a' }] });
+    });
+    expect(await getApiClient().orgs.list()).toEqual([{ id: 'org_a' }]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const refresh = fetchMock.mock.calls[1]!;
+    expect(String(refresh[0])).toContain('/auth/refresh');
+    expect(new Headers(refresh[1]?.headers).get('X-Lumi-Site')).toBe('site_a');
+    expect(JSON.parse(String(refresh[1]?.body))).toEqual({ refreshToken: 'refresh_a' });
+    expect(new Headers(fetchMock.mock.calls[2]![1]?.headers).has('X-Lumi-Site')).toBe(false);
+    expect(getActiveToken()).toBe(fresh);
+    expect(getActiveRefreshToken()).toBe('refresh_a2');
+    await logout();
+    expect(new Headers(fetchMock.mock.calls[3]![1]?.headers).get('X-Lumi-Site')).toBe('site_a');
+  });
+});

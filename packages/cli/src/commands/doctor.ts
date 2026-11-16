@@ -3,7 +3,8 @@ import pc from 'picocolors';
 import { fetchTypegenManifest, probeHealth, type RequestOptions } from '../api.js';
 import { CONFIG_FILENAME, resolveConfig, type ValueSource } from '../config.js';
 import { CliError } from '../errors.js';
-import type { ParsedArgs } from '../utils/args.js';
+import { securityDoctorCommand } from '../security/doctor-security.js';
+import { boolFlag, type ParsedArgs } from '../utils/args.js';
 import { log, maskSecret } from '../utils/log.js';
 
 const MIN_NODE_MAJOR = 22;
@@ -40,6 +41,8 @@ export interface DoctorCommandOptions {
   env?: NodeJS.ProcessEnv;
   request?: RequestOptions;
   nodeVersion?: string;
+  /** Output sink for `--security` (tests); defaults to `console.log`. */
+  write?: (line: string) => void;
 }
 
 export async function doctorCommand(
@@ -47,6 +50,9 @@ export async function doctorCommand(
   options: DoctorCommandOptions = {},
 ): Promise<number> {
   const cwd = options.cwd ?? process.cwd();
+  if (boolFlag(args, 'security')) {
+    return securityDoctorCommand(args, { cwd, env: options.env, write: options.write });
+  }
   const config = resolveConfig(args, { cwd, env: options.env });
   const checks: Check[] = [];
 

@@ -5,6 +5,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   plugins: [react()],
   test: {
+    // jsdom workers share the machine with the CMS suite under Turbo.
+    maxWorkers: 4,
     globals: true,
     testTimeout: 15_000,
     setupFiles: ['./src/test/setup.ts'],
@@ -21,6 +23,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Dev-only virtual module (vite-plugins/dev-extensions.ts); stubbed for tests.
+      'virtual:lumibase-extensions': path.resolve(__dirname, './src/test/virtual-lumibase-extensions.ts'),
     },
   },
 });

@@ -229,7 +229,7 @@ describe('Anomaly flow — integration', () => {
   async function installPolicy(policy: LockoutPolicy): Promise<void> {
     const siteRows = await db
       .insert(sites)
-      .values({ name: 'anomaly-test-site' })
+      .values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, name: 'anomaly-test-site' })
       .returning({ id: sites.id });
     const siteId = siteRows[0]!.id;
     await db.insert(settings).values({

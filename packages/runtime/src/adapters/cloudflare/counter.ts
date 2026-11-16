@@ -26,11 +26,11 @@ export class CloudflarePageviewCounter implements UniqueCounterProvider {
     return this.namespace.get(id);
   }
 
-  async increment(key: string, by = 1, _opts?: { ttl?: number }): Promise<number> {
+  async increment(key: string, by = 1, opts?: { ttl?: number }): Promise<number> {
     const res = await this.stub().fetch('https://internal/incr', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, by }),
+      body: JSON.stringify({ key, by, ...(opts?.ttl ? { ttl: opts.ttl } : {}) }),
     });
     const { value } = (await res.json()) as { value: number };
     return value;

@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
-import { buildQs, confirmDescription, okText, run } from './_shared.js';
+import { buildQs, confirmDescription, okAfter, okText, run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 const EXTENSION_TYPES = ['interface', 'display', 'layout', 'panel', 'module', 'hook', 'endpoint'] as const;
@@ -51,8 +51,8 @@ export function registerExtensionTools(server: McpServer, client: LumiBaseClient
     },
     async ({ id }) =>
       run(async () => {
-        await client.delete(`/extensions/${encodePathSegment(id)}`);
-        return okText(`Extension "${id}" uninstalled.`);
+        const response = await client.delete(`/extensions/${encodePathSegment(id)}`);
+        return okAfter(response, `Extension "${id}" uninstalled.`);
       }),
   );
 
@@ -107,13 +107,16 @@ export function registerExtensionTools(server: McpServer, client: LumiBaseClient
     {
       description: 'Publish an extension to the marketplace (signs + marks it published).',
       inputSchema: {
-        extensionId: z.string().min(1),
-        marketplaceSlug: z.string().min(1),
-        publisher: z.record(z.string(), z.unknown()).optional(),
-        signature: z.string().optional(),
-        signatureAlg: z.string().optional(),
-        publisherKeyId: z.string().optional(),
-        bundleSha256: z.string().optional(),
+        // Mirrors `publishSchema` (`apps/cms/src/routes/marketplace.ts`). The
+        // previous shape made publisher an object and the signature fields
+        // optional; the route refused every call that shape described (#716 review).
+        extensionId: z.string(),
+        marketplaceSlug: z.string().regex(/^[a-z0-9-]+$/).describe('Lowercase slug: a-z, 0-9, hyphen.'),
+        publisher: z.string().min(1).describe('Publisher identity the signature is made by.'),
+        signature: z.string().min(1),
+        signatureAlg: z.enum(['ed25519', 'rsa-pss-sha256']).optional().describe('Default ed25519.'),
+        publisherKeyId: z.string().min(1),
+        bundleSha256: z.string().regex(/^[0-9a-f]{64}$/).describe('Lowercase hex SHA-256 of the bundle.'),
       },
     },
     async (input) => run(() => client.post<unknown>('/marketplace/publish', input)),

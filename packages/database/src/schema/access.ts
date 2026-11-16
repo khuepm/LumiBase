@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -12,7 +13,7 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
-import { sites, users } from './core';
+import { organizations, sites, users } from './core';
 
 /**
  * RBAC + ABAC. Role groups users; Policy is the reusable unit attached to
@@ -169,8 +170,9 @@ export const apiKeys = pgTable(
   'lumibase_api_keys',
   {
     id: id(),
+    scope: text('scope').$type<'site' | 'organization'>().default('site').notNull(),
+    organizationId: text('organization_id'),
     siteId: text('site_id')
-      .notNull()
       .references(() => sites.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     description: text('description'),
@@ -191,6 +193,12 @@ export const apiKeys = pgTable(
     createdAt: createdAt(),
   },
   (t) => ({
+    organizationFk: foreignKey({ columns: [t.organizationId], foreignColumns: [organizations.id],
+      name: 'lumibase_api_keys_organization_id_fk' }).onDelete('cascade'),
+    scopeTarget: check('api_keys_scope_target', sql`
+      (${t.scope} = 'site' and ${t.siteId} is not null and ${t.organizationId} is null)
+      or (${t.scope} = 'organization' and ${t.organizationId} is not null and ${t.siteId} is null)`),
+    organizationIdx: index('api_keys_organization_idx').on(t.organizationId),
     tokenHashUnique: uniqueIndex('api_keys_token_hash_unique').on(t.tokenHash),
     sitePrefixIdx: index('api_keys_site_prefix_idx').on(t.siteId, t.prefix),
     siteActiveIdx: index('api_keys_site_active_idx').on(t.siteId, t.revokedAt, t.expiresAt),

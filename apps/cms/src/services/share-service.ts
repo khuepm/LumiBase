@@ -25,6 +25,12 @@ export interface ShareServiceDeps {
   cache?: CacheProvider;
   siteId?: string;
   now?: Date;
+  /**
+   * The db scoped to a given site (B130). The public read only learns the
+   * site from the share row, so every query after that lookup runs on
+   * `scopedDb(share.siteId)`. Defaults to `db`.
+   */
+  scopedDb?: (siteId: string) => Database;
 }
 
 export interface CreateShareInput {
@@ -211,6 +217,9 @@ export class ShareService {
       .where(eq(shares.tokenHash, tokenHash))
       .limit(1);
     if (!share) throw new ShareServiceError('NOT_FOUND', 'Share link not found.', 404);
+    // `lumibase_shares` is not site-isolated; everything after the token
+    // lookup is, so it runs scoped to the share's site (B130).
+    const db = this.deps.scopedDb?.(share.siteId) ?? this.deps.db;
 
     const now = this.deps.now ?? new Date();
     assertActiveShare(share, now);
@@ -226,13 +235,13 @@ export class ShareService {
       headers: input.headers,
       now,
     });
-    const permissionService = new PermissionService({ db: this.deps.db, cache: this.deps.cache, ctx });
+    const permissionService = new PermissionService({ db: db, cache: this.deps.cache, ctx });
     const readPerm = await permissionService.canAccess(share.collection, 'read');
     if (!readPerm) {
       throw new ShareServiceError('FORBIDDEN', 'Share role cannot read this collection.', 403);
     }
     const creatorPermissionService = new PermissionService({
-      db: this.deps.db,
+      db: db,
       cache: this.deps.cache,
       ctx: baseMagicContext({
         siteId: share.siteId,
@@ -248,14 +257,14 @@ export class ShareService {
       throw new ShareServiceError('FORBIDDEN', 'Share creator cannot read this collection.', 403);
     }
 
-    const [targetCollection] = await this.deps.db
+    const [targetCollection] = await db
       .select()
       .from(collections)
       .where(and(scopeSite(collections.siteId, share.siteId), eq(collections.name, share.collection)))
       .limit(1);
     if (!targetCollection) throw new ShareServiceError('NOT_FOUND', `Collection "${share.collection}" not found.`, 404);
 
-    const [row] = await this.deps.db
+    const [row] = await db
       .select()
       .from(items)
       .where(
@@ -272,7 +281,7 @@ export class ShareService {
     if (!row) throw new ShareServiceError('NOT_FOUND', `Item "${share.itemId}" not found.`, 404);
 
     const compiled = await new SchemaService({
-      db: this.deps.db,
+      db: db,
       siteId: share.siteId,
       cache: this.deps.cache,
     }).getCompiled(share.collection);
@@ -280,7 +289,7 @@ export class ShareService {
     const effectiveReadPerm = { ...readPerm, fields: intersectPermissionFields(readPerm, creatorReadPerm) };
     const masked = permissionService.maskItem(effectiveReadPerm, row as typeof row & { data: Record<string, unknown> }, knownFields);
 
-    await this.deps.db
+    await db
       .update(shares)
       .set({ usedCount: sql`${shares.usedCount} + 1`, lastUsedAt: now })
       .where(eq(shares.id, share.id));

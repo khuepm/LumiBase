@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { CompiledPermission, PermissionAction, PermissionBundle } from '@lumibase/sdk';
-import { getApiClient } from './api';
+import { permissionsQueryOptions } from './me-queries';
 
 /**
  * Studio-wide permission hook. Fetches `/permissions/me` once per session
@@ -36,14 +36,8 @@ export interface PermissionHelpers {
 const ALL = ['*'];
 
 export function usePermissions(): PermissionHelpers {
-  const client = getApiClient();
-  const query = useQuery({
-    queryKey: ['permissions-me'],
-    queryFn: async () => (await client.permissions.me()).data,
-    // Match KV TTL on the worker side; tweak if it drifts.
-    staleTime: 60_000,
-    retry: 0,
-  });
+  // Shared key with the app shell (lib/me-queries) — one request per boot.
+  const query = useQuery({ ...permissionsQueryOptions(), retry: 0 });
 
   const bundle = query.data;
   const isAdmin = !!bundle?.admin;

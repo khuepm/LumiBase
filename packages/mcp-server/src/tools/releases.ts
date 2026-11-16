@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
-import { buildQs, confirmDescription, okText, run } from './_shared.js';
+import { buildQs, confirmDescription, okAfter, okText, run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 /**
@@ -18,6 +18,16 @@ const releaseItemSchema = z.object({
   targetStatus: z.enum(['draft', 'published', 'archived']).optional(),
   revisionId: z.string().nullable().optional(),
 });
+
+/** Accepted by `POST`/`PATCH /releases` and stored as-is; read by the scheduled-publish sweep. */
+const maintenanceWindowSchema = z
+  .record(z.string(), z.unknown())
+  .nullable()
+  .optional()
+  .describe(
+    'Scheduled publish only inside these UTC windows: { windows: [{ dow: 0-6, start: "HH:MM", end: "HH:MM" }] }. ' +
+      'null or omitted = any time.',
+  );
 
 export function registerReleaseTools(server: McpServer, client: LumiBaseClient) {
   server.registerTool(
@@ -56,6 +66,7 @@ export function registerReleaseTools(server: McpServer, client: LumiBaseClient) 
         description: z.string().nullable().optional(),
         atomicityMode: z.enum(['all_or_nothing', 'best_effort']).optional(),
         publishAt: z.string().nullable().optional().describe('ISO datetime to auto-publish, or null.'),
+        maintenanceWindow: maintenanceWindowSchema,
       },
     },
     async (input) => run(() => client.post<unknown>('/releases', input)),
@@ -71,6 +82,7 @@ export function registerReleaseTools(server: McpServer, client: LumiBaseClient) 
         description: z.string().nullable().optional(),
         atomicityMode: z.enum(['all_or_nothing', 'best_effort']).optional(),
         publishAt: z.string().nullable().optional(),
+        maintenanceWindow: maintenanceWindowSchema,
         addItems: z.array(releaseItemSchema).optional().describe('Items to stage into the release.'),
         removeItems: z
           .array(z.object({ collection: z.string(), itemId: z.string() }))
@@ -102,8 +114,8 @@ export function registerReleaseTools(server: McpServer, client: LumiBaseClient) 
     },
     async ({ id }) =>
       run(async () => {
-        await client.delete(`/releases/${encodePathSegment(id)}`);
-        return okText(`Release "${id}" deleted.`);
+        const response = await client.delete(`/releases/${encodePathSegment(id)}`);
+        return okAfter(response, `Release "${id}" deleted.`);
       }),
   );
 }

@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-09-01T19:24:40.830Z
+version: 7
+lastUpdated: 2026-11-14T02:15:35.397Z
 sourceLang: en
-contentHash: a549172ced3a3d26
-codeVerified: 2026-09-01T19:24:40.830Z
-codeVerifiedHash: a549172ced3a3d26
-codeVerifiedClaims: 34
+contentHash: 40ce7652d5196dc5
+codeVerified: 2026-11-14T02:15:35.397Z
+codeVerifiedHash: 40ce7652d5196dc5
+codeVerifiedClaims: 36
 ---
 
 # Task/Plan: Runtime security guards for LumiBase
@@ -71,10 +71,14 @@ team can understand, review, and later enforce Harness usage of it.
    `accept`; `PUT` is `requireSiteAdmin`, persisted to the `settings` row keyed
    `upload_policy`, restricted to catalogued MIME types).
 
-   **Serving hardening (`routes/media.ts`):** downloads are returned with
-   `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff`, so a
-   stored HTML/SVG object cannot be rendered (and its script executed) under the
-   app origin when opened top-level. This composes with the global CSP
+   **Serving hardening (`routes/media.ts`):** `Content-Disposition` is
+   `inline` only for an allow-list of passive raster/video types and
+   `attachment` for everything else (SVG, PDF, HTML, text, unknown), always with
+   `X-Content-Type-Options: nosniff` and a `sandbox` CSP, and SVGs are
+   re-sanitised on the way out — so a stored HTML/SVG object cannot be rendered
+   (and its script executed) under the app origin when opened top-level. Full
+   detail, including magic-byte sniffing, the polyglot corpus and the SVG
+   sanitiser: [upload-security.md](./upload-security.md). This composes with the global CSP
    (`script-src 'self'`, no `unsafe-inline`) as defense-in-depth. The storage
    adapters map the logical `contentType` onto the native R2 `httpMetadata` /
    S3 `ContentType` field so the served `Content-Type` round-trips correctly
@@ -126,7 +130,8 @@ team can understand, review, and later enforce Harness usage of it.
   MIME outside the allowlist, mismatch their declared extension/content, or embed
   active SVG content are rejected before writing to storage — on every covered
   upload surface, including `POST /api/v1/media/:key`.
-- Media downloads are served as attachments with `nosniff`, and the served
+- Media is served inline only for passive images/video and otherwise as an
+  attachment, always with `nosniff` and a sandbox CSP, and the served
   `Content-Type` round-trips through both storage adapters.
 - Every response carries a CSP and the baseline security headers.
 - The outbound URL guard has tests for localhost, private IPs, link-local
@@ -162,7 +167,7 @@ Every `ItemService` construction goes through two explicit helpers in
   `overrides` cannot accidentally drop enforcement.
 - **`itemServiceForSystem(deps, reason)`** — used for system/background flows. It
   requires a `SystemContextReason` (`'scheduler'` | `'background-worker'` |
-  `'compliance-erasure'`) so the author must **state why** the fail-open posture
+  `'compliance-erasure'` | `'semantic-drift-scan'`) so the author must **state why** the fail-open posture
   is safe.
 
 The regression test `apps/cms/src/__tests__/item-service-rbac-context.test.ts`
@@ -181,8 +186,9 @@ re-introduce a fail-open path without a reviewer noticing.
 | `graphql/context.ts` | request | GraphQL inherits the REST surface's governance |
 | `services/scheduler-worker.ts` | system `scheduler` | cron retention sweep, no user principal |
 | `services/veto-commit-worker.ts` | system `background-worker` | commit after the veto window locked in the human decision |
-| `services/agent-run-worker.ts` | system `background-worker` | governed agent run — HITL/autonomy gated in the harness, not per-user RBAC |
+| `services/agent-run-worker.ts` | principal (`itemServiceForPrincipal`) when the job carries a user or API-key principal; otherwise system `background-worker` | a job with a user or API-key principal enforces that principal's row/field RBAC, as the request path does (#580); reconciler (agent-role) and legacy capability-snapshot jobs have no principal and are gated by the harness (HITL/autonomy, agent role); a `dev` principal (development runtime + `admin` role only) resolves to a full admin bundle with no persisted role, so it keeps the system posture |
 | `services/erasure-service.ts` | system `compliance-erasure` | erasure/SAR gated by admin + dual-control at the service layer |
+| `services/review-content-access.ts` (`reviewContentAccessForDriftScan`) | system `semantic-drift-scan` | semantic drift pass (J12): reads only the rule's fields minus pinned fields, writes no item; sending content is gated by `aiDecisions.enabled` + `aiDecisions.drift` |
 
 ### Checklist when adding a new ItemService
 
@@ -196,3 +202,15 @@ re-introduce a fail-open path without a reviewer noticing.
 - No production file (outside the factory + allowlist) calls `new ItemService(...)` directly — guaranteed by the source-scan test.
 - The AI and MCP endpoints enforce row/field RBAC exactly like `/items` (LLM skills cannot exceed the token's privileges).
 - Every system context declares an explicit, greppable `reason` present in the audit table.
+
+
+### Authorization parity completion (#580)
+
+The execution matrix includes Copilot, queued Agent API, governed MCP and standalone
+REST passthroughs. PostgreSQL regression tests now cover site-admin backup/restore,
+marketplace installation and separate media read/create/delete permissions. They
+verify revocation before execution, tenant isolation, binary-byte preservation and
+absence of writes on denial. Standalone tool tests verify the original tenant and
+bearer credential reach the REST boundary and a refusal is returned without retry.
+The authorization audit and exact test scopes are recorded in
+`docs/review-agent/2026-11-01-ai-audit-580-authz-parity.md`.

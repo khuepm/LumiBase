@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LumiBase anonymous usage telemetry event (v1)",
+  "description": "The complete body of every request the opt-in telemetry emitter sends. Nothing else is transmitted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "installId", "event", "occurredOn", "version", "runtime"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "installId": {
+      "type": "string",
+      "description": "Random UUID v4 generated on the install when telemetry is first enabled. Not derived from any hostname, key, user or site.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "event": {
+      "type": "string",
+      "enum": ["first_site_created", "first_item_published", "first_delivery_request", "first_agent_run"]
+    },
+    "occurredOn": {
+      "type": "string",
+      "description": "UTC calendar day the milestone was reached (YYYY-MM-DD). No time of day.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "version": {
+      "type": "string",
+      "description": "LumiBase version string, or \"unknown\".",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "runtime": {
+      "type": "string",
+      "enum": ["cloudflare", "docker"]
+    }
+  }
+}

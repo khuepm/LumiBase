@@ -1,28 +1,49 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { Check, ChevronDown, ChevronLeft, Copy, Lock, Pin, Save, Share2, Star, Trash2, X } from 'lucide-react';
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { Check, ChevronDown, ChevronLeft, Copy, Eye, Lock, Pin, Save, Share2, Star, Trash2, X } from 'lucide-react';
 import type { SaveAction } from '@lumibase/contracts/schemas';
 import { useSaveAction, saveActionLabel } from './use-save-action';
-import { useEffect, useMemo, useState } from 'react';
-import type { FieldResource, ItemRow, RevisionRow } from '@lumibase/sdk';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { FieldResource, ItemRow, PermissionAction, RevisionRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { jsonEqual } from '@/lib/json-equal';
 import { usePermissions, type PermissionHelpers } from '@/lib/use-permissions';
 import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
 import { PresenceStack } from '@/components/presence-chip';
 import { CoEditingBanner } from '@/components/co-editing-banner';
 import { useCoEditors } from '@/hooks/use-presence';
 import { resolveInterface } from './interfaces/registry';
+import { useExtensionUpdates } from '@/lib/extension-loader';
 import { GroupContainer, type GroupVariant } from './interfaces/group';
+import { placedFields, resolveFormVisibility, type FormLayout } from '@lumibase/contracts/form-layout';
+import { LayoutNodes } from './form-layout-renderer';
+import { checkRequired, useFormLayout, validationErrorsFrom } from './form-layout-state';
 import { RawToggle } from './interfaces/raw-toggle';
 import { ProvenanceBadge } from './provenance-badge';
 import { RevisionsPanel } from './revisions-panel';
 import { RawJsonPanel } from './raw-json-panel';
 import { VersionPanel } from './version-panel';
 import { DependentRecordsDialog, type DependentGroup } from './dependent-records-dialog';
+import { isPreconditionFailed } from './save-conflict';
 import { TranslationMode } from './translation-mode';
 import { translatableFields, tmLearnEntries } from './translatable-fields';
-import { useSiteLocales } from './use-site-locales';
+import { useSiteLocalesState } from './use-site-locales';
+import {
+  FieldRevealContext,
+  localeNoticeMessage,
+  planIntentLocale,
+  useIntentFieldFocus,
+  type LocalePlan,
+} from './field-focus';
+import { readEditorIntentSearch } from './editor-intent-search';
+import { ItemCreate } from './item-create';
+import { EditorialActions } from './editorial-actions';
+import { DuplicateItemButton, PublicationInfo } from './item-publication';
+import { useFocusFieldFromHash } from './focus-field';
+import { DraftReviewPanel } from './draft-review-panel';
+import { useReviewRollout, useReviewSession } from './use-review-pilot';
+import { PreviewPane, PreviewSplit } from './preview-pane';
 
 type Tab = 'fields' | 'translation' | 'revisions' | 'versions' | 'raw';
 
@@ -32,7 +53,36 @@ type Tab = 'fields' | 'translation' | 'revisions' | 'versions' | 'raw';
  * around a basic field editor. The full Interface registry lands in slice 3+.
  */
 export function ItemDetailPage() {
-  const { collection, id } = useParams({ from: '/admin-layout/content/$collection/$id' });
+  // Non-strict: rendered by both `/content/...` and `/$adminPath/content/...`.
+  const { collection, id } = useParams({ strict: false }) as { collection: string; id: string };
+  // `?locale=&field=` come from intent links (issue #759); validated here so a
+  // hand-edited URL can never inject anything but a locale tag / field name.
+  const intentSearch = readEditorIntentSearch(useSearch({ strict: false }));
+  if (id === 'new') {
+    return <ItemCreate key={collection} collection={collection} intentField={intentSearch.field} />;
+  }
+  return (
+    <ItemEditor
+      key={`${collection}/${id}`}
+      collection={collection}
+      id={id}
+      intentLocale={intentSearch.locale}
+      intentField={intentSearch.field}
+    />
+  );
+}
+
+function ItemEditor({
+  collection,
+  id,
+  intentLocale,
+  intentField,
+}: {
+  collection: string;
+  id: string;
+  intentLocale?: string;
+  intentField?: string;
+}) {
   const client = getApiClient();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -48,9 +98,11 @@ export function ItemDetailPage() {
 
   const [tab, setTab] = useState<Tab>('fields');
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
+  // Item version the current draft is based on; sent as `If-Match` on save.
+  const [baseVersion, setBaseVersion] = useState<number | undefined>(undefined);
   // Translation mode (translation-memory-ui): the site's default is the source
   // locale; the user picks a target to translate into.
-  const locales = useSiteLocales();
+  const { locales, isLoaded: localesLoaded } = useSiteLocalesState();
   const [targetLocale, setTargetLocale] = useState<string | null>(null);
   // Translatable fields the user set by hand (or applied a human TM match) in
   // this session — learned into TM on save when `translations.learnTm` is on.
@@ -59,6 +111,29 @@ export function ItemDetailPage() {
   const [publishAt, setPublishAt] = useState<string | null>(null);
   const [unpublishAt, setUnpublishAt] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  // Live preview pane (epic #667): shown beside the form when the collection
+  // has a `meta.previewUrl` template.
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const collectionQuery = useQuery({
+    queryKey: ['collection', collection],
+    queryFn: async () => (await client.schema.getCollection(collection)).data,
+  });
+  const previewTemplate =
+    typeof collectionQuery.data?.meta?.previewUrl === 'string' ? collectionQuery.data.meta.previewUrl : null;
+  const focusField = useCallback((field: string) => {
+    setTab('fields');
+    // After the tab renders: focus the field's first control and bring it into view.
+    window.setTimeout(() => {
+      const container = Array.from(document.querySelectorAll<HTMLElement>('[data-field]')).find(
+        (el) => el.dataset.field === field,
+      );
+      if (!container) return;
+      container.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      container
+        .querySelector<HTMLElement>('input, textarea, select, [contenteditable="true"], button')
+        ?.focus({ preventScroll: true });
+    }, 0);
+  }, []);
   const [dependentGroups, setDependentGroups] = useState<DependentGroup[] | null>(null);
   const [shareRoleId, setShareRoleId] = useState('');
   const [sharePassword, setSharePassword] = useState('');
@@ -146,16 +221,22 @@ export function ItemDetailPage() {
     },
   });
 
-  // Hydrate draft from server data once.
+  // Hydrate draft from server data once. `baseVersion` pins the version the
+  // draft was built from, so a background refetch cannot silently move the
+  // save's `If-Match` forward and overwrite someone else's edit.
   useEffect(() => {
     if (itemQuery.data && draft === null) {
       setDraft({ ...(itemQuery.data.data as Record<string, unknown>) });
       setPublishAt(isoToLocalInput(itemQuery.data.publishAt));
       setUnpublishAt(isoToLocalInput(itemQuery.data.unpublishAt));
+      setBaseVersion(itemQuery.data.version);
     }
   }, [itemQuery.data, draft]);
 
   const fields = fieldsQuery.data ?? [];
+  // Form layout (#750): tabs / groups / dividers + conditional visibility.
+  const layout = useFormLayout(collection);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   // Fields the user can read at all — anything else is invisible (server
   // strips it from the payload, but we'd render an empty input otherwise).
   const editable: FieldResource[] = useMemo(
@@ -170,16 +251,46 @@ export function ItemDetailPage() {
   // first other locale. Both derive from the same `locales` setting the
   // translatable-text interface uses, so lists never diverge.
   const sourceLocale = locales[0] ?? 'en';
+  // Draft-review pilot (Jev J09): the panel shows only in assisted mode; the
+  // session from opening this editor to the first save is timed in baseline
+  // and assisted mode alike.
+  const reviewMode = useReviewRollout(collection);
+  const reviewSession = useReviewSession({ collection, mode: reviewMode, locale: sourceLocale });
   useEffect(() => {
     if (targetLocale === null) {
       setTargetLocale(locales.find((l) => l !== sourceLocale) ?? sourceLocale);
     }
   }, [locales, sourceLocale, targetLocale]);
-  const hasTranslatableFields = translatableFields(editable).length > 0;
+  const translatableEditable = useMemo(() => translatableFields(editable), [editable]);
+  const hasTranslatableFields = translatableEditable.length > 0;
+
+  // Intent links (issue #759): pick the tab/locale once the editor and the
+  // site's locale setting are loaded, then reveal + focus the linked field.
+  const [localePlan, setLocalePlan] = useState<LocalePlan | null>(null);
+  const editorReady =
+    Boolean(itemQuery.data) && draft !== null && fieldsQuery.isSuccess && !perms.isLoading;
+  useEffect(() => {
+    if (!intentLocale || localePlan || !editorReady || !localesLoaded) return;
+    const plan = planIntentLocale({
+      requested: intentLocale,
+      locales,
+      translatable: translatableEditable.map((f) => f.name),
+      field: intentField,
+    });
+    if (!plan) return;
+    setLocalePlan(plan);
+    setTab(plan.tab);
+    if (plan.targetLocale) setTargetLocale(plan.targetLocale);
+  }, [intentLocale, intentField, localePlan, editorReady, localesLoaded, locales, translatableEditable]);
+  const fieldFocus = useIntentFieldFocus({
+    field: intentField,
+    fields: tab === 'translation' ? translatableEditable : editable,
+    ready: editorReady && (!intentLocale || localePlan !== null),
+  });
 
   const isDirty = useMemo(() => {
     if (!itemQuery.data || draft === null) return false;
-    if (JSON.stringify(draft) !== JSON.stringify(itemQuery.data.data ?? {})) return true;
+    if (!jsonEqual(draft, itemQuery.data.data ?? {})) return true;
     return (
       publishAt !== isoToLocalInput(itemQuery.data.publishAt) ||
       unpublishAt !== isoToLocalInput(itemQuery.data.unpublishAt)
@@ -189,11 +300,19 @@ export function ItemDetailPage() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!draft) return null;
-      const res = await client.items(collection as never).patch(id, {
-        data: draft,
-        publishAt: localInputToIso(publishAt),
-        unpublishAt: localInputToIso(unpublishAt),
-      });
+      // Same required rule as the server (PATCH = partial), so the form can
+      // flag the field — and its tab — without a round trip.
+      const missing = checkRequired(fields, draft, layout, true);
+      if (Object.keys(missing).length > 0) throw requiredError(missing);
+      const res = await client.items(collection as never).patch(
+        id,
+        {
+          data: draft,
+          publishAt: localInputToIso(publishAt),
+          unpublishAt: localInputToIso(unpublishAt),
+        },
+        { ifMatch: baseVersion },
+      );
       // Learn human-edited translations into TM (Req 6.1). Best-effort: a TM
       // write failure must not fail the save that already succeeded.
       const toLearn = tmLearnEntries({
@@ -211,10 +330,18 @@ export function ItemDetailPage() {
       }
       return res.data as ItemRow;
     },
-    onSuccess: () => {
+    onError: (err: Error) => {
+      setFieldErrors(validationErrorsFrom(err, fields.map((f) => f.name)));
+    },
+    onSuccess: (saved) => {
+      // The draft stays on screen after a save, so it is now based on the
+      // version the server just wrote.
+      if (saved) setBaseVersion(saved.version);
+      setFieldErrors({});
       queryClient.invalidateQueries({ queryKey: ['item', collection, id] });
       queryClient.invalidateQueries({ queryKey: ['items', collection] });
       queryClient.invalidateQueries({ queryKey: ['revisions', collection, id] });
+      reviewSession.finish(id);
       // Navigate per the save action (one-off override, else effective default).
       const action = pendingAction ?? saveAction.effective;
       setPendingAction(null);
@@ -324,6 +451,13 @@ export function ItemDetailPage() {
         <div className="flex items-center gap-2">
           {/* Avatar stack — other users currently editing this same item */}
           <PresenceStack peers={coEditors} />
+          <EditorialActions
+            collection={collection}
+            item={itemQuery.data}
+            canUpdate={canUpdate}
+            isDirty={isDirty}
+          />
+          <DuplicateItemButton collection={collection} id={id} canCreate={perms.can(collection, 'create')} />
           <button
             type="button"
             onClick={() => setShareOpen(true)}
@@ -339,21 +473,33 @@ export function ItemDetailPage() {
             {canShare ? <Share2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
             Share
           </button>
-          <button
-            type="button"
-            onClick={() => deleteMutation.mutate()}
-            disabled={deleteMutation.isPending || !canDelete}
-            title={canDelete ? undefined : 'You do not have delete permission on this collection.'}
-            className={cn(
-              'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50',
-              canDelete
-                ? 'border-destructive/40 text-destructive hover:bg-destructive/10'
-                : 'cursor-not-allowed border-muted-foreground/20 text-muted-foreground',
-            )}
-          >
-            {canDelete ? <Trash2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-            Delete
-          </button>
+          {previewTemplate && (
+            <button
+              type="button"
+              onClick={() => setPreviewOpen((v) => !v)}
+              aria-pressed={previewOpen}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted',
+                previewOpen ? 'border-primary text-primary' : 'border-border text-foreground',
+              )}
+            >
+              <Eye className="h-3.5 w-3.5" />
+              Preview
+            </button>
+          )}
+          {/* Folder mode (#749): a policy without `delete` hides the action
+              entirely rather than showing a dead button. */}
+          {canDelete && (
+            <button
+              type="button"
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+              className="inline-flex items-center gap-1 rounded-md border border-destructive/40 px-2 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete
+            </button>
+          )}
           <div className="relative inline-flex">
             <button
               type="button"
@@ -364,7 +510,7 @@ export function ItemDetailPage() {
               disabled={!isDirty || saveMutation.isPending || !canUpdate}
               title={canUpdate ? saveActionLabel(saveAction.effective) : 'You do not have update permission on this collection.'}
               className={cn(
-                'inline-flex items-center gap-1 rounded-l-md px-3 py-1 text-xs font-medium',
+                'inline-flex items-center gap-1 rounded-s-md px-3 py-1 text-xs font-medium',
                 isDirty && canUpdate
                   ? 'bg-primary text-primary-foreground hover:opacity-90'
                   : 'bg-muted text-muted-foreground',
@@ -383,7 +529,7 @@ export function ItemDetailPage() {
               onClick={() => setSaveMenuOpen((v) => !v)}
               disabled={saveMutation.isPending || !canUpdate}
               className={cn(
-                'inline-flex items-center rounded-r-md border-l border-primary-foreground/20 px-1.5 py-1',
+                'inline-flex items-center rounded-e-md border-s border-primary-foreground/20 px-1.5 py-1',
                 canUpdate ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-muted text-muted-foreground',
               )}
             >
@@ -391,7 +537,7 @@ export function ItemDetailPage() {
             </button>
             {saveMenuOpen && (
               <div
-                className="absolute right-0 top-full z-20 mt-1 w-52 rounded-md border border-border bg-background py-1 text-xs shadow-md"
+                className="absolute end-0 top-full z-20 mt-1 w-52 rounded-md border border-border bg-background py-1 text-xs shadow-md"
                 onMouseLeave={() => setSaveMenuOpen(false)}
               >
                 {(['stay', 'return', 'create_new'] as const).map((a) => (
@@ -404,7 +550,7 @@ export function ItemDetailPage() {
                       setPendingAction(a);
                       saveMutation.mutate();
                     }}
-                    className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-muted disabled:opacity-50"
+                    className="flex w-full items-center justify-between px-3 py-1.5 text-start hover:bg-muted disabled:opacity-50"
                   >
                     {saveActionLabel(a)}
                     {saveAction.effective === a && <Check className="h-3 w-3" />}
@@ -418,7 +564,7 @@ export function ItemDetailPage() {
                     setSaveMenuOpen(false);
                     saveAction.setDefault(saveAction.effective);
                   }}
-                  className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-muted-foreground hover:bg-muted"
+                  className="flex w-full items-center gap-1.5 px-3 py-1.5 text-start text-muted-foreground hover:bg-muted"
                 >
                   <Star className="h-3 w-3" />
                   Set “{saveActionLabel(saveAction.effective)}” as default
@@ -432,11 +578,33 @@ export function ItemDetailPage() {
       {/* Real-time warning when more than one person has this item open. */}
       <CoEditingBanner coEditors={coEditors} />
 
-      {saveMutation.error && (
+      {saveMutation.error && isPreconditionFailed(saveMutation.error) ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive"
+        >
+          <span className="flex-1">
+            Someone else changed this item after you opened it, so your changes were not saved. Copy anything
+            you want to keep, then load the latest version.
+          </span>
+          <button
+            type="button"
+            className="rounded border border-destructive/40 px-2 py-1 font-medium hover:bg-destructive/10"
+            onClick={() => {
+              saveMutation.reset();
+              // Refetch first: clearing the draft re-hydrates it from the
+              // cached item, which must already be the latest version.
+              void itemQuery.refetch().then(() => setDraft(null));
+            }}
+          >
+            Discard my changes and load latest
+          </button>
+        </div>
+      ) : saveMutation.error ? (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
           Save failed.
         </div>
-      )}
+      ) : null}
 
       {dependentGroups && (
         <DependentRecordsDialog
@@ -558,7 +726,22 @@ export function ItemDetailPage() {
         </div>
       )}
 
+      {localePlan?.notice && intentLocale && (
+        <div role="status" className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+          {localeNoticeMessage(localePlan.notice, intentLocale)}
+        </div>
+      )}
+      {fieldFocus.status === 'missing' && intentField && (
+        <div role="status" className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+          The linked field “{intentField}” is not available here — it may be hidden, removed, or
+          outside your permissions.
+        </div>
+      )}
+
+      {(() => {
+        const editorBody = (
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_22rem]">
+        <FieldRevealContext.Provider value={fieldFocus.reveal}>
         <section className="rounded-lg border bg-background p-4">
           {tab === 'fields' && (
             <FieldsTab
@@ -569,6 +752,8 @@ export function ItemDetailPage() {
               perms={perms}
               pinnedFields={pinsQuery.data ?? []}
               onReleasePin={canUpdate ? (field) => releasePinMutation.mutate(field) : undefined}
+              layout={layout}
+              errors={fieldErrors}
             />
           )}
           {tab === 'translation' && draft && targetLocale && (
@@ -623,6 +808,7 @@ export function ItemDetailPage() {
             />
           )}
         </section>
+        </FieldRevealContext.Provider>
 
         <aside className="rounded-lg border bg-muted/20 p-3">
           <h2 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Tabs</h2>
@@ -635,6 +821,25 @@ export function ItemDetailPage() {
             <TabButton current={tab} value="versions" onClick={setTab}>Versions</TabButton>
             <TabButton current={tab} value="raw" onClick={setTab}>Raw JSON</TabButton>
           </ul>
+          {/* Draft review (Jev J08): suggestions only. Apply edits the draft;
+              saving and publishing stay with the buttons above. Shown only
+              while this collection is in the assisted pilot (J09). */}
+          {reviewMode === 'assisted' && (
+            <div className="mt-4 border-t pt-3">
+              <DraftReviewPanel
+                collection={collection}
+                itemId={id}
+                values={draft}
+                savedValues={(itemQuery.data.data ?? {}) as Record<string, unknown>}
+                fields={editable}
+                writeAction="update"
+                perms={perms}
+                pinnedFields={pinsQuery.data ?? []}
+                onApply={(field, value) => setDraft((prev) => ({ ...(prev ?? {}), [field]: value }))}
+                onViewed={reviewSession.markViewed}
+              />
+            </div>
+          )}
           <dl className="mt-4 space-y-1 border-t pt-3 text-xs text-muted-foreground">
             <Meta label="Status" value={itemQuery.data.status} />
             <Meta label="Sort" value={String(itemQuery.data.sort ?? 0)} />
@@ -643,6 +848,7 @@ export function ItemDetailPage() {
             ) : null}
             <Meta label="Updated" value={new Date(itemQuery.data.updatedAt).toLocaleString()} />
             <Meta label="Created" value={new Date(itemQuery.data.createdAt).toLocaleString()} />
+            <PublicationInfo item={itemQuery.data} />
           </dl>
           {/* Content scheduling (Req 10.1). Empty = unset; the Delivery API
               only serves items inside the current Publish_Window. */}
@@ -671,11 +877,40 @@ export function ItemDetailPage() {
           </div>
         </aside>
       </div>
+        );
+        if (!previewOpen || !previewTemplate) return editorBody;
+        return (
+          <PreviewSplit
+            editor={editorBody}
+            preview={
+              <PreviewPane
+                collection={collection}
+                itemId={id}
+                template={previewTemplate}
+                draft={draft}
+                savedMarker={String(itemQuery.data.updatedAt)}
+                locale={targetLocale}
+                onFocusField={focusField}
+                onClose={() => setPreviewOpen(false)}
+              />
+            }
+          />
+        );
+      })()}
     </div>
   );
 }
 
+
 /** ISO timestamp → `datetime-local` input value (local time), or '' when unset. */
+/** Synthesized `VALIDATION` error for a client-side required failure. */
+export function requiredError(missing: Record<string, string>) {
+  const message = Object.entries(missing)
+    .map(([field, msg]) => `${field}: ${msg}`)
+    .join('; ');
+  return Object.assign(new Error(message), { body: { errors: [{ code: 'VALIDATION', message }] } });
+}
+
 function isoToLocalInput(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso);
@@ -708,7 +943,7 @@ function TabButton({
         type="button"
         onClick={() => onClick(value)}
         className={cn(
-          'w-full rounded-md px-2 py-1 text-left',
+          'w-full rounded-md px-2 py-1 text-start',
           current === value ? 'bg-background font-medium shadow-sm' : 'hover:bg-background/60',
         )}
       >
@@ -736,7 +971,7 @@ function Meta({ label, value }: { label: string; value: string }) {
  * the user sees them but cannot mutate them. Fields without `read` are
  * filtered upstream in `editable`, so they never reach here.
  */
-function FieldsTab({
+export function FieldsTab({
   fields,
   value,
   onChange,
@@ -744,6 +979,9 @@ function FieldsTab({
   perms,
   pinnedFields,
   onReleasePin,
+  writeAction = 'update',
+  layout = null,
+  errors = {},
 }: {
   fields: FieldResource[];
   value: Record<string, unknown>;
@@ -754,7 +992,17 @@ function FieldsTab({
   pinnedFields: string[];
   /** Present when the user may release pins; absent renders the badge only. */
   onReleasePin?: (field: string) => void;
+  /** Field permission that makes a cell writable; `create` on the new-item form. */
+  writeAction?: Extract<PermissionAction, 'create' | 'update'>;
+  /** Collection form layout (#750); null renders the classic flat form. */
+  layout?: FormLayout | null;
+  /** Field key → validation message (inline + tab error badges). */
+  errors?: Readonly<Record<string, string>>;
 }) {
+  // resolveInterface reads the extension registry during render.
+  useExtensionUpdates();
+  // `#field=<name>` deep links from the release validation summary (#692).
+  useFocusFieldFromHash(fields.length);
   if (fields.length === 0) {
     return <p className="text-sm text-muted-foreground">No editable fields.</p>;
   }
@@ -764,6 +1012,9 @@ function FieldsTab({
   const groupFieldNames = new Set(
     fields.filter((f) => f.interface?.startsWith('group-')).map((f) => f.name),
   );
+  // Fields the form layout places render inside its tabs/groups, never also
+  // in the default section or a legacy group container.
+  const placed = new Set(placedFields(layout));
   const bySort = (a: FieldResource, b: FieldResource) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
   const widthClass = (w?: FieldResource['width']) =>
     w === 'half' ? 'sm:col-span-1' : 'col-span-1 sm:col-span-2';
@@ -772,9 +1023,9 @@ function FieldsTab({
     // Group container — render its children in a nested grid.
     if (f.interface?.startsWith('group-')) {
       const variant = f.interface.replace('group-', '') as GroupVariant;
-      const children = fields.filter((c) => c.group === f.name).sort(bySort);
+      const children = fields.filter((c) => c.group === f.name && !placed.has(c.name)).sort(bySort);
       return (
-        <div key={f.id} className="col-span-1 sm:col-span-2">
+        <div key={f.id} className="col-span-1 sm:col-span-2" data-field-anchor={f.name}>
           <GroupContainer variant={variant} field={f}>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children.map(renderField)}</div>
           </GroupContainer>
@@ -784,14 +1035,23 @@ function FieldsTab({
 
     const Interface = resolveInterface(f);
     const cellValue = value?.[f.name];
-    const writable = perms.fieldAllowed(collection, 'update', f.name);
+    const writable = perms.fieldAllowed(collection, writeAction, f.name);
     const pinned = pinnedFields.includes(f.name);
     const setCell = (next: unknown) => {
       if (!writable) return;
       onChange({ ...value, [f.name]: next });
     };
+    const error = errors[f.name];
+    const errorId = `field-error-${f.name}`;
     return (
-      <div key={f.id} className={widthClass(f.width)}>
+      <div
+        key={f.id}
+        className={widthClass(f.width)}
+        data-field={f.name}
+        data-field-anchor={f.name}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+      >
         <label className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
           <span>{f.name}</span>
           {f.required && <span className="text-destructive">*</span>}
@@ -806,7 +1066,7 @@ function FieldsTab({
                 <button
                   type="button"
                   onClick={() => onReleasePin(f.name)}
-                  className="ml-0.5 rounded-full px-1 hover:bg-sky-100"
+                  className="ms-0.5 rounded-full px-1 hover:bg-sky-100"
                   aria-label={`Release pin on ${f.name}`}
                   title="Release pin — allow agents to write this field again."
                 >
@@ -816,7 +1076,7 @@ function FieldsTab({
             </span>
           )}
           {!writable && (
-            <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-amber-700">
+            <span className="ms-auto inline-flex items-center gap-1 text-[10px] text-amber-700">
               <Lock className="h-3 w-3" /> read-only
             </span>
           )}
@@ -826,6 +1086,11 @@ function FieldsTab({
             <Interface field={f} value={cellValue} onChange={setCell} />
           </RawToggle>
         </div>
+        {error && (
+          <p id={errorId} className="mt-1 text-xs text-destructive">
+            {error}
+          </p>
+        )}
       </div>
     );
   };
@@ -835,5 +1100,29 @@ function FieldsTab({
     .filter((f) => !f.group || !groupFieldNames.has(f.group))
     .sort(bySort);
 
-  return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{topLevel.map(renderField)}</div>;
+  if (!layout) {
+    return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{topLevel.map(renderField)}</div>;
+  }
+
+  // Layout mode: unplaced fields keep the classic flat rendering in a default
+  // section, then the layout's tabs / groups / dividers follow.
+  const byName = new Map(fields.map((f) => [f.name, f]));
+  const visibility = resolveFormVisibility(layout, value ?? {});
+  const unplaced = topLevel.filter((f) => !placed.has(f.name));
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {unplaced.map(renderField)}
+      <LayoutNodes
+        nodes={layout.nodes}
+        ctx={{
+          visibility,
+          errors,
+          renderField: (key) => {
+            const f = byName.get(key);
+            return f ? renderField(f) : null;
+          },
+        }}
+      />
+    </div>
+  );
 }

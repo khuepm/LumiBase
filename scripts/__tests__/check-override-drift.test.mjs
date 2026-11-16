@@ -63,6 +63,19 @@ test('a scoped override only speaks for its own range', () => {
   assert.equal(rangesIntersect(parseRange(scope), parseRange('^3.3.0')), true);
 });
 
+test('an upper-bound selector scopes the override to the vulnerable range only', () => {
+  // `js-yaml@<4.3.2: ^4.3.2` raises 3.x / old 4.x copies, and must not be
+  // measured against a direct `^5.5.0` declaration it never touches.
+  const { name, scope } = splitOverrideKey('js-yaml@<4.3.2');
+  assert.equal(name, 'js-yaml');
+  assert.equal(scope, '<4.3.2');
+  assert.ok(parseRange(scope), 'a `<` selector must parse, not fall back to unscoped');
+  assert.equal(rangesIntersect(parseRange(scope), parseRange('^5.5.0')), false);
+  assert.equal(rangesIntersect(parseRange(scope), parseRange('^4.3.2')), false);
+  assert.equal(rangesIntersect(parseRange(scope), parseRange('^3.13.1')), true);
+  assert.equal(rangesIntersect(parseRange('<=4.3.2'), parseRange('^4.3.2')), true);
+});
+
 test('scoped keys on namespaced packages split on the right @', () => {
   assert.deepEqual(splitOverrideKey('@types/react'), { name: '@types/react', scope: null });
   assert.deepEqual(splitOverrideKey('@babel/core@7'), { name: '@babel/core', scope: '7' });

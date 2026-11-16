@@ -171,18 +171,22 @@ describe('Agent Harness Layer completion properties', () => {
     );
   });
 
-  it('preserves failed run audit, retries as a new run, and dead-letters repeated failures once', async () => {
+  it('preserves failed run audit across repeated attempts and dead-letters repeated failures once', async () => {
+    // Later attempts are added with `ensureRun` on the same goal. `retryRun` locks
+    // the goal row and relies on real `WHERE` semantics and a partial unique index,
+    // none of which this fake models (its `where` is a no-op), so the retry path
+    // itself is exercised against Postgres in `agent-run-retry.db.integration.test.ts`.
     const queue = createQueueRecorder();
     const { db, rows } = createHarnessDb('site_a');
     const service = new AgentRunService(db, 'site_a', queue);
     const first = await service.ensureRun({ title: 'retry target' });
 
     await service.failRun(first.runId, 'first failure', { stopReason: 'error' });
-    const second = await service.retryRun(first.runId);
-    expect(second).not.toBeNull();
-    await service.failRun(second!.runId, 'second failure', { stopReason: 'error' });
-    const third = await service.retryRun(second!.runId);
-    await service.failRun(third!.runId, 'third failure', { stopReason: 'error' });
+    const second = await service.ensureRun({ goalId: first.goalId });
+    expect(second.runId).not.toBe(first.runId);
+    await service.failRun(second.runId, 'second failure', { stopReason: 'error' });
+    const third = await service.ensureRun({ goalId: first.goalId });
+    await service.failRun(third.runId, 'third failure', { stopReason: 'error' });
 
     const failed = rows['runs']!.filter((run) => run.status === 'failed');
     expect(failed).toHaveLength(3);

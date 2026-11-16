@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-09-14T21:26:08.918Z
+version: 12
+lastUpdated: 2026-11-15T19:56:19.632Z
 sourceLang: vi
-contentHash: f2050885621cde26
-codeVerified: 2026-09-14T21:26:08.918Z
-codeVerifiedHash: f2050885621cde26
+contentHash: a13d2df6c1876273
+codeVerified: 2026-11-15T19:56:19.632Z
+codeVerifiedHash: a13d2df6c1876273
 codeVerifiedClaims: 4
 ---
 
@@ -18,7 +18,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 
 ## Bắt đầu nhanh
 
-- [getting-started.md](./getting-started.md) — Khởi tạo dự án LumiBase mới bằng `npm create lumibase@latest` (CLI `create-lumibase`): template `nextjs` được chọn sẵn dựng website Next.js kèm CMS + Studio và nội dung mẫu, còn `default`/`cloudflare` dựng starter Hono + Drizzle. Trang này cũng chỉ rõ khi nào bạn **không** cần khung nào cả — chỉ cần `npm install lumibase`.
+- [getting-started.md](./getting-started.md) — Khởi tạo dự án LumiBase mới bằng `npm create lumibase@next` (CLI `create-lumibase`): template `nextjs` được chọn sẵn dựng website Next.js kèm CMS + Studio và nội dung mẫu, còn `default`/`cloudflare` dựng starter Hono + Drizzle. Trang này cũng chỉ rõ khi nào bạn **không** cần khung nào cả — chỉ cần `npm install lumibase`.
 - [cli/index.md](./cli/index.md) — CLI `lumibase`: `init` (tạo project), `types` (sinh type từ CMS đang chạy), `doctor` (kiểm tra cấu hình và kết nối).
 
 ## Tutorials (hướng dẫn thực hành)
@@ -31,7 +31,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 - [agent-setup/index.md](./agent-setup/index.md) — Trang tổng hợp thiết lập AI agent cho LumiBase.
 - [agent-setup/prompt.md](./agent-setup/prompt.md) — Hướng dẫn máy đọc được (machine-readable), agent fetch và execute trực tiếp.
 - [agent-setup/claude-code.md](./agent-setup/claude-code.md) · [cursor.md](./agent-setup/cursor.md) · [github-copilot.md](./agent-setup/github-copilot.md) · [codex.md](./agent-setup/codex.md) · [windsurf.md](./agent-setup/windsurf.md) — Hướng dẫn từng agent.
-- [llms.txt](../llms.txt) — Index toàn bộ docs cho LLM. [en/llms.txt](./llms.txt) — Index English docs.
+- [llms.txt](../llms.txt) — Index toàn bộ docs cho LLM. [en/llms.txt](../en/llms.txt) — Index English docs.
 
 ## Cấu trúc tài liệu
 
@@ -47,6 +47,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 - **Tính năng cốt lõi** (`features/`)
   - [collections-builder.md](./features/collections-builder.md) — No-code Collection Builder.
   - [field-types-and-config.md](./features/field-types-and-config.md) — Hệ thống field types & interface/display config.
+  - [dynamic-zones.md](./features/dynamic-zones.md) — Dynamic zones: field `blocks` (danh sách block có kiểu, có thứ tự, schema theo từng block).
   - [permissions-rbac.md](./features/permissions-rbac.md) — Roles, Policies, Permissions tới field (JSON rule engine).
   - [access-manifest-v1.md](./features/access-manifest-v1.md) — JSON schema contract `lumibase.access@v1` cho access import/export.
   - [system-collections-access.md](./features/system-collections-access.md) — Gom nhóm system/sensitive collection cho seed và Permission Builder.
@@ -68,6 +69,10 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 - **Tính năng nâng cao (POST-GA / Dual-runtime)** (`features/`)
   - [ai-copilot.md](./features/ai-copilot.md) — AI Chat + Human-in-the-Loop approvals (Studio Copilot).
   - [agent-harness-layer.md](./features/agent-harness-layer.md) — Agent goals, runs, tools, memory, approvals, artifacts, evaluations, và quản trị sinh ứng dụng.
+  - [site-skills.md](./features/site-skills.md) — Site Skills: playbook có phiên bản được chèn vào agent run, CLI skills-as-code, MCP prompts.
+  - [agent-receipts.md](./features/agent-receipts.md) — Agent receipts: run, approval, lần bác bỏ, chi phí, drift và autonomy trong một cửa sổ; ngưỡng cảnh báo và xuất CSV.
+  - [locale-generator.md](./features/locale-generator.md) — Locale generator: thêm locale trong một bước; bản dịch máy chờ trong hàng đợi review.
+  - [external-action-tools.md](./features/external-action-tools.md) — Tool của agent có tác động ngoài CMS, được quản trị: rủi ro khai báo, approval chỉ dành cho người, bí mật theo site.
   - [runtime-abstraction.md](./features/runtime-abstraction.md) — Lớp `@lumibase/runtime` cho phép chạy trên Cloudflare và Docker.
   - [flows-automation.md](./features/flows-automation.md) — Flows / Operations engine (workflow automation).
   - [marketplace.md](./features/marketplace.md) — Marketplace extensions có ký số (signed bundles).
@@ -108,13 +113,20 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [operations/encryption-keys.md](./operations/encryption-keys.md) — `ENCRYPTION_KEY` bảo vệ những gì, rotate re-wrap được gì và không được gì, xử lý khi mất hoặc lộ khoá.
 - **Security** (`security/`)
   - [security/anti-abuse.md](./security/anti-abuse.md) — Cơ chế chống lạm dụng & thực hành tốt nhất: danh mục phòng thủ nhiều lớp + các khoảng trống đã biết.
+  - [security/secure-defaults.md](./security/secure-defaults.md) — Template `create-lumibase` an toàn mặc định (secret được sinh tự động, không có admin mặc định) và danh sách quy tắc của `lumibase doctor --security`.
   - [security/route-guards.md](./security/route-guards.md) — Danh mục guard cho route / control-plane.
   - [security/runtime-security-guards-plan.md](./security/runtime-security-guards-plan.md) — Nền tảng bảo mật runtime: trách nhiệm guard và điểm gắn pipeline.
   - [security/cwe-top-100-audit.md](./security/cwe-top-100-audit.md) — Audit bảo mật theo ánh xạ CWE.
   - [security/idor-testing.md](./security/idor-testing.md) — Hướng dẫn kiểm thử xuyên tenant (IDOR).
   - [security/external-jwt-auth.md](./security/external-jwt-auth.md) — Xác thực nhà phát hành JWT bên ngoài.
+  - [security/social-login.md](./security/social-login.md) — Đăng nhập mạng xã hội cho thành viên (Google, Apple, GitHub) và liên kết tài khoản.
   - [security/user-management.md](./security/user-management.md) — Quản lý người dùng & auth realms (ADR-010).
+  - [security/passkeys.md](./security/passkeys.md) — Passkey (WebAuthn): đăng nhập staff không mật khẩu và yếu tố thứ hai, cấu hình RP ID / origin.
   - [security/dependency-overrides.md](./security/dependency-overrides.md) — Thắt chặt chuỗi cung ứng / ghi đè dependency.
+  - [security/vulnerability-disclosure.md](./security/vulnerability-disclosure.md) — Chính sách công bố lỗ hổng: cách báo cáo, phiên bản được hỗ trợ, SLA theo mức CVSS, GHSA/CVE, embargo, safe harbour, chính sách triage báo cáo do AI tạo.
+  - [security/advisories.md](./security/advisories.md) — Security advisory: nơi công bố, cách theo dõi, feed API máy đọc được, bảng chỉ mục.
+  - [security/advisory-template.md](./security/advisory-template.md) — Mẫu bài advisory/CVE, dòng CHANGELOG và tin trả lời người báo cáo.
+  - [security/advisory-runbook.md](./security/advisory-runbook.md) — Runbook cho maintainer từ báo cáo tới advisory đã công bố, kèm buổi chạy thử advisory đầu tiên.
 - **Compliance & Quyền của người dùng** (`compliance/`)
   - [compliance/README.md](./compliance/README.md) — Tổng quan + ma trận quyền × thị trường (EU/US/VN, Google/Apple) ánh xạ vào LumiBase. **Không phải tư vấn pháp lý.**
   - [compliance/user-rights-catalog.md](./compliance/user-rights-catalog.md) — Danh mục dễ hiểu của từng quyền (quyền được lãng quên, truy cập, di chuyển, đồng ý, huỷ đăng ký, xoá tài khoản…).
@@ -143,7 +155,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 - **`packages/sdk`** — JS SDK (REST + WS + typegen).
 - **`packages/ui`** — shadcn components + CVA tokens.
 - **`packages/extension-sdk`** — Types và helpers cho dev viết extension.
-- **`packages/create-lumibase`** — CLI bootstrap (`npm create lumibase@latest`) sinh dự án LumiBase mới từ một trong ba template: `nextjs` (website Next.js + CMS và Studio chạy trong Docker, chọn sẵn), `default` (Docker) hoặc `cloudflare` (Workers). Xem [getting-started.md](./getting-started.md).
+- **`packages/create-lumibase`** — CLI bootstrap (`npm create lumibase@next`) sinh dự án LumiBase mới từ một trong ba template: `nextjs` (website Next.js + CMS và Studio chạy trong Docker, chọn sẵn), `default` (Docker) hoặc `cloudflare` (Workers). Xem [getting-started.md](./getting-started.md).
 - **`packages/mcp-server`** — MCP stdio server (`@lumibase/mcp-server`) expose tool cho AI assistant tạo/quản lý collections, fields, items.
 
 ## Nguyên tắc khi đọc tài liệu

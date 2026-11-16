@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { getApiClient } from '@/lib/api';
 import { DISPLAY_CATALOGUE } from '@/modules/content/displays/registry';
 import { DisplayTemplateEditor } from '@/modules/content/display-template-editor';
+import { PreviewUrlSection } from './preview-url-section';
 
 interface DisplayTabProps {
   collectionName: string;
@@ -61,6 +62,8 @@ export function DisplayTab({ collectionName }: DisplayTabProps) {
 
   return (
     <div className="space-y-6">
+      <PreviewUrlSection collectionName={collectionName} />
+
       <section>
         <header className="mb-2 flex items-center justify-between">
           <div>
@@ -101,7 +104,7 @@ export function DisplayTab({ collectionName }: DisplayTabProps) {
         </header>
         <div className="overflow-hidden rounded-lg border">
           <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+            <thead className="bg-muted/40 text-start text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-3 py-2">Field</th>
                 <th className="px-3 py-2">Interface</th>

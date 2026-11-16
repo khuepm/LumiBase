@@ -1,12 +1,15 @@
 ---
-version: 2
-lastUpdated: 2026-07-27T23:50:23.218Z
+version: 5
+lastUpdated: 2026-10-17T16:36:19.548Z
 sourceLang: vi
-contentHash: 00f15e0eb7ed5ea0
-codeVerified: 2026-07-27T23:50:23.218Z
-codeVerifiedHash: 00f15e0eb7ed5ea0
-codeVerifiedClaims: 6
+contentHash: 11872c1d86999172
+codeVerified: 2026-10-17T16:36:19.548Z
+codeVerifiedHash: 11872c1d86999172
+codeVerifiedClaims: 8
 ---
+
+<!-- check-parity: allow code-fences -->
+<!-- Lý do: comment cuối dòng trong block typescript #3 được dịch; check-parity chỉ bỏ qua comment nguyên dòng (B111). -->
 
 # Cloudflare Access & Custom JWT Authentication
 
@@ -131,16 +134,21 @@ Quy trình kiểm tra quyền hạn của User:
    - Mặc định sau khi đăng nhập thành công, End-user được gán vai trò `member` gắn với `site_id` của request.
 
 ### B. Bảo mật Multi-Tenancy (Row-Level Security)
-LumiBase thực thi multi-tenancy nghiêm ngặt ở tầng database nhờ middleware `withRls()` của Hono kết hợp với cơ chế Row-Level Security (RLS) của PostgreSQL:
+LumiBase thiết kế lớp chốt multi-tenancy ở tầng database bằng middleware `withRls()` của Hono kết hợp với cơ chế Row-Level Security (RLS) của PostgreSQL. Gate chính là bộ lọc `site_id` ở tầng ứng dụng; lớp chốt RLS có hiệu lực khi `LUMIBASE_DB_RLS=enforce` (B130, mặc định tắt):
 
 1. **Xác định Site**: `withTenant()` middleware đọc header `X-Lumi-Site` để lấy `siteId` hiện tại.
-2. **Thiết lập DB context**: `withRls()` thực thi câu lệnh SQL:
+2. **Thiết lập DB context**: với `LUMIBASE_DB_RLS=enforce`, `withDb()` chạy câu lệnh dưới đây trong cùng transaction với mỗi câu của request (`BEGIN; …; <query>; COMMIT`), site id là tham số bind. Vì `is_local = true`, setting hết hiệu lực cùng transaction đó và không thể rò sang request khác; `withRls()` fail closed nếu db của request chưa được scope:
    ```sql
    SELECT set_config('app.site_id', '<siteId>', true);
    ```
-3. **RLS Policy**: Mọi câu lệnh truy vấn dữ liệu sau đó (Drizzle ORM) sẽ được Postgres tự động lọc điều kiện RLS dựa trên cấu hình:
+3. **RLS Policy**: Postgres lọc mỗi câu truy vấn theo cặp policy mà `packages/database/migrations/rls-policies.sql` tạo cho mỗi bảng, dựa trên `app.site_id` của transaction chạy câu đó:
    ```sql
-   CREATE POLICY tenant_isolation_policy ON <table_name>
-   FOR ALL USING (site_id = current_setting('app.site_id'));
+   CREATE POLICY site_isolation ON <table_name>
+     AS RESTRICTIVE FOR ALL TO PUBLIC
+     USING (site_id = app_site_id()) WITH CHECK (site_id = app_site_id());
+   CREATE POLICY site_isolation_permit ON <table_name>
+     AS PERMISSIVE FOR ALL TO PUBLIC
+     USING (site_id = app_site_id()) WITH CHECK (site_id = app_site_id());
    ```
-   *Điều này đảm bảo người dùng hoặc admin của site này hoàn toàn không thể đọc/ghi dữ liệu của site khác, ngay cả khi viết code lỗi thiếu điều kiện WHERE.*
+   `app_site_id()` trả `NULLIF(current_setting('app.site_id', true), '')`, nên khi không set scope thì không có dòng nào hiện ra và mọi lệnh ghi đều bị từ chối.
+   *Với `enforce` và role ứng dụng NOBYPASSRLS, người dùng hoặc admin của site này hoàn toàn không thể đọc/ghi dữ liệu của site khác, ngay cả khi viết code lỗi thiếu điều kiện WHERE. Worker và route hệ thống dùng một system connection `BYPASSRLS` riêng; xem [Scope RLS trên request path](rls-request-scope.md).*

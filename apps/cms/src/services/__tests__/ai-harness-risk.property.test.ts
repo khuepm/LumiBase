@@ -2,6 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import * as fc from 'fast-check';
 import { AISecureHarness, CORE_SKILLS } from '../ai-harness';
 import type { Database } from '@lumibase/database';
+// The subject here is risk classification, not input shape. Since #454 the
+// harness refuses arguments that violate a skill's canonical schema, so the
+// generated dictionaries would classify every schema-bearing skill as `denied`
+// regardless of its risk. `argsForProperty` keeps the property measuring risk.
+import { argsForProperty } from '../../test-utils/agent-tool-args';
 
 /**
  * Feature: ai-first-cms-engine, Property 3: Risk classification và execution flow
@@ -93,7 +98,7 @@ describe('Feature: ai-first-cms-engine, Property 3: Risk classification và exec
           });
 
           // Use wildcard '*' so capability check always passes
-          const result = await harness.execute(skillName, args, ['*']);
+          const result = await harness.execute(skillName, argsForProperty(skillName, args), ['*']);
 
           // Property: dangerous skill → pending_approval with valid approvalId
           expect(result.status).toBe('pending_approval');
@@ -119,7 +124,7 @@ describe('Feature: ai-first-cms-engine, Property 3: Risk classification và exec
           });
 
           // Use wildcard '*' so capability check always passes
-          const result = await harness.execute(skillName, args, ['*']);
+          const result = await harness.execute(skillName, argsForProperty(skillName, args), ['*']);
 
           // Property: safe skill → executed with data
           expect(result.status).toBe('executed');
@@ -141,7 +146,7 @@ describe('Feature: ai-first-cms-engine, Property 3: Risk classification và exec
 
         const skill = CORE_SKILLS[skillName]!;
         const riskResult = harness.evaluateRisk(skill, skillName);
-        const executeResult = await harness.execute(skillName, args, ['*']);
+        const executeResult = await harness.execute(skillName, argsForProperty(skillName, args), ['*']);
 
         // Property: evaluateRisk(true) ↔ pending_approval, evaluateRisk(false) ↔ executed
         if (riskResult) {

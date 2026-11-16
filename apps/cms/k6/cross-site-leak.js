@@ -1,3 +1,6 @@
+// Set ORGANIZATION_ID + ORGANIZATION_TOKEN (lbo_) for provisioning.
+// Cleanup requires ORGANIZATION_OWNER_TOKEN (Studio owner), because an org key
+// cannot delete sites. Site-level test traffic still uses ADMIN_TOKEN.
 import http from 'k6/http';
 import ws from 'k6/ws';
 import { check, sleep } from 'k6';

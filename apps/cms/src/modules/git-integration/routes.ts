@@ -21,7 +21,7 @@ import {
   type PullRequestResource,
 } from '@lumibase/contracts/schemas';
 import type { AppEnv } from '../../env';
-import { withDb } from '../../middleware/db';
+import { withDb, withSystemDb } from '../../middleware/db';
 import { requireSiteAdmin } from '../../middleware/site-admin';
 import { AuditLogger } from '../audit/logger';
 import { getGitConfig } from './config';
@@ -492,7 +492,10 @@ async function audit(
 // ── Public router (OAuth callback + webhook) ──────────────────────────────
 
 export const gitPublicRouter = new Hono<AppEnv>();
-gitPublicRouter.use('*', withDb());
+// OAuth callback: no site scope yet → system connection (B130). Webhook: the
+// handler scopes itself to the path's site via `scopedDbFor`.
+gitPublicRouter.use('/oauth/*', withSystemDb());
+gitPublicRouter.use('/webhook/*', withDb());
 
 gitPublicRouter.get('/oauth/:provider/callback', async (c) => {
   const provider = c.req.param('provider') as OAuthProvider;

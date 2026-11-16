@@ -118,6 +118,7 @@
 
 import { auditLog, type Database } from '@lumibase/database';
 import type { QueueProvider } from '@lumibase/runtime';
+import { v7 as uuidv7 } from 'uuid';
 import { auditFallbackTotal } from '../../routes/metrics';
 import { enqueueAuditJob, getAuditLogQueue } from './worker';
 
@@ -170,12 +171,13 @@ export type AuditEvent = AuditEventCode | (string & {});
  * A fully-materialised audit log row, mirroring the `audit_log` table
  * columns (design §3.6 / `packages/database/src/schema/security.ts`).
  *
- * `id` and `timestamp` are assigned by the database (`nanoid` default
- * and `defaultNow()` respectively), so callers never supply them — see
+ * `id` (a uuidv7 assigned by the writer — the sync insert here and the
+ * queue worker; older rows may carry the DB `nanoid` default) and
+ * `timestamp` (`defaultNow()`) are never supplied by callers — see
  * {@link AuditLogWriteInput}.
  */
 export interface AuditLogEntry {
-  /** `nanoid` primary key, assigned by the DB default. */
+  /** uuidv7 primary key assigned by the writer (legacy rows: `nanoid`). */
   readonly id: string;
   /** Insert time, assigned by the DB `defaultNow()`. */
   readonly timestamp: Date;
@@ -506,6 +508,8 @@ export class AuditLogger {
   /** The bare `INSERT INTO audit_log` with the masked entry's columns. */
   private async runInsert(entry: AuditLogWriteInput): Promise<void> {
     await this.db.insert(auditLog).values({
+      // uuidv7 like the queue path (worker.ts): audit/system records are uuidv7 (AGENTS.md).
+      id: uuidv7(),
       siteId: entry.siteId ?? this.siteId,
       event: entry.event,
       actorEmail: entry.actorEmail ?? null,

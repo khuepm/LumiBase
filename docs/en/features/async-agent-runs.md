@@ -1,0 +1,183 @@
+---
+version: 8
+lastUpdated: 2026-11-07T17:57:18.483Z
+sourceLang: en
+contentHash: 6ef1425fd61bee3b
+codeVerified: 2026-11-06T02:09:06.984Z
+codeVerifiedHash: b657655b2141df34
+codeVerifiedClaims: 8
+---
+
+# Asynchronous agent runs
+
+`POST /api/v1/agent/goals` accepts `execution: "async"`, a `task` containing
+`skillName` and `arguments`, and a `budget`. It returns `202` with a queued run.
+The queue payload carries the budget and the principal reference; the worker
+resolves current capabilities when it receives the job. A missing queue binding
+returns `400 ASYNC_UNAVAILABLE` before a goal or run is created.
+
+## Cloudflare setup
+
+`apps/cms/wrangler.toml` pairs an `AGENT_RUNS_QUEUE` producer with a consumer in
+all five profiles. The runtime maps that binding to the logical queue
+`agent-runs`; it does not fall back to the realtime queue.
+
+| Profile | Queue |
+| --- | --- |
+| Local/default | `lumibase-agent-runs-local` |
+| staging | `lumibase-agent-runs-staging` |
+| production | `lumibase-agent-runs-production` |
+| dev | `lumibase-agent-runs-dev` |
+| demo | `lumibase-agent-runs-demo` |
+
+Before deploying a named profile, provision its queue if it does not exist.
+For production, run from `apps/cms`:
+
+```bash
+cd apps/cms
+pnpm exec wrangler queues create lumibase-agent-runs-production
+pnpm exec wrangler queues create lumibase-agent-runs-production-dlq
+pnpm run deploy:production
+```
+
+Each consumer uses a batch size of 1, a batch timeout of 1 second, three retries,
+and a dead-letter queue with the `-dlq` suffix. Monitor the dead-letter queue;
+failed delivery does not prove that an interrupted skill had no side effects.
+The queue handler needs `HYPERDRIVE`; local development may use `DATABASE_URL`
+when `LUMIBASE_ENV=development`. Configure the same LLM and encryption secrets
+used by synchronous execution. The worker receives cache, search, queue and key
+providers from the Cloudflare runtime.
+The same Worker `queue()` handler (`processCloudflareQueue`) also routes the
+`flow-runs` and `flow-events` queues; see
+[Cloudflare Workers: Flows queues](./flows-automation.md#cloudflare-workers-flows-queues).
+
+## Execution and recovery
+
+`apps/cms/src/cloudflare.ts` exports the queue handler. It awaits each message
+before acknowledging it and retries only messages whose processing throws.
+Malformed messages also follow the bounded retry/dead-letter path. Logs identify
+the queue and message, without copying tool arguments or credentials.
+
+The shared worker atomically claims only a `queued` run. Repeated delivery of an
+already claimed, cancelled or completed run does not repeat the skill. The
+five-minute scheduled sweep quarantines stale `running` runs; operators must
+inspect their tool calls before deciding whether to retry. Expected harness
+outcomes such as denied execution or pending approval are persisted and the
+message is acknowledged.
+
+New jobs forward the saved budget. Older jobs missing a budget in their payload
+fall back to the stored run budget. `maxToolCalls: 0` therefore blocks the first
+tool call. Queue transport does not bypass capability or human-approval checks.
+
+The shared `health_check` probe is acknowledged without running an agent or opening a database connection.
+
+## Queue submission failures
+
+`POST /api/v1/agent/goals` returns `503 ENQUEUE_FAILED` with `goalId` and `runId`
+when submission fails. Compensation changes only a still-queued run to failed;
+it never overwrites a run already claimed by a worker. Retry and reconciler
+submission use the same conditional transition.
+
+New asynchronous goals persist the intended task in goal metadata with the same
+secret masking used for tool-call audit. `POST /api/v1/agent/runs/:id/retry` can
+recover that task even if the original delivery never reached the harness.
+Masked arguments cannot be replayed; submit a fresh request with the required
+secrets instead. Old goals without a recorded task still require a new request.
+Retries re-resolve permissions and preserve the stored budget.
+
+The stale sweep also fails queued runs older than 15 minutes, for every goal
+origin, with `queue_timeout`. A delayed message for a failed run cannot claim it.
+This timeout may expire work during a long queue backlog; recovery is an explicit
+retry, never automatic replay. Running executions retain their separate
+`stale_unverified` quarantine because their side effects may have happened.
+
+## Reconstructing a run and recovery decisions
+
+Every outcome is recorded on rows that reference each other: the goal, its
+runs (`retryOfRunId` points at the attempt a retry replaces), each run's tool
+calls (`status`, `error`, masked `input`/`output`, `latencyMs`), the approval
+rows (`runId`, `subjectId` = tool call id), the content revision
+(`createdByRunId`), and `agent_run.retried` in activity, which names who
+asked for the retry. Read the tool call status before the run status:
+
+| Run | Tool call | What happened | What to do |
+| --- | --- | --- | --- |
+| `succeeded` | `executed` | The skill ran and its result was saved. | Nothing. Not retryable. |
+| `failed` | `denied` | Refused before execution (capabilities, policy, autonomy). | Fix the cause, then retry. |
+| `failed` | `failed` | The skill returned an error. | Inspect the error and retry if the write cannot have partly happened. |
+| `failed` | `executed` | The skill ran; saving the outcome failed afterwards (`stopReason: worker_error`). | The effect happened. Retry is refused with `409 RUN_EFFECT_RECORDED`. |
+| `failed` | `running` | The process stopped mid-execution (`stopReason: stale_unverified`). | Unknown. Check the content, then retry or leave it. |
+| `cancelled` | none, or `denied` | Cancelled before the next tool call started. | Retry if still wanted. |
+
+A cancel never rewrites a settled run: cancelling a run that finished at the
+same moment returns `409 NOT_CANCELLABLE` and the run keeps its outcome. A run
+cancelled while the harness is classifying a call that needs approval is not parked, and
+no approval is created for it. The guarded transition to `awaiting_approval` and both
+approval inserts commit in one transaction. If either insert fails, all three writes
+roll back; the synchronous path leaves the run in flight for stale-run quarantine,
+and the queue worker records failure through its existing error handler. A cancellation
+after the transition waits for the transaction and cannot expose a half-created approval.
+
+Run and tool call errors name the failure but never the values of a failed
+database statement: they read `Database query failed (SQLSTATE <code>): <driver
+message>`.
+
+## Multi-tenancy
+
+Queues and provider credentials are shared by the deployment. Each job retains
+its `siteId`, run/goal identifiers, principal and governance limits. Database
+operations in the shared worker remain tenant-scoped; principals are resolved
+against the payload tenant. Queue bindings and names differ between deployment
+profiles so staging cannot consume production jobs.
+
+## Verification
+
+Regression tests cover PATCH omission semantics, budget propagation and
+execution, two-tenant isolation, per-message acknowledgement/retry, missing
+bindings and provider parity. The PostgreSQL suite uses `DATABASE_URL` and must
+run against a disposable test database:
+
+```bash
+pnpm -F @lumibase/cms exec vitest run src/services/__tests__/p1-governance.db.integration.test.ts
+pnpm -F @lumibase/cms exec vitest run src/services/__tests__/agent-run-recovery.db.integration.test.ts
+pnpm -F @lumibase/cms exec vitest run src/__tests__/cloudflare-agent-queue.test.ts
+pnpm -F @lumibase/runtime exec vitest run src/__tests__/cloudflare-agent-queue.test.ts
+```
+
+A dry-run build verifies bundling and configuration. It does not verify that
+production queues, secrets and Hyperdrive connectivity are provisioned.
+
+
+## Recovering uncertain outcomes and tracing requests
+
+A 30-second skill deadline stops waiting, not the underlying handler. A timed-out
+run records `metrics.outcomeUnknown: true` before returning
+`EXECUTION_OUTCOME_UNKNOWN`. Its tool may still finish a write later. Retry and
+approval resume return `RUN_OUTCOME_UNKNOWN`; cancellation cannot undo a write
+already issued. If persisting the marker fails or the process crashes, a running
+tool-call row also prevents replay. Inspect content, revisions, provider receipts
+and tool calls before creating new work; never treat this status as rollback.
+
+Use the opaque HTTP request ID to find `goal.metadata.requestId` and
+`run.metrics.requestId`, then follow run IDs through tool calls, approvals,
+artifacts, evaluations and revisions. A retry retains `retryOfRunId` and
+`metrics.originRequestId`, records its new request ID and includes it in the retry
+activity and queue job. IDs outside letters, digits, `_` and `-` or longer than
+64 characters are omitted; do not send personal data as request IDs.
+
+Trace input/output redacts credential and personal-data keys (including email,
+phone and address), plus email addresses in text. Database errors retain SQLSTATE
+without query parameters or driver detail. This is defense in depth, not a
+classifier for all possible personal prose: keep secrets and personal data out of
+free-form goal titles and request IDs. Redacted input cannot safely be replayed;
+create a new reviewed request with the required values instead.
+
+Agent and tool metric labels use a finite vocabulary; unknown names are grouped
+as `custom`, unknown reasons/statuses as `other`. Generation tool calls record
+provider token counts when available, otherwise a text token estimate. Estimated
+USD is emitted only with complete provider counts and both optional nonnegative
+`LLM_PRICE_INPUT_PER_MTOK` and `LLM_PRICE_OUTPUT_PER_MTOK` prices (USD per million
+tokens). Configure prices for the selected model; absent pricing means unknown
+cost, not zero. These tool counters do not represent all chat/planning calls or a
+provider invoice. Shared approval decisions record latency across the agent,
+Copilot and reviewer entry points. Counters are process-local and reset on restart.

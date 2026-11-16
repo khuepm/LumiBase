@@ -3,6 +3,7 @@ import type { AppEnv } from '../env';
 import { AuditLogger } from '../modules/audit/logger';
 
 type SecurityGuardEvent =
+  | 'organization_access_denied'
   | 'control_plane_access_denied'
   | 'file_upload_policy_denied'
   | 'mcp_control_plane_skill_denied';

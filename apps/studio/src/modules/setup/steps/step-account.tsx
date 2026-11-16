@@ -18,7 +18,9 @@ import {
   type AccountFormValues,
   type PasswordRuleId,
 } from '../schemas/account';
+import { getAccountDraft, setAccountDraft } from '../setup-drafts';
 import { useSetupStore } from '../setup-store';
+import { DEFAULT_PASSWORD_POLICY, evaluatePasswordPolicy } from '@lumibase/contracts/schemas';
 
 /**
  * "Admin Account" step of the Setup Wizard.
@@ -56,50 +58,10 @@ import { useSetupStore } from '../setup-store';
  * Spec refs: requirements §3.1–§3.5, §3.7, §3.10; design.md §5.5.
  */
 
-// ────────────────────────────────────────────────────────────────────────
-// In-memory account draft
-//
-// Rationale: the wizard's persisted Zustand store deliberately omits
-// secret fields (see `setup-store.ts` doc) so a refresh never lands
-// the plaintext password in `sessionStorage`. We still need a place to
-// stash the values between this step and `useCompleteSetup` (task
-// 3.8), and React Hook Form local state goes away as soon as the
-// component unmounts. A module-scoped variable held only in JS heap
-// fits: it lives for the tab's lifetime, never touches storage, and
-// resets on a hard refresh (forcing the user to re-enter credentials
-// rather than ever recover them from disk).
-// ────────────────────────────────────────────────────────────────────────
-
-let accountDraft: AccountFormValues | null = null;
-
-/**
- * Read the current in-memory account draft.
- *
- * Returns `null` if the operator hasn't successfully submitted the
- * Account step in this tab yet, or after `clearAccountDraft()` is
- * called by the completion mutation. NEVER persists across refreshes.
- */
-export function getAccountDraft(): AccountFormValues | null {
-  return accountDraft;
-}
-
-/**
- * Drop the in-memory draft. Call this immediately after the values
- * have been posted to `POST /api/v1/setup/complete` (task 3.8) so the
- * plaintext password doesn't outlive its single legitimate use.
- */
-export function clearAccountDraft(): void {
-  accountDraft = null;
-}
-
-/**
- * Write the in-memory account draft. The account step owns normal form
- * submission, while alternate setup surfaces use this for same-tab
- * handoff before opening the full wizard.
- */
-export function setAccountDraft(value: AccountFormValues): void {
-  accountDraft = value;
-}
+// In-memory account draft: lives in `../setup-drafts` so the boot path
+// (`useCompleteSetup`) can read it without pulling this step into the
+// initial bundle (#757). Re-exported here for existing callers.
+export { clearAccountDraft, getAccountDraft, setAccountDraft } from '../setup-drafts';
 
 // ────────────────────────────────────────────────────────────────────────
 // zxcvbn lazy-loader
@@ -196,11 +158,11 @@ export function StepAccount({ onSubmitted }: StepAccountProps) {
     reValidateMode: 'onChange',
     shouldUnregister: false,
     defaultValues: {
-      email: accountDraft?.email ?? '',
-      password: accountDraft?.password ?? '',
-      confirmPassword: accountDraft?.confirmPassword ?? '',
-      firstName: accountDraft?.firstName ?? '',
-      lastName: accountDraft?.lastName ?? '',
+      email: getAccountDraft()?.email ?? '',
+      password: getAccountDraft()?.password ?? '',
+      confirmPassword: getAccountDraft()?.confirmPassword ?? '',
+      firstName: getAccountDraft()?.firstName ?? '',
+      lastName: getAccountDraft()?.lastName ?? '',
     },
   });
 
@@ -261,8 +223,26 @@ export function StepAccount({ onSubmitted }: StepAccountProps) {
     return result.score;
   }, [zxcvbnReady, passwordValue, emailValue, firstNameValue, lastNameValue]);
 
+  // The server enforces the shared password policy (#733) on
+  // `POST /setup/complete`, scored by the in-house estimator from
+  // `@lumibase/contracts`. zxcvbn (Req 3.7) stays the meter here; this extra
+  // gate only guarantees the wizard never lets through a password the server
+  // would then reject at the very last step.
+  const sharedStrength = useMemo(
+    () =>
+      evaluatePasswordPolicy(passwordValue, DEFAULT_PASSWORD_POLICY, [
+        emailValue,
+        firstNameValue,
+        lastNameValue,
+      ]).rules.find((r) => r.rule === 'min_strength'),
+    [passwordValue, emailValue, firstNameValue, lastNameValue],
+  );
+  const meetsSharedPolicy = sharedStrength?.ok ?? true;
+
   const meetsZxcvbnGate =
-    passwordScore !== null && passwordScore >= MIN_REQUIRED_ZXCVBN_SCORE;
+    passwordScore !== null &&
+    passwordScore >= MIN_REQUIRED_ZXCVBN_SCORE &&
+    meetsSharedPolicy;
 
   // Submit-button gating. We deliberately disable the button rather
   // than only relying on the schema so the UX matches the requirement
@@ -404,13 +384,13 @@ export function StepAccount({ onSubmitted }: StepAccountProps) {
             ]
               .filter(Boolean)
               .join(' ')}
-            className={inputClass(Boolean(errors.password), 'pr-10')}
+            className={inputClass(Boolean(errors.password), 'pe-10')}
             {...register('password')}
           />
           <button
             type="button"
             onClick={() => setShowPassword((v) => !v)}
-            className="absolute inset-y-0 right-2 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
+            className="absolute inset-y-0 end-2 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
             aria-label={showPassword ? 'Hide password' : 'Show password'}
             tabIndex={-1}
           >
@@ -441,6 +421,14 @@ export function StepAccount({ onSubmitted }: StepAccountProps) {
               label={RULE_LABELS[id]}
             />
           ))}
+          <RuleRow
+            ok={passwordValue.length > 0 && meetsSharedPolicy}
+            label={
+              passwordValue.length > 0 && !meetsSharedPolicy && sharedStrength
+                ? sharedStrength.message
+                : 'Not based on your name, e-mail or a common password'
+            }
+          />
         </ul>
       </Field>
 
@@ -460,13 +448,13 @@ export function StepAccount({ onSubmitted }: StepAccountProps) {
             aria-describedby={
               errors.confirmPassword ? `${confirmId}-error` : undefined
             }
-            className={inputClass(Boolean(errors.confirmPassword), 'pr-10')}
+            className={inputClass(Boolean(errors.confirmPassword), 'pe-10')}
             {...register('confirmPassword')}
           />
           <button
             type="button"
             onClick={() => setShowConfirm((v) => !v)}
-            className="absolute inset-y-0 right-2 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
+            className="absolute inset-y-0 end-2 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
             aria-label={
               showConfirm ? 'Hide confirm password' : 'Show confirm password'
             }
@@ -649,7 +637,7 @@ function PasswordStrengthMeter({
           ))}
         </div>
         <span
-          className={`min-w-[5.5rem] text-right text-xs ${insufficient ? 'text-red-600' : 'text-emerald-700'
+          className={`min-w-[5.5rem] text-end text-xs ${insufficient ? 'text-red-600' : 'text-emerald-700'
             }`}
         >
           {label}

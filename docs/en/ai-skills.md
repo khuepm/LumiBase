@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:02:34.419Z
+version: 5
+lastUpdated: 2026-11-15T13:42:40.951Z
 sourceLang: en
-contentHash: 82398215345c6e2e
-codeVerified: 2026-08-02T19:02:34.419Z
-codeVerifiedHash: 82398215345c6e2e
+contentHash: 8221209427f28e25
+codeVerified: 2026-11-15T13:42:40.951Z
+codeVerifiedHash: 8221209427f28e25
 codeVerifiedClaims: 6
 ---
 
@@ -88,6 +88,7 @@ Skills run through the **governed endpoint** `POST /api/v1/mcp` (gated by the pe
 | `aiSuggestField` · `aiContentAssist` · `generate*` | `schema:read` / `items:*` | safe |
 | `listRelations` | `schema:read` | safe |
 | `createRelation` / `deleteRelation` | `schema:create` / `schema:delete` | dangerous · (delete) irreversible |
+| `planContentMigration` / `applyContentMigrationSchema` | `schema:read` / `schema:create` + `schema:update` | safe / dangerous (approval) — see [Content migration](./features/content-migration.md) |
 | `listRoles` / `listPolicies` | `access:read` | safe |
 | `createRole` / `createPolicy` | `access:create` | dangerous |
 | `deleteRole` / `deletePolicy` | `access:delete` | dangerous · irreversible |
@@ -100,8 +101,11 @@ Skills run through the **governed endpoint** `POST /api/v1/mcp` (gated by the pe
 | `listExtensions` / `installExtension` / `updateExtension` / `uninstallExtension` | `extensions:read`/`write`/`delete` | safe / dangerous |
 | `listDeploymentTargets` / `listDeployments` / `getDeploymentStatus` / `triggerDeployment` | `deployments:read` / `deployments:write` | safe / dangerous (`trigger` gated by HITL below autopilot) |
 | `listCdcSubscriptions` / `getCdcSubscriptionStatus` / `createCdcSubscription` / `replayCdcSubscription` / `deleteCdcSubscription` | `cdc:manage` | reads safe; `create`/`replay`/`delete` are control-plane → HITL below autopilot. `create`/`replay` carry an explicit `dangerous` flag, `delete` via the `delete` name prefix — so the agent/MCP path matches the admin-only `/api/v1/cdc` REST surface |
+| `askUser` / `getUserAnswer` | `items:read` | safe — `askUser` parks the run in `waiting_user` until a human answers in Mission Control (or it times out / is cancelled); `getUserAnswer` returns the answer to the requester only, as untrusted data. Not on the autonomy gradient: asking is allowed at every level. Not offered to the Copilot chat, which has no run to pause. See [agent harness](features/agent-harness-layer.md#asking-a-human-askuser-710) |
 
 **Reserved collection names.** `createCollection` (and any rename via `updateCollection`) rejects names starting with the `lumibase_` prefix, which is owned by the platform (CDC/Firebase sync tables, internal config). The guard lives in `SchemaService.ensureName`, so it applies uniformly to the AI harness, the builder/Studio routes, and any other caller; violations raise `RESERVED_NAME` (HTTP 422).
+
+**External-action tools.** A tool whose effect lands outside the CMS is registered with a declared `risk`, `reversibility`, `blastRadius`, `capability` and secret references, and is decided on that declaration instead of the classification above. A high-risk or irreversible one waits for an approval at every autonomy level, and that approval can only be given by a signed-in user. Secrets are resolved from the `KeyProvider` when the handler runs and never reach the prompt, the tool result or a stored row. None is registered by default. See [external-action tools](features/external-action-tools.md).
 
 **Standalone MCP server (`@lumibase/mcp-server`, `lumibase-mcp`).** A separate stdio server that wraps the REST API as ~105 MCP tools covering the full content-operations surface: content, RBAC, users/teams, intents/flows (incl. `get_flow_run`), webhooks, translations, translation-memory (incl. `update_tm`/`delete_tm`), search, media + `list_transform_presets`, preset resolution (`get_effective_preset`/`list_preset_bookmarks`), editorial workflow (`list_reviews`/`submit_review`/`approve_content`/`reject_content`), content releases (CRUD + `publish_release`), read-only deployments (`list_deployments`/`get_deployment_logs` — triggering stays governed), share links (`create_share`/`revoke_share`), `get_site`, ops, backup/restore, materialize, extensions, marketplace, and read-only **insights** (`list_dashboards`/`run_panel`/`query_insights`). It is an ungoverned passthrough — RBAC/tenancy are enforced server-side for the bearer token. Destructive tools require `confirm: true`. See `docs/en/agent-setup/`.
 

@@ -1,7 +1,9 @@
+import { HUMAN_REQUIRED_APPROVAL_POLICY } from './external-action-tools';
 import { activity, agentApprovals, agentGoals, agentRuns, agentToolCalls, settings } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { maskSecrets } from './agent-run-service';
+import { satisfiesCapability } from './effective-capability-service';
 import { getContentOsFlags } from './feature-flags';
 
 /**
@@ -142,6 +144,16 @@ export class ReviewerService {
       // The veto window exists precisely to give HUMANS the last word.
       throw new ReviewerError('HUMAN_ONLY', 'Veto-window approvals require a human.', 403);
     }
+    if (approval.approvalPolicy === HUMAN_REQUIRED_APPROVAL_POLICY) {
+      // External-action tools: the approval is a person's to give. Refused
+      // here, before anything is recorded, and again inside `executeApproved`.
+      throw new ReviewerError('HUMAN_ONLY', 'This approval can only be decided by a signed-in user.', 403);
+    }
+    if (approval.kind === 'question') {
+      // `askUser` (#710) exists to reach a person; an agent answering another
+      // agent's clarification would close the loop it was meant to open.
+      throw new ReviewerError('HUMAN_ONLY', 'Agent questions are answered by a human.', 403);
+    }
 
     // Capability: review:<domain> (Req 11.2).
     const toolName =
@@ -150,7 +162,12 @@ export class ReviewerService {
         : undefined;
     const domain = reviewDomainFor(approval.subjectType, toolName);
     const required = `review:${domain}`;
-    if (!(input.capabilities.includes(required) || input.capabilities.includes('*'))) {
+    // `satisfiesCapability` rather than a local `includes` pair (#481 R3.4). This
+    // check used to accept `*` and nothing else, while the resolver emits `admin`
+    // and never mints `*` — so a real administrator was refused here and the route
+    // had no reachable positive path. Sharing the predicate with the harness is
+    // what keeps "what counts as admin" from drifting apart again.
+    if (!satisfiesCapability(input.capabilities, required)) {
       throw new ReviewerError('FORBIDDEN', `Capability "${required}" is required.`, 403);
     }
 

@@ -29,6 +29,8 @@ interface FakeDbOptions {
   updateErrorOnCause?: boolean;
   /** Captures the SET payload passed to UPDATE. */
   captured?: { set?: Record<string, unknown> };
+  /** Principal attached to `c.get('auth')`; defaults to a dev admin. */
+  auth?: AppEnv['Variables']['auth'];
 }
 
 function fakeDb(opts: FakeDbOptions): Database {
@@ -70,6 +72,10 @@ function buildApp(opts: FakeDbOptions): Hono<AppEnv> {
   app.use('*', async (c, next) => {
     c.set('db', fakeDb(opts));
     c.set('siteId', '__default__');
+    c.set(
+      'auth',
+      opts.auth !== undefined ? opts.auth : { roles: ['admin'], raw: { dev: true } },
+    );
     // Minimal runtime stub; cache is optional in the handler.
     c.set('runtime', { cache: { delete: async () => {} } } as never);
     await next();
@@ -156,5 +162,19 @@ describe('PATCH /api/v1/site', () => {
       body: JSON.stringify({ descriptor: '' }),
     });
     expect(captured.set?.descriptor).toBeNull();
+  });
+
+  it('rejects a non-admin caller with 403 FORBIDDEN without mutating the site', async () => {
+    const captured: { set?: Record<string, unknown> } = {};
+    const res = await buildApp({
+      captured,
+      auth: { type: 'anonymous', roles: ['public'], raw: { anonymous: true } },
+    }).request('/api/v1/site', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ displayTitle: 'Hijacked' }),
+    });
+    expect(res.status).toBe(403);
+    expect(captured.set).toBeUndefined();
   });
 });

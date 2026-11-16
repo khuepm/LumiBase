@@ -1,19 +1,58 @@
+import { publicLLMFailure } from '../services/llm-provider';
 import { aiApprovals, aiConversations, aiMessages } from '@lumibase/database';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import type { AppEnv } from '../env';
+import type { AppEnv, AuthPrincipal } from '../env';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
+import { siteExternalToolRegistry } from '../extensions/mcp-extension-tools';
 import { AISecureHarness } from '../services/ai-harness';
 import { AccessService } from '../services/access-service';
 import { ConfigService } from '../services/config-service';
 import { ExtensionsService } from '../services/extensions-service';
+import { approvalDeciderFromAuth, approvalRequesterFromAuth, principalRefFromAuth, resolveRequestCapabilities } from '../services/governed-capabilities';
 import { IntentService } from '../services/intent-service';
 import { SchemaService } from '../services/schema-service';
-import { itemServiceForRequest } from '../services/item-service-factory';
-import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from '../services/llm-provider';
+import { itemServiceForRequest, buildRequestPermissionContext } from '../services/item-service-factory';
+import { createConfiguredLLMProvider, createLLMProvider } from '../services/llm-provider';
+import { loadCopilotHistory } from '../services/copilot-history';
+import { resolveCopilotPlaybooks } from '../services/site-skill-service';
+import { createDecisionProvider, type DecisionProviderEnv } from '../services/decision-provider';
+import { decisionAuditContextForRequest } from '../services/decision-refusal-audit';
+import {
+  authorizeDecision,
+  decisionQuotaFromEnv,
+  DecisionGovernanceError,
+  readDecisionSettings,
+  runGovernedDecision,
+  writeDecisionAudit,
+  type DecisionQuotaEnv,
+} from '../services/decision-governance';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPendingRun, FLOW_RUNS_QUEUE } from '../services/flow-run-service';
+import { queueAccepts } from '../services/queue-routing';
+
+/**
+ * A Copilot conversation belongs to the user who started it (#579).
+ *
+ * Every conversation route used to check only `site_id`, so any member of the
+ * site who had a conversation id could read its messages, delete it, or append
+ * to it through `POST /chat`. Appending is the dangerous part: the next turn of
+ * the owner feeds the appended message to the model as the owner's own history,
+ * and any tool call it produces runs under the owner's rights.
+ *
+ * Callers without a user id (API keys) own only the conversations recorded
+ * with their own `api_key_id`. Matching "user_id IS NULL" instead would let
+ * every API key of the site share one pool of conversations. A principal with
+ * neither id owns nothing.
+ */
+function conversationOwnerClause(auth: AuthPrincipal | undefined) {
+  if (auth?.userId) return eq(aiConversations.userId, auth.userId);
+  if (auth?.apiKeyId) {
+    return and(isNull(aiConversations.userId), eq(aiConversations.apiKeyId, auth.apiKeyId))!;
+  }
+  return sql`false`;
+}
 
 // ---------------------------------------------------------------------------
 // Zod Schemas
@@ -32,12 +71,50 @@ export const decideSchema = z.object({
   decision: z.enum(['approved', 'rejected']),
 });
 
+const decisionPayloadSchema = z.union([
+  z.string().min(1).max(20_000),
+  z.record(z.string(), z.unknown()),
+  z.array(z.unknown()),
+]);
+
+const decisionQuestionSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('noul'),
+    instructions: decisionPayloadSchema,
+    criteria: z.object({ true: decisionPayloadSchema, false: decisionPayloadSchema }),
+  }),
+  z.object({
+    type: z.literal('choice'),
+    instructions: decisionPayloadSchema,
+    criteria: z
+      .record(z.string().min(1).max(128), decisionPayloadSchema.nullable())
+      .refine((options) => {
+        const count = Object.keys(options).length;
+        return count >= 2 && count <= 255;
+      }, 'A choice question needs 2-255 options'),
+  }),
+  z.object({
+    type: z.literal('score'),
+    instructions: decisionPayloadSchema,
+    criteria: z.array(decisionPayloadSchema).min(2).max(10),
+  }),
+]);
+
+export const decisionRequestSchema = z.object({
+  // Size is bounded on the whole request (state + questions) by the provider's
+  // input budget, so an oversized payload fails with 413 before any fetch.
+  state: decisionPayloadSchema,
+  questions: z
+    .record(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'Invalid question key'), decisionQuestionSchema)
+    .refine((questions) => {
+      const count = Object.keys(questions).length;
+      return count >= 1 && count <= 32;
+    }, 'Provide 1-32 questions'),
+});
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-/** Max messages to load from conversation history as LLM context. */
-const MAX_CONTEXT_MESSAGES = 20;
 
 // ---------------------------------------------------------------------------
 // Router
@@ -45,9 +122,17 @@ const MAX_CONTEXT_MESSAGES = 20;
 
 export const aiRouter = new Hono<AppEnv>();
 
-function getUserCapabilities(c: Context<AppEnv>): string[] {
-  const auth = c.get('auth');
-  return Array.isArray(auth.roles) ? auth.roles : [];
+/**
+ * Capabilities for the current principal, resolved from the live RBAC bundle
+ * (#472).
+ *
+ * This used to return `auth.roles` — a role *id* for a normal user, `[]` for an
+ * API key, and the literal `'admin'` only for bootstrap/dev. Compared by exact
+ * string against `items:write` and friends, that made the harness
+ * admin-or-nothing on every transport. Now the same model REST uses decides.
+ */
+async function getUserCapabilities(c: Context<AppEnv>): Promise<string[]> {
+  return (await resolveRequestCapabilities(c)).capabilities;
 }
 
 /**
@@ -62,12 +147,18 @@ function getUserCapabilities(c: Context<AppEnv>): string[] {
  * forced dangerous, hence all park for approval) resolved with its service
  * absent. Both decision routes now share this builder.
  */
-export function buildAuthorizedHarness(c: Context<AppEnv>): AISecureHarness {
+export async function buildAuthorizedHarness(c: Context<AppEnv>): Promise<AISecureHarness> {
   const db = c.get('db');
   const siteId = c.get('siteId');
   const auth = c.get('auth');
   const runtime = c.get('runtime');
   const llm = createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>);
+  const itemService = itemServiceForRequest(c);
+  // An approved extension tool (#715) is released here, so this harness must
+  // know the site's extension tools exactly as the one that parked it did.
+  const externalTools = await siteExternalToolRegistry({
+    db, siteId, env: c.env, dataAccess: itemService.extensionDataAccess(),
+  });
 
   return new AISecureHarness({
     db,
@@ -75,24 +166,36 @@ export function buildAuthorizedHarness(c: Context<AppEnv>): AISecureHarness {
     schemaService: new SchemaService({ db, siteId, cache: runtime.cache }),
     // Request-scoped so an executed skill enforces the same row/field RBAC the
     // caller's own token would.
-    itemService: itemServiceForRequest(c),
+    itemService,
+    externalTools,
     accessService: new AccessService({ db, siteId, userId: auth.userId ?? null, cache: runtime.cache }),
     intentService: new IntentService({ db, siteId, userId: auth.userId ?? null, llm }),
     configService: new ConfigService({ db, siteId }),
-    extensionsService: new ExtensionsService({ db, siteId, userId: auth.userId ?? null }),
+    extensionsService: new ExtensionsService({
+      db, siteId, userId: auth.userId ?? null, cache: runtime.cache, env: c.env,
+      permissionCtx: buildRequestPermissionContext({ auth, siteId, headers: c.req.header(), ip: c.get('ip') ?? null }),
+    }),
     llm,
     queue: runtime.queue,
     notify: buildAgentNotifier(c),
     // An approved `triggerDeployment` executes here — without the KeyProvider
     // the approval would resolve into a configuration error.
     keys: runtime.keys,
+    cache: runtime.cache,
   });
 }
 
-function requireAdmin(c: Context<AppEnv>) {
-  const roles = getUserCapabilities(c);
+/**
+ * Admin gate for the legacy approval surface.
+ *
+ * Now asks the resolver rather than looking for the literal role string
+ * `'admin'`, which only a bootstrap or dev principal ever carried — a site admin
+ * holding a real `adminAccess` role was rejected here.
+ */
+async function requireAdmin(c: Context<AppEnv>) {
+  const grant = await resolveRequestCapabilities(c);
 
-  if (!roles.includes('admin')) {
+  if (!grant.controlPlaneAdmin) {
     return c.json(
       {
         errors: [
@@ -157,7 +260,7 @@ aiRouter.post('/chat', async (c) => {
     let conversationId = inputConversationId;
 
     if (conversationId) {
-      // Verify conversation belongs to this site
+      // Verify the conversation belongs to this site AND this caller (#579).
       const [conv] = await db
         .select({ id: aiConversations.id })
         .from(aiConversations)
@@ -165,6 +268,7 @@ aiRouter.post('/chat', async (c) => {
           and(
             eq(aiConversations.id, conversationId),
             eq(aiConversations.siteId, siteId),
+            conversationOwnerClause(auth),
           ),
         );
       if (!conv) {
@@ -178,7 +282,7 @@ aiRouter.post('/chat', async (c) => {
         message.length > 60 ? `${message.substring(0, 57)}...` : message;
       const [newConv] = await db
         .insert(aiConversations)
-        .values({ siteId, userId, title })
+        .values({ siteId, userId, apiKeyId: userId ? null : auth.apiKeyId ?? null, title })
         .returning();
       conversationId = newConv!.id;
     }
@@ -190,10 +294,11 @@ aiRouter.post('/chat', async (c) => {
       content: message,
     });
 
-    const userCapabilities = getUserCapabilities(c);
+    const userCapabilities = await getUserCapabilities(c);
 
     // Async path: enqueue LLM + harness on worker; HITL still surfaces via poll.
-    if (prefersAsyncResponse(c) && runtime.queue) {
+    // Without a `flow-runs` binding (Workers, B118) fall through to the sync path.
+    if (prefersAsyncResponse(c) && queueAccepts(runtime.queue, FLOW_RUNS_QUEUE)) {
       const run = await createPendingRun(db, {
         siteId,
         runType: 'ai_chat',
@@ -205,7 +310,9 @@ aiRouter.post('/chat', async (c) => {
         runId: run.id,
         conversationId,
         message,
-        userCapabilities,
+        // Principal reference, not a capability snapshot (#472) — the worker
+        // re-resolves the grant when it picks the job up.
+        principal: principalRefFromAuth(auth, siteId),
         userId,
       });
       return c.json(
@@ -221,24 +328,23 @@ aiRouter.post('/chat', async (c) => {
       );
     }
 
-    // Step 4: Load conversation history for LLM context
-    const historyRows = await db
-      .select({ role: aiMessages.role, content: aiMessages.content })
-      .from(aiMessages)
-      .where(eq(aiMessages.conversationId, conversationId))
-      .orderBy(asc(aiMessages.createdAt))
-      .limit(MAX_CONTEXT_MESSAGES);
-
-    const llmMessages: LLMMessage[] = historyRows.map((row) => ({
-      role: row.role as LLMMessage['role'],
-      content: row.content,
-    }));
+    // Step 4: Load conversation history for LLM context (newest window, #582)
+    const llmMessages = await loadCopilotHistory(db, conversationId);
 
     // Step 5: Call LLM
     const llmProvider = createLLMProvider(
       c.env as unknown as Record<string, string | undefined>,
     );
-    const llmResponse = await llmProvider.chat(llmMessages);
+    // Site playbooks (#712) matching the latest user turns join the Copilot prompt.
+    const playbooks = await resolveCopilotPlaybooks(
+      { db, siteId },
+      { text: message, history: llmMessages, capabilities: userCapabilities },
+    );
+    const siteSkillsMeta = playbooks.applied.length > 0 ? { siteSkills: playbooks.applied } : {};
+    const llmResponse = await llmProvider.chat(
+      llmMessages,
+      playbooks.systemPrompt ? { systemPrompt: playbooks.systemPrompt } : undefined,
+    );
 
     // Step 6: Handle response
     if (llmResponse.toolCalls.length === 0) {
@@ -250,7 +356,7 @@ aiRouter.post('/chat', async (c) => {
         conversationId,
         role: 'assistant',
         content: responseText,
-        metadata: { status: 'denied' },
+        metadata: { status: 'denied', ...siteSkillsMeta },
       });
 
       // Update conversation timestamp
@@ -265,6 +371,7 @@ aiRouter.post('/chat', async (c) => {
             status: 'denied' as const,
             message: responseText,
             conversationId,
+            ...siteSkillsMeta,
           },
         },
         200,
@@ -291,12 +398,24 @@ aiRouter.post('/chat', async (c) => {
       notify: buildAgentNotifier(c),
       // Enables the deployment skills, which decrypt target tokens.
       keys: runtime.keys,
+      cache: runtime.cache,
+      extensionsService: new ExtensionsService({
+        db, siteId, userId: auth.userId ?? null, cache: runtime.cache, env: c.env,
+        permissionCtx: buildRequestPermissionContext({ auth, siteId, headers: c.req.header(), ip: c.get('ip') ?? null }),
+      }),
     });
     const result = await harness.execute(
       toolCall.name,
       toolCall.arguments,
       userCapabilities,
       message,
+      {
+        // Provenance for anything this call parks (#472). A capability snapshot
+        // would go stale while the approval waits; a reference is re-resolved at
+        // the moment a human approves.
+        requestId: c.get('requestId'),
+        requestedByPrincipal: approvalRequesterFromAuth(c.get('auth'), siteId),
+      },
     );
 
     const responseMessage =
@@ -316,6 +435,7 @@ aiRouter.post('/chat', async (c) => {
       metadata: {
         status: result.status,
         approvalId: result.approvalId,
+        ...siteSkillsMeta,
       },
     });
 
@@ -331,11 +451,14 @@ aiRouter.post('/chat', async (c) => {
           ...result,
           message: responseMessage,
           conversationId,
+          ...siteSkillsMeta,
         },
       },
       200,
     );
   } catch (err: unknown) {
+    const failure = publicLLMFailure(err);
+    if (failure) return c.json({ errors: [{ code: failure.code, message: failure.message }] }, failure.status);
     const errorMessage = err instanceof Error ? err.message : 'Internal server error';
     console.error('[ai/chat] execution error', formatSafeError(err));
     return c.json(
@@ -366,7 +489,8 @@ aiRouter.get('/conversations', async (c) => {
     .where(
       and(
         eq(aiConversations.siteId, siteId),
-        ...(auth.userId ? [eq(aiConversations.userId, auth.userId)] : []),
+        // A caller without a user id used to list every conversation of the site.
+        conversationOwnerClause(auth),
       ),
     )
     .orderBy(desc(aiConversations.updatedAt))
@@ -384,7 +508,8 @@ aiRouter.get('/conversations/:id/messages', async (c) => {
   const siteId = c.get('siteId');
   const conversationId = c.req.param('id');
 
-  // Verify conversation belongs to this site
+  // Verify the conversation belongs to this site AND this caller (#579). Another
+  // user's conversation answers 404, the same as one that does not exist.
   const [conv] = await db
     .select({ id: aiConversations.id })
     .from(aiConversations)
@@ -392,6 +517,7 @@ aiRouter.get('/conversations/:id/messages', async (c) => {
       and(
         eq(aiConversations.id, conversationId),
         eq(aiConversations.siteId, siteId),
+        conversationOwnerClause(c.get('auth')),
       ),
     );
 
@@ -427,10 +553,81 @@ aiRouter.delete('/conversations/:id', async (c) => {
       and(
         eq(aiConversations.id, conversationId),
         eq(aiConversations.siteId, siteId),
+        // Owner only (#579). Idempotent 204 either way, so the response does
+        // not reveal whether another user's conversation exists.
+        conversationOwnerClause(c.get('auth')),
       ),
     );
 
   return c.body(null, 204);
+});
+
+// ---------------------------------------------------------------------------
+// Decision routes (TypeSafe Jev / equivalent)
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /decisions
+ * Asks the configured decision model (DECISION_PROVIDER) typed questions
+ * about `state`. Read-only: no content is written, so no HITL approval.
+ * Governed (#511): `ai:decide` capability, site opt-in, field allowlist,
+ * per-site quota, and an audit event — all before the provider is called.
+ * Publishable API keys and `frontend` sessions are refused with 403 FORBIDDEN
+ * even with that capability (#562), before the body is read.
+ */
+aiRouter.post('/decisions', async (c) => {
+  const startedAt = Date.now();
+
+  const grant = await resolveRequestCapabilities(c);
+  try {
+    authorizeDecision(grant);
+  } catch (err) {
+    const error = err as DecisionGovernanceError;
+    // Refusals are aggregated per window (#564): this bounds the audit rows a
+    // flood of refused requests can write.
+    await writeDecisionAudit(decisionAuditContextForRequest(c), {
+      outcome: error.code,
+      status: 403,
+      startedAt,
+      refusalReason: error.reason,
+    });
+    return c.json({ errors: [{ code: error.code, message: error.message }] }, 403);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const parsed = decisionRequestSchema.safeParse(body);
+
+  if (!parsed.success) {
+    await writeDecisionAudit(decisionAuditContextForRequest(c), { outcome: 'VALIDATION', status: 400, startedAt });
+    return c.json(
+      {
+        errors: parsed.error.issues.map((issue) => ({
+          code: 'VALIDATION',
+          message: issue.message,
+          path: issue.path.map(String),
+        })),
+      },
+      400,
+    );
+  }
+
+  const request = parsed.data;
+  const env = c.env as unknown as DecisionProviderEnv & DecisionQuotaEnv;
+  const configured = createDecisionProvider(env);
+  const outcome = await runGovernedDecision(
+    async () => ({
+      configured,
+      settings: await readDecisionSettings(c.get('db'), c.get('siteId')),
+      quota: decisionQuotaFromEnv(env),
+      cache: c.get('runtime').cache,
+      siteId: c.get('siteId'),
+    }),
+    request,
+    // Client disconnect aborts the upstream call and suppresses retries.
+    { signal: c.req.raw.signal, audit: decisionAuditContextForRequest(c), startedAt },
+  );
+  if (outcome.retryAfterSeconds !== undefined) c.header('Retry-After', String(outcome.retryAfterSeconds));
+  return c.json(outcome.body, outcome.status);
 });
 
 // ---------------------------------------------------------------------------
@@ -442,12 +639,12 @@ aiRouter.delete('/conversations/:id', async (c) => {
  * Returns pending approval records for the current site, sorted by createdAt DESC, max 100.
  */
 aiRouter.get('/approvals', async (c) => {
-  const forbidden = requireAdmin(c);
+  const forbidden = await requireAdmin(c);
   if (forbidden) return forbidden;
 
   const db = c.get('db');
   const siteId = c.get('siteId');
-  const userCapabilities = getUserCapabilities(c);
+  const userCapabilities = await getUserCapabilities(c);
   const harness = new AISecureHarness({ db, siteId });
 
   const pendingApprovals = await db
@@ -475,7 +672,7 @@ aiRouter.get('/approvals', async (c) => {
  * Approves or rejects a pending approval record.
  */
 aiRouter.post('/approvals/:id/decide', async (c) => {
-  const forbidden = requireAdmin(c);
+  const forbidden = await requireAdmin(c);
   if (forbidden) return forbidden;
 
   // Step 1: Parse and validate input
@@ -502,7 +699,7 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
   const auth = c.get('auth');
   const runtime = c.get('runtime');
   const userId = auth.userId ?? auth.externalId ?? 'unknown';
-  const userCapabilities = getUserCapabilities(c);
+  const userCapabilities = await getUserCapabilities(c);
   const harness = new AISecureHarness({ db, siteId });
 
   const [approval] = await db
@@ -540,11 +737,12 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
 
   if (decision === 'approved') {
     // Wire up real services for skill execution on approval only after authorization.
-    const authorizedHarness = buildAuthorizedHarness(c);
+    const authorizedHarness = await buildAuthorizedHarness(c);
     const result = await authorizedHarness.executeApproved(
       approvalId,
       userId,
       userCapabilities,
+      approvalDeciderFromAuth(auth),
     );
 
     if (result.status === 'denied') {
@@ -565,7 +763,7 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
   }
 
   // decision === 'rejected'
-  const rejected = await harness.rejectApproval(approvalId, userId);
+  const rejected = await harness.rejectApproval(approvalId, userId, approvalDeciderFromAuth(auth));
   if (!rejected) {
     return c.json(
       {

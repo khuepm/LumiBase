@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T10:26:33.742Z
+version: 3
+lastUpdated: 2026-11-12T18:29:49.521Z
 sourceLang: en
-contentHash: 015a30205d060b97
-codeVerified: 2026-07-28T10:26:33.742Z
-codeVerifiedHash: 015a30205d060b97
+contentHash: d2b8d013b525ed73
+codeVerified: 2026-11-12T18:29:49.521Z
+codeVerifiedHash: d2b8d013b525ed73
 codeVerifiedClaims: 28
 ---
 
@@ -28,13 +28,14 @@ the fallback, so no event is lost — push only lowers latency.
 | Kind | Fired when | Severity |
 |---|---|---|
 | `approval` | A HITL approval is created (reviewer needed). | info |
+| `question` | An agent asks a human with `askUser`; the run waits for the answer. | info |
 | `veto` | A write is staged into an L3 veto window. | warning |
 | `incident` | An `agent_incidents` row is recorded. | warning / critical |
 | `run` | An agent run succeeds or fails. | info / warning |
 | `goal` | A parent goal settles to completed/failed. | info / warning |
 
-Each notification carries `{ id, kind, severity, title, body, deepLink,
-entityId, ts }` — identical on both transports for client-side dedupe.
+Each notification carries `{ id, kind, severity, title, body, deepLink, entityId, ts }`
+— identical on both transports for client-side dedupe.
 
 ## Architecture
 
@@ -42,7 +43,11 @@ entityId, ts }` — identical on both transports for client-side dedupe.
   (`emitAgentNotification`). Producers that only hold `db` + `siteId` accept an
   optional `AgentNotifier` callback; request-context callers build one with
   `buildAgentNotifier(c)` (`notify-context.ts`), which binds the DO namespace
-  (`SITE_ROOM`) and the VAPID env. Background callers omit it (poll fallback).
+  (`SITE_ROOM`) and the VAPID env. The `agent-runs` queue worker passes a Web
+  Push-only notifier (no DO namespace there) that forwards `approval` and
+  `question` only — queued runs send no run succeeded/failed pushes — and keeps
+  each send alive with the queue consumer's `waitUntil` on Workers (awaited on
+  Docker); other background callers omit it (poll fallback).
 - **Web Push crypto** — `apps/cms/src/modules/notifications/web-push.ts`,
   implemented entirely on the Web Crypto API so it runs on both Cloudflare
   Workers and Node (the `web-push` npm package is Node-only and is deliberately

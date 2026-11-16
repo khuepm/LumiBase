@@ -9,7 +9,39 @@ import type { RuntimeContext } from '@lumibase/runtime';
  * - MEDIA: R2 bucket for asset storage.
  */
 export interface Bindings {
+  /** Producer for governed asynchronous agent runs. */
+  AGENT_RUNS_QUEUE?: Queue;
+  /** Producer for manual flow runs and async AI chat (logical `flow-runs`, B118). */
+  FLOW_RUNS_QUEUE?: Queue;
+  /** Producer for event and schedule flow runs (logical `flow-events`, B118). */
+  FLOW_EVENTS_QUEUE?: Queue;
+  /** Producer for search index/remove jobs (logical `content-indexing`, B131). */
+  CONTENT_INDEXING_QUEUE?: Queue;
+  /** Producer for ISR revalidation dispatch jobs (logical `revalidation-dispatch`, B131). */
+  REVALIDATION_QUEUE?: Queue;
+  /** Producer for envelope-encryption migration continuations (logical `encryption-envelope-migration`, B131). */
+  ENVELOPE_MIGRATION_QUEUE?: Queue;
+  /** Meilisearch endpoint for the search provider. Unset: search is disabled. */
+  MEILISEARCH_HOST?: string;
+  MEILISEARCH_API_KEY?: string;
   HYPERDRIVE?: Hyperdrive;
+  /**
+   * Optional second Hyperdrive config for the system role (BYPASSRLS), used by
+   * scheduled/queue handlers and system routes when `LUMIBASE_DB_RLS=enforce`
+   * (B130). Unset: system paths use `HYPERDRIVE`.
+   */
+  HYPERDRIVE_SYSTEM?: Hyperdrive;
+  /**
+   * Request-path RLS scope (B130): `off` (default) or `enforce`. With
+   * `enforce` every request statement runs in its own transaction with
+   * `app.site_id` set. Any other value fails closed.
+   */
+  LUMIBASE_DB_RLS?: string;
+  /**
+   * Connection string for the system role (BYPASSRLS) in Docker mode. Required
+   * when `LUMIBASE_DB_RLS=enforce`; unset means system paths use `DATABASE_URL`.
+   */
+  DATABASE_SYSTEM_URL?: string;
   /** @deprecated Use `c.get('runtime').cache` (CacheProvider) instead of accessing KV directly. */
   CONFIG_CACHE?: KVNamespace;
   /** @deprecated Use `c.get('runtime').storage` (StorageProvider) instead of accessing R2 directly. */
@@ -19,6 +51,14 @@ export interface Bindings {
   LUMIBASE_ENV: string;
   /** Semver package/application version for the deployed LumiBase build. */
   LUMIBASE_VERSION?: string;
+  /** Opt in to anonymous usage telemetry (`true`). Default off. See docs `operations/usage-telemetry.md`. */
+  LUMIBASE_TELEMETRY_ENABLED?: string;
+  /** Hard off switch for telemetry (`true`). Wins over `LUMIBASE_TELEMETRY_ENABLED`. */
+  LUMIBASE_TELEMETRY_DISABLED?: string;
+  /** Where telemetry events are POSTed. Unset by default — nothing is sent without it. */
+  LUMIBASE_TELEMETRY_ENDPOINT?: string;
+  /** Honoured as a telemetry off switch when truthy. */
+  DO_NOT_TRACK?: string;
   /** Source-control revision used for this build. */
   LUMIBASE_GIT_SHA?: string;
   /** ISO-8601 timestamp for when this build artifact was produced. */
@@ -90,6 +130,9 @@ export interface Bindings {
   REFRESH_COOKIE_SECURE?: string;
   /** When set to `"true"`, withAuth allows dev tokens (skip JWKS verify). */
   LUMIBASE_DEV_AUTH?: string;
+  /** Explicitly allow Studio users to create organizations (default off). */
+  LUMIBASE_ALLOW_ORG_SIGNUP?: string;
+  LUMIBASE_MCP_ORG_TOOLS?: string;
   /** Secret key for AES-GCM per-field encryption (base64 encoded). */
   ENCRYPTION_KEY?: string;
   /** Comma-separated trusted origins for executable extension bundles. */
@@ -100,6 +143,20 @@ export interface Bindings {
   LUMIBASE_EXT_SIGNATURE_POLICY?: string;
   /** Comma-separated frontend origins allowed by CORS. */
   CORS_ALLOWED_ORIGINS?: string;
+  /**
+   * Passkeys (#735): WebAuthn RP ID — the registrable domain passkeys are
+   * bound to. Defaults to the host of the Studio origin. Changing it orphans
+   * every passkey registered under the old value.
+   */
+  WEBAUTHN_RP_ID?: string;
+  /** Passkeys: RP display name shown by the browser. Default `LumiBase`. */
+  WEBAUTHN_RP_NAME?: string;
+  /**
+   * Passkeys: comma-separated Studio origins allowed to run ceremonies. When
+   * unset, a request `Origin` that is already trusted (same origin as the API,
+   * `LUMIBASE_PUBLIC_URL`, or `CORS_ALLOWED_ORIGINS`) is used.
+   */
+  WEBAUTHN_ORIGINS?: string;
   /** Data-retention horizon (days) for the `activity` log. 0/unset = disabled. */
   LUMIBASE_ACTIVITY_RETENTION_DAYS?: string;
   /** Data-retention horizon (days) for read/archived `notifications`. 0/unset = disabled. */
@@ -110,6 +167,12 @@ export interface Bindings {
   FILE_UPLOAD_ALLOWED_MIME_TYPES?: string;
   /** Bearer token required to read Prometheus metrics in production. */
   METRICS_TOKEN?: string;
+  /**
+   * Static bearer secret for the read-only ops diagnostics plane
+   * (`/api/v1/ops/*`, `.kiro/specs/ops-diagnostics`). Unset (or < 32 chars)
+   * → the plane answers 404 everywhere.
+   */
+  LUMIBASE_OPS_TOKEN?: string;
   /** Delivery API shared-cache lifetime in seconds (`0` disables public caching). Default 60. */
   LUMIBASE_DELIVER_SMAXAGE?: string;
   /** Delivery API stale-while-revalidate window in seconds. Default 300. */
@@ -120,6 +183,8 @@ export interface Bindings {
   LUMIBASE_DELIVER_RATE_LIMIT?: string;
   /** Authenticated API rate limit (req/min per principal). Default 600; `0` = off. */
   LUMIBASE_API_RATE_LIMIT?: string;
+  /** /api/v1/ai/* rate limit per client IP per site, req/min (default 300; `0` = off). Runs before auth (#564). */
+  LUMIBASE_AI_IP_RATE_LIMIT?: string;
   /** Debounce window (seconds) for API-key `lastUsedAt` writes. Default 60; `0` = touch every request. */
   LUMIBASE_APIKEY_TOUCH_INTERVAL?: string;
   /** Max JSON request body in bytes for the app-level guard. Default 1 MiB. */
@@ -140,6 +205,8 @@ export interface Bindings {
    * behaviour. Use in hardened deployments where the throttle is load-bearing.
    */
   LUMIBASE_RATE_LIMIT_FAIL_CLOSED?: string;
+  /** `frame-src` ceiling for Studio HTML (live preview pane, #667). Default: `https: http://localhost:* http://127.0.0.1:*`. */
+  LUMIBASE_STUDIO_FRAME_SRC?: string;
   /** Max static cost accepted per GraphQL operation (default 1000). */
   LUMIBASE_GQL_MAX_COST?: string;
   /** List multiplier for GraphQL list fields lacking a literal pagination arg (default 20). */
@@ -183,6 +250,41 @@ export interface Bindings {
   WORKERS_AI_API_TOKEN?: string;
   /** Optional Workers AI gateway URL override. */
   WORKERS_AI_GATEWAY?: string;
+  // ── Decision Provider (services/decision-provider.ts) ──────────────────
+  /** `'typesafe'` | `'openrouter'` | `'llm'`. Unset disables `/ai/decisions`. */
+  DECISION_PROVIDER?: string;
+  /** Decision model override (default `jev-latest` / `~typesafe/jev-latest`). */
+  DECISION_MODEL?: string;
+  /** TypeSafe API key for Jev (System One API). */
+  TYPESAFE_API_KEY?: string;
+  /** Optional TypeSafe endpoint override. Defaults to `https://api.typesafe.ai/v1`. */
+  TYPESAFE_BASE_URL?: string;
+  /** OpenRouter API key, used when DECISION_PROVIDER = 'openrouter'. */
+  OPENROUTER_API_KEY?: string;
+  /** Total decision deadline in ms, retries included (default 20000, 1000–120000). */
+  DECISION_TIMEOUT_MS?: string;
+  /** Timeout of one upstream attempt in ms (default 8000, 500–120000). */
+  DECISION_ATTEMPT_TIMEOUT_MS?: string;
+  /** Retries after the first attempt (default 2, 0–5). */
+  DECISION_MAX_RETRIES?: string;
+  /** UTF-8 byte cap on serialized state + questions (default 131072). */
+  DECISION_MAX_INPUT_BYTES?: string;
+  /** Estimated token budget on the same payload (default 24000). */
+  DECISION_MAX_INPUT_TOKENS?: string;
+  /** `llm` only: cap on the estimated answer size in tokens (default 4096, 256–32768). */
+  DECISION_LLM_MAX_OUTPUT_TOKENS?: string;
+  /** `llm` + Gemini/Vertex only: thinking headroom added to the sent cap (default 1024, 0–32768). */
+  DECISION_LLM_THINKING_TOKENS?: string;
+  /** Platform ceiling: admitted decisions per site per hour (default 600). A site may only tighten it. */
+  DECISION_SITE_REQUESTS_PER_HOUR?: string;
+  /** Platform ceiling: decisions in flight per site (default 4). */
+  DECISION_SITE_MAX_CONCURRENT?: string;
+  /** Platform ceiling: estimated tokens per site per UTC day, retries included (default 2,000,000). */
+  DECISION_SITE_TOKENS_PER_DAY?: string;
+  /** Dedup window (s) for refused-decision audit rows (default 300; `0` = one row per refusal) (#564). */
+  DECISION_REFUSAL_AUDIT_WINDOW_SECONDS?: string;
+  /** Days a draft review run (and its feedback) is kept before the hourly purge (default 180). */
+  DECISION_REVIEW_RETENTION_DAYS?: string;
   // ── Custom domains / Cloudflare for SaaS (services/domains/*) ───────────
   /** API token with `SSL and Certificates: Edit` on the SaaS zone. */
   CLOUDFLARE_API_TOKEN?: string;
@@ -192,6 +294,13 @@ export interface Bindings {
   LUMIBASE_SAAS_FALLBACK?: string;
   /** Reserved suffix offered for free subdomains. Defaults to `lumibase.dev`. */
   LUMIBASE_FREE_DOMAIN_SUFFIX?: string;
+  /**
+   * Absolute URL of Studio → Settings → Security for this deployment (e.g.
+   * `https://cms.example.com/settings/security#active-sessions`). Linked from
+   * the new-device sign-in email sent to staff (#739). Optional: without it
+   * the email names the page instead of linking it. Members get the site URL.
+   */
+  LUMIBASE_SECURITY_SETTINGS_URL?: string;
   // ── Git integration (modules/git-integration) ───────────────────────────
   /** Public origin used to build operator-facing webhook URLs (e.g. https://api.example.com). */
   LUMIBASE_PUBLIC_URL?: string;
@@ -233,6 +342,18 @@ export interface AuthPrincipal {
   roles?: string[];
   /** Flag to identify if this principal is a frontend end-user (authenticated via Custom JWT) */
   isFrontendUser?: boolean;
+  /**
+   * Present when the principal is an OAuth access token presented to the MCP
+   * resource (#346): an external-issuer JWT whose `aud` includes the MCP
+   * resource URI. `scopes` narrow — never widen — the RBAC capability set.
+   */
+  oauth?: {
+    issuer: string;
+    resource: string;
+    scopes: string[];
+    /** OAuth client that obtained the token (`azp` / `client_id`), for audit. */
+    clientId?: string;
+  };
   raw: Record<string, unknown>;
 }
 
@@ -240,13 +361,24 @@ export interface AuthPrincipal {
  * Per-request variables hung off Hono's context.
  */
 export interface Variables {
+  organizationAccessAudited?: boolean;
+  organization?: { id: string; role: import('@lumibase/contracts').OrgRole };
+  siteAdminVia?: 'role' | 'bootstrap' | 'organization' | null;
   db: Database;
+  /**
+   * Memoised system-role db (BYPASSRLS, unscoped). Set by `withSystemDb()` /
+   * `systemDbFor(c)` in `middleware/db.ts`; only for system routes and writes
+   * that legitimately cross sites (B130).
+   */
+  systemDb?: Database;
   /** Active site id (Strict Rule #2). Set by `withTenant`. */
   siteId: string;
   /** Authenticated principal. Set by `withAuth`. */
   auth: AuthPrincipal;
   /** Correlation id for log lines. */
   requestId: string;
+  /** Set once this request's 5xx was handed to the ops error capture (`modules/ops/capture.ts`). */
+  opsErrorCaptured?: boolean;
   /**
    * Resolved client IP for the current request (admin-setup-wizard
    * task 11.2; Req 15.1, 15.2; design §6.2). Populated by the
@@ -269,6 +401,20 @@ export interface Variables {
   userAgent?: string;
   /** Runtime context providing cache, storage, database, search, queue, and media adapters. */
   runtime: RuntimeContext;
+  /**
+   * Memoised tenant of this request, with its owning organization. Set lazily
+   * by `tenantRefFor(c)` in `platform/request.ts` — read it through that
+   * helper, never directly: it is unset until something asks.
+   */
+  tenantRef?: {
+    siteId: string;
+    ref: Promise<import('@lumibase/contracts/platform').TenantRef>;
+  };
+  /**
+   * Memoised entitlement snapshot of this request. Set lazily by
+   * `entitlementsFor(c)` in `platform/request.ts`; unset until something asks.
+   */
+  entitlements?: Promise<import('@lumibase/contracts/platform').EntitlementSnapshot>;
   /**
    * Internal response-type marker for observability/log enrichment.
    * Currently used by `adminPathGuard` (admin-setup-wizard Req 5.2) to

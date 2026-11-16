@@ -1,11 +1,17 @@
+import { classifyTokenPrefix } from '@lumibase/contracts';
+import { isOrganizationPath, isMcpPath, organizationRoleForSite, organizationRoleExpression } from '../services/organization-access';
+import { auditSecurityGuardDenied } from './security-audit';
 import type { MiddlewareHandler } from 'hono';
 import { apiKeys, users, userSites } from '@lumibase/database';
 import { and, eq, sql } from 'drizzle-orm';
+import { systemDbFor } from './db';
+import { isSessionLive } from '../services/auth/refresh-token';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { runDetached } from '../lib/detached';
 import { AuditLogger } from '../modules/audit/logger';
 import { tryExternalJwt } from '../modules/external-auth/adapter';
+import { externalPrincipalRaw } from '../modules/external-auth/principal-raw';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { TOKEN_AUDIENCE, audienceValues } from '../services/auth/token-audience';
 import { resolvePublicRoleIdCached } from '../services/auth/public-role';
@@ -15,6 +21,9 @@ import {
   readAllowedOrigins,
 } from '../services/api-key-publishable';
 import { mergeRequestContext } from './request-context';
+import { mcpResourceContext } from './mcp-oauth';
+import { isSocialAuthPublicPath } from '../modules/social-auth/paths';
+import { scopesFromClaims } from '../services/mcp-oauth';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -76,6 +85,8 @@ function apiKeySnapshot(row: typeof apiKeys.$inferSelect): Record<string, unknow
   return {
     id: row.id,
     siteId: row.siteId,
+    scope: row.scope ?? 'site',
+    organizationId: row.organizationId ?? null,
     name: row.name,
     prefix: row.prefix,
     description: row.description,
@@ -89,7 +100,7 @@ function apiKeySnapshot(row: typeof apiKeys.$inferSelect): Record<string, unknow
 async function auditApiKeyUseDenied(
   c: Parameters<MiddlewareHandler<AppEnv>>[0],
   row: typeof apiKeys.$inferSelect,
-  reason: 'site_mismatch' | 'revoked' | 'expired' | 'origin_not_allowed',
+  reason: 'site_mismatch' | 'revoked' | 'expired' | 'origin_not_allowed' | 'site_scoped_credential_on_org_plane' | 'site_not_in_organization' | 'scope_prefix_mismatch',
 ): Promise<void> {
   // Record the denial against the key's OWN site, not the requested one.
   //
@@ -99,7 +110,11 @@ async function auditApiKeyUseDenied(
   // is also the tenant that actually needs to see this event — someone is using
   // their key against another site. The requested id is still preserved in
   // `metadata.requestedSiteId` below, where no FK applies.
-  await new AuditLogger({ db: c.get('db'), siteId: row.siteId }).write({
+  //
+  // The write goes through the system connection (B130): the key's site
+  // differs from the request's site scope, so under LUMIBASE_DB_RLS=enforce
+  // the scoped request db would fail the policy's WITH CHECK.
+  await new AuditLogger({ db: systemDbFor(c), siteId: row.siteId }).write({
     event: 'api_key_use_denied',
     actorEmail: null,
     ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
@@ -108,6 +123,7 @@ async function auditApiKeyUseDenied(
     metadata: {
       apiKeyId: row.id,
       apiKeyName: row.name,
+      organizationId: row.organizationId ?? null,
       prefix: row.prefix,
       siteId: row.siteId,
       requestedSiteId: c.get('siteId'),
@@ -137,10 +153,16 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     path === '/api/v1/auth/resend-verification' ||
     path === '/api/v1/auth/forgot-password' ||
     path === '/api/v1/auth/reset-password' ||
+    path === '/api/v1/auth/password-policy' ||
     path === '/api/v1/auth/refresh' ||
     path === '/api/v1/auth/logout' ||
     path === '/api/v1/auth/login' ||
     path === '/api/v1/auth/verify-totp' ||
+    path === '/api/v1/auth/passkey/options' ||
+    path === '/api/v1/auth/passkey/verify' ||
+    // Social login (#736): start / provider callback / one-time code exchange.
+    // Self-authenticating via server-side state + PKCE; see modules/social-auth.
+    isSocialAuthPublicPath(path) ||
     path === '/api/v1/realtime' ||
     path.startsWith('/api/v1/files/upload/') ||
     // Flow webhook trigger authenticates with a per-flow token inside the
@@ -207,6 +229,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
 
       const email = typeof payload.email === 'string' ? payload.email : undefined;
       const requestSiteId = c.get('siteId');
+      const orgPath = isOrganizationPath(path);
 
       // Map the Access identity to a real user + site role from the DB instead
       // of trusting the edge assertion for authorization (CWE-302). A verified
@@ -240,14 +263,15 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         );
       }
 
-      const [membership] = await c
-        .get('db')
-        .select({ roleId: userSites.roleId })
+      const [membership] = orgPath ? [] : await systemDbFor(c)
+        .select({ roleId: userSites.roleId, organizationRole: organizationRoleExpression(user.id, requestSiteId) })
         .from(userSites)
         .where(and(eq(userSites.userId, user.id), eq(userSites.siteId, requestSiteId)))
         .limit(1);
 
-      if (!membership && !user.isBootstrap) {
+      const inherited = !orgPath && !membership
+        ? await organizationRoleForSite(systemDbFor(c), user.id, requestSiteId) : null;
+      if (!orgPath && !membership && !user.isBootstrap && !inherited) {
         return c.json(
           { errors: [{ code: 'UNAUTHENTICATED', message: 'Cloudflare Access user is not a member of the selected site.' }] },
           401,
@@ -261,7 +285,8 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
           email,
           isBootstrap: user.isBootstrap,
         },
-        membership: membership?.roleId ? { roleId: membership.roleId } : null,
+        organizationRole: membership?.organizationRole ?? (inherited || null),
+        membership: membership ? { roleId: membership.roleId ?? null } : null,
       });
 
       const principal: AuthPrincipal = {
@@ -291,8 +316,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
 
   if (bearerToken) {
     const tokenHash = await sha256Hex(bearerToken);
-    const [apiKey] = await c
-      .get('db')
+    const [apiKey] = await (isOrganizationPath(path) || classifyTokenPrefix(bearerToken) === 'organization' ? systemDbFor(c) : c.get('db'))
       .select()
       .from(apiKeys)
       .where(eq(apiKeys.tokenHash, tokenHash))
@@ -304,7 +328,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       // never accepted here. We fetch by token hash (a 256-bit unguessable
       // value) and then reject + audit any cross-tenant use before the key
       // can yield a principal.
-      if (apiKey.siteId !== c.get('siteId')) {
+      if (apiKey.scope !== 'organization' && !isOrganizationPath(path) && apiKey.siteId !== c.get('siteId')) {
         await auditApiKeyUseDenied(c, apiKey, 'site_mismatch');
         return c.json(
           { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
@@ -324,6 +348,26 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
           { errors: [{ code: 'UNAUTHENTICATED', message: 'API key is expired or revoked.' }] },
           401,
         );
+      }
+
+      if (isOrganizationPath(path) && apiKey.scope !== 'organization') {
+        await auditApiKeyUseDenied(c, apiKey, 'site_scoped_credential_on_org_plane');
+        return c.json({ errors: [{ code: 'ORGANIZATION_FORBIDDEN' }] }, 403);
+      }
+      if (apiKey.scope === 'organization') {
+        if (classifyTokenPrefix(bearerToken) !== 'organization') {
+          await auditApiKeyUseDenied(c, apiKey, 'scope_prefix_mismatch');
+          return c.json({ errors: [{ code: 'UNAUTHENTICATED' }] }, 401);
+        }
+        if (!isOrganizationPath(path) && !(isMcpPath(path) && !c.get('siteId'))) {
+          const { sites } = await import('@lumibase/database');
+          const [site] = await systemDbFor(c).select({ organizationId: sites.organizationId })
+            .from(sites).where(eq(sites.id, c.get('siteId'))).limit(1);
+          if (!site || site.organizationId !== apiKey.organizationId) {
+            await auditApiKeyUseDenied(c, apiKey, 'site_not_in_organization');
+            return c.json({ errors: [{ code: 'SITE_NOT_IN_ORGANIZATION' }] }, 403);
+          }
+        }
       }
 
       // Origin allowlist for publishable (client-embeddable) keys. Scoped to
@@ -404,8 +448,36 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         externalId: ext.externalId,
         email: ext.email,
         roles: ext.roleIds,
-        raw: ext.payload as Record<string, unknown>,
+        // Never the payload verbatim: LumiBase-reserved markers (`dev`,
+        // `isBootstrap`, `tfaVerified`, …) are dropped so an external issuer
+        // cannot assert them. See `external-auth/principal-raw.ts`.
+        raw: externalPrincipalRaw(ext.payload),
       };
+      // On the MCP resource the verifier has already required `aud` to contain
+      // the resource URI, so this is an OAuth access token for MCP (#346): carry
+      // its scopes so the route can narrow the RBAC capability set.
+      const mcp = mcpResourceContext(c);
+      if (mcp) {
+        const claims = ext.payload as Record<string, unknown>;
+        const clientId = typeof claims.azp === 'string' ? claims.azp : typeof claims.client_id === 'string' ? claims.client_id : undefined;
+        principal.oauth = {
+          issuer: String(ext.payload.iss ?? ''),
+          resource: mcp.resource,
+          scopes: scopesFromClaims(claims),
+          ...(clientId ? { clientId } : {}),
+        };
+        // Built field by field, never spread from the token (ported from #805):
+        // guards elsewhere read `raw.dev` and `raw.isBootstrap`, and a claim
+        // minted by an outside authorization server must not set them. `aud` is
+        // kept as verified (it already matched the issuer's configured audience
+        // and this resource) so audience walls such as `frontend` still apply.
+        principal.raw = {
+          mcpOAuth: true,
+          iss: principal.oauth.issuer,
+          sub: typeof claims.sub === 'string' ? claims.sub : undefined,
+          aud: claims.aud,
+        };
+      }
       c.set('auth', principal);
       return next();
     }
@@ -440,7 +512,13 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       const payload = await verifyCustomJwt(bearerToken, jwtSecret);
       const tokenSiteId = typeof payload.siteId === 'string' ? payload.siteId : null;
       const requestSiteId = c.get('siteId');
-      if (!tokenSiteId || tokenSiteId !== requestSiteId) {
+      const orgPath = isOrganizationPath(path);
+      const studioSession = audienceValues(payload.aud).includes(TOKEN_AUDIENCE.studio);
+      if (orgPath && !studioSession) {
+        await auditSecurityGuardDenied(c, 'organization_access_denied', { reason: 'site_scoped_credential_on_org_plane' });
+        return c.json({ errors: [{ code: 'ORGANIZATION_FORBIDDEN' }] }, 403);
+      }
+      if (!orgPath && (!tokenSiteId || tokenSiteId !== requestSiteId) && !studioSession) {
         return c.json(
           { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
           401,
@@ -479,18 +557,36 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         );
       }
 
-      const [membership] = await c
-        .get('db')
-        .select({ roleId: userSites.roleId })
+      // Per-session revocation (#730): a login/refresh token carries `sid`,
+      // its refresh-token family. Once that session is revoked ("sign out
+      // this device", "sign out other devices", reuse detection) it has no
+      // live refresh row and its access token dies now, not at `exp`.
+      // System handle: a Studio token may act on a sibling site whose RLS
+      // scope would hide the family row; the random `sid` is the only key.
+      // Tokens minted before `sid` existed skip the check until they expire.
+      const sessionId = typeof payload.sid === 'string' ? payload.sid : null;
+      if (sessionId && !(await isSessionLive(systemDbFor(c), sessionId))) {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Session revoked. Please sign in again.' }] },
+          401,
+        );
+      }
+
+      const [membership] = orgPath ? [] : await systemDbFor(c)
+        .select({ roleId: userSites.roleId, organizationRole: organizationRoleExpression(user.id, requestSiteId) })
         .from(userSites)
         .where(and(eq(userSites.userId, userId), eq(userSites.siteId, requestSiteId)))
         .limit(1);
-      if (!membership && !user.isBootstrap) {
+      const inherited = !orgPath && studioSession && (!membership || tokenSiteId !== requestSiteId)
+        ? await organizationRoleForSite(systemDbFor(c), user.id, requestSiteId) : null;
+      if ((!orgPath && tokenSiteId !== requestSiteId && !inherited) || (!orgPath && !membership && !user.isBootstrap && !inherited)) {
         return c.json(
           { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
           401,
         );
       }
+
+      if (inherited) c.set('siteAdminVia', 'organization');
 
       // The `aud` claim records the realm the token was minted for
       // (`studio` vs `frontend`). `isFrontendUser` tracks it for the
@@ -503,7 +599,8 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
           email: typeof payload.email === 'string' ? payload.email : user.id,
           isBootstrap: user.isBootstrap,
         },
-        membership: membership?.roleId ? { roleId: membership.roleId } : null,
+        organizationRole: membership?.organizationRole ?? (inherited || null),
+        membership: membership ? { roleId: membership.roleId ?? null } : null,
       });
 
       const principal: AuthPrincipal = {
@@ -577,6 +674,10 @@ const ANONYMOUS_ALLOWED_PREFIXES = [
   '/api/v1/search',
   '/api/v1/media',
   '/api/v1/files',
+  // Live OpenAPI document (#745). Still 404s unless the site enabled it AND
+  // listed the `public` realm; the anonymous caller then sees only what the
+  // `public` role may read.
+  '/api/v1/openapi.json',
 ];
 
 /** Only side-effect-free methods are ever eligible for the anonymous realm. */

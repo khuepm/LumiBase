@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:05:49.466Z
+version: 10
+lastUpdated: 2026-11-13T19:16:12.263Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8213b15617869cfe
+sourceHash: 440989947c2b355b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:05:54.545Z
-codeVerifiedHash: 8213b15617869cfe
-codeVerifiedClaims: 26
+codeVerified: 2026-11-15T11:40:42.607Z
+codeVerifiedHash: 440989947c2b355b
+codeVerifiedClaims: 34
 ---
 
 # Checklist deploy LumiBase lên production
@@ -16,6 +16,8 @@ codeVerifiedClaims: 26
 > Checklist đầy đủ để deploy LumiBase lên production. Hỗ trợ cả **Cloudflare Workers** (edge) và **Docker** (self-hosted).
 
 ---
+
+Workflow triển khai CMS và phát hành tạo các queue còn thiếu của Flows (`flow-runs`, `flow-events`), queue nội dung (`content-indexing`, `revalidation-dispatch`), queue envelope migration (`encryption-envelope-migration`) cùng dead-letter queue của chúng trước khi triển khai bằng `scripts/ensure-flow-queues.mjs`. Queue đã có được giữ nguyên. Token triển khai cần quyền chỉnh sửa Queues. Triển khai thủ công/cục bộ vẫn dùng các lệnh tạo queue bên dưới.
 
 ## Mục lục
 
@@ -77,6 +79,16 @@ codeVerifiedClaims: 26
   ```bash
   wrangler queues create lumibase-realtime
   ```
+- [ ] Đã tạo queue cho agent run, Flows, index search, ISR revalidation và envelope migration, kèm dead-letter queue, cho mọi profile có tên mà bạn deploy (xem [queue của Flows](features/flows-automation.md#cloudflare-workers-queue-của-flows)):
+  ```bash
+  cd apps/cms
+  for profile in staging production dev demo; do
+    for q in agent-runs flow-runs flow-events content-indexing revalidation-dispatch encryption-envelope-migration; do
+      pnpm exec wrangler queues create "lumibase-$q-$profile"
+      pnpm exec wrangler queues create "lumibase-$q-$profile-dlq"
+    done
+  done
+  ```
 - [ ] Đã cập nhật `wrangler.toml` với các binding ID
 
 ### Docker (deploy self-hosted)
@@ -123,6 +135,7 @@ openssl rand -base64 24
 | `CF_ACCESS_AUDIENCE` | Nếu dùng CF Access | `wrangler secret put CF_ACCESS_AUDIENCE --env production` |
 | `SENTRY_DSN` | Khuyến nghị | `wrangler secret put SENTRY_DSN --env production` |
 | `METRICS_TOKEN` | Khuyến nghị | `wrangler secret put METRICS_TOKEN --env production` |
+| `LUMIBASE_OPS_TOKEN` | Tùy chọn | `wrangler secret put LUMIBASE_OPS_TOKEN --env production` |
 | `OPENAI_API_KEY` | Nếu dùng AI | `wrangler secret put OPENAI_API_KEY --env production` |
 
 ### Environment cho Docker
@@ -178,7 +191,28 @@ pnpm -F @lumibase/database migrate
 
 ### Bảo mật database
 
-- [ ] Đã bật Row Level Security (RLS)
+- [ ] Chọn chế độ RLS. Lớp chốt chỉ thực thi khi `LUMIBASE_DB_RLS=enforce`; quy trình đầy đủ ở [Scope RLS trên request path](features/rls-request-scope.md).
+  - `off` (mặc định): ứng dụng kết nối bằng role bypass RLS (role có `BYPASSRLS`; superuser cũng bypass). Owner của bảng không được miễn: `rls-policies.sql` bật `FORCE ROW LEVEL SECURITY`, nên owner không phải superuser không thấy dòng nào. Ở chế độ này áp file không thay đổi gì.
+  - `enforce`: hai role. `DATABASE_URL` (hoặc `HYPERDRIVE`) là role ứng dụng tạo với `NOSUPERUSER NOBYPASSRLS`; tuyệt đối không là superuser hay role có `BYPASSRLS`, nếu không lớp chốt không thực thi gì. `DATABASE_SYSTEM_URL` (hoặc binding `HYPERDRIVE_SYSTEM`) là system role có `BYPASSRLS`, nên không phải superuser, dành cho worker, cron và route hệ thống. Cả hai role được cấp `USAGE` trên schema và `SELECT, INSERT, UPDATE, DELETE` trên mọi bảng (cấp lại sau các migration thêm bảng).
+- [ ] Với `enforce`: log khởi động Docker có `[db-rls] request-path RLS scope: enforce (…)` và không có `[db-rls] WARNING`; `GET /health/ready` trả 200 (nó probe cả hai connection).
+- [ ] Đã bật Row Level Security (RLS): áp `packages/database/migrations/rls-policies.sql` bằng owner của database (không phải role ứng dụng). `pnpm db:migrate` không áp file này; áp lại sau mỗi lần upgrade.
+  ```bash
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction \
+    -f packages/database/migrations/rls-policies.sql
+  ```
+- [ ] Đã kiểm policy RLS: query dưới đây trả 2 dòng cho mỗi bảng (`site_isolation` RESTRICTIVE, `site_isolation_permit` PERMISSIVE).
+  ```sql
+  SELECT tablename, policyname, permissive FROM pg_policies
+   WHERE policyname IN ('site_isolation', 'site_isolation_permit')
+   ORDER BY 1, 2;
+  ```
+- [ ] Smoke test RLS bằng một role không có BYPASSRLS: count > 0 với site có settings, và = 0 khi chưa set `app.site_id`. Test này tự mở transaction riêng; nó chứng minh policy đúng, không chứng minh ứng dụng đã có scope. Với ứng dụng, chạy bước kiểm tra hai site trong [Scope RLS trên request path](features/rls-request-scope.md#bật-tính-năng).
+  ```sql
+  BEGIN;
+  SELECT set_config('app.site_id', '<site id>', true);
+  SELECT count(*) FROM lumibase_settings;
+  COMMIT;
+  ```
 - [ ] Không cho truy cập public schema
 - [ ] Đã bật audit logging
 - [ ] Đã cấu hình lịch backup
@@ -382,6 +416,7 @@ curl https://api.yourdomain.com/api/v1/health
 ### Bảo mật API
 
 - [ ] Endpoint `/metrics` được bảo vệ bởi `METRICS_TOKEN`
+- [ ] `/api/v1/ops/*` trả về 404 trừ khi `LUMIBASE_OPS_TOKEN` (≥ 32 ký tự) được đặt — xem [Chẩn đoán vận hành](./features/ops-diagnostics.md)
 - [ ] Endpoint SCIM được bảo vệ (nếu dùng)
 - [ ] Đã tắt introspection GraphQL ở production
 - [ ] Đã bật validate MIME type khi upload file
@@ -530,6 +565,7 @@ docker compose up -d
 | `CF_ACCESS_AUDIENCE` | Nếu dùng CF Access | Từ dashboard CF |
 | `SENTRY_DSN` | Khuyến nghị | Từ project Sentry |
 | `METRICS_TOKEN` | Khuyến nghị | `openssl rand -base64 24` |
+| `LUMIBASE_OPS_TOKEN` | Tùy chọn | `openssl rand -base64 36` |
 
 ### Docker
 

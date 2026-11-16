@@ -152,6 +152,11 @@ export interface LoginSuccessContext {
    * gated on it. Defaults to `false` when omitted.
    */
   readonly baselineWarmup?: boolean;
+  /**
+   * How the user proved who they are, recorded on the `login_success` audit
+   * entry for the user's security history (#739). Omitted → not recorded.
+   */
+  readonly method?: 'password' | 'totp';
 }
 
 /**
@@ -465,18 +470,23 @@ export async function recordLoginFailure(
       const lockedUntil = new Date(
         now.getTime() + policy.userLockoutDurationSeconds * 1000,
       );
-      // Use `lower(email) = ?` so the update matches a user whose row
-      // stores the address with mixed case (the legacy /register
-      // path doesn't normalise yet — task 6.3). Drizzle's
-      // `.update(users).set(...).where(sql\`...\`)` builds the right
-      // SQL here.
+      // Lock the resolved account row by primary key when the caller
+      // matched one (#794: under the `root` email identity mode the typed
+      // address may be an alias, so `lower(email)` would miss the row and
+      // alias rotation would dodge the lockout). Without a match, fall back
+      // to `lower(email) = ?` — it targets no row, which is the intended
+      // no-op for an unknown address.
       await db
         .update(users)
         .set({
           lockedUntil,
           failedCount: userFailedCount,
         })
-        .where(sql`lower(${users.email}) = ${emailLower}`);
+        .where(
+          ctx.userId
+            ? eq(users.id, ctx.userId)
+            : sql`lower(${users.email}) = ${emailLower}`,
+        );
       userLocked = true;
 
       // Req 13.1 — fan a `user_locked` notification out to the
@@ -720,6 +730,7 @@ export async function recordLoginSuccess(
       anomalyScore: roundScore(ctx.anomalyScore),
       anomalyTriggered: ctx.anomalyTriggered ?? false,
       baselineWarmup: ctx.baselineWarmup ?? false,
+      ...(ctx.method ? { method: ctx.method } : {}),
     },
   });
 
@@ -869,7 +880,9 @@ export async function recordAnomalyBlock(
     await db
       .update(users)
       .set({ lockedUntil })
-      .where(sql`lower(${users.email}) = ${emailLower}`);
+      // By primary key: the detector ran on a verified account row (#794 —
+      // the typed address may be an alias of it under `root` mode).
+      .where(eq(users.id, ctx.userId));
 
     // Req 13.1 — `anomaly_lock` notification. Only the `'lock'`
     // action maps to a Req 13.1 event; `'require_mfa'` deliberately

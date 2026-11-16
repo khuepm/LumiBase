@@ -8,18 +8,23 @@ import type { Server as HttpServer } from 'node:http';
 import { createRuntime, leaderLockedCallback } from '@lumibase/runtime/node';
 import { getSharedRealtimeHub } from '@lumibase/runtime/docker';
 import { drizzle } from 'drizzle-orm/postgres-js';
+import type { Sql } from 'postgres';
 import { schema } from '@lumibase/database';
 import cron, { type ScheduledTask } from 'node-cron';
 import { loadSecretFiles, validateProductionConfig } from './config/production';
 import { runScheduledRotation } from './modules/audit/scheduled';
 import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
+import { runScheduledReviewRunPurge } from './services/review-run-retention';
 import { bootstrapNodeObservability } from './observability/node';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPressureLimiter } from './pressure-limiter';
 import { startWorkerHealthServer } from './worker-health';
 import { setRuntimeFactory } from './middleware/runtime';
 import { mountStudio } from './serve-studio';
+import { runSetupTokenStartup } from './modules/setup/startup';
+import { assertDbRlsStartup } from './config/db-rls-startup';
 import type { Bindings } from './env';
+import { nodeAutostartEnabled } from './node-autostart';
 
 type ProcessRole = 'web' | 'worker' | 'all';
 
@@ -66,9 +71,33 @@ async function main() {
   // its own Docker runtime, so every process ended up with two — two Redis
   // connections, two pg pools — and discarded one on the first request.
   setRuntimeFactory(() => runtime);
+  // ── Request-path RLS scope (B130) ───────────────────────────────────────
+  //
+  // Validates LUMIBASE_DB_RLS for every process role. With `enforce` it
+  // requires DATABASE_SYSTEM_URL on a BYPASSRLS role and fails the start
+  // otherwise: workers and cron below run on that system connection.
+  await assertDbRlsStartup({ rawMode: process.env.LUMIBASE_DB_RLS, database: runtime.database });
 
 
   if (runHttp) {
+    // ── Setup token (admin-setup-wizard Req 2.6; #470) ─────────────────────
+    //
+    // With LUMIBASE_REQUIRE_SETUP_TOKEN on, `/setup/complete` demands a token,
+    // and this is the only place one is minted and printed. It must finish
+    // before `serve()` so no setup request can reach a process that has not
+    // issued its token yet. Only HTTP processes run it: they serve `/setup`,
+    // and a worker-only process printing the token would put it in logs the
+    // operator is not reading. A DB failure here fails the start on purpose —
+    // see `runSetupTokenStartup`.
+    //
+    // Runs before any site exists, so it uses the system connection (B130).
+    // `getSystemConnection()` is typed `unknown` so the runtime package does
+    // not depend on postgres-js; both adapters return a postgres-js `Sql`.
+    await runSetupTokenStartup({
+      db: drizzle(runtime.database.getSystemConnection() as Sql, { schema }),
+      env: process.env,
+    });
+
     // Serve the Studio SPA from this process when its bundle is present. Node
     // only: Workers has no filesystem, so on Cloudflare the Studio stays a
     // separate Pages deployment. `serve-studio` is imported nowhere else, which
@@ -131,15 +160,46 @@ async function main() {
     console.warn('[lumibase-cms] JWT_SECRET unset — realtime WebSocket server disabled');
   }
 
+  // ── Extension hot reload (#754) — LOCAL DEVELOPMENT ONLY ──────────────────
+  // Opt-in via LUMIBASE_EXTENSION_DEV=1 + NODE_ENV=development; refused in
+  // production (and validateProductionConfig fails the start if the flag is
+  // set there). Subscribes to the loopback `lumibase-ext dev` hub and swaps
+  // rebuilt hook/endpoint bundles in without a restart. Node-only: the client
+  // is imported dynamically here and nowhere else, so Workers never ships it.
+  let extensionDevClient: { stop(): void } | undefined;
+  {
+    const { resolveExtensionDevConfig } = await import('./extensions/dev-reload/config');
+    const devConfig = resolveExtensionDevConfig(process.env as Record<string, string | undefined>);
+    if (devConfig.enabled) {
+      const [{ startExtensionDevClient }, { devExtensionRegistry }] = await Promise.all([
+        import('./extensions/dev-reload/client'),
+        import('./extensions/dev-reload/registry'),
+      ]);
+      extensionDevClient = startExtensionDevClient({
+        config: devConfig,
+        registry: devExtensionRegistry,
+        env: process.env as Record<string, string | undefined>,
+      });
+    } else if (devConfig.reason !== 'not-requested') {
+      console.error(`[extension-dev] hot reload REFUSED: ${devConfig.message}`);
+    }
+  }
+
   // Cron tasks stopped on SIGTERM (optional when role=web).
   let rotationTask: ScheduledTask | undefined;
   let pageviewFlushTask: ScheduledTask | undefined;
   let vetoSweepTask: ScheduledTask | undefined;
   let claimSweepTask: ScheduledTask | undefined;
+  let staleRunSweepTask: ScheduledTask | undefined;
+  let questionSweepTask: ScheduledTask | undefined;
   let schedulerTask: ScheduledTask | undefined;
   let retentionTask: ScheduledTask | undefined;
+  let revisionRetentionTask: ScheduledTask | undefined;
   let deploymentPollTask: ScheduledTask | undefined;
   let flowScheduleTask: ScheduledTask | undefined;
+  let goalDispatchTask: ScheduledTask | undefined;
+  let importTask: ScheduledTask | undefined;
+  let localeJobTask: ScheduledTask | undefined;
   let loadGuardTimer: ReturnType<typeof setInterval> | undefined;
 
   if (runWorkers) {
@@ -168,12 +228,15 @@ async function main() {
   // `recoverMissedExecutions`: ticks missed while the process was down are
   // not replayed (audit rotation / pageview flush catch up on the next cron).
   //
-  // The rotator needs a Drizzle client. We mirror `middleware/db.ts`'s runtime
-  // path: `runtime.database.getConnection()` returns the postgres-js `Sql`
-  // instance (cast required — the provider types it as `unknown` to avoid
-  // coupling to postgres-js), which we wrap with the shared `schema`.
+  // Every worker, cron and queue consumer below shares this Drizzle client.
+  // It runs on the SYSTEM connection (B130): most jobs sweep across sites
+  // without a site scope, and the audit batcher inserts rows of several sites
+  // in one statement, so under `LUMIBASE_DB_RLS=enforce` they need a role
+  // with BYPASSRLS (`DATABASE_SYSTEM_URL`). Without a dedicated system
+  // connection `getSystemConnection()` is the main pool, as before.
+  // Tripwire T3 (`__tests__/rls-scope.wiring.test.ts`) keeps it that way.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rotatorDb = drizzle(runtime.database.getConnection() as any, { schema });
+  const rotatorDb = drizzle(runtime.database.getSystemConnection() as any, { schema });
 
   // Hourly cron. `runScheduledRotation` is best-effort and never throws, so the
   // callback is safe to fire-and-forget; the returned promise only logs the
@@ -186,9 +249,22 @@ async function main() {
     leaderLockedCallback(
       'audit-rotation',
       3_300_000,
-      () => {
-        void runScheduledRotation(rotatorDb);
+      async () => {
+        await runScheduledRotation(rotatorDb);
         void runScheduledRefreshTokenPrune(rotatorDb);
+        void runScheduledReviewRunPurge(rotatorDb, process.env.DECISION_REVIEW_RETENTION_DAYS);
+        // Opt-in anonymous usage telemetry. Off unless the operator enabled it
+        // AND named an endpoint; when off it touches neither DB nor network.
+        void Promise.all([import('./modules/activation/telemetry'), import('./routes/system')])
+          .then(([{ runScheduledTelemetry }, { resolveBuildMetadata }]) =>
+            runScheduledTelemetry({
+              db: rotatorDb,
+              env: process.env,
+              runtime: 'docker',
+              version: resolveBuildMetadata().version,
+            }),
+          )
+          .catch(() => console.error('[telemetry] tick failed'));
       },
       lockOpts,
     ),
@@ -202,8 +278,8 @@ async function main() {
     leaderLockedCallback(
       'pageview-flush',
       240_000,
-      () => {
-        void runScheduledPageviewFlush(rotatorDb, runtime);
+      async () => {
+        await runScheduledPageviewFlush(rotatorDb, runtime);
       },
       lockOpts,
     ),
@@ -241,6 +317,7 @@ async function main() {
     // identically whether a run is executed sync or off the queue.
     keys: runtime.keys,
     env: process.env as Record<string, string | undefined>,
+    runtime,
   });
 
   // ── Content indexing (search) ────────────────────────────────────────────
@@ -322,14 +399,17 @@ async function main() {
   // the flow and records the run. Without it, event flows never fire.
   const { registerFlowEventWorker } = await import('./services/flow-dispatch');
   registerFlowEventWorker({
+    cache: runtime.cache,
     db: rotatorDb,
     queue: runtime.queue,
     keys: runtime.keys,
+    env: process.env as Record<string, string | undefined>,
   });
 
   // ── Manual flow runs + AI chat async (high-load task 17) ────────────────
   const { registerFlowRunsWorker } = await import('./services/flow-run-service');
   registerFlowRunsWorker({
+    cache: runtime.cache,
     db: rotatorDb,
     queue: runtime.queue,
     keys: runtime.keys,
@@ -357,8 +437,8 @@ async function main() {
     leaderLockedCallback(
       'veto-sweep',
       240_000,
-      () => {
-        void sweepDueVetoCommits(vetoWorkerDeps).catch((err) => {
+      async () => {
+        await sweepDueVetoCommits(vetoWorkerDeps).catch((err) => {
           console.error('[veto-sweep] failed', formatSafeError(err));
         });
       },
@@ -382,8 +462,8 @@ async function main() {
     leaderLockedCallback(
       'approval-claim-sweep',
       240_000,
-      () => {
-        void sweepStaleApprovalClaims({ db: rotatorDb })
+      async () => {
+        await sweepStaleApprovalClaims({ db: rotatorDb })
           .then((released) => {
             for (const claim of released) {
               console.warn(
@@ -398,6 +478,69 @@ async function main() {
           })
           .catch((err) => {
             console.error('[approval-claim-sweep] failed', formatSafeError(err));
+          });
+      },
+      lockOpts,
+    ),
+  );
+
+  // ── Abandoned agent run sweep (#481 R3.1) ──────────────────────────────────
+  //
+  // A worker that dies mid-run leaves `agent_runs` on `running`. The queue claim
+  // deliberately refuses to take such a run over — age cannot prove the first
+  // attempt had no side effect, and taking it over wrote the same item twice in a
+  // measured probe — so without this sweep the row would stay `running` forever:
+  // read as in-flight by the dispatcher, absent from the approvals inbox.
+  //
+  // Quarantining moves it to `failed` with `stopReason: 'stale_unverified'`, which
+  // is a state an operator can act on. Guarded conditional updates, so a run that
+  // finishes normally in the meantime is never overwritten.
+  const { sweepStaleRuns } = await import('./services/agent-run-service');
+  staleRunSweepTask = cron.schedule(
+    '*/5 * * * *',
+    leaderLockedCallback(
+      'agent-run-stale-sweep',
+      240_000,
+      async () => {
+        await sweepStaleRuns({ db: rotatorDb })
+          .then((swept) => {
+            for (const run of swept) {
+              console.warn(
+                '[agent-run-stale-sweep] quarantined abandoned run',
+                JSON.stringify({ runId: run.runId, siteId: run.siteId, goalId: run.goalId }),
+              );
+            }
+          })
+          .catch((err) => {
+            console.error('[agent-run-stale-sweep] failed', formatSafeError(err));
+          });
+      },
+      lockOpts,
+    ),
+  );
+
+  // ── askUser question timeout (#710) ────────────────────────────────────────
+  //
+  // A run parked on a question holds no worker and no lock, so nothing else
+  // would ever notice its deadline. This sweep expires overdue questions and
+  // fails their runs with `stopReason: 'question_timeout'`, which frees the goal
+  // for the dispatcher. Each step is a guarded conditional update, so an answer
+  // that lands first is never overwritten. Same 5-minute tick on Workers.
+  const { sweepExpiredQuestions } = await import('./services/agent-question-service');
+  questionSweepTask = cron.schedule(
+    '*/5 * * * *',
+    leaderLockedCallback(
+      'agent-question-sweep',
+      240_000,
+      async () => {
+        await sweepExpiredQuestions({ db: rotatorDb })
+          .then((expired) => {
+            for (const question of expired) {
+              console.warn('[agent-question-sweep] question expired', JSON.stringify(question));
+            }
+          })
+          .catch((err) => {
+            console.error('[agent-question-sweep] failed', formatSafeError(err));
           });
       },
       lockOpts,
@@ -419,8 +562,8 @@ async function main() {
     leaderLockedCallback(
       'content-scheduler',
       50_000,
-      () => {
-        void runSchedulerTick(schedulerDeps).catch((err) => {
+      async () => {
+        await runSchedulerTick(schedulerDeps).catch((err) => {
           console.error('[content-scheduler] tick failed', formatSafeError(err));
         });
       },
@@ -433,10 +576,114 @@ async function main() {
     leaderLockedCallback(
       'retention-sweep',
       3_300_000,
-      () => {
-        void sweepRetention(schedulerDeps).catch((err) => {
+      async () => {
+        await sweepRetention(schedulerDeps).catch((err) => {
           console.error('[retention-sweep] failed', formatSafeError(err));
         });
+      },
+      lockOpts,
+    ),
+  );
+  // Revision retention (#693): prunes revisions per `meta.revisionRetention`.
+  const { sweepRevisionRetention } = await import('./services/revision-retention');
+  revisionRetentionTask = cron.schedule(
+    '23 * * * *',
+    leaderLockedCallback(
+      'revision-retention',
+      3_300_000,
+      async () => {
+        await sweepRevisionRetention({ db: rotatorDb }).catch((err) => {
+          console.error('[revision-retention] failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
+
+  // ── Reconciler goal dispatch (#455) ─────────────────────────────────────
+  //
+  // The reconciler creates goals; this tick is what turns them into runs. Before
+  // it existed, a reconciler goal was terminal: it was created, the drift flipped
+  // to `assigned` with the goal id, and nothing anywhere executed it — and
+  // because `planReconciliation` skips drifts that already carry a goal, the
+  // unexecutable goal locked that drift out of every later cycle.
+  //
+  // One minute is deliberate: each pass advances a goal by at most one step
+  // (draft → promote → verify), and the promote step waits on a human approval,
+  // so a faster tick would only re-observe the same waiting state. The pass is
+  // leader-locked because two processes dispatching the same goal would create
+  // two runs for one drift.
+  //
+  // The callback is `async` and AWAITS the tick. Every cron callback in this file
+  // used to be `() => { void work(); }`, which returns `undefined` immediately —
+  // so `leaderLockedCallback`'s `await fn()` completed at once and released the
+  // lock while the work was still running. Measured with the real helper and a
+  // fake Redis: `lockReleased=true` while `workDone=false`. The lock therefore
+  // guaranteed nothing, for any of these jobs; `goal-dispatch` is simply the one
+  // where the consequence is two runs for one drift. `serve-cron-await.test.ts`
+  // keeps the shape from coming back.
+  // ── Background imports (#726) ───────────────────────────────────────────
+  //
+  // Each upload starts processing in its own request; this tick resumes jobs
+  // whose lease expired (restart, crash) and starts queued jobs that waited on
+  // the per-site concurrency limit.
+  const { runImportTick, resolveImportConfig } = await import('./services/import-service');
+  const importDeps = {
+    db: rotatorDb,
+    config: resolveImportConfig(process.env as Record<string, string | undefined>),
+    realtime: runtime.realtime,
+    env: process.env as Record<string, unknown>,
+  };
+  importTask = cron.schedule(
+    '* * * * *',
+    leaderLockedCallback(
+      'import-resume',
+      55_000,
+      async () => {
+        await runImportTick(importDeps, { budgetMs: 50_000 }).catch((err) => {
+          console.error('[import] tick failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
+
+  // ── Locale generator (#714) ─────────────────────────────────────────────
+  // Same shape as imports: the creating request drives the first chunk; this
+  // tick resumes jobs whose lease expired.
+  const { runLocaleJobTick } = await import('./services/locale-generation-service');
+  const { localeJobDeps } = await import('./routes/locale-generation');
+  localeJobTask = cron.schedule(
+    '* * * * *',
+    leaderLockedCallback(
+      'locale-generation-resume',
+      55_000,
+      async () => {
+        await runLocaleJobTick(localeJobDeps(rotatorDb, process.env as unknown as Bindings), { budgetMs: 50_000 }).catch((err) => {
+          console.error('[locale-generation] tick failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
+
+  const { runGoalDispatchTick } = await import('./services/goal-dispatch-service');
+  const goalDispatchDeps = { db: rotatorDb, queue: runtime.queue };
+  goalDispatchTask = cron.schedule(
+    '* * * * *',
+    leaderLockedCallback(
+      'goal-dispatch',
+      50_000,
+      async () => {
+        await runGoalDispatchTick(goalDispatchDeps)
+          .then((summary) => {
+            if (summary.dispatched > 0 || summary.blocked > 0 || summary.completed > 0) {
+              console.log('[goal-dispatch] pass', JSON.stringify(summary));
+            }
+          })
+          .catch((err) => {
+            console.error('[goal-dispatch] tick failed', formatSafeError(err));
+          });
       },
       lockOpts,
     ),
@@ -456,8 +703,8 @@ async function main() {
     leaderLockedCallback(
       'deployment-poll',
       25_000,
-      () => {
-        void sweepAllSites(deployPollerDeps).catch((err) => {
+      async () => {
+        await sweepAllSites(deployPollerDeps).catch((err) => {
           console.error('[deployment-poll] sweep failed', formatSafeError(err));
         });
       },
@@ -477,8 +724,8 @@ async function main() {
     leaderLockedCallback(
       'flow-schedule',
       50_000,
-      () => {
-        void runDueScheduledFlows({ db: rotatorDb, queue: runtime.queue }).catch((err) => {
+      async () => {
+        await runDueScheduledFlows({ db: rotatorDb, queue: runtime.queue }).catch((err) => {
           console.error('[flow-schedule] tick failed', formatSafeError(err));
         });
       },
@@ -525,10 +772,17 @@ async function main() {
     pageviewFlushTask?.stop();
     vetoSweepTask?.stop();
     claimSweepTask?.stop();
+    staleRunSweepTask?.stop();
+    questionSweepTask?.stop();
     schedulerTask?.stop();
     retentionTask?.stop();
+    revisionRetentionTask?.stop();
     deploymentPollTask?.stop();
     flowScheduleTask?.stop();
+    goalDispatchTask?.stop();
+    importTask?.stop();
+    localeJobTask?.stop();
+    extensionDevClient?.stop();
     if (runHttp) {
       pressureLimiter.stop();
     }
@@ -560,7 +814,18 @@ async function main() {
   });
 }
 
-main().catch((err) => {
-  console.error('[lumibase-cms] Failed to start:', formatSafeError(err));
-  process.exit(1);
-});
+/**
+ * Start function for a deployment entry that wraps this one. Reach it through
+ * `startNodeServer` in `./node`, which is what turns the autostart below off.
+ */
+export { main as startNodeServer };
+
+// Running this file (`node dist/serve.cjs`, `tsx src/serve.ts`) starts the
+// server, as it always has. A wrapping entry loads it through `./node`, which
+// disables the autostart first and then calls `startNodeServer()` itself.
+if (nodeAutostartEnabled()) {
+  main().catch((err) => {
+    console.error('[lumibase-cms] Failed to start:', formatSafeError(err));
+    process.exit(1);
+  });
+}

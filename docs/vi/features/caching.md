@@ -2,15 +2,15 @@
 title: Caching
 description: HTTP cache ở edge, CacheProvider tầng ứng dụng, và các lớp phòng thủ cache penetration
 translatedFrom: en
-sourceHash: 218e2a3a0ef0179c
-version: 4
-lastUpdated: 2026-08-10T20:04:00.102Z
+sourceHash: 5e1114cd7d51ea0a
+version: 7
+lastUpdated: 2026-11-09T04:18:38.708Z
 sourceLang: en
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-10T20:04:00.102Z
-codeVerifiedHash: 218e2a3a0ef0179c
-codeVerifiedClaims: 16
+codeVerified: 2026-11-09T04:18:38.708Z
+codeVerifiedHash: 5e1114cd7d51ea0a
+codeVerifiedClaims: 18
 ---
 
 # Caching
@@ -42,6 +42,10 @@ Purge theo tag là một lời gọi bất kể bao nhiêu URL bị ảnh hưở
 
 Chính cơ chế lùi này là lý do index URL tồn tại. Ở nơi purge theo tag chạy được, index là thừa; ở nơi không chạy được, nó là toàn bộ cơ chế.
 
+URL được ghi vào đó là key edge **chuẩn hoá**, không phải URL thô của request: chỉ giữ `locale`, `lang`, `provenance=true` và `preview=true` (hoặc `draft=true`, lưu thành `preview=true`), theo đúng thứ tự đó. Mọi query parameter khác bị bỏ trước `edgeCache.match/put`, nên `?utm_source=…` hay `?r=<random>` không tạo thêm bản edge mới và không đẩy URL trang thật ra khỏi index 200 entry.
+
+`304 Not Modified` không bao giờ được ghi vào edge. Nó chỉ trả lời request có điều kiện của một client, mà key edge không mang header nào của request, nên một 304 đã lưu sẽ bị trả với body rỗng cho client kế tiếp chưa có bản cache nào. Khi hit edge, route tự trả lời `If-None-Match` bằng cách so với `ETag` của bản đã lưu.
+
 Không có hai biến đó thì purge tụt xuống mức colo-local, và đấy **không phải** invalidate toàn cầu: các PoP khác vẫn phục vụ bản cũ tới hết `s-maxage`. Hãy cấu hình chúng cho mọi triển khai mà một lần sửa nội dung phải tới đích nhanh hơn cửa sổ `s-maxage`.
 
 Mọi thứ trên đường này đều degrade an toàn. Mất một entry index, token hết hạn, purge API trả 403 — mỗi trường hợp đều lùi về hành vi cũ (hết hạn theo `s-maxage`) và không trường hợp nào làm hỏng lần ghi đã kích hoạt purge. `lumibase_cache_operations_total{op="purgeEdge"}` tách `ok` khỏi `error` để nhìn ra khác biệt đó.
@@ -63,6 +67,10 @@ Hiện chỉ áp cho **một** thứ: compiled permission bundle, thứ được
 Store nằm ở cấp module và có chặn trên (256 entry, TTL 5s). Cả hai đều quan trọng: store theo từng request sẽ không bao giờ hit, còn store không chặn thì rò rỉ — process Docker sống lâu, và isolate Workers được tái dùng cho request của **nhiều tenant khác nhau**. Mọi key đều mang `siteId`, nên không tầng nào phía trên phải tách tenant hộ.
 
 `lumibase_cache_operations_total{backend="process"}` báo hit và miss, nên việc tầng này có đáng giữ hay không là thứ đo được chứ không phải tin.
+
+**`{principal}` gồm những gì.** Segment principal nêu đủ mọi đầu vào định danh mà bundle được compile từ đó: `api_key:{id}`, `user:{id}` và `role:{id}`, nối bằng `|` khi có nhiều hơn một (ví dụ `user:{id}|role:{id}` khi resolve capability trên các đường AI), và là `anon` khi không có cái nào. Trước #583, một context mang cả user lẫn role chỉ được key theo role, nên hai thành viên của cùng một role dùng chung một bundle, kể cả policy cấp trực tiếp cho một user.
+
+**Policy phụ thuộc request không được phục vụ từ cache.** Một policy có danh sách IP allow/deny hoặc khoảng hiệu lực (`ip_allow`, `ip_deny`, `valid_from`, `valid_until`, hoặc cùng các key đó trong `rules`) có hiệu lực hay không tuỳ vào ip và đồng hồ của request. Khi bất kỳ policy ứng viên nào của một principal có guard như vậy, entry trong cache chỉ ghi lại điều đó, và bundle được compile cho từng request. Principal không có guard vẫn đi đường cache. Trên một lần chạy pg17 cục bộ của `apps/cms/eval/permission-cache/bench.ts` (500 lần resolve, 3 lượt, cache in-process), một lần resolve có cache mất p95 2.0–2.8 ms, không cache 22.8–31.9 ms, và principal có IP guard 8.1–10.0 ms.
 
 ## URL media và lời hứa `immutable`
 
@@ -135,3 +143,10 @@ Khoá cache penetration theo đúng cách chia shared-vs-isolated như phần c�
 | Shape guard | n/a | Thuần regex, không lưu trữ | Cùng body/header 404 như một miss thật — không bao giờ là oracle cho hình dạng hợp lệ |
 
 **Kiểm chứng thế nào:** Properties P17–P20 mức unit/integration trong `apps/cms/src/__tests__/cache-penetration.test.ts` (cô lập tombstone hai site + bypass khi có credential); wiring tripwire cho `withDeliverRateLimit` trong `security-guards.wiring.test.ts`.
+
+
+### Định tuyến mô hình, thời hạn và kiểm tra tải
+
+Cả sáu adapter mô hình qua mạng dùng thời hạn upstream 20 giây cho đến khi đọc xong nội dung phản hồi. Hủy từ caller và thời hạn quyết định ngắn hơn vẫn có hiệu lực. Chat thông thường gửi một yêu cầu. Khi upstream lỗi, hệ thống trả lỗi trước khi chuyển provider hoặc thực thi công cụ. Echo cấu hình rõ và fallback khi thiếu thông tin xác thực vẫn đi qua kiểm tra phân quyền của harness. Kỹ năng sinh nội dung cần provider đã cấu hình.
+
+Chạy `pnpm -F @lumibase/cms bench:model-routing` để đo chi phí đóng gói, phân tích phản hồi và fallback cục bộ với phản hồi provider tổng hợp. Tải thử xuất p50/p95/p99, số lần gọi/lỗi, token tổng hợp và USD ước lượng theo đơn giá fixture. Mỗi kịch bản cần p95 cục bộ dưới 100 ms, đúng một lần gọi upstream cho mỗi yêu cầu provider và không gọi upstream với echo. Dùng `apps/cms/eval/permission-cache/bench.ts` trên PostgreSQL dùng riêng để đo phân giải quyền khi cache hit/miss. Baseline mô tả chi phí cục bộ và giá kiểm thử. Độ trễ provider production và hóa đơn cần phép đo riêng.

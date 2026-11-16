@@ -90,8 +90,13 @@ Three different things get called "installing LumiBase". Pick the one you actual
 ### 1. A new project of your own
 
 ```bash
-npm create lumibase@latest my-project
+npm create lumibase@next my-project
 ```
+
+> **Use `@next` during the 1.0 release candidates.** npm's `latest` tag still
+> points at the 0.x scaffolder, which has no Next.js template and pins no CMS.
+> `@next` is the current release candidate. The commands move back to `@latest`
+> when 1.0.0 ships.
 
 The first prompt picks the template, and the preselected one — `nextjs` — is the fastest path to something real: a **Next.js website plus the actual CMS and Studio** in Docker, a `posts` collection, seeded content, and a publishable key the browser can safely hold. `npm run cms:verify` then proves that key cannot read drafts or write.
 
@@ -115,13 +120,19 @@ That gives you the **API** on `:1989`. The development compose image mounts sour
 
 ```bash
 cp docker/.env.example docker/.env      # set JWT_SECRET; DATABASE_SSL_MODE=disable for the bundled Postgres
-LUMIBASE_VERSION=1.0.0-rc.1 docker compose \
+LUMIBASE_VERSION=2.1.0 docker compose \
   -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
 The image serves the Studio from the same origin as the API, so there is no second deployment and no CORS entry to configure. Open <http://localhost:1989/setup> to create the first admin; afterwards the Studio lives under the admin path that setup chose. `/`, `/admin` and `/studio` deliberately return an indistinguishable `404` — the login location is not meant to be discoverable. Set `LUMIBASE_SERVE_STUDIO=false` to run API-only when you host the Studio separately. Details: [Deployment overview](./docs/en/deployment/overview.md#studio-api-connectivity) · [Deployment checklist](./docs/en/DEPLOYMENT-CHECKLIST.md)
 
 Runbook: [Deployment overview](./docs/en/deployment/overview.md) · [Deployment checklist](./docs/en/DEPLOYMENT-CHECKLIST.md)
+
+**Deploy to a cloud platform** — CMS + Studio + PostgreSQL + Redis, secrets generated, straight to the setup wizard:
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/khuepm/lumibase)
+
+Fly.io (`fly.toml`, four commands) and Railway (`railway.json`; template pending publication) are covered in [One-click deploys](./docs/en/deployment/one-click.md), along with why Cloudflare has no button yet.
 
 ### 3. A development checkout (contributors)
 
@@ -150,12 +161,12 @@ Full documentation lives in [`docs/`](./docs/en/README.md); the task roadmap is 
 
 Every release must pass a green GitHub Actions CI run before it can be published or deployed. The required CI gate runs on every pull request and every push to `main`, and includes dependency installation with the locked pnpm version, version policy validation, typechecking, tests, lint for the current stable allowlist, and the production build.
 
-Current release: `v1.0.0-rc.1` (`2026-09-03`) — **first release candidate for the stable 1.0 contract**. Introduces the unified [`lumibase`](https://www.npmjs.com/package/lumibase) package (JS/TS client + the `lumibase` CLI: `types`, `doctor`, `init`) while [`@lumibase/sdk`](https://www.npmjs.com/package/@lumibase/sdk) and [`create-lumibase`](https://www.npmjs.com/package/create-lumibase) keep working unchanged. Follows the `0.26.0` migration path; no new migrations.
+Current release: `v2.1.0` (`2026-11-16`) — three completed epics: security hardening (sessions and devices, passkeys, member social login, password policy, security history), deployment and hosting (Helm chart, one-click Render deploy, deploy permissions and promotion, Astro/SvelteKit starters, live OpenAPI) and content modeling (geopoint, timezone-aware datetimes, dynamic zones, hierarchical collections, form layout); plus the ops diagnostics plane and Cloudflare Workers parity for background jobs. Back up PostgreSQL, apply migrations `0026`–`0034` and re-apply `rls-policies.sql` before starting the new CMS. The public API and SDK follow the [versioning policy](docs/en/contributing/versioning-policy.md). Jev decision/review/automation APIs and the Studio M2A JSON helper remain experimental. See the [changelog](CHANGELOG.md) and [upgrade guide](docs/en/operations/upgrades.md) before upgrading from 0.x.
 
 Every release before this one is summarised in [`CHANGELOG.md`](./CHANGELOG.md), including the **`v0.5.0` Content OS foundation** — intents/SLOs, control-loop reconciliation, the L0–L4 trust ledger, the veto window, the four-scope kill switch, the tenant constitution, provenance-first revisions, the multi-agent newsroom, and Studio Mission Control. That foundation remains the baseline every later release builds upon, not replaces.
 
 ```bash
-LUMIBASE_VERSION=1.0.0-rc.1 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+LUMIBASE_VERSION=2.1.0 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
 See [`CHANGELOG.md`](./CHANGELOG.md) for upgrade steps, rollback notes, compatibility details, and backup guidance.

@@ -88,6 +88,9 @@ function fakeDb(): Database & { freezes: FreezeRow[]; audits: Array<Record<strin
             // idempotency check below matches on liftedAt === null.
             limit: async () => freezes.filter((row) => row.liftedAt === null).map((row) => ({ ...row })),
           }),
+          // Runs parked on an `askUser` question (#710), which a freeze
+          // cancels: none in these scenarios.
+          limit: async () => [],
         }),
       }),
     }),

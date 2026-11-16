@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { and, eq } from 'drizzle-orm';
@@ -92,7 +93,7 @@ describe.skipIf(!hasDbIntegrationUrl)('permission revocation — DB integration'
 
     await db.delete(apiKeys).where(eq(apiKeys.id, API_KEY));
     await db.delete(sites).where(eq(sites.id, SITE));
-    await db.insert(sites).values({ id: SITE, name: 'Perm Revoke IT' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'Perm Revoke IT' });
 
     const postsId = (
       await db
@@ -211,7 +212,7 @@ describe.skipIf(!hasDbIntegrationUrl)('permission revocation — DB integration'
         // Clear anything a previously interrupted run left behind.
         await db.delete(apiKeys).where(eq(apiKeys.id, OTHER_KEY));
         await db.delete(sites).where(eq(sites.id, OTHER));
-        await db.insert(sites).values({ id: OTHER, name: 'Perm Revoke IT B' });
+        await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER, name: 'Perm Revoke IT B' });
         const otherPosts = (
           await db
             .insert(collections)

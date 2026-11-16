@@ -194,6 +194,21 @@
                 "placeholder": "https://example.com/lumibase/security"
               }
             }
+          },
+          "emailIdentity": {
+            "title": "Email identity",
+            "description": "How email aliases map to accounts on this instance. Applies to registration, invites and SCIM. Only the bootstrap admin can change it later, and switching to one account per mailbox is refused while existing accounts share a mailbox.",
+            "options": {
+              "exact": {
+                "label": "Exact address (default)",
+                "description": "Every distinct address is its own account: test+a@gmail.com and test+b@gmail.com can register separately."
+              },
+              "root": {
+                "label": "One account per mailbox",
+                "description": "+tag aliases (and, for Gmail, dots and googlemail.com) resolve to one account instance-wide. Signing in with any alias reaches that account."
+              }
+            },
+            "reviewLabel": "Email identity"
           }
         },
         "submit": "Continue"

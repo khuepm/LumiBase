@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:14:29.861Z
+version: 2
+lastUpdated: 2026-11-12T11:48:21.842Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ff4339b1b2f269c5
+sourceHash: 815b076ad0385537
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:14:34.597Z
-codeVerifiedHash: ff4339b1b2f269c5
-codeVerifiedClaims: 12
+codeVerified: 2026-11-12T11:48:21.842Z
+codeVerifiedHash: 815b076ad0385537
+codeVerifiedClaims: 14
 ---
 
 # Full-text Search
@@ -101,9 +101,15 @@ Hook chạy tự động:
 - **Item update** → re-index.
 - **Item delete** → xóa khỏi index.
 
-Worker `content-indexing` (`registerContentIndexingWorker`, wire trong
-`serve.ts`) đọc queue và gọi `searchProvider.index(...)` / `delete(...)`. Khi
-không có queue, `ItemService` index trực tiếp (inline).
+Worker `content-indexing` (`registerContentIndexingWorker`) đọc queue và gọi
+`searchProvider.index(...)` / `delete(...)`. Docker/Node wire nó trong
+`serve.ts`. Cloudflare Workers chạy cùng handler đó từ export `queue()`
+(`apps/cms/src/cloudflare-content-queue.ts`), trên queue
+`lumibase-content-indexing-<profile>` gắn binding `CONTENT_INDEXING_QUEUE`.
+Trước backlog B131, Worker không có queue này, nên trên Workers index không
+bao giờ nhận thay đổi nội dung. Khi không có queue, hoặc Worker không có
+binding `content-indexing`, `ItemService` index trực tiếp (inline). Trên
+Workers không có `MEILISEARCH_HOST`, consumer ack job mà không index.
 
 ### Reindex CLI
 

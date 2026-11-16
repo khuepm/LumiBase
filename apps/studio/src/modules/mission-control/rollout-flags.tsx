@@ -125,7 +125,7 @@ export function RolloutFlagsPanel() {
                   <span
                     className={cn(
                       'absolute top-0.5 h-4 w-4 rounded-full bg-background transition-all',
-                      on ? 'left-[18px]' : 'left-0.5',
+                      on ? 'start-[18px]' : 'start-0.5',
                     )}
                   />
                 </button>
