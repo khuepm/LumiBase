@@ -86,9 +86,12 @@ import { domainsRouter } from './routes/domains';
 import { siteRouter } from './routes/site';
 import { systemRouter } from './routes/system';
 import { shareAdminRouter, sharePublicRouter } from './routes/shares';
+import { previewAdminRouter } from './routes/preview';
+import { previewDeliveryRouter } from './routes/preview-delivery';
 import { teamsRouter } from './routes/teams';
 import { translationsRouter } from './routes/translations';
 import { tmRouter } from './routes/translation-memory';
+import { localeGenerationRouter } from './routes/locale-generation';
 import { typegenRouter } from './routes/typegen';
 import { openApiRouter } from './routes/openapi';
 import { usersRouter } from './routes/users';
@@ -342,6 +345,8 @@ api.route('/settings', settingsRouter);
 api.route('/site', siteRouter);
 api.route('/domains', domainsRouter);
 api.route('/shares', shareAdminRouter);
+// Preview tokens (epic #667, V01): mint / list / revoke / rotate + settings.
+api.route('/preview', previewAdminRouter);
 api.route('/users', usersRouter);
 api.route('/teams', teamsRouter);
 api.route('/files', filesRouter);
@@ -394,6 +399,8 @@ api.route('/admin/social-providers', adminSocialProvidersRouter);
 // relies on.
 api.route('/admin/security', auditRouter);
 api.route('/tm', tmRouter);
+// One-shot translation generator for a new locale (#714) — control plane.
+api.route('/locale-generation', localeGenerationRouter);
 api.route('/flows', flowsRouter);
 api.route('/marketplace', marketplaceRouter);
 api.route('/materialize', materializeRouter);
@@ -471,6 +478,10 @@ app.use('/api/v1/deliver/*', withEntitlement({
 // Separate mount so the rate-limit wiring line above stays exactly as the
 // security-guards wiring test pins it. Runs after the limiter.
 app.use('/api/v1/deliver/*', withDeliveryMilestone(deliverPathSiteId));
+// Preview reads (epic #667): same public mount + limiter as delivery, site in
+// the path, token in the `x-lumibase-preview` header. Registered before
+// `deliverRouter` so its `/preview/*` leaf paths win.
+app.route('/api/v1/deliver/preview', previewDeliveryRouter);
 app.route('/api/v1/deliver', deliverRouter);
 
 // Public pageview beacon — tenancy in the URL, unauthenticated. `withRuntime`

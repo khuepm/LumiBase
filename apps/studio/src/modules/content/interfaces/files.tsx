@@ -1,8 +1,9 @@
-import { File, Plus, Upload, X } from 'lucide-react';
+import { File, Library, Plus, Upload, X } from 'lucide-react';
 import { useRef, useState, type DragEvent } from 'react';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { readOptions, type InterfaceComponent } from './types';
+import { acceptToMimeTypes, useMediaPicker } from '@/modules/files/media-picker';
 
 interface FilesOptions {
   accept?: string;
@@ -23,6 +24,18 @@ export const FilesInterface: InterfaceComponent<string[]> = ({
   const client = getApiClient();
   const files = Array.isArray(value) ? value : [];
   const limit = opts.limit ?? 15;
+  const openPicker = useMediaPicker();
+
+  const chooseFromLibrary = async () => {
+    if (!openPicker) return;
+    const picked = await openPicker({
+      multiple: true,
+      max: limit,
+      initiallySelected: files,
+      allowedMimeTypes: acceptToMimeTypes(opts.accept),
+    });
+    if (picked) onChange(picked.map((a) => a.filenameDisk));
+  };
 
   const upload = async (file: File) => {
     if (opts.maxSize && file.size > opts.maxSize) {
@@ -134,6 +147,11 @@ export const FilesInterface: InterfaceComponent<string[]> = ({
           onChange={(event) => void handleFiles(event.target.files)}
         />
       </div>
+      {openPicker && !disabled && (
+        <button type="button" onClick={() => void chooseFromLibrary()} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+          <Library className="h-3.5 w-3.5" /> Choose from library
+        </button>
+      )}
     </div>
   );
 };

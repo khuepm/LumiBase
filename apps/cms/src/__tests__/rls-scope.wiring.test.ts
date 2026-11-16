@@ -240,6 +240,7 @@ const ROUTER_DB_CLASS: Record<string, { class: RouterClass; file?: string; note?
   '/api/v1/shares': { class: 'self-scoped', file: 'routes/shares.ts' },
   '/api/v1/email': { class: 'self-scoped', file: 'routes/email-public.ts' },
   '/api/v1/deliver': { class: 'self-scoped', file: 'routes/deliver.ts' },
+  '/api/v1/deliver/preview': { class: 'self-scoped', file: 'routes/preview-delivery.ts' },
   '/api/v1/pageviews': { class: 'self-scoped', file: 'modules/pageviews/routes.ts' },
   '/api/v1/integrations/git': { class: 'mixed', file: 'modules/git-integration/routes.ts' },
 };
@@ -249,7 +250,17 @@ describe('Router DB classes — every top-level mount declares how its db is sco
   const mounts = [...index.matchAll(/^app\.route\('([^']+)'/gm)].map((m) => m[1]!);
   const uses = [...index.matchAll(/^app\.use\('([^']+)',([^\n]*)/gm)].map((m) => ({ path: m[1]!, chain: m[2]! }));
   const useFor = (mount: string) =>
-    uses.filter((u) => u.path === `${mount}/*` || u.path.startsWith(`${mount}/`)).map((u) => u.chain).join(' ');
+    uses
+      .filter(
+        (u) =>
+          u.path === `${mount}/*` ||
+          u.path.startsWith(`${mount}/`) ||
+          // A nested mount (`/api/v1/deliver/preview`) inherits its parent's
+          // wildcard chain (`/api/v1/deliver/*`).
+          (u.path.endsWith('/*') && mount.startsWith(u.path.slice(0, -1))),
+      )
+      .map((u) => u.chain)
+      .join(' ');
 
   it('no unclassified or stale mount', () => {
     expect(mounts.filter((m) => !(m in ROUTER_DB_CLASS)), 'classify the new mount in ROUTER_DB_CLASS').toEqual([]);

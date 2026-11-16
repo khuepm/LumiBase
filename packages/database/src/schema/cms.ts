@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   foreignKey,
   index,
   integer,
@@ -239,6 +240,18 @@ export const items = pgTable(
      */
     editorialState: text('editorial_state'),
     /**
+     * Publication timestamps (#687, migration 0037). `firstPublishedAt` is
+     * stamped once, on the first transition into `published`, and never moves.
+     * `publishedAt` is the most recent publish (kept on unpublish, so it reads
+     * "last published at"). `hasUnpublishedChanges` flips on when the data of
+     * an item that has been published is edited, and clears on the next
+     * publish. Maintained by ItemService / EditorialService / the scheduler
+     * through `publication-state.ts`.
+     */
+    firstPublishedAt: timestamp('first_published_at'),
+    publishedAt: timestamp('published_at'),
+    hasUnpublishedChanges: boolean('has_unpublished_changes').default(false).notNull(),
+    /**
      * Per-record wrapped DEK for envelope encryption (Req 4.5). Null unless
      * `LUMIBASE_ENVELOPE_ENCRYPTION` is enabled; deleting it crypto-shreds the
      * record (Req 11.2).
@@ -283,6 +296,10 @@ export const items = pgTable(
     treePathIdx: index('items_tree_path_idx')
       .on(t.siteId, t.collectionId, t.path.op('text_pattern_ops'))
       .where(sql`${t.path} is not null`),
+    /** "Modified since publish" list filter (#687, migration 0037). */
+    unpublishedChangesIdx: index('items_unpublished_changes_idx')
+      .on(t.siteId, t.collectionId)
+      .where(sql`${t.hasUnpublishedChanges} = true and ${t.deletedAt} is null`),
   }),
 );
 
@@ -702,5 +719,55 @@ export const transformPresets = pgTable(
   },
   (t) => ({
     siteKeyUnique: uniqueIndex('transform_presets_site_key_unique').on(t.siteId, t.key),
+  }),
+);
+
+/**
+ * Preview secrets (epic #667, V01) — one row per minted preview token.
+ *
+ * The token itself is an HS256 JWT signed with a key derived per site from
+ * the deployment secret, so a token minted for site A never verifies on site
+ * B. Only the SHA-256 of the token is stored: the row is the server-side
+ * record that makes a token revocable and auditable, and the delivery read
+ * requires both a valid signature AND a live row on the requesting site.
+ *
+ * A token targets one item (optionally a named content version of it) or a
+ * whole release; `locale` is carried through to the frontend.
+ */
+export const previewSecrets = pgTable(
+  'lumibase_preview_secrets',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    /** SHA-256 hex of the signed token. Plaintext is returned only on mint. */
+    tokenHash: text('token_hash').notNull(),
+    collection: text('collection'),
+    itemId: text('item_id'),
+    /** `content_versions.key` — preview a named branch of the item. */
+    versionKey: text('version_key'),
+    releaseId: text('release_id').references(() => releases.id, { onDelete: 'cascade' }),
+    locale: text('locale'),
+    /** The token reads with this user's permissions, re-evaluated per read. */
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: timestamp('expires_at').notNull(),
+    revokedAt: timestamp('revoked_at'),
+    revokedBy: text('revoked_by').references(() => users.id, { onDelete: 'set null' }),
+    useCount: integer('use_count').default(0).notNull(),
+    lastUsedAt: timestamp('last_used_at'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    tokenHashUnique: uniqueIndex('preview_secrets_token_hash_unique').on(t.tokenHash),
+    siteActiveIdx: index('preview_secrets_site_active_idx').on(t.siteId, t.revokedAt, t.expiresAt),
+    siteItemIdx: index('preview_secrets_site_item_idx').on(t.siteId, t.collection, t.itemId),
+    targetCheck: check(
+      'preview_secrets_target_chk',
+      sql`(${t.collection} is not null and ${t.itemId} is not null) or ${t.releaseId} is not null`,
+    ),
+    useCountNonNegative: check('preview_secrets_use_count_non_negative', sql`${t.useCount} >= 0`),
   }),
 );

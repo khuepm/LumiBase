@@ -22,6 +22,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import { AuditLogger } from '../modules/audit/logger';
+import { publishStampsSql } from './publication-state';
 
 export type EditorialState =
   | 'draft'
@@ -189,6 +190,8 @@ export class EditorialService {
         status: statusForEditorialState(next),
         updatedAt: new Date(),
         version: nextItemVersion(),
+        // Reaching `published` through the workflow is a publish (#687).
+        ...(statusForEditorialState(next) === 'published' ? publishStampsSql() : {}),
       })
       .where(and(scopeSite(items.siteId, this.deps.siteId), eq(items.collectionId, collId), eq(items.id, itemId)));
     await this.audit(collectionName, itemId, current, next, action);

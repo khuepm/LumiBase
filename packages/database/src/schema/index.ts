@@ -25,3 +25,4 @@ export * from './imports';
 export * from './ops';
 export * from './activation';
 export * from './social-auth';
+export * from './locale-generation';
