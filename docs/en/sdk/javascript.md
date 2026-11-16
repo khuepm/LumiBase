@@ -1,10 +1,10 @@
 ---
-version: 7
-lastUpdated: 2026-11-12T10:11:46.996Z
+version: 8
+lastUpdated: 2026-11-16T02:07:12.243Z
 sourceLang: en
-contentHash: 88e0270e2e7e332c
-codeVerified: 2026-11-12T10:11:46.996Z
-codeVerifiedHash: 88e0270e2e7e332c
+contentHash: 2bc0c8e592654208
+codeVerified: 2026-11-16T02:07:12.243Z
+codeVerifiedHash: 2bc0c8e592654208
 codeVerifiedClaims: 8
 ---
 
@@ -203,6 +203,15 @@ while (!['succeeded', 'failed', 'cancelled', 'timed_out'].includes(current.statu
   current = (await client.imports.get(job.id)).data
 }
 if (current.failedRows > 0) console.table((await client.imports.errors(job.id)).data.errors)
+```
+
+### JSON path index advice
+
+```typescript
+// Expression index for a typed filter such as filter[specs.weight][_gt]=10.
+// Advice only: review the DDL and run it yourself (it uses CONCURRENTLY).
+const { data: advice } = await client.schema.indexAdvice('products', 'specs.weight', 'numeric')
+console.log(advice.ddl ?? advice.notes.join('\n')) // ddl is null for timestamp casts
 ```
 
 ### Revisions and pins

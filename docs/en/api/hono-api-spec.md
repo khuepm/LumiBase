@@ -1,10 +1,10 @@
 ---
-version: 56
-lastUpdated: 2026-11-15T23:40:56.423Z
+version: 57
+lastUpdated: 2026-11-16T02:07:12.500Z
 sourceLang: en
-contentHash: fb7e23a8ff3b4d56
-codeVerified: 2026-11-15T23:40:56.423Z
-codeVerifiedHash: fb7e23a8ff3b4d56
+contentHash: 60789a554c502313
+codeVerified: 2026-11-16T02:07:12.500Z
+codeVerifiedHash: 60789a554c502313
 codeVerifiedClaims: 636
 ---
 
@@ -557,6 +557,10 @@ transaction (`CONCURRENTLY`). `timestamp` returns `ddl: null`, because
 
 Errors: `400 VALIDATION` (missing/invalid `path`, unknown `cast`, or no `cast`
 for a nested path), `404 NOT_FOUND` (collection or top-level field).
+
+Clients: `client.schema.indexAdvice(collection, path, cast?)` in the SDK, and
+the **Indexes** tab under **Data model → collection** in Studio, which shows the
+expression, the DDL with a copy button, and the notes.
 
 ### Fields
 
