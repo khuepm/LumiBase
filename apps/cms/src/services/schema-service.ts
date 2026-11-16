@@ -1647,12 +1647,24 @@ export function assertFieldMutationAllowed(
 ) {
   const risk = assessFieldMutationRisk(existing, next, populatedRows);
   if (!risk.risky) return risk;
-  if (options.migrationPlan || options.confirmRiskyChange) return risk;
+  if (isMigrationPlanDeclared(options.migrationPlan) || options.confirmRiskyChange === true) return risk;
   throw new SchemaServiceError(
     'FIELD_MIGRATION_REQUIRED',
-    `Changing ${risk.changes.join('/')} for populated field "${existing.name}" requires a migration plan or explicit confirmation.`,
+    `Changing ${risk.changes.join('/')} for populated field "${existing.name}" requires a migration plan ` +
+      'naming a non-empty `strategy`, or `confirmRiskyChange: true`.',
     409,
   );
+}
+
+/**
+ * Fail closed (#865): a plan only confirms a risky change when it names a
+ * non-empty string `strategy`. `{}` or a plan of unknown shape used to pass
+ * the guard just by being truthy. The plan is still not executed (B213).
+ */
+function isMigrationPlanDeclared(plan: Record<string, unknown> | undefined): boolean {
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return false;
+  const strategy = plan['strategy'];
+  return typeof strategy === 'string' && strategy.trim().length > 0;
 }
 
 export function buildSchemaDiff(
