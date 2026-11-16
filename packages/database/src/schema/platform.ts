@@ -57,10 +57,66 @@ export const files = pgTable(
     folder: text('folder').references(() => folders.id),
     metadata: jsonb('metadata').default({}).notNull(),
     uploadedBy: text('uploaded_by').references(() => users.id),
+    /**
+     * Full SHA-256 (hex) of the current binary (#706). Null for rows created
+     * before the column existed or whose object was too large to read back at
+     * registration — those never match a duplicate check.
+     */
+    contentHash: text('content_hash'),
+    /**
+     * Binary revision, bumped by every in-place replace (#703). The id, folder
+     * and every reference stay put; only the bytes behind them change. Part of
+     * the delivery ETag and of the `?v=` pin, so a replace changes both.
+     */
+    version: integer('version').default(1).notNull(),
+    /**
+     * Malware scan state (#707): `skipped` (scanning disabled — the default),
+     * `pending`, `clean`, `infected`, `error`. Only `skipped` and `clean` are
+     * served by the delivery route.
+     */
+    scanStatus: text('scan_status').default('skipped').notNull(),
     createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (t) => ({
     siteIdx: index('files_site_idx').on(t.siteId, t.folder),
+    hashIdx: index('files_site_hash_idx').on(t.siteId, t.contentHash),
+  }),
+);
+
+/**
+ * Previous binaries of a file kept after an in-place replace (#703), so an
+ * editor can undo within the retention window. A row is the state the file
+ * had *before* the replace that created it; restoring it is itself a replace,
+ * so history is never rewritten. Rows past `expires_at` are pruned together
+ * with their storage object.
+ */
+export const fileVersions = pgTable(
+  'lumibase_file_versions',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    fileId: text('file_id')
+      .notNull()
+      .references(() => files.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    filenameDisk: text('filename_disk').notNull(),
+    filenameDownload: text('filename_download').notNull(),
+    mime: text('mime').notNull(),
+    filesize: bigint('filesize', { mode: 'number' }).notNull(),
+    width: integer('width'),
+    height: integer('height'),
+    contentHash: text('content_hash'),
+    metadata: jsonb('metadata').default({}).notNull(),
+    replacedBy: text('replaced_by'),
+    createdAt: createdAt(),
+    expiresAt: timestamp('expires_at').notNull(),
+  },
+  (t) => ({
+    fileIdx: index('file_versions_file_idx').on(t.siteId, t.fileId, t.version),
+    expiryIdx: index('file_versions_expiry_idx').on(t.expiresAt),
   }),
 );
 

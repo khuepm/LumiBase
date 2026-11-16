@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-09-01T19:25:54.674Z
+version: 3
+lastUpdated: 2026-11-15T19:48:31.600Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 17fd5198b3a06b2c
+sourceHash: 4c2cf39c35cb35f0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-01T19:25:54.674Z
-codeVerifiedHash: 17fd5198b3a06b2c
+codeVerified: 2026-11-15T19:48:31.600Z
+codeVerifiedHash: 4c2cf39c35cb35f0
 codeVerifiedClaims: 20
 ---
 
@@ -15,7 +15,7 @@ codeVerifiedClaims: 20
 
 > Preview = embedding an `<iframe>` in Studio's record editor, pointed at a URL template configured on the collection and interpolated with the fields of the record being edited — so an author can see the real website inside the admin. Inspired by Directus' Live Preview feature.
 
-**Status:** design proposal (not implemented). No migration needed for the MVP.
+**Status:** design proposal, superseded. The feature shipped in epic #667 with `{token}`/`{id}`/`{slug}` placeholders (not `{{field}}`), site-scoped preview tokens and ADR-014 — see [Live preview & visual editing](./visual-editing.md). The text below is kept as design background.
 
 ## 1. The idea
 

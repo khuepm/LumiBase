@@ -22,6 +22,7 @@ import { McpService, toolAnnotations, toolTitle, type McpHarnessPort } from '../
 import { SchemaService } from '../services/schema-service';
 import { SiteSkillService } from '../services/site-skill-service';
 import { ToolRegistryService } from '../services/tool-registry-service';
+import { loadSiteExtensionMcp, siteExternalToolRegistry } from '../extensions/mcp-extension-tools';
 import { mcpResourceContext } from '../middleware/mcp-oauth';
 import { DECISION_CAPABILITY, satisfiesCapability } from '../services/effective-capability-service';
 import { MCP_SCOPES, bearerChallenge, narrowCapabilitiesByScopes, scopesForCapabilities } from '../services/mcp-oauth';
@@ -110,7 +111,18 @@ async function handleMcp(c: Context<AppEnv>) {
 
   const runtime = c.get('runtime');
   const llm = createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>);
-  const registry = new ToolRegistryService(db, siteId, skillCatalog());
+  const itemService = itemServiceForRequest(c);
+  // Extension-contributed MCP surface (#715): tools join the harness as
+  // external-action tools (same governance as every non-core tool); prompts
+  // and resources are static manifest text, offered by capability.
+  const extensionMcp = await loadSiteExtensionMcp({
+    db, siteId, env: c.env, dataAccess: itemService.extensionDataAccess(),
+  }).catch((err: unknown) => {
+    console.error('[mcp] extension MCP surface unavailable', err instanceof Error ? err.message : String(err));
+    return null;
+  });
+  const externalTools = await siteExternalToolRegistry({ db, siteId, ...(extensionMcp ? { preloaded: extensionMcp } : {}) });
+  const registry = new ToolRegistryService(db, siteId, skillCatalog(externalTools));
   const harness = new AISecureHarness({
     db,
     siteId,
@@ -121,7 +133,8 @@ async function handleMcp(c: Context<AppEnv>) {
     // this router's contract that an MCP client "can never do more than the
     // same token could via the Agent API". Previously built without a
     // permissionCtx, which silently bypassed RBAC.
-    itemService: itemServiceForRequest(c),
+    itemService,
+    externalTools,
     accessService: new AccessService({ db, siteId, userId: auth.userId ?? null, cache: runtime.cache }),
     intentService: new IntentService({ db, siteId, userId: auth.userId ?? null, llm }),
     configService: new ConfigService({ db, siteId }),
@@ -157,23 +170,61 @@ async function handleMcp(c: Context<AppEnv>) {
   const mayReadSkills = grant.allowed && grant.controlPlaneAdmin;
   const promptSkills = async (capabilities: readonly string[]) =>
     mayReadSkills ? siteSkills.listForMcp(capabilities) : [];
+  // Extension prompts/resources are the extension author's static text, not
+  // site control-plane data, so they follow the caller's capability alone.
+  const offered = <T extends { capability: string }>(entries: readonly T[], capabilities: readonly string[]) =>
+    entries.filter((entry) => satisfiesCapability(capabilities, entry.capability));
+  const extensionPrompts = extensionMcp?.prompts ?? [];
+  const extensionResources = extensionMcp?.resources ?? [];
   const port: McpHarnessPort = {
-    listPrompts: async (capabilities) =>
-      (await promptSkills(capabilities)).map((skill) => ({
+    listPrompts: async (capabilities) => [
+      ...(await promptSkills(capabilities)).map((skill) => ({
         name: skill.slug,
         title: skill.name,
         description: skill.description,
       })),
+      ...offered(extensionPrompts, capabilities).map((prompt) => ({
+        name: prompt.name,
+        ...(prompt.title ? { title: prompt.title } : {}),
+        ...(prompt.description ? { description: prompt.description } : {}),
+      })),
+    ],
     getPrompt: async (name, capabilities) => {
       const skill = (await promptSkills(capabilities)).find((entry) => entry.slug === name);
-      return skill
+      if (skill) {
+        return {
+          name: skill.slug,
+          title: skill.name,
+          description: skill.description,
+          text: skill.body,
+          version: skill.version,
+          hash: skill.hash,
+        };
+      }
+      const prompt = offered(extensionPrompts, capabilities).find((entry) => entry.name === name);
+      return prompt
         ? {
-            name: skill.slug,
-            title: skill.name,
-            description: skill.description,
-            text: skill.body,
-            version: skill.version,
-            hash: skill.hash,
+            name: prompt.name,
+            ...(prompt.title ? { title: prompt.title } : {}),
+            ...(prompt.description ? { description: prompt.description } : {}),
+            text: prompt.text,
+            extension: prompt.extension,
+          }
+        : null;
+    },
+    listResources: async (capabilities) =>
+      offered(extensionResources, capabilities).map(({ uri, name, title, description, mimeType }) => ({
+        uri, name, mimeType, ...(title ? { title } : {}), ...(description ? { description } : {}),
+      })),
+    readResource: async (uri, capabilities) => {
+      const resource = offered(extensionResources, capabilities).find((entry) => entry.uri === uri);
+      return resource
+        ? {
+            uri: resource.uri,
+            name: resource.name,
+            mimeType: resource.mimeType,
+            text: resource.text,
+            ...(resource.title ? { title: resource.title } : {}),
           }
         : null;
     },

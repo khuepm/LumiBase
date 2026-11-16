@@ -153,6 +153,9 @@ const ALLOWED_NULL_ROLE_ID: Record<string, string> = {
   // request principal, and the one place a role genuinely applies threads the
   // share's own roleId through `baseMagicContext({ siteId, roleId, now })`.
   'services/share-service.ts': 'actor/creator contexts are userId-keyed; share role passed explicitly',
+  // Preview tokens read as their creator: the context is keyed by the token's
+  // `created_by` userId (roles resolve from that user's membership per read).
+  'services/preview-service.ts': 'creator context is userId-keyed; no request principal exists on the public read',
 };
 
 describe('permission context roleId guard (source scan)', () => {

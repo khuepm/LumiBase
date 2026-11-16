@@ -1,11 +1,11 @@
 ---
-version: 53
-lastUpdated: 2026-11-15T22:14:26.404Z
+version: 56
+lastUpdated: 2026-11-15T23:40:56.423Z
 sourceLang: en
-contentHash: 16425acb71035763
-codeVerified: 2026-11-15T22:14:26.404Z
-codeVerifiedHash: 16425acb71035763
-codeVerifiedClaims: 592
+contentHash: fb7e23a8ff3b4d56
+codeVerified: 2026-11-15T23:40:56.423Z
+codeVerifiedHash: fb7e23a8ff3b4d56
+codeVerifiedClaims: 636
 ---
 
 # Hono API Specification — LumiBase
@@ -869,6 +869,41 @@ Scheduled releases publish via the shared `content-scheduler` tick
 
 ---
 
+## 3c. Live preview (epic #667)
+
+Preview tokens let a frontend read draft content for a short time. Security
+model: [ADR-014](../architecture/decisions/adr-014-preview-bridge-threat-model.md);
+guide: [Live preview & visual editing](../features/visual-editing.md).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/preview/token` | Mint a token (user principals only; 30/min/user → `429`) |
+| `GET` | `/api/v1/preview/tokens` | Live tokens (site admin: all; others: own) |
+| `POST` | `/api/v1/preview/tokens/:id/revoke` | Revoke one (site admin: any; others: own) |
+| `POST` | `/api/v1/preview/tokens/revoke-all` | Rotate — revoke every live token of the site (site admin) |
+| `GET` | `/api/v1/preview/settings` | `{ allowedOrigins, ttlSeconds }` |
+| `PUT` | `/api/v1/preview/settings` | Update them (site admin; exact origins only) |
+| `GET` | `/api/v1/deliver/preview/:site_id` | Public: what the token targets (+ the item / release members) |
+| `GET` | `/api/v1/deliver/preview/:site_id/items/:collection` | Public: live items + the token's overlay (`?limit=&offset=`, max 100) |
+| `GET` | `/api/v1/deliver/preview/:site_id/items/:collection/:id` | Public: one item through the overlay |
+
+**Mint body** — an item (+ optional `versionKey`) or a release:
+```json
+{ "collection": "posts", "itemId": "itm_1", "versionKey": "redesign", "locale": "vi", "ttlSeconds": 900 }
+```
+`201 { data: { id, token, expiresAt, url, … } }` — `token` is shown once;
+`url` is built from the collection's `meta.previewUrl` (or `null`).
+
+**Public reads** take the token in the `x-lumibase-preview` header or
+`?__preview=`. Every failure (malformed, other site, expired, revoked, creator
+lost access) is `401 { errors: [{ code: "PREVIEW_UNAUTHORIZED" }] }` with an
+identical body. Responses: `Cache-Control: private, no-store`,
+`X-Robots-Tag: noindex, nofollow`, `Referrer-Policy: no-referrer`. Audit events:
+`preview.token_minted`, `preview.read`, `preview.token_rejected`,
+`preview.token_revoked`, `preview.tokens_rotated`, `preview.settings_updated`.
+
+---
+
 ## 4. Permissions, Roles & Policies
 
 | Method | Path | Description |
@@ -911,11 +946,22 @@ Scheduled releases publish via the shared `content-scheduler` tick
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/api/v1/files/presigned-url` | Get presigned R2/S3 PUT URL |
-| `POST` | `/api/v1/files` | Register file metadata after upload |
-| `GET` | `/api/v1/files` | List files (filterable) |
+| `POST` | `/api/v1/files` | Register file metadata after upload; fills `contentHash` + embedded metadata, returns `meta.duplicates` |
+| `GET` | `/api/v1/files` | List files: `?folder=<id\|root>&subfolders=true&search=&mime=image/*,application/pdf&ids=&limit=&offset=` → `meta.total` |
 | `GET` | `/api/v1/files/:id` | File metadata |
-| `PATCH` | `/api/v1/files/:id` | Update metadata (title, tags, folder) |
-| `DELETE` | `/api/v1/files/:id` | Delete file |
+| `PATCH` | `/api/v1/files/:id` | Rename (`filenameDownload`), move (`folder`), editorial `metadata`; id and storage key never change |
+| `DELETE` | `/api/v1/files/:id` | Safe delete: `409 FILE_IN_USE` with references unless `?confirm=true` (policy `confirm`); never under policy `block` |
+| `PUT` | `/api/v1/files/:id/content` | Replace the bytes in place (same id/key/references, `version`+1, previous kept for undo); `If-Match: "v<n>"`, `?filename=` |
+| `GET` | `/api/v1/files/:id/content` | Deliver current bytes; `?v=<version>` → immutable; `423` while a malware scan is pending/failed |
+| `GET` | `/api/v1/files/:id/versions` | Previous binaries within the retention window |
+| `POST` | `/api/v1/files/:id/versions/:versionId/restore` | Restore a previous binary (itself a replace) |
+| `GET` | `/api/v1/files/:id/usage` | Items and pages referencing the file |
+| `POST` | `/api/v1/files/:id/scan` | Re-run the malware scan (site admin) |
+| `GET` | `/api/v1/files/duplicates?hash=` | Same-content files (SHA-256 hex); also `POST` with `{ hash }` |
+| `POST` | `/api/v1/files/bulk` | `{ ids, folder?, metadata? }` bulk move / editorial metadata; `meta.skipped` |
+| `GET/PUT` | `/api/v1/files/settings` | DAM settings (`files.dam`); `PUT` site admin |
+| `GET` | `/api/v1/files/folders` · `/folders/tree` | Folders (flat / nested with `path`) |
+| `POST/PATCH/DELETE` | `/api/v1/files/folders[/:id]` | Create / rename+move (`409 FOLDER_CYCLE`) / delete empty (`409 FOLDER_NOT_EMPTY`); site admin |
 | `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
 | `POST` | `/api/v1/media/:key` | Upload raw media bytes (RBAC `media:create`; upload guard applies) |
 | `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`); with transform params → 302 to derivative |
@@ -938,9 +984,14 @@ image URL (CF Image Resizing / Imgproxy). No params → the original bytes.
 `?preset=<key>` resolves a saved `transform_presets` row for the site. See
 `.kiro/specs/image-transform-dsl`.
 
+**Access to `/api/v1/files`.** Site admins have full access; other members need a
+`files` policy permission whose rule is evaluated per file against `folder`,
+`folder_path`, `uploaded_by`, `mime` and `id` (folder-scoped permissions). See
+`docs/en/features/digital-asset-management.md` (epic #670).
+
 **Upload policy (`/api/v1/uploads/config`).** Enforced by the `file-upload-policy`
 guard on every upload surface (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`,
-`POST /api/v1/media/:key`): a public role cannot upload; the body is size-capped on
+`PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`): a public role cannot upload; the body is size-capped on
 its true byte length; the declared MIME must be in the allowlist and match the
 filename extension; raw bytes are content-sniffed (magic bytes) and executables /
 active-content SVGs are rejected; raster images are scanned for an embedded
@@ -1292,6 +1343,15 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `GET/POST/PATCH/DELETE` | `/api/v1/agent/roles[/:name]` | Agent role library CRUD (admin) — seeded with Planner, Writer, … |
 | `GET` | `/api/v1/agent/autonomy` | Trust ledger: grants + open incidents |
 | `GET/POST` | `/api/v1/agent/autonomy/promotions[...]` | Promotion proposals; `POST :id/decide` is the only path to a higher level (admin) |
+| `GET` | `/api/v1/agent/receipts` | Agent receipts (#713): read-only aggregation of runs (by status/agent, failure rate), tool calls by skill × outcome with p50 latency, approvals (status, approver, latency p50/p90/avg), vetoes, `askUser` questions, human overrides, token/USD cost, drift, incidents, autonomy grants and promotions, a daily series and the alert thresholds crossed. `?since&until` (ISO, default the last 30 days, at most 180 days; `400 VALIDATION` / `WINDOW_TOO_WIDE`). Admin (control plane). See [agent receipts](../features/agent-receipts.md) |
+| `GET` | `/api/v1/agent/receipts/export` | CSV (`text/csv`) of `?kind=runs` (default) \| `tool_calls` \| `approvals` over the same window, at most 10,000 rows (`X-Export-Rows`, `X-Export-Truncated`). Tool inputs/outputs are never exported; text cells that start with `= + - @` are prefixed with `'` |
+| `GET/PUT` | `/api/v1/agent/receipts/alerts` | Alert thresholds (`maxRunFailureRate`, `maxVetoRate`, `maxOverrideRate`, `maxApprovalLatencyP90Minutes`, `maxCostUsd`, `maxTokens`, `maxOpenDrift`, `maxIncidents`); an absent key is not checked. Stored in the `agent.receipts.alerts` setting; unknown keys or rates outside 0–1 → `400 VALIDATION` |
+| `POST` | `/api/v1/locale-generation/jobs` | One-shot translation generator for a new locale (#714). Body `{ locale, sourceLocale? = 'en', collections, includeUi? = true, provider? }`; adds the locale to the `locales` setting and queues a job that translates missing `translatable-text` values and `ui` strings (translation memory → glossary → MT) into the review queue. `202` with the job; `400` `VALIDATION` / `NO_TRANSLATABLE_FIELDS` / `PROVIDER_UNAVAILABLE`; `409 JOB_ACTIVE`. Control plane (site administrators). See [locale generator](../features/locale-generator.md) |
+| `GET` | `/api/v1/locale-generation/jobs[/:id]` | Jobs with `status`, `cursor`, `counters`; one job adds `review` (suggestions by state) |
+| `POST` | `/api/v1/locale-generation/jobs/:id/cancel` \| `/resume` | Cancel a queued/running job between chunks; re-queue a failed/cancelled job at its cursor (`409` otherwise) |
+| `GET` | `/api/v1/locale-generation/suggestions` | Review queue, `?locale&status&jobId&collection&limit&offset`, `{ data, meta: { total, limit, offset } }` |
+| `POST` | `/api/v1/locale-generation/suggestions/:id/decide` | `{ decision: 'approve', text? }` \| `{ decision: 'reject' }`. Approval writes through the reviewer's item service (RBAC, validation, revision); `{ status: 'stale' }` when the source changed or the locale was already written; `409 ALREADY_DECIDED`; `422` when the write is refused (the suggestion stays pending) |
+| `POST` | `/api/v1/locale-generation/suggestions/decide-bulk` | `{ decision, locale, ids?, jobId?, collection?, limit? ≤ 200 }` → `{ approved, rejected, stale, failed, processed, failures }` |
 | `GET/POST` | `/api/v1/agent/staged[...]` | Veto window: pending stagings enriched with `approvalId/collection/itemId/patch/agentRole` from the staging revision (null fields when the staging is gone); `POST :id/veto` discards a staging |
 | `GET` | `/api/v1/agent/approvals` | Approval inbox (`status` filter; defaults to `pending`) |
 | `POST` | `/api/v1/agent/approvals/:id/decide` | Human decision on a parked action. Body `{ decision: 'approved' \| 'rejected', reason? }`; needs `approvals:decide` (403 otherwise), `404` for an unknown or other-tenant id, `409` when the approval already left `pending`. On `approved` the harness owns the state transition, so execution and the status write happen once. Execution re-resolves **the requester's** current rights and runs with `requester ∩ decider`: an approval whose requester was since revoked, demoted or removed is denied, and one with no recorded requester (parked before provenance existed) is denied with `APPROVAL_PROVENANCE_MISSING`. An approval stored with `approvalPolicy: human_required` (every [external-action tool](../features/external-action-tools.md)) is released only by a signed-in user: an API key, a connector token or an agent gets `409 EXECUTION_FAILED` carrying `HUMAN_APPROVAL_REQUIRED`, and the approval stays `pending` |

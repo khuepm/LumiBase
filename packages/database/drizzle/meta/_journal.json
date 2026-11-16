@@ -267,6 +267,27 @@
       "when": 1795334400000,
       "tag": "0037_item_publication_state",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795420800000,
+      "tag": "0038_dam_assets",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1795507200000,
+      "tag": "0039_preview_secrets",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1795593600000,
+      "tag": "0040_locale_generation",
+      "breakpoints": true
     }
   ]
 }

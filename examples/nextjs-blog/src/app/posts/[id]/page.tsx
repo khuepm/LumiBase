@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { LumiError } from 'lumibase';
 import { lumi, type Post } from '@/lib/lumi';
+import { activePreviewToken, previewPost } from '@/lib/preview';
+import { VisualEditing } from '../../visual-editing';
 
 interface PostPageProps {
   params: Promise<{ id: string }>;
@@ -38,6 +40,15 @@ export default async function PostDetailPage({ params }: PostPageProps) {
   const { id } = await params;
   let post: Post;
 
+  // Draft mode (Studio preview): read through the preview token, which sees
+  // the draft / version / release this preview was opened for.
+  const previewToken = await activePreviewToken();
+  if (previewToken) {
+    const draft = await previewPost(previewToken, id);
+    if (!draft) return notFound();
+    return <PostView post={draft} preview />;
+  }
+
   try {
     // A draft (or unknown id) answers 404 for this credential — the SDK
     // turns every non-2xx into a `LumiError` carrying the status.
@@ -52,22 +63,34 @@ export default async function PostDetailPage({ params }: PostPageProps) {
     return notFound();
   }
 
+  return <PostView post={post} />;
+}
+
+/** `data-lumibase-field` marks a field as click-to-edit in the Studio preview. */
+function field(post: Post, name: string) {
+  return { 'data-lumibase-field': `posts/${post.id}/${name}` };
+}
+
+function PostView({ post, preview = false }: { post: Post; preview?: boolean }) {
   return (
     <article style={styles.main}>
+      {preview && <VisualEditing />}
       <Link href="/" style={styles.backLink}>
         ← Back to all posts
       </Link>
       
       <header style={styles.header}>
-        <h1 style={styles.title}>{post.data.title}</h1>
+        <h1 style={styles.title} {...field(post, 'title')} data-lumibase-live="text">
+          {post.data.title}
+        </h1>
         <div style={styles.meta}>
-          <span>By <strong>{post.data.author}</strong></span>
+          <span>By <strong {...field(post, 'author')}>{post.data.author}</strong></span>
           <span>•</span>
           <span>{new Date(post.createdAt).toLocaleDateString()}</span>
         </div>
       </header>
 
-      <div style={styles.content}>
+      <div style={styles.content} {...field(post, 'body')}>
         {post.data.body.split('\n\n').map((para: string, idx: number) => (
           <p key={idx} style={styles.paragraph}>
             {para}

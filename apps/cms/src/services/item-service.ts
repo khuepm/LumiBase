@@ -1022,6 +1022,15 @@ export class ItemService {
     }
   }
 
+  /**
+   * The same actor-scoped item access extension hooks get, for other sandbox
+   * entry points (extension MCP tools, #715): row/field/action permissions are
+   * those of this service's principal.
+   */
+  extensionDataAccess(): ExtensionActorDataAccess {
+    return this.actorDataAccess();
+  }
+
   private actorDataAccess(): ExtensionActorDataAccess {
     const buildService = () =>
       new ItemService({

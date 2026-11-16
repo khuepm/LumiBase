@@ -15,3 +15,4 @@ export * from './org-permissions';
 export * from './token-prefix';
 export * from './form-layout/index';
 export * from './security-history';
+export * from './agent-receipts';

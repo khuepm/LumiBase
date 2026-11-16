@@ -29,7 +29,8 @@ export const tmRouter = new Hono<AppEnv>();
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-function buildProviders(env: AppEnv['Bindings']): Map<string, MtProvider> {
+/** MT providers configured for this deployment (also used by the locale generator, #714). */
+export function buildProviders(env: AppEnv['Bindings']): Map<string, MtProvider> {
   const map = new Map<string, MtProvider>();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
