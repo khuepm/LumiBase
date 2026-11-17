@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import { inviteUserToSite } from '../modules/email-identity/invite';
+import { inviteRefusalMessage, inviteUserToSite } from '../modules/email-identity/invite';
 import type { AppEnv } from '../env';
 import { runDetached } from '../lib/detached';
 import { requireSiteAdmin } from '../middleware/site-admin';
@@ -175,7 +175,7 @@ usersRouter.post('/invite', async (c) => {
     return c.json({
       errors: [{
         code: invited.code,
-        message: 'This mailbox is already a member of this site under another address.',
+        message: inviteRefusalMessage(invited.code),
       }],
     }, 409);
   }

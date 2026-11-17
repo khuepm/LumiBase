@@ -1,8 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-07-18T20:49:50.811Z
+version: 3
+lastUpdated: 2026-11-16T15:44:56.235Z
 sourceLang: en
-contentHash: 69fb55e16335b41b
+contentHash: f09ac8ab62f698ae
+codeVerified: 2026-11-16T15:44:56.235Z
+codeVerifiedHash: f09ac8ab62f698ae
+codeVerifiedClaims: 8
 ---
 
 # GraphQL API Specification
@@ -57,7 +60,7 @@ field is surfaced with a mapped scalar:
 | `integer` | `Int` |
 | `float`, `decimal` | `Float` |
 | `bigInteger` | `String` (avoids 53-bit precision loss) |
-| `dateTime`, `date`, `time`, `timestamp` | `DateTime` (ISO-8601 string) |
+| `datetime` (canonical), `dateTime` (legacy), `date`, `time`, `timestamp` | `DateTime` (ISO-8601 string) |
 | `string`, `text`, `uuid`, `hash`, `slug`, `code`, `color` | `String` |
 | `json`, `csv`, `geometry`, `files` | `JSON` |
 

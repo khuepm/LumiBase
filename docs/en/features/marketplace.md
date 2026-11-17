@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T12:59:56.000Z
+version: 5
+lastUpdated: 2026-11-16T15:30:00.700Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: f47ac6b8c1d63092
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 291ea9be1c38e004
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-16T15:30:00.700Z
+codeVerifiedHash: 291ea9be1c38e004
+codeVerifiedClaims: 32
 ---
 
 # Marketplace for Extensions
@@ -28,6 +31,10 @@ The LumiBase Marketplace lets you publish and install **digitally signed** exten
 | `downloadCount` | Cumulative package downloads (bumped by `/download`) |
 | `submissionStatus` | Community submission state: `pending` / `approved` / `rejected` (null = not a submission) |
 | `submittedBy` | User who submitted the extension via the community flow |
+| `isOfficial` | **Server-derived** official flag: true only when the name is in the `lumibase-` namespace **and** the bundle verifies against a key flagged `official`. Never taken from a client or manifest |
+| `autoInstall` | Install automatically during setup bootstrap / site-create reconcile |
+| `enabledByDefault` | Initial `enabled` value at install time (an admin can turn it off later) |
+| `verifiedAt` | Timestamp of the last successful signature verification (drives the badge) |
 
 `extension_votes` records marketplace upvotes — one row per `(userId, marketplaceSlug)`, enforced by a unique index so voting is idempotent. Votes are keyed by slug so they survive version bumps.
 
@@ -48,7 +55,11 @@ Public keys are declared in the `MARKETPLACE_PUBLIC_KEYS` env var as a JSON map:
 }
 ```
 
-Loaded once at router init, not cached long-term (can be rotated via an env update + redeploy).
+The env map is re-parsed on every key resolution, not cached long-term (can be rotated via an env update + redeploy).
+
+Besides the env var, keys are registered in the `lumibase_publisher_keys` table (unique `keyId`, `publicKeyPem`, `publisher`, `official`, `revoked`). When a `publisherKeyId` is resolved, the DB row takes precedence over env, so a tampered env var can neither mark a key official nor un-revoke it. An env-only key is always third-party (`official: false`, `revoked: false`); a revoked key always fails verification. The official LumiBase key is seeded into this table during setup.
+
+Implementation: `apps/cms/src/services/extension-verifier.ts`.
 
 ## API endpoints
 
@@ -57,6 +68,7 @@ GET    /api/v1/marketplace/extensions              List published extensions
 GET    /api/v1/marketplace/extensions/:slug        Detail (with signature)
 GET    /api/v1/marketplace/extensions/:slug/download   Download package (302 → bundle; ?redirect=0 → JSON)
 POST   /api/v1/marketplace/extensions/:slug/install    Install into the current site
+GET    /api/v1/marketplace/updates                 Available updates for the extensions installed on the current site
 POST   /api/v1/marketplace/extensions/:slug/vote       Upvote (auth; idempotent)
 DELETE /api/v1/marketplace/extensions/:slug/vote       Remove upvote (auth)
 POST   /api/v1/marketplace/publish                 Publish an uploaded (signed) extension
@@ -68,10 +80,12 @@ POST   /api/v1/marketplace/submissions/:id/review  Approve / reject a submission
 Implementation: `apps/cms/src/routes/marketplace.ts`.
 
 The catalog projection adds three derived fields on top of the stable public
-fields: `verified` (true when the listing carries a signature + registered
-publisher key + integrity hash — drives the "Verified" badge and the trusted
-install path), `voteCount`, and `hasVoted` (for the authenticated caller).
-`totalDownloads` now reflects `downloadCount`.
+fields: `verified` (true when the listing has `verifiedAt` — set only after a real
+signature check at publish/install — or `isOfficial`; rows published before that
+step was recorded fall back to carrying a signature + publisher key id + integrity
+hash — drives the "Verified" badge and the trusted install path), `voteCount`, and
+`hasVoted` (for the authenticated caller). `totalDownloads` now reflects
+`downloadCount`.
 
 ## Download
 
@@ -105,7 +119,7 @@ On `POST /install`:
 
 1. Fetch the bundle from `bundleUrl` (R2/S3/external).
 2. Recompute SHA-256 → compare against `bundleSha256`.
-3. Look up `publisherKeyId` in `MARKETPLACE_PUBLIC_KEYS`.
+3. Look up `publisherKeyId` in `lumibase_publisher_keys`, then in `MARKETPLACE_PUBLIC_KEYS` (see [Public keys registry](#public-keys-registry)).
 4. Verify `signature` via `crypto.subtle.verify(algorithm, key, signatureBytes, sha256Bytes)`.
 5. On failure → reject the install, do not mount.
 6. On success → write the extension to the DB for the current `siteId` with `enabled: false` by default; the admin enables it manually.
@@ -119,7 +133,7 @@ On `POST /install`:
 - A signature + `publisherKeyId`.
 - A unique slug + `publisher` info.
 
-Only an admin (capability `marketplace:publish`) is allowed.
+Only a moderator with the `extensions:configure` permission is allowed — the same gate as `/submissions/:id/review`, since publishing writes the shared global catalog every tenant reads.
 
 ## Roadmap
 

@@ -98,7 +98,8 @@ describe('castExpression', () => {
 describe('buildJsonPathIndexAdvice', () => {
   it('emits a partial expression index matching the filter expression', () => {
     const a = buildJsonPathIndexAdvice({ collectionId: 'c1', collectionName: 'Products', segments: ['price'], cast: 'numeric' });
-    expect(a.indexName).toBe('items_products_price_numeric_idx');
+    expect(a.indexName).toMatch(/^items_products_price_numeric_[0-9a-f]{12}_idx$/);
+    expect(a.ddl).toContain(`IF NOT EXISTS ${a.indexName} ON`);
     expect(a.ddl).toContain('ON lumibase_items ((');
     expect(a.ddl).toContain(`data ->> 'price'`);
     expect(a.ddl).toContain(`WHERE collection_id = 'c1' AND deleted_at IS NULL`);
@@ -113,6 +114,40 @@ describe('buildJsonPathIndexAdvice', () => {
     });
     expect(a.ddl).toContain(`data #>> '{metadata,dimensions,weight_in_grams}'::text[]`);
     expect(a.indexName.length).toBeLessThanOrEqual(63);
+  });
+
+  // Issue #858: index names are global per schema, collection names are only
+  // unique per site, so the name must be keyed on what makes the index unique.
+  it('gives same-named collections in different sites different index names', () => {
+    const siteA = buildJsonPathIndexAdvice({ collectionId: 'collA', collectionName: 'products', segments: ['price'], cast: 'numeric' });
+    const siteB = buildJsonPathIndexAdvice({ collectionId: 'collB', collectionName: 'products', segments: ['price'], cast: 'numeric' });
+    expect(siteA.indexName).not.toBe(siteB.indexName);
+  });
+
+  it('gives the paths a_b and a.b different index names', () => {
+    const flat = buildJsonPathIndexAdvice({ collectionId: 'c1', collectionName: 'p', segments: ['a_b'], cast: 'numeric' });
+    const nested = buildJsonPathIndexAdvice({ collectionId: 'c1', collectionName: 'p', segments: ['a', 'b'], cast: 'numeric' });
+    expect(flat.indexName).not.toBe(nested.indexName);
+  });
+
+  it('gives different casts on the same path different index names', () => {
+    const n = buildJsonPathIndexAdvice({ collectionId: 'c1', collectionName: 'p', segments: ['x'], cast: 'numeric' });
+    const b = buildJsonPathIndexAdvice({ collectionId: 'c1', collectionName: 'p', segments: ['x'], cast: 'boolean' });
+    expect(n.indexName).not.toBe(b.indexName);
+  });
+
+  it('keeps names distinct when the readable part is truncated to the same 63 chars', () => {
+    const long = 'a_very_long_collection_name_that_goes_on_and_on_and_on';
+    const one = buildJsonPathIndexAdvice({ collectionId: 'c1', collectionName: long, segments: ['metadata', 'dimensions', 'weight_one'], cast: 'numeric' });
+    const two = buildJsonPathIndexAdvice({ collectionId: 'c1', collectionName: long, segments: ['metadata', 'dimensions', 'weight_two'], cast: 'numeric' });
+    expect(one.indexName.length).toBeLessThanOrEqual(63);
+    expect(two.indexName.length).toBeLessThanOrEqual(63);
+    expect(one.indexName).not.toBe(two.indexName);
+  });
+
+  it('is stable for the same collection, path and cast', () => {
+    const input = { collectionId: 'c1', collectionName: 'Products', segments: ['metadata', 'rating'], cast: 'numeric' as const };
+    expect(buildJsonPathIndexAdvice(input).indexName).toBe(buildJsonPathIndexAdvice({ ...input }).indexName);
   });
 
   it('returns no DDL for timestamp casts (not IMMUTABLE)', () => {
