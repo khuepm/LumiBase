@@ -16,6 +16,7 @@ import {
 } from '@lumibase/database';
 import { AGENT_RECEIPTS_ALERTS_SETTING_KEY } from '@lumibase/contracts';
 import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
+import { seedItems } from '../../__tests__/helpers/seed-items';
 import { AgentReceiptsError, AgentReceiptsService, resolveReceiptsWindow } from '../agent-receipts-service';
 
 /**
@@ -81,6 +82,7 @@ describe.skipIf(!hasDbIntegrationUrl)('AgentReceiptsService — DB integration',
       .insert(contentIntents)
       .values({ siteId, name: 'fresh', collection: 'posts', schedule: '0 * * * *' })
       .returning();
+    await seedItems(db, siteId, ['i']);
     const drift = (fingerprint: string, values: Partial<typeof contentDrifts.$inferInsert>) => ({
       siteId, intentId: intent!.id, itemId: 'i', ruleType: 'freshness', ruleKey: fingerprint, fingerprint, ...values,
     });

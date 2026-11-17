@@ -13,6 +13,7 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
+import { items } from './cms';
 import { organizations, sites, users } from './core';
 
 /**
@@ -275,6 +276,12 @@ export const shares = pgTable(
   },
   (t) => ({
     tokenHashUnique: uniqueIndex('shares_token_hash_unique').on(t.tokenHash),
+    /** Same-site item (migration 0041); erasure of the item removes this row. */
+    itemFk: foreignKey({
+      name: 'lumibase_shares_item_fk',
+      columns: [t.siteId, t.itemId],
+      foreignColumns: [items.siteId, items.id],
+    }).onDelete('cascade'),
     siteCollectionItemIdx: index('shares_site_collection_item_idx').on(t.siteId, t.collection, t.itemId),
     siteRoleIdx: index('shares_site_role_idx').on(t.siteId, t.roleId),
     siteRevokedIdx: index('shares_site_revoked_idx').on(t.siteId, t.revokedAt),
