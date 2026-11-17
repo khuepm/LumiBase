@@ -9,6 +9,7 @@ import { provisionSite } from './site-provisioning';
 import { USAGE_KINDS } from '@lumibase/contracts/platform';
 import { recordUsage } from '../platform/usage';
 import { emailLookup } from '../modules/email-identity/service';
+import { isInviteBindable } from '../modules/email-identity/invite';
 
 export type OrganizationActor = { type: 'user'; userId: string } | { type: 'api_key'; apiKeyId: string };
 export function organizationActorFromAuth(auth: AuthPrincipal): OrganizationActor {
@@ -99,15 +100,21 @@ export async function executeOrganizationMutation(
     const lookup = input.userId ? eq(users.id, input.userId) : (await emailLookup(db, input.email ?? '')).where;
     const [user] = await db.select({ id: users.id }).from(users).where(lookup).limit(1);
     let userId = user?.id;
+    let createdHere = false;
     if (!userId && input.email) {
       // #732: two concurrent invites of one new address both miss the lookup;
       // the unique email indexes pick one insert, and the loser re-reads the
       // winner's row instead of surfacing a 23505 as a 500.
       const [created] = await db.insert(users).values({ email: input.email, status: 'invited' })
         .onConflictDoNothing().returning({ id: users.id });
+      createdHere = created !== undefined;
       userId = created?.id ?? (await db.select({ id: users.id }).from(users).where(lookup).limit(1))[0]?.id;
     }
     if (!userId) organizationFail('NOT_FOUND', 404);
+    // #856: an email match only binds an account whose mailbox is proven.
+    if (!input.userId && !createdHere && !(await isInviteBindable(db, userId!))) {
+      organizationFail('INVITEE_EMAIL_UNVERIFIED', 409);
+    }
     const [existing] = await db.select().from(organizationMembers).where(and(eq(organizationMembers.organizationId, orgId), eq(organizationMembers.userId, userId!)));
     if (role !== 'owner' && (input.role === 'owner' || existing?.role === 'owner')) organizationFail('ORGANIZATION_FORBIDDEN', 403);
     if (existing?.role === 'owner' && input.role !== 'owner') await ensureAnotherOrganizationOwner(db, orgId, userId!);

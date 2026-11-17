@@ -4,6 +4,7 @@ import { ackHealthProbes, openWorkerQueueResources } from './cloudflare-queue-co
 import type { Bindings } from './env';
 import {
   CONTENT_INDEXING_QUEUE,
+  makeConfiguredSet,
   registerContentIndexingWorker,
   type SearchIndexJob,
   type SearchRemoveJob,
@@ -47,6 +48,14 @@ const contentIndexingMessage = z.discriminatedUnion('jobName', [
 
 const revalidationData = z.object({ siteId: id, collection: id }) satisfies z.ZodType<RevalidationDispatchJob>;
 const revalidationMessage = z.object({ id, jobName: z.literal('dispatch'), data: revalidationData });
+
+/**
+ * Index names this isolate has already configured. Module scope because the
+ * consumer registers per batch; a per-batch set re-applied the index settings
+ * on every batch (#863). Index names are `{siteId}__{collection}`, so one set
+ * is tenant-safe, and an isolate restart only costs one redundant settings call.
+ */
+const configuredIndexes = makeConfiguredSet();
 
 type MessageHandlingQueue = QueueProvider & {
   handleMessage(queueName: string, body: { id: string; jobName: string; data: unknown }): Promise<void>;
@@ -96,10 +105,13 @@ export async function processCloudflareContentIndexingQueue(
   const queue = runtime.queue;
   // Infra misconfiguration: throw before claiming anything so Cloudflare retries the batch.
   if (!canHandleMessages(queue)) throw new Error('Content indexing queue requires the Cloudflare queue provider.');
-  registerContentIndexingWorker({
-    search: runtime.search,
-    queue,
-  });
+  registerContentIndexingWorker(
+    {
+      search: runtime.search,
+      queue,
+    },
+    { configured: configuredIndexes },
+  );
   await drain(batch, messages, queue, CONTENT_INDEXING_QUEUE, contentIndexingMessage, 'content-indexing-queue');
 }
 

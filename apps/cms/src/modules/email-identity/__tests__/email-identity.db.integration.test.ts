@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { roles, sites, systemState, userSites, users, type Database } from '@lumibase/database';
+import { roles, sites, systemState, userIdentities, userSites, users, type Database } from '@lumibase/database';
 import { MemoryCacheProvider } from '@lumibase/runtime';
 
 import type { AppEnv } from '../../../env';
@@ -323,6 +323,70 @@ describe.skipIf(!hasDbIntegrationUrl)('Email identity policy — DB integration'
     const result = await inviteUserToSite(db, { siteId: SITE_STRICT, email: `inv+alias@${DOMAIN}` });
     expect(result).toEqual({ ok: false, code: 'EMAIL_IDENTITY_CONFLICT' });
     expect(await countEmail(`inv+alias@${DOMAIN}`)).toBe(0);
+  });
+
+  // ── invite: only bind an account whose mailbox is proven (#856) ─────
+
+  async function membershipCount(userId: string, siteId: string): Promise<number> {
+    const rows = await db
+      .select({ userId: userSites.userId })
+      .from(userSites)
+      .where(and(eq(userSites.userId, userId), eq(userSites.siteId, siteId)));
+    return rows.length;
+  }
+
+  it('invite does not bind an SSO JIT account (external login, no verified email) matched case-insensitively', async () => {
+    // What external-auth JIT writes: the IdP's `email` claim as is, `active`, no password.
+    const jit = await addUser(`Victim@${DOMAIN}`, { externalId: 'eidit-jit-victim' });
+    const result = await inviteUserToSite(db, { siteId: SITE_OPEN, email: `victim@${DOMAIN}` });
+    expect(result).toEqual({ ok: false, code: 'INVITEE_EMAIL_UNVERIFIED' });
+    expect(await membershipCount(jit.id, SITE_OPEN)).toBe(0);
+  });
+
+  it('under `root`, invite does not bind an unverified alias account', async () => {
+    expect((await setInstanceEmailIdentityMode(db, 'root')).ok).toBe(true);
+    const jitAlias = await addUser(`eidit.vic+x@gmail.com`, { externalId: 'eidit-jit-alias' });
+    const jitResult = await inviteUserToSite(db, { siteId: SITE_OPEN, email: 'eiditvic@gmail.com' });
+    expect(jitResult).toEqual({ ok: false, code: 'INVITEE_EMAIL_UNVERIFIED' });
+    expect(await membershipCount(jitAlias.id, SITE_OPEN)).toBe(0);
+
+    // Self-registered, verification link never clicked: still `invited` with a password.
+    const pending = await addUser(`eidit.reg+y@gmail.com`, { passwordHash: 'secret-hash', status: 'invited' });
+    const regResult = await inviteUserToSite(db, { siteId: SITE_OPEN, email: 'eiditreg@gmail.com' });
+    expect(regResult).toEqual({ ok: false, code: 'INVITEE_EMAIL_UNVERIFIED' });
+    expect(await membershipCount(pending.id, SITE_OPEN)).toBe(0);
+  });
+
+  it('under `root`, invite still binds a verified alias account', async () => {
+    expect((await setInstanceEmailIdentityMode(db, 'root')).ok).toBe(true);
+    const verified = await addUser(`eidit.ok+z@gmail.com`, { passwordHash: 'secret-hash' });
+    const result = await inviteUserToSite(db, { siteId: SITE_OPEN, email: 'eiditok@gmail.com' });
+    if (!result.ok) throw new Error(`expected invite to succeed, got ${result.code}`);
+    expect(result.user.id).toBe(verified.id);
+    expect(await membershipCount(verified.id, SITE_OPEN)).toBe(1);
+  });
+
+  it('invite binds a social-login account whose provider verified the same address', async () => {
+    const social = await addUser(`social@${DOMAIN}`);
+    await db.insert(userIdentities).values({
+      userId: social.id,
+      issuer: 'https://accounts.google.com',
+      subject: 'eidit-google-1',
+      emailAtLink: `social@${DOMAIN}`,
+    });
+    const result = await inviteUserToSite(db, { siteId: SITE_OPEN, email: `Social@${DOMAIN}` });
+    if (!result.ok) throw new Error(`expected invite to succeed, got ${result.code}`);
+    expect(result.user.id).toBe(social.id);
+  });
+
+  it('invite re-binds a pending invitation placeholder to another site', async () => {
+    const first = await inviteUserToSite(db, { siteId: SITE_OPEN, email: `again@${DOMAIN}` });
+    if (!first.ok) throw new Error(`expected invite to succeed, got ${first.code}`);
+    expect(first.created).toBe(true);
+    const second = await inviteUserToSite(db, { siteId: SITE_STRICT, email: `again@${DOMAIN}` });
+    if (!second.ok) throw new Error(`expected invite to succeed, got ${second.code}`);
+    expect(second.created).toBe(false);
+    expect(second.user.id).toBe(first.user.id);
   });
 
   // ── register / login through the real router ─────────────────────────

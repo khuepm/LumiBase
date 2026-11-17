@@ -1,10 +1,10 @@
 ---
-version: 14
-lastUpdated: 2026-11-16T20:35:15.500Z
+version: 15
+lastUpdated: 2026-11-17T19:23:30.212Z
 sourceLang: en
-contentHash: 8657ce2b1478ab35
-codeVerified: 2026-11-16T20:35:15.500Z
-codeVerifiedHash: 8657ce2b1478ab35
+contentHash: c4cf5c68f57e9896
+codeVerified: 2026-11-17T19:23:30.212Z
+codeVerifiedHash: c4cf5c68f57e9896
 codeVerifiedClaims: 122
 ---
 
@@ -111,7 +111,8 @@ The rule lives twice, in `emailRoot()`
 one fixture list. Both start from the same normaliser — trim the whitespace JS
 `trim()` strips, then lower-case — in `normalizeEmail()` and in
 `lumibase_email_normalize()` (migration `0041`), which is also the `exact`-mode
-account key. SCIM trims `userName` and rejects a value that is not an address. Database triggers write `users.email_canonical` /
+account key. SCIM trims `userName` and rejects a value that is not an address.
+Database triggers write `users.email_canonical` /
 `users.email_root` and `user_sites.identity_key`, so every writer — register,
 invite, SCIM, setup, seeds — is keyed the same way, and unique indexes (not a
 check-then-insert) enforce the result.
@@ -143,6 +144,25 @@ succeeds. Both accept `dryRun: true`, and every applied change is audit-logged.
   `202` whether the address, one of its aliases, or a strict-site alias already
   exists; the account and its membership commit in one transaction, so a
   refused membership never leaves an orphan account.
+- **A refused membership is an error, never a silent success.** Every
+  `user_sites` writer names `(user_id, site_id)` as its conflict target, so
+  "already a member" stays a no-op while an alias of an existing member of a
+  strict site surfaces: SCIM `POST /Groups` answers `409` with
+  `scimType: "uniqueness"` and creates nothing, and setup answers
+  `409 EMAIL_IDENTITY_CONFLICT`.
+- **SSO JIT never links by email.** An external-JWT login whose email claim
+  collides with another account (an alias under `root`, or an alias of a member
+  of a strict site) is rejected with `403` — the server log and the
+  `external_auth_denied` audit row carry `EMAIL_IDENTITY_CONFLICT` — instead of
+  failing with a 500. The existing account is not linked: an IdP email claim is
+  not proof of control of that mailbox. The JIT account and its membership
+  commit in one transaction.
+- **Strict covers organization-inherited access.** An organization owner or
+  admin reaches the organization's sites without a `user_sites` row. On a
+  strict site that inherited role is dropped when another alias of the same
+  root mailbox holds the site's seat: the alias that is a site member or, when
+  none is, the earliest-created alias with an owner/admin role in the
+  organization.
 
 Several external identities can be linked to one account through the
 `lumibase_user_identities` table (one row per `(issuer, subject)`). Members use

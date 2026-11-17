@@ -499,7 +499,7 @@
                 "type": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias, geopoint ({ lat, lng }). Not validated server-side; GraphQL currently types `datetime` as String (B206)."
+                  "description": "Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias, geopoint ({ lat, lng }). Not validated server-side (B206)."
                 },
                 "interface": {
                   "type": "string",
@@ -659,7 +659,7 @@
                   "pattern": "^[a-z][a-z0-9_]{0,62}$"
                 },
                 "migrationPlan": {
-                  "description": "Counts as confirmation of a risky change, like confirmRiskyChange=true. The plan is not executed yet.",
+                  "description": "Counts as confirmation of a risky change, like confirmRiskyChange=true, only when it names a non-empty string `strategy` (e.g. { strategy: \"cast\" }); `{}` is refused. The plan is not executed yet.",
                   "type": "object",
                   "propertyNames": {
                     "type": "string"
@@ -936,7 +936,7 @@
                 "type": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias, geopoint ({ lat, lng }). Not validated server-side; GraphQL currently types `datetime` as String (B206)."
+                  "description": "Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias, geopoint ({ lat, lng }). Not validated server-side (B206)."
                 },
                 "interface": {
                   "type": "string",
@@ -1096,7 +1096,7 @@
                   "pattern": "^[a-z][a-z0-9_]{0,62}$"
                 },
                 "migrationPlan": {
-                  "description": "Counts as confirmation of a risky change, like confirmRiskyChange=true. The plan is not executed yet.",
+                  "description": "Counts as confirmation of a risky change, like confirmRiskyChange=true, only when it names a non-empty string `strategy` (e.g. { strategy: \"cast\" }); `{}` is refused. The plan is not executed yet.",
                   "type": "object",
                   "propertyNames": {
                     "type": "string"
@@ -1266,7 +1266,7 @@
           "type": {
             "type": "string",
             "minLength": 1,
-            "description": "Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias, geopoint ({ lat, lng }). Not validated server-side; GraphQL currently types `datetime` as String (B206)."
+            "description": "Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias, geopoint ({ lat, lng }). Not validated server-side (B206)."
           },
           "interface": {
             "type": "string",
@@ -1426,7 +1426,7 @@
             "pattern": "^[a-z][a-z0-9_]{0,62}$"
           },
           "migrationPlan": {
-            "description": "Counts as confirmation of a risky change, like confirmRiskyChange=true. The plan is not executed yet.",
+            "description": "Counts as confirmation of a risky change, like confirmRiskyChange=true, only when it names a non-empty string `strategy` (e.g. { strategy: \"cast\" }); `{}` is refused. The plan is not executed yet.",
             "type": "object",
             "propertyNames": {
               "type": "string"
