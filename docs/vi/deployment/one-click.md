@@ -1,14 +1,14 @@
 ---
 sourceLang: en
-version: 2
-lastUpdated: 2026-11-12T18:23:47.335Z
+version: 3
+lastUpdated: 2026-11-16T15:40:01.990Z
 translatedFrom: en
-sourceHash: 337314e0f842957a
+sourceHash: ecb2a5851a2a04d2
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T18:23:47.335Z
-codeVerifiedHash: 337314e0f842957a
-codeVerifiedClaims: 22
+codeVerified: 2026-11-16T15:40:01.990Z
+codeVerifiedHash: ecb2a5851a2a04d2
+codeVerifiedClaims: 24
 ---
 
 # Deploy một cú nhấp
@@ -31,10 +31,11 @@ sao repository của bạn. `railway.json` là ngoại lệ: service Railway t�
 repository **build `docker/Dockerfile` từ source** — xem [Railway](#railway) để
 biết bản build đó thiếu gì.
 
-Các template cần image từ bản release đầu tiên sau `2.0.0`: chúng dựa vào việc
-entrypoint suy ra `CORS_ALLOWED_ORIGINS`, điều mà `2.0.0` (`latest` hiện nay)
-không làm, nên cho tới khi bản release đó được publish, một lần deploy sẽ dừng ở
+Các template cần `2.1.0` trở lên: chúng dựa vào việc entrypoint suy ra
+`CORS_ALLOWED_ORIGINS`, điều mà `2.0.0` không làm, nên một image cũ hơn sẽ dừng ở
 bước kiểm tra production với `CORS_ALLOWED_ORIGINS is required in production`.
+`render.yaml` và `fly.toml` pin image release của commit bạn deploy từ đó; xem
+[Pin một phiên bản](#pin-một-phiên-bản).
 
 ## Mọi template thiết lập những gì
 
@@ -82,11 +83,11 @@ token mới.
 
 ## Render
 
-> **Nâng cấp không người giám sát.** `render.yaml` deploy `:latest` và image chạy
-> migration mỗi lần khởi động, nên bất kỳ lần restart nào sau một bản release mới
-> — kể cả bản major — đều nâng cấp instance và migrate database của nó. Hãy pin
-> bản sao của bạn: `url: ghcr.io/khuepm/lumibase-cms:<version>`. Xem
-> [Pin một phiên bản](#pin-một-phiên-bản).
+> **Release đã pin.** `render.yaml` deploy một tag release,
+> `url: ghcr.io/khuepm/lumibase-cms:<version>`, đừng bao giờ dùng `:latest`: image
+> chạy migration mỗi lần khởi động, nên một tag trôi sẽ biến bất kỳ lần restart
+> nào sau một bản release mới — kể cả bản major — thành một lần nâng cấp không
+> người giám sát. Xem [Pin một phiên bản](#pin-một-phiên-bản).
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/khuepm/lumibase)
 
@@ -139,10 +140,11 @@ từ Docker image để có image release; service tạo từ repository dùng
 
 ## Fly.io
 
-> **Nâng cấp không người giám sát.** `fly.toml` deploy `:latest` và image chạy
-> migration mỗi lần khởi động, nên một lần `fly deploy` hoặc restart machine sau
-> một bản release mới — kể cả bản major — sẽ nâng cấp app và migrate database của
-> nó. Hãy pin nó trong `[build]`: `image = "ghcr.io/khuepm/lumibase-cms:<version>"`.
+> **Release đã pin.** `fly.toml` deploy một tag release trong `[build]`,
+> `image = "ghcr.io/khuepm/lumibase-cms:<version>"`, đừng bao giờ dùng `:latest`:
+> image chạy migration mỗi lần khởi động, nên một tag trôi sẽ biến một lần
+> `fly deploy` hoặc restart machine sau một bản release mới — kể cả bản major —
+> thành một lần nâng cấp không người giám sát. Xem [Pin một phiên bản](#pin-một-phiên-bản).
 
 Fly không có nút deploy, không sinh secret, và chạy Postgres và Redis như các
 resource riêng. Từ một thư mục trống:
@@ -189,15 +191,21 @@ Worker tự chứa mà nút bấm deploy được được theo dõi ở backlog
 
 ## Pin một phiên bản
 
-Render và Fly trỏ tới `latest`, tag luôn theo bản release mới nhất, và image chạy
-các migration đang chờ mỗi khi khởi động: một lần restart của nền tảng sau một bản
-release là một lần nâng cấp không ai lên lịch, và sau một bản release major thì có
-thể cần các bước thủ công trong upgrade notes của nó. Mặc định vẫn là `latest` vì
-các template chỉ chạy với image có entrypoint hiện tại, và chưa tag release nào đã
-publish có nó (xem ghi chú ở đầu trang).
+Mọi template chạy image đã publish đều deploy một tag release, đừng bao giờ dùng
+`latest` hay `edge`. Image chạy các migration đang chờ mỗi khi khởi động, nên với
+một tag trôi, một lần restart của nền tảng sau một bản release là một lần nâng
+cấp không ai lên lịch, và sau một bản release major thì có thể cần các bước thủ
+công trong upgrade notes của nó.
 
-Cho production, hãy pin bản release bạn đã kiểm thử — dòng cần đổi là
+`render.yaml` và `fly.toml` mang bản release của commit repository chứa chúng:
+`pnpm version:sync` dời dòng image của chúng theo mỗi bản release, và
+`scripts/__tests__/deploy-manifests.test.mjs` fail khi gặp một tag trôi hoặc một
+tag khác version trong `package.json` gốc. Template Railway không có file nào
+trong repository để pin, nên service `lumibase` của nó được gán tag bằng tay
+(xem [Railway](#railway)).
+
+Image chỉ đổi khi dòng bạn deploy từ đó đổi. Để nâng cấp, hãy sửa nó —
 `url: ghcr.io/khuepm/lumibase-cms:<version>` trong `render.yaml`,
 `image = "ghcr.io/khuepm/lumibase-cms:<version>"` trong `fly.toml`, hoặc image
-của service Railway — và đổi nó có chủ đích, sau khi đọc upgrade notes của bản
-release đó; xem [Docker → Cập nhật](./docker.md#cập-nhật).
+của service Railway — có chủ đích, sau khi đọc upgrade notes của bản release đó;
+xem [Docker → Cập nhật](./docker.md#cập-nhật).

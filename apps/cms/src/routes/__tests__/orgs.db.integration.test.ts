@@ -24,6 +24,7 @@ import { EffectiveCapabilityService } from '../../services/effective-capability-
 const A = 'org_637_a', B = 'org_637_b', SA = 'site_637_a', SB = 'site_637_b';
 const OWNER = 'usr_637_owner', ADMIN = 'usr_637_admin', OTHER = 'usr_637_other', DUAL = 'usr_637_dual';
 const secret = 'organization-integration-test-only-secret';
+const JIT = 'usr_637_jit', VERIFIED = 'usr_637_verified';
 
 describe.skipIf(!hasDbIntegrationUrl)('organization API, auth and tenant isolation (real PostgreSQL)', () => {
   let db: Database, app: Hono<AppEnv>;
@@ -44,7 +45,7 @@ describe.skipIf(!hasDbIntegrationUrl)('organization API, auth and tenant isolati
     const orgIds = [A, B, ...created];
     await db.delete(sites).where(inArray(sites.organizationId, orgIds));
     await db.delete(organizations).where(inArray(organizations.id, orgIds));
-    await db.delete(users).where(inArray(users.id, [OWNER, ADMIN, OTHER, DUAL]));
+    await db.delete(users).where(inArray(users.id, [OWNER, ADMIN, OTHER, DUAL, JIT, VERIFIED]));
     created.clear();
   }
   beforeAll(async () => {
@@ -161,6 +162,22 @@ describe.skipIf(!hasDbIntegrationUrl)('organization API, auth and tenant isolati
     expect((await request(`/orgs/${A}/keys`, adminToken, 'POST', { name: 'human key' })).status).toBe(201);
     const logs = await db.select().from(auditLog);
     expect(logs.some((l) => (l.metadata as Record<string, unknown>).reason === 'organization_key_on_human_only_route')).toBe(true);
+  });
+  it('invites by email only into an account whose mailbox is proven (#856)', async () => {
+    // SSO JIT shape: IdP email stored as is, active, no password.
+    await db.insert(users).values([
+      { id: JIT, email: 'Jit637@example.test', externalId: 'idp|jit637', status: 'active' },
+      { id: VERIFIED, email: 'verified637@example.test', passwordHash: 'secret-hash', status: 'active' },
+    ]);
+    const refused = await request(`/orgs/${A}/members`, ownerToken, 'POST', { email: 'jit637@example.test', role: 'admin' });
+    expect(refused.status).toBe(409);
+    expect(await payload(refused)).toEqual({ errors: [{ code: 'INVITEE_EMAIL_UNVERIFIED' }] });
+    const bound = await db.select().from(organizationMembers).where(eq(organizationMembers.userId, JIT));
+    expect(bound).toHaveLength(0);
+
+    const ok = await request(`/orgs/${A}/members`, ownerToken, 'POST', { email: 'Verified637@example.test', role: 'member' });
+    expect(ok.status).toBeLessThan(300);
+    expect((await payload(ok)).data.userId).toBe(VERIFIED);
   });
   it('enforces owner-only slug changes, promotion and deleting a nonempty org', async () => {
     expect((await request(`/orgs/${A}`, adminToken, 'PATCH', { slug: 'org_637_renamed' })).status).toBe(403);

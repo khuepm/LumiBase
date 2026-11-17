@@ -320,6 +320,11 @@ function errorToHttp(error: SetupServiceError): { status: number; body: { errors
         status: 409,
         body: { errors: [{ code: 'PATH_TAKEN' }] },
       };
+    case 'EMAIL_IDENTITY_CONFLICT':
+      return {
+        status: 409,
+        body: { errors: [{ code: 'EMAIL_IDENTITY_CONFLICT' }] },
+      };
     case 'INTERNAL':
     default:
       return {
