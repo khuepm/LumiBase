@@ -1,10 +1,10 @@
 ---
-version: 2
+version: 3
 sourceLang: en
-lastUpdated: 2026-11-15T19:50:20.465Z
-contentHash: efd74f0a8a1ef504
-codeVerified: 2026-11-15T19:50:20.465Z
-codeVerifiedHash: efd74f0a8a1ef504
+lastUpdated: 2026-11-17T19:27:36.561Z
+contentHash: a5a53c4ee286cbc3
+codeVerified: 2026-11-17T19:27:36.561Z
+codeVerifiedHash: a5a53c4ee286cbc3
 codeVerifiedClaims: 30
 ---
 
@@ -153,7 +153,8 @@ and Cloudflare Image Resizing keeps only copyright by default.
 ## Media picker (D08)
 
 One picker serves the media library, the built-in `file` / `files` fields
-("Choose from library") and UI extensions:
+("Choose from library"), the rich-text (`wysiwyg`) and `markdown` editors
+("Insert from library") and UI extensions:
 
 ```ts
 import { getStudioHost } from '@lumibase/extension-sdk';
@@ -164,9 +165,24 @@ const assets = await getStudioHost()?.openMediaPicker({
   initiallySelected: ['<fileId or storage key>'],
   allowedMimeTypes: ['image/*'],
   folder: '<folderId>',        // scope; includeSubfolders defaults to true
+  kind: 'image',               // initial type chip: image | video | audio | document
+  search: 'logo',              // pre-filled search
 });
 // → PickedAsset[] | null (cancelled)
 ```
+
+Each `PickedAsset` carries the file row plus `url`, the version-pinned
+delivery URL (`…/api/v1/files/<id>/content?v=<version>`), and `alt` when
+the file has alt text. Embed `url` in content: it is immutable for that
+version, and "where used" finds the reference by the file id. Readers need
+`files:read` (grant it to the `public` role for a public site).
+
+The type chips (All types / Images / Video / Audio / Documents) only show
+kinds that `allowedMimeTypes` permits, and a chip never widens it. Picking
+`Images` under `allowedMimeTypes: ['image/png', 'application/pdf']` filters by
+`image/png`. The rich-text editor inserts images as `<img src alt width
+height>` and other files as links, at the caret. The markdown editor inserts
+`![alt](url)` / `[name](url)` at the caret, and its preview renders images.
 
 Filtering is server-side. `GET /api/v1/files` takes `folder` (`root` for
 files outside any folder), `subfolders=true`, `search`, `mime`
@@ -235,5 +251,3 @@ stored in `settings` under the key `files.dam`:
 
 - Resumable uploads (TUS, D04 #704) are not implemented. Large files still
   use the single signed `PUT`.
-- Rich text does not embed images through the picker yet (R03). The picker
-  API above is the integration point.

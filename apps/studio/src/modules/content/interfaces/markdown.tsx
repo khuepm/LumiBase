@@ -1,8 +1,10 @@
-import { Eye, FileText } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Eye, FileText, ImagePlus } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { sanitizeHtml } from '@/lib/sanitize-html';
 import { contentDirProps } from '@/lib/text-direction';
+import { assetMarkdown } from '@/modules/files/embed';
+import { useMediaPicker } from '@/modules/files/media-picker';
 import { readOptions, type InterfaceComponent } from './types';
 
 interface MarkdownOptions {
@@ -32,6 +34,22 @@ export const MarkdownInterface: InterfaceComponent<string> = ({
   const dirProps = contentDirProps(locale);
   const [mode, setMode] = useState<Mode>('write');
   const html = useMemo(() => renderMarkdown(value ?? ''), [value]);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const openPicker = useMediaPicker();
+
+  // Embed library files at the caret through the shared picker (#708).
+  const insertFromLibrary = async () => {
+    if (disabled || !openPicker) return;
+    const el = textareaRef.current;
+    const current = value ?? '';
+    const start = el?.selectionStart ?? current.length;
+    const end = el?.selectionEnd ?? current.length;
+    const picked = await openPicker({ multiple: true, kind: 'image', title: 'Insert from library' });
+    if (!picked?.length) return;
+    const snippet = picked.map(assetMarkdown).join('\n');
+    onChange(current.slice(0, start) + snippet + current.slice(end));
+    setMode('write');
+  };
 
   return (
     <div className="overflow-hidden rounded-md border">
@@ -42,9 +60,21 @@ export const MarkdownInterface: InterfaceComponent<string> = ({
         <TabBtn active={mode === 'preview'} onClick={() => setMode('preview')}>
           <Eye className="h-3.5 w-3.5" /> Preview
         </TabBtn>
+        {openPicker && !disabled && (
+          <button
+            type="button"
+            onClick={() => void insertFromLibrary()}
+            aria-label="Insert from library"
+            title="Insert from library"
+            className="ms-auto inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent"
+          >
+            <ImagePlus className="h-3.5 w-3.5" /> Library
+          </button>
+        )}
       </div>
       {mode === 'write' ? (
         <textarea
+          ref={textareaRef}
           {...dirProps}
           value={value ?? ''}
           disabled={disabled}
@@ -109,6 +139,8 @@ function renderMarkdown(src: string): string {
   // Bold + italic
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+  // Images ![alt](url) — before links, which would otherwise eat the `[alt](url)`.
+  html = html.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, '<img src="$2" alt="$1">');
   // Links [text](url)
   html = html.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,

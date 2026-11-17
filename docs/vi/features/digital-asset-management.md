@@ -1,13 +1,13 @@
 ---
-version: 2
+version: 3
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-11-15T19:50:20.465Z
-sourceHash: efd74f0a8a1ef504
-codeVerified: 2026-11-15T19:50:20.465Z
-codeVerifiedHash: efd74f0a8a1ef504
+lastUpdated: 2026-11-17T19:27:36.561Z
+sourceHash: a5a53c4ee286cbc3
+codeVerified: 2026-11-17T19:27:36.561Z
+codeVerifiedHash: a5a53c4ee286cbc3
 codeVerifiedClaims: 30
 ---
 
@@ -152,7 +152,8 @@ giữ copyright.
 ## Media picker (D08)
 
 Một picker phục vụ thư viện media, các field `file` / `files` có sẵn
-("Choose from library") và UI extension:
+("Choose from library"), trình soạn rich-text (`wysiwyg`) và `markdown`
+("Insert from library") và UI extension:
 
 ```ts
 import { getStudioHost } from '@lumibase/extension-sdk';
@@ -163,9 +164,25 @@ const assets = await getStudioHost()?.openMediaPicker({
   initiallySelected: ['<fileId or storage key>'],
   allowedMimeTypes: ['image/*'],
   folder: '<folderId>',        // scope; includeSubfolders defaults to true
+  kind: 'image',               // initial type chip: image | video | audio | document
+  search: 'logo',              // pre-filled search
 });
 // → PickedAsset[] | null (cancelled)
 ```
+
+Mỗi `PickedAsset` mang row của file cùng `url`, URL phân phối ghim theo
+version (`…/api/v1/files/<id>/content?v=<version>`), và `alt` khi file có alt
+text. Nhúng `url` vào nội dung: nó bất biến với version đó, và "dùng ở đâu" tìm
+thấy tham chiếu theo id file. Người đọc cần `files:read` (cấp cho role
+`public` với site công khai).
+
+Các chip loại (All types / Images / Video / Audio / Documents) chỉ hiện những
+loại mà `allowedMimeTypes` cho phép, và một chip không bao giờ nới rộng nó. Chọn
+`Images` dưới `allowedMimeTypes: ['image/png', 'application/pdf']` sẽ lọc theo
+`image/png`. Trình soạn rich-text chèn ảnh dưới dạng `<img src alt width
+height>` và file khác dưới dạng link, tại vị trí con trỏ. Trình soạn markdown
+chèn `![alt](url)` / `[name](url)` tại vị trí con trỏ, và bản xem trước của nó
+hiển thị ảnh.
 
 Lọc diễn ra ở server. `GET /api/v1/files` nhận `folder` (`root` cho file nằm
 ngoài mọi thư mục), `subfolders=true`, `search`, `mime` (phân tách bằng dấu
@@ -234,5 +251,3 @@ Chúng được lưu trong `settings` dưới key `files.dam`:
 
 - Upload resumable (TUS, D04 #704) chưa được hiện thực. File lớn vẫn dùng
   một lần `PUT` có chữ ký.
-- Rich text chưa nhúng ảnh qua picker (R03). API picker ở trên là điểm tích
-  hợp.
