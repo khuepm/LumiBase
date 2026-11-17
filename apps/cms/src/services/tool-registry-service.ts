@@ -1,6 +1,7 @@
 import { agentToolCalls, agentTools, type Database } from '@lumibase/database';
 import { and, desc, eq, gte } from 'drizzle-orm';
 import type { SkillDefinition } from './ai-harness';
+import { isEnforceableObjectSchema } from '@lumibase/contracts';
 
 export type AgentRiskLevel = 'safe' | 'review_required' | 'dangerous' | 'blocked';
 
@@ -12,6 +13,12 @@ export interface AgentToolDefinition extends SkillDefinition {
   enabled: boolean;
   owner: string;
   extensionId?: string | null;
+  /**
+   * Set when the advertised `inputSchema` is a narrowing `agent_tools`
+   * override (B205). The harness enforces it on top of the canonical contract,
+   * so what `tools/list` advertises for the site is what is accepted.
+   */
+  enforcedOverrideSchema?: Record<string, unknown>;
 }
 
 export interface ToolPolicyResult {
@@ -52,6 +59,12 @@ function schemaRequired(schema: unknown): string[] {
   const req = (schema as Record<string, unknown>)['required'];
   return Array.isArray(req) ? req.filter((r): r is string => typeof r === 'string') : [];
 }
+
+/**
+ * Whether an override is a JSON Schema the harness can both advertise and
+ * enforce (B205); shared with extension tool declarations (#715).
+ */
+export const isEnforceableOverrideSchema = isEnforceableObjectSchema;
 
 /**
  * Override từ `agent_tools` chỉ được **thu hẹp** contract mà core skill đã khai,
@@ -156,14 +169,14 @@ export class ToolRegistryService {
     toolName: string,
   ): Record<string, unknown> {
     if (!overrideSchema || typeof overrideSchema !== 'object') return coreSchema;
-    if (overrideNarrowsSchema(coreSchema, overrideSchema)) {
-      return overrideSchema as Record<string, unknown>;
+    if (isEnforceableOverrideSchema(overrideSchema) && overrideNarrowsSchema(coreSchema, overrideSchema)) {
+      return overrideSchema;
     }
     this.rejectedOverrides.push(toolName);
     return coreSchema;
   }
 
-  /** Tên các tool có override bị từ chối vì mở rộng contract (để observability). */
+  /** Tên các tool có override bị từ chối vì mở rộng contract hoặc không hợp lệ (để observability). */
   readonly rejectedOverrides: string[] = [];
 
   async getTool(name: string): Promise<AgentToolDefinition | undefined> {
@@ -198,10 +211,12 @@ export class ToolRegistryService {
       return base;
     }
 
+    const inputSchema = this.resolveOverrideSchema(base.inputSchema, override.inputSchema, override.name);
     return {
       ...base,
       description: override.description,
-      inputSchema: this.resolveOverrideSchema(base.inputSchema, override.inputSchema, override.name),
+      inputSchema,
+      ...(inputSchema !== base.inputSchema ? { enforcedOverrideSchema: inputSchema } : {}),
       outputSchema: (override.outputSchema as Record<string, unknown>) ?? {},
       requiredCapabilities: mergeOverrideCapabilities(core?.requiredCapabilities, override.requiredCapabilities),
       riskPolicy: base.riskPolicy.level === 'dangerous' ? base.riskPolicy : normalizeRiskPolicy(override.riskPolicy),
@@ -228,10 +243,12 @@ export class ToolRegistryService {
         service: 'ai',
         handler: async () => ({ skipped: true }),
       });
+      const inputSchema = this.resolveOverrideSchema(base.inputSchema, override.inputSchema, override.name);
       byName.set(override.name, {
         ...base,
         description: override.description,
-        inputSchema: this.resolveOverrideSchema(base.inputSchema, override.inputSchema, override.name),
+        inputSchema,
+        ...(inputSchema !== base.inputSchema ? { enforcedOverrideSchema: inputSchema } : {}),
         outputSchema: (override.outputSchema as Record<string, unknown>) ?? {},
         requiredCapabilities: mergeOverrideCapabilities(
           this.coreSkills[override.name]?.requiredCapabilities,

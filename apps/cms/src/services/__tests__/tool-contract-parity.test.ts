@@ -31,9 +31,8 @@ function isWriteCapable(name: string): boolean {
  * Write-capable skills that may stay without a canonical schema, with the reason.
  * `generateSeedData` returns an artifact and persists nothing.
  */
-const NO_SCHEMA_ALLOWED: Record<string, string> = {
-  generateSeedData: 'returns a seed-data artifact; writes no row',
-};
+// Empty since B204 (#716): every core skill, `generateSeedData` included, has a schema.
+const NO_SCHEMA_ALLOWED: Record<string, string> = {};
 
 describe('tool contract parity', () => {
   it('every write-capable skill has a canonical schema (validation is not fail-open for writes)', () => {

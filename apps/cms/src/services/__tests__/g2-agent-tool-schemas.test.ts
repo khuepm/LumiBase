@@ -12,6 +12,7 @@ import {
 import { CdcSubscriptionCreateSchema } from '@lumibase/contracts/schemas';
 import { argsForProperty, validArgsFor } from '../../test-utils/agent-tool-args';
 import { intentInputSchema } from '../intent-service';
+import { CORE_SKILLS as HARNESS_SKILLS } from '../ai-harness';
 
 /**
  * Nguồn schema chuẩn cho agent tool (#454). Test khoá ba tính chất mà phần còn
@@ -66,9 +67,25 @@ describe('AgentToolSchemas', () => {
     ).toBe(true);
   });
 
-  it('skill chưa có schema thì fail-open có chủ ý (không phá hành vi read)', () => {
-    expect(hasAgentToolSchema('listCollections')).toBe(false);
-    expect(validateAgentToolInput('listCollections', { bất: 'kỳ' }).ok).toBe(true);
+  it('tên chưa có schema thì fail-open có chủ ý (không phá một skill đọc mới chưa được khai)', () => {
+    expect(hasAgentToolSchema('notYetDeclaredSkill')).toBe(false);
+    expect(validateAgentToolInput('notYetDeclaredSkill', { bất: 'kỳ' }).ok).toBe(true);
+  });
+
+  it('mọi core skill đều có schema chuẩn — không skill nào còn quảng bá {type:"object"} (B204)', () => {
+    const missing = Object.keys(HARNESS_SKILLS).filter((name) => !hasAgentToolSchema(name));
+    expect(missing).toEqual([]);
+  });
+
+  it('skill đọc từng không có schema nay từ chối key lạ và đòi key bắt buộc (B204)', () => {
+    expect(validateAgentToolInput('listItems', {}).ok).toBe(false);
+    expect(validateAgentToolInput('listItems', { collection: 'posts', limit: 500 }).ok).toBe(false);
+    expect(validateAgentToolInput('listItems', { collection: 'posts', limit: 10, offset: 0 }).ok).toBe(true);
+    expect(validateAgentToolInput('listCollections', { extra: 1 }).ok).toBe(false);
+    expect(validateAgentToolInput('listCollections', {}).ok).toBe(true);
+    expect(validateAgentToolInput('listDeployments', { status: 'done' }).ok).toBe(false);
+    expect(validateAgentToolInput('getDeploymentStatus', {}).ok).toBe(false);
+    expect(validateAgentToolInput('compareVersion', { collection: 'p', itemId: 'i' }).ok).toBe(false);
   });
 
   it('jsonSchemaFor suy ra từ đúng Zod và bỏ $schema', () => {
@@ -77,7 +94,7 @@ describe('AgentToolSchemas', () => {
     expect(json['type']).toBe('object');
     expect(Object.keys(json['properties'] as object).sort()).toEqual(['collection', 'data', 'status']);
     expect(json['required']).toEqual(expect.arrayContaining(['collection', 'data']));
-    expect(jsonSchemaFor('listCollections')).toBeUndefined();
+    expect(jsonSchemaFor('notYetDeclaredSkill')).toBeUndefined();
   });
 
   it('mọi schema khai báo là object và phủ nhóm write chính', () => {
@@ -162,9 +179,9 @@ describe('AgentToolSchemas', () => {
   });
 
   it('skill không có schema thì validArgsFor trả {} và argsForProperty giữ args sinh ngẫu nhiên', () => {
-    expect(validArgsFor('listCollections')).toEqual({});
+    expect(validArgsFor('notYetDeclaredSkill')).toEqual({});
     const generated = { random: 'junk' };
-    expect(argsForProperty('listCollections', generated)).toBe(generated);
+    expect(argsForProperty('notYetDeclaredSkill', generated)).toBe(generated);
     expect(argsForProperty('createItem', generated)).not.toBe(generated);
     expect(validateAgentToolInput('createItem', argsForProperty('createItem', generated)).ok).toBe(true);
   });

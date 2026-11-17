@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isEnforceableObjectSchema } from '../agent-tools/schemas';
 
 /**
  * Extension-contributed MCP surface (#715).
@@ -34,9 +35,18 @@ export const EXTENSION_TOOL_NAME_RE = /^[a-z][a-zA-Z0-9_]{2,40}$/;
 /** `namespace:action`, e.g. `items:write`, `tickets:comment`. */
 export const EXTENSION_CAPABILITY_RE = /^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/;
 
+/**
+ * The schema an extension tool advertises must be one the harness enforces
+ * (#716): an object schema in the subset the external-action argument
+ * validator checks. Otherwise `tools/list` would promise a contract nothing
+ * enforces, or carry an invalid schema.
+ */
 const jsonSchemaObject = z
   .record(z.string(), z.unknown())
-  .refine((schema) => schema['type'] === 'object', { message: 'inputSchema must be a JSON Schema of type "object"' });
+  .refine((schema) => isEnforceableObjectSchema(schema), {
+    message:
+      'inputSchema must be a JSON Schema of type "object" whose properties have a JSON type, with `required` naming declared properties',
+  });
 
 export const extensionMcpToolSchema = z.object({
   name: z.string().regex(EXTENSION_TOOL_NAME_RE),

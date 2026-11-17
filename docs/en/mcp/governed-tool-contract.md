@@ -1,13 +1,13 @@
 ---
-version: 10
-lastUpdated: 2026-11-11T02:57:07.772Z
+version: 11
+lastUpdated: 2026-11-17T19:30:56.399Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 329b9de7859ec6a0
+sourceHash: 0cd978f63dcb62ff
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-11T02:57:07.772Z
-codeVerifiedHash: 329b9de7859ec6a0
+codeVerified: 2026-11-17T19:30:56.399Z
+codeVerifiedHash: 0cd978f63dcb62ff
 codeVerifiedClaims: 38
 contentHash: 8431450c18c2e01f
 ---
@@ -40,7 +40,9 @@ Three rules when adding a schema:
 2. **`.strict()`** — unknown fields are **rejected**, not dropped silently. That silent drop is exactly what the old `update_item` did: REST stripped keys outside the `data` envelope and returned `200 OK` with an empty patch.
 3. **Keep the key names the handler reads.** Renaming belongs in an alias mapping layer, not in the schema.
 
-A skill without a schema is **not** validated — a deliberate fail-open, so existing read behaviour is not broken by a contract nobody has written yet. `agentToolNamesWithSchema()` returns the covered set.
+Every core skill has a canonical schema, read skills included (B204, #716): `listItems`, `listCollections`, `getDeploymentStatus` and the rest no longer advertise `{type:"object"}`, and a call with an unknown key or without a required one is refused with `VALIDATION`. Only a name with no schema at all (a skill added later without one) is not validated — a deliberate fail-open. `agentToolNamesWithSchema()` returns the covered set.
+
+A site's `agent_tools` row may narrow a core tool's schema. The override is advertised on that site's `tools/list` only when it is well formed (object schema, properties with a JSON `type`, `required` naming declared properties) and narrows the canonical one; it is then also **enforced** by the harness, on top of the canonical contract. An invalid or broadening override is ignored and the canonical schema stays (B205).
 
 A hand-written `inputSchema` on a skill **wins**: those were authored against the handler and some describe shapes the canonical set does not cover yet.
 

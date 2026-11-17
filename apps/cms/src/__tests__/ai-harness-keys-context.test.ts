@@ -142,6 +142,11 @@ describe('AISecureHarness KeyProvider construction guard (source scan)', () => {
 // ── 2. The registry really degrades without a KeyProvider ───────────────────
 
 describe('deployment skills depend on the KeyProvider', () => {
+  /** Arguments each skill's canonical contract accepts (B204: reads are validated too). */
+  const ARGS: Record<string, Record<string, unknown>> = {
+    triggerDeployment: { targetId: 'target_1' },
+    getDeploymentStatus: { deploymentId: 'dep_1' },
+  };
   const DEPLOYMENT_SKILLS = [
     'listDeploymentTargets',
     'listDeployments',
@@ -161,7 +166,7 @@ describe('deployment skills depend on the KeyProvider', () => {
   }
 
   it.each(DEPLOYMENT_SKILLS)('%s fails without a KeyProvider', async (skill) => {
-    const result = await harness().runSkill(skill, skill === 'triggerDeployment' ? { targetId: 'target_1' } : {});
+    const result = await harness().runSkill(skill, ARGS[skill] ?? {});
     expect(result.success).toBe(false);
     expect(result.success === false && result.error).toContain('DEPLOYMENTS_NOT_CONFIGURED');
   });
@@ -171,7 +176,7 @@ describe('deployment skills depend on the KeyProvider', () => {
       getActiveKey: async () => ({ keyId: 'v0', key: '' }),
       getKey: async () => '',
       listKeys: async () => [],
-    }).runSkill(skill, skill === 'triggerDeployment' ? { targetId: 'target_1' } : {});
+    }).runSkill(skill, ARGS[skill] ?? {});
     // The stub db makes these fail *later* (inside DeploymentService); what
     // matters is that the missing-provider guard no longer short-circuits.
     expect(result.success === false && result.error).not.toContain('DEPLOYMENTS_NOT_CONFIGURED');
