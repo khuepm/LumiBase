@@ -139,7 +139,7 @@ describe('edge URL index — concurrent writers (#864)', () => {
     expect([...(edge.purged[0] ?? [])].sort()).toEqual([...expected].sort());
   });
 
-  it('Cloudflare: drain returns the newest `limit` members, oldest first, and deletes them', async () => {
+  it('Cloudflare: reads the newest `limit` members, oldest first, and ack deletes them', async () => {
     const kv = createListableKv();
     const cache = new CloudflareCacheProvider(kv);
     let now = 1_000;
@@ -153,11 +153,18 @@ describe('edge URL index — concurrent writers (#864)', () => {
       spy.mockRestore();
     }
 
-    // `b` was re-added last, so it is the newest; the duplicate is one key.
-    expect(await cache.drainMembers('edgeurls:deliver:site-a', { limit: 2 })).toEqual(['c', 'b']);
-    // `a` fell outside the bound and is left to expire on its TTL.
-    expect(await cache.drainMembers('edgeurls:deliver:site-a')).toEqual(['a']);
-    expect(await cache.drainMembers('edgeurls:deliver:site-a')).toEqual([]);
+    // `b` was re-added last, so it is the newest and is returned once.
+    const first = await cache.readMembers('edgeurls:deliver:site-a', { limit: 2 });
+    expect(first.members).toEqual(['c', 'b']);
+    // Reading removes nothing until the batch is acknowledged.
+    expect((await cache.readMembers('edgeurls:deliver:site-a', { limit: 2 })).members).toEqual(['c', 'b']);
+    await first.ack();
+    // `a` fell outside the bound and is left to expire on its TTL. The
+    // earlier add of `b` was scanned before `a`, so the ack deleted it too.
+    const rest = await cache.readMembers('edgeurls:deliver:site-a');
+    expect(rest.members).toEqual(['a']);
+    await rest.ack();
+    expect((await cache.readMembers('edgeurls:deliver:site-a')).members).toEqual([]);
   });
 
   it('Cloudflare: clamps the member TTL to the KV minimum of 60 seconds', async () => {
@@ -179,13 +186,28 @@ describe('edge URL index — concurrent writers (#864)', () => {
     expect(await cache.get(edgeUrlIndexKey('deliver:site-a'))).toBeNull();
   });
 
+  it('a URL re-recorded while a purge is in flight stays indexed after the ack', async () => {
+    const cache = new MemoryCacheProvider();
+    await recordEdgeUrl(cache, ['deliver:site-a'], 'https://acme.test/a');
+    const batch = await cache.readMembers(edgeUrlIndexKey('deliver:site-a'));
+    await recordEdgeUrl(cache, ['deliver:site-a'], 'https://acme.test/a');
+    await recordEdgeUrl(cache, ['deliver:site-a'], 'https://acme.test/b');
+
+    await batch.ack();
+
+    expect((await cache.readMembers(edgeUrlIndexKey('deliver:site-a'))).members).toEqual([
+      'https://acme.test/a',
+      'https://acme.test/b',
+    ]);
+  });
+
   it('Memory: honours the member-set TTL', async () => {
     vi.useFakeTimers();
     try {
       const cache = new MemoryCacheProvider();
       await cache.addMember('k', 'm', { ttl: 1 });
       vi.advanceTimersByTime(1_100);
-      expect(await cache.drainMembers('k')).toEqual([]);
+      expect((await cache.readMembers('k')).members).toEqual([]);
     } finally {
       vi.useRealTimers();
     }

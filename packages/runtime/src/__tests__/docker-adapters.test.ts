@@ -15,6 +15,8 @@ const mockRedis = {
   quit: vi.fn(),
   pipeline: vi.fn(),
   multi: vi.fn(),
+  zrange: vi.fn(),
+  eval: vi.fn(),
 };
 
 function mockMulti(results: Array<[Error | null, unknown]> = []) {
@@ -280,14 +282,28 @@ describe('RedisCacheProvider', () => {
       await expect(provider.addMember('k', 'm')).rejects.toThrow('WRONGTYPE');
     });
 
-    it('drains the newest `limit` members and deletes the set in one MULTI', async () => {
-      const tx = mockMulti([[null, ['https://acme.test/b', 'https://acme.test/c']], [null, 1]]);
+    it('reads the newest `limit` members without deleting, and ack removes only unchanged scores', async () => {
+      mockRedis.zrange.mockResolvedValueOnce(['https://acme.test/b', '1700000000001', 'https://acme.test/c', '1700000000002']);
+      mockRedis.eval.mockResolvedValueOnce(2);
 
-      const members = await provider.drainMembers('edgeurls:deliver:site-a', { limit: 2 });
+      const batch = await provider.readMembers('edgeurls:deliver:site-a', { limit: 2 });
 
-      expect(members).toEqual(['https://acme.test/b', 'https://acme.test/c']);
-      expect(tx.zrange).toHaveBeenCalledWith('lumi:set:edgeurls:deliver:site-a', -2, '-1');
-      expect(tx.del).toHaveBeenCalledWith('lumi:set:edgeurls:deliver:site-a');
+      expect(batch.members).toEqual(['https://acme.test/b', 'https://acme.test/c']);
+      expect(mockRedis.zrange).toHaveBeenCalledWith('lumi:set:edgeurls:deliver:site-a', -2, '-1', 'WITHSCORES');
+      expect(mockRedis.del).not.toHaveBeenCalled();
+      expect(mockRedis.eval).not.toHaveBeenCalled();
+
+      await batch.ack();
+
+      expect(mockRedis.eval).toHaveBeenCalledWith(
+        expect.stringContaining('ZSCORE'),
+        1,
+        'lumi:set:edgeurls:deliver:site-a',
+        'https://acme.test/b',
+        '1700000000001',
+        'https://acme.test/c',
+        '1700000000002',
+      );
     });
   });
 

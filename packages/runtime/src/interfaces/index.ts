@@ -4,6 +4,7 @@ export type {
   CacheEvent,
   CacheProvider,
   CacheSetOptions,
+  MemberBatch,
   MemberSetProvider,
   NegativeCacheEnvelope,
   UniqueCounterProvider,

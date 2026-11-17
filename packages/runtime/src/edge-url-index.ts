@@ -82,7 +82,8 @@ export async function recordEdgeUrl(
 }
 
 /**
- * Purge every edge URL recorded under `tag`, then drop the index entry.
+ * Purge every edge URL recorded under `tag`, then drop the entries it read.
+ * A purge that throws leaves the index intact for the next attempt.
  *
  * Returns how many URLs the edge provider reported purging (0 when there is
  * no edge, no index, or the purge failed) — an observability signal only.
@@ -99,15 +100,21 @@ export async function purgeEdgeByTag(
     // member-set provider still reads it so URLs recorded before an upgrade
     // are purged instead of waiting out their TTL.
     const legacy = parseUrls(await cache.get<string>(key));
-    const urls = hasMemberSet(cache)
-      ? [...new Set([...legacy, ...(await cache.drainMembers(key, { limit: EDGE_URL_INDEX_LIMIT }))])]
-      : legacy;
+    // Read without removing: if the purge below throws, the members stay
+    // indexed and the next purge retries them.
+    const batch = hasMemberSet(cache)
+      ? await cache.readMembers(key, { limit: EDGE_URL_INDEX_LIMIT })
+      : null;
+    const urls = batch ? [...new Set([...legacy, ...batch.members])] : legacy;
     // Pass the tag even with an empty URL list: a provider whose CDN supports
     // tag purge can act on copies this index never recorded.
     const purged = await edgeCache.purge({ urls, tags: [tag] });
     // Drop the index even when the purge reported 0: the entries it points at
     // are expiring on their own clock anyway, and keeping a list that failed
     // once would make every later purge retry the same dead URLs forever.
+    // Only what was read is acknowledged, so a URL recorded during the purge
+    // stays indexed.
+    await batch?.ack();
     await cache.delete(key);
     return purged;
   } catch {

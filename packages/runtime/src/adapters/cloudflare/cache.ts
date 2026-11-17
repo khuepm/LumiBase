@@ -4,6 +4,7 @@ import type {
   CacheEntry,
   CacheProvider,
   CacheSetOptions,
+  MemberBatch,
   MemberSetProvider,
   UniqueCounterProvider,
 } from '../../interfaces';
@@ -32,12 +33,24 @@ export interface KVListResult {
   cursor?: string;
 }
 
-/** Namespace for {@link MemberSetProvider} keys: `lumi:set:{key}:{sha256(member)}`. */
+/**
+ * Namespace for {@link MemberSetProvider} keys:
+ * `lumi:set:{key}:{reverse time}:{sha256(member)}`.
+ */
 const SET_KEY_PREFIX = 'lumi:set:';
 /** Workers KV rejects an `expirationTtl` below 60 seconds. */
 const KV_MIN_TTL_SECONDS = 60;
-/** Upper bound on keys one drain scans, to stay inside per-invocation KV limits. */
-const SET_DRAIN_SCAN_LIMIT = 1000;
+/** Upper bound on keys one read scans, to stay inside per-invocation KV limits. */
+const SET_READ_SCAN_LIMIT = 1000;
+/**
+ * `MAX - Date.now()`, zero-padded to 13 digits, sorts newest-first under KV's
+ * lexicographic `list` order. Valid until the year 2286.
+ */
+const REVERSE_TIME_MAX = 9_999_999_999_999;
+
+function reverseTime(t: number): string {
+  return String(Math.max(REVERSE_TIME_MAX - t, 0)).padStart(13, '0');
+}
 
 interface MemberMetadata {
   m: string;
@@ -197,19 +210,21 @@ export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProv
   }
 
   /**
-   * Member sets (#864). KV has no atomic append, so each member is its own key
-   * — `lumi:set:{key}:{sha256(member)}` — carrying the member and its write
-   * time in list metadata. Concurrent adds of different members write
-   * different keys and cannot overwrite each other; re-adding a member
-   * rewrites its own key, which deduplicates and refreshes it.
+   * Member sets (#864). KV has no atomic append, so every add is its own key
+   * — `lumi:set:{key}:{reverse time}:{sha256(member)}` — carrying the member
+   * and its write time in list metadata. Concurrent adds write different keys
+   * and cannot overwrite each other.
    *
-   * `limit` cannot be enforced on write without a read-modify-write, so it is
-   * enforced on read: {@link drainMembers} returns the newest `limit`. Members
-   * beyond the bound expire through `ttl`.
+   * The reverse-time segment makes KV's lexicographic `list` return the
+   * newest adds first, so a read selects the newest `limit` members without
+   * scanning the whole set, however many adds it holds. `limit` cannot be
+   * enforced on write without a read-modify-write; older adds (including
+   * earlier adds of a member that was re-added) expire through `ttl`.
    */
   async addMember(key: string, member: string, opts?: { ttl?: number; limit?: number }): Promise<void> {
-    const memberKey = `${SET_KEY_PREFIX}${key}:${await sha256Hex(member)}`;
-    const metadata: MemberMetadata = { m: member, t: Date.now() };
+    const t = Date.now();
+    const memberKey = `${SET_KEY_PREFIX}${key}:${reverseTime(t)}:${await sha256Hex(member)}`;
+    const metadata: MemberMetadata = { m: member, t };
     await this.kv.put(memberKey, member, {
       metadata,
       ...(opts?.ttl ? { expirationTtl: Math.max(opts.ttl, KV_MIN_TTL_SECONDS) } : {}),
@@ -217,34 +232,50 @@ export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProv
   }
 
   /**
-   * List the members, return the newest `limit`, and delete the keys of the
-   * members returned. KV `list` is eventually consistent, so a member added
-   * moments before the drain may not be listed yet; it stays in the set for
-   * the next drain rather than being lost. Members past `limit` are left to
-   * expire on their TTL, keeping the delete fan-out bounded.
+   * List newest-first until `limit` distinct members are found (or
+   * {@link SET_READ_SCAN_LIMIT} keys are scanned). Nothing is deleted until
+   * `ack()`, which deletes exactly the keys scanned for the returned members;
+   * a member re-added after the read has a newer key and survives.
+   *
+   * KV `list` is eventually consistent, so a member added moments before the
+   * read may not be listed yet; it stays in the set for the next read.
    */
-  async drainMembers(key: string, opts?: { limit?: number }): Promise<string[]> {
+  async readMembers(key: string, opts?: { limit?: number }): Promise<MemberBatch> {
     if (!this.kv.list) throw new Error('KV binding does not support list()');
+    const limit = opts?.limit;
+    if (limit !== undefined && limit <= 0) return { members: [], ack: async () => undefined };
     const prefix = `${SET_KEY_PREFIX}${key}:`;
-    const entries: Array<{ name: string; member: string; t: number }> = [];
+    // member → every key scanned for it, in newest-first discovery order.
+    const found = new Map<string, string[]>();
+    let scanned = 0;
     let cursor: string | undefined;
-    do {
+    scan: do {
       const page = await this.kv.list({
         prefix,
-        limit: SET_DRAIN_SCAN_LIMIT - entries.length,
+        limit: SET_READ_SCAN_LIMIT - scanned,
         ...(cursor ? { cursor } : {}),
       });
       for (const k of page.keys) {
-        if (isMemberMetadata(k.metadata)) entries.push({ name: k.name, member: k.metadata.m, t: k.metadata.t });
+        scanned += 1;
+        if (!isMemberMetadata(k.metadata)) continue;
+        const names = found.get(k.metadata.m);
+        if (names) {
+          names.push(k.name);
+        } else {
+          if (limit !== undefined && found.size >= limit) break scan;
+          found.set(k.metadata.m, [k.name]);
+        }
       }
       cursor = page.list_complete ? undefined : page.cursor;
-    } while (cursor && entries.length < SET_DRAIN_SCAN_LIMIT);
+    } while (cursor && scanned < SET_READ_SCAN_LIMIT);
 
-    entries.sort((a, b) => a.t - b.t);
-    const limit = opts?.limit;
-    const drained = limit === undefined ? entries : limit > 0 ? entries.slice(-limit) : [];
-    await Promise.all(drained.map((e) => this.kv.delete(e.name)));
-    return drained.map((e) => e.member);
+    const names = [...found.values()].flat();
+    return {
+      members: [...found.keys()].reverse(),
+      ack: async () => {
+        await Promise.all(names.map((name) => this.kv.delete(name)));
+      },
+    };
   }
 
   /**

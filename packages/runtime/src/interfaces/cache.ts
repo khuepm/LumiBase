@@ -103,16 +103,26 @@ export interface MemberSetProvider {
    */
   addMember(key: string, member: string, opts?: { ttl?: number; limit?: number }): Promise<void>;
   /**
-   * Remove the set at `key` and return its members, oldest first — at most
-   * the newest `opts.limit` of them when a limit is given.
+   * Read the newest `opts.limit` members (all when omitted), oldest first,
+   * without removing them. The caller acts on them, then calls `ack()` to
+   * remove exactly what it read — so a caller that fails before `ack()`
+   * leaves the set intact for a retry, and a member re-added after the read
+   * survives the ack.
    */
-  drainMembers(key: string, opts?: { limit?: number }): Promise<string[]>;
+  readMembers(key: string, opts?: { limit?: number }): Promise<MemberBatch>;
+}
+
+/** Members read by {@link MemberSetProvider.readMembers}. */
+export interface MemberBatch {
+  members: string[];
+  /** Remove the members read here, unless they were re-added since. */
+  ack(): Promise<void>;
 }
 
 /** True when `cache` implements {@link MemberSetProvider}. */
 export function hasMemberSet<T extends object>(cache: T): cache is T & MemberSetProvider {
   const candidate = cache as Partial<MemberSetProvider>;
-  return typeof candidate.addMember === 'function' && typeof candidate.drainMembers === 'function';
+  return typeof candidate.addMember === 'function' && typeof candidate.readMembers === 'function';
 }
 
 /** Thrown when an atomic-counter backend is not wired for the active runtime. */

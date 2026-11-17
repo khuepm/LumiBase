@@ -5,6 +5,7 @@ import type {
   CacheEntry,
   CacheProvider,
   CacheSetOptions,
+  MemberBatch,
   MemberSetProvider,
   UniqueCounterProvider,
 } from '../../interfaces';
@@ -12,6 +13,19 @@ import type {
 const TAG_KEY_PREFIX = 'lumi:tag:';
 /** Sorted-set namespace for {@link MemberSetProvider}; never a JSON `get` key. */
 const SET_KEY_PREFIX = 'lumi:set:';
+/**
+ * Remove each member only if its score is still the one that was read, so a
+ * member re-added (re-scored) after the read survives the ack. KEYS[1] is the
+ * set; ARGV holds member/score pairs.
+ */
+const ACK_MEMBERS_SCRIPT = `
+local removed = 0
+for i = 1, #ARGV, 2 do
+  if redis.call('ZSCORE', KEYS[1], ARGV[i]) == ARGV[i + 1] then
+    removed = removed + redis.call('ZREM', KEYS[1], ARGV[i])
+  end
+end
+return removed`;
 const INVALIDATE_CHUNK = 500;
 
 export class RedisCacheProvider implements CacheProvider, UniqueCounterProvider, MemberSetProvider {
@@ -200,24 +214,29 @@ export class RedisCacheProvider implements CacheProvider, UniqueCounterProvider,
     throwOnTxError(await tx.exec());
   }
 
-  async drainMembers(key: string, opts?: { limit?: number }): Promise<string[]> {
+  async readMembers(key: string, opts?: { limit?: number }): Promise<MemberBatch> {
     await this.ensureConnected();
     const setKey = `${SET_KEY_PREFIX}${key}`;
-    if (opts?.limit !== undefined && opts.limit <= 0) {
-      await this.client.del(setKey);
-      return [];
+    if (opts?.limit !== undefined && opts.limit <= 0) return { members: [], ack: async () => undefined };
+    // Newest `limit` by score, oldest first, as a flat [member, score, …] list.
+    const flat = await this.client.zrange(setKey, opts?.limit !== undefined ? -opts.limit : 0, '-1', 'WITHSCORES');
+    const members: string[] = [];
+    const pairs: string[] = [];
+    for (let i = 0; i + 1 < flat.length; i += 2) {
+      const member = flat[i];
+      const score = flat[i + 1];
+      if (typeof member !== 'string' || typeof score !== 'string') continue;
+      members.push(member);
+      pairs.push(member, score);
     }
-    // Read and delete in one MULTI, so an add that lands between the two is
-    // either drained here or kept for the next drain — never silently lost.
-    const results = throwOnTxError(
-      await this.client
-        .multi()
-        .zrange(setKey, opts?.limit !== undefined ? -opts.limit : 0, '-1')
-        .del(setKey)
-        .exec(),
-    );
-    const members = results[0]?.[1];
-    return Array.isArray(members) ? members.filter((m): m is string => typeof m === 'string') : [];
+    return {
+      members,
+      ack: async () => {
+        if (pairs.length === 0) return;
+        await this.ensureConnected();
+        await this.client.eval(ACK_MEMBERS_SCRIPT, 1, setKey, ...pairs);
+      },
+    };
   }
 
   async close(): Promise<void> {
