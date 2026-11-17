@@ -97,6 +97,48 @@ describe('edge URL index — concurrent writers (#864)', () => {
     });
   }
 
+  for (const [name, factory] of providers) {
+    it(`keeps the URLs indexed when the edge purge throws, so a retry purges them — ${name}`, async () => {
+      const cache = factory();
+      const urls = ['https://acme.test/a', 'https://acme.test/b'];
+      for (const url of urls) await recordEdgeUrl(cache, ['deliver:site-a'], url, { ttl: 300 });
+
+      const failing: EdgeCacheProvider = {
+        ...fakeEdge(),
+        async purge() {
+          throw new Error('CDN purge API 503');
+        },
+      };
+      expect(await purgeEdgeByTag(cache, failing, 'deliver:site-a')).toBe(0);
+
+      const edge = fakeEdge();
+      expect(await purgeEdgeByTag(cache, edge, 'deliver:site-a')).toBe(2);
+      expect([...(edge.purged[0] ?? [])].sort()).toEqual(urls);
+      // Acknowledged after a successful purge: nothing left to retry.
+      expect(await purgeEdgeByTag(cache, edge, 'deliver:site-a')).toBe(0);
+    });
+  }
+
+  it('Cloudflare: purges the newest 200 URLs even after more than 1000 writes under one tag', async () => {
+    const cache = new CloudflareCacheProvider(createListableKv());
+    const edge = fakeEdge();
+    const total = 1100;
+    let now = 1_700_000_000_000;
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      for (let i = 0; i < total; i += 1) {
+        now += 1;
+        await recordEdgeUrl(cache, ['deliver:site-a'], `https://acme.test/p${i}`, { ttl: 300 });
+      }
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(await purgeEdgeByTag(cache, edge, 'deliver:site-a')).toBe(EDGE_URL_INDEX_LIMIT);
+    const expected = Array.from({ length: EDGE_URL_INDEX_LIMIT }, (_, i) => `https://acme.test/p${total - EDGE_URL_INDEX_LIMIT + i}`);
+    expect([...(edge.purged[0] ?? [])].sort()).toEqual([...expected].sort());
+  });
+
   it('Cloudflare: drain returns the newest `limit` members, oldest first, and deletes them', async () => {
     const kv = createListableKv();
     const cache = new CloudflareCacheProvider(kv);
