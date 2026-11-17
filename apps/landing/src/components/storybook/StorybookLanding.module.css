@@ -81,9 +81,11 @@
   padding-top: 40px;
 }
 
+/* 38vw keeps the column clear of Lumi down to the width where the layout
+   stacks; wider than that and the lede runs under the fur. */
 .copy {
   position: relative;
-  width: min(34rem, 44vw);
+  width: min(34rem, 38vw);
 }
 /* A soft pool of night behind the text, so it holds against the stars. */
 .copy::before {
@@ -715,8 +717,37 @@
   .prologue,
   .epilogue {
     align-items: flex-start;
-    padding: 28px 22px 52svh;
+    padding: 22px 22px 40svh;
     text-align: left;
+  }
+  /* The opening has to fit above the lamp on a short phone, so it is set
+     tighter than the chapters that follow. */
+  .prologue .title {
+    margin-bottom: 16px;
+    font-size: clamp(2.05rem, 9.4vw, 2.7rem);
+  }
+  .prologue .lede {
+    margin-bottom: 0;
+    font-size: 0.98rem !important;
+    line-height: 1.5;
+  }
+  .prologue .eyebrow {
+    margin-bottom: 12px !important;
+  }
+  .prologue .actions,
+  .epilogue .actions {
+    flex-wrap: nowrap;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .prologue .button {
+    min-height: 44px;
+    padding: 0 16px;
+    font-size: 0.88rem;
+    gap: 8px;
+  }
+  .footnote {
+    display: none;
   }
   .epilogue .eyebrow,
   .epilogue .actions {

@@ -117,15 +117,23 @@ const LUMI: Record<Layout, readonly Anchor[]> = {
   // On a phone the scene takes the top of the screen and the copy the bottom —
   // except at ground level, where the lamp needs the hill and the copy goes up.
   mobile: [
-    { x: 0, y: -0.36, s: 0.13 },
+    { x: -0.24, y: -0.56, s: 0.1 },
     { x: 0.16, y: 0.56, s: 0.115 },
     { x: 0, y: 0.6, s: 0.085 },
     { x: 0.5, y: 0.68, s: 0.085 },
     { x: 0, y: 0.56, s: 0.105 },
     { x: 0.42, y: 0.7, s: 0.085 },
-    { x: 0, y: -0.36, s: 0.13 },
+    { x: -0.24, y: -0.56, s: 0.1 },
   ],
 };
+
+/**
+ * Where the lamp stands relative to Lumi's ground-level pose, in screen x.
+ * On a wide screen Lumi hovers straight above it. A phone has no height to
+ * stack them under the copy, so the lamp sits to one side and Lumi floats by
+ * the spout it came out of.
+ */
+export const LAMP_OFFSET: Record<Layout, number> = { desktop: 0, mobile: 0.52 };
 
 export function lumiAnchor(layout: Layout, c: number): Anchor {
   const keys = LUMI[layout];

@@ -9,6 +9,7 @@ import { createPages, createStairs, createTrail, createWisps } from "./props";
 import { createFlareTexture, createGlowTexture } from "./textures";
 import {
   CHAPTERS,
+  LAMP_OFFSET,
   LAST_CHAPTER,
   TRUST_CHAPTER,
   TRUST_LEVELS,
@@ -420,7 +421,7 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
     // ── Lamp, on the front hill under the opening and closing poses ───────
     const lampHome = lumiAnchor(layout, c < LAST_CHAPTER / 2 ? 0 : LAST_CHAPTER);
     const lampScale = lampHome.s * halfHeightAt(LAMP_Z) * 0.8;
-    const lampX = lampHome.x * halfWidthAt(LAMP_Z);
+    const lampX = (lampHome.x + LAMP_OFFSET[layout]) * halfWidthAt(LAMP_Z);
     lamp.group.position.set(lampX, hillHeight(frontHill.shape, lampX) - lampScale * 0.04, LAMP_Z);
     lamp.group.scale.setScalar(lampScale);
     lamp.group.visible = grounded > 0.02;
@@ -499,7 +500,7 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
     for (const hill of hills) hill.setGlow(lampX, lampGlow * (hill === frontHill ? 1 : 0.35));
     // The castle keeps out from behind the copy: centre-stage for the opening,
     // off to the side for the ending, when Lumi takes the centre.
-    const castleX = layout === "desktop" ? (c < LAST_CHAPTER / 2 ? 0.02 : -0.62) : -0.52;
+    const castleX = layout === "desktop" ? (c < LAST_CHAPTER / 2 ? 0.02 : -0.62) : 0.68;
     for (const hill of hills) hill.setCastle(castleX);
     scratch.copy(spout).project(camera);
     glowScreen.set(scratch.x, scratch.y);
