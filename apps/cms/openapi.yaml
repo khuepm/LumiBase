@@ -6557,7 +6557,8 @@ paths:
       tags: [Release Flags]
       summary: Effective release flags for the active site (#869)
       description: |
-        Members get `{ key, enabled }` per flag. Site admins also get the stage,
+        Members get `{ key, enabled }` for released flags only (unreleased keys
+        stay hidden). Site admins get every flag, with the stage,
         the source of the release decision (`env` | `manifest` | `stage`), the
         site choice and the flag's owner and removal date.
       parameters:

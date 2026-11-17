@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-11-17T13:19:10.827Z
+version: 3
+lastUpdated: 2026-11-17T14:46:37.198Z
 sourceLang: en
-contentHash: 95787bae84a97b77
-codeVerified: 2026-11-17T13:19:10.827Z
-codeVerifiedHash: 95787bae84a97b77
+contentHash: c9ed73e7edd52284
+codeVerified: 2026-11-17T14:46:37.198Z
+codeVerifiedHash: c9ed73e7edd52284
 codeVerifiedClaims: 26
 ---
 
@@ -54,7 +54,9 @@ node scripts/release-flags/manifest.mjs sign \
 ```
 
 A manifest replaces the previous one as a whole. Include every flag you want
-released, not only the one that changed.
+released, not only the one that changed. `sign` refuses a manifest with no
+flags, because it would withdraw every released feature; pass `--allow-empty`
+if that is what you mean.
 
 An instance accepts a manifest only when all of these hold:
 
@@ -83,7 +85,16 @@ There are two channels. Both go through the same verification.
 
 If a fetch fails or a manifest is rejected, the instance keeps the manifest it
 already accepted. Losing contact with LumiBase never turns a released feature
-off.
+off. The pull does not follow redirects.
+
+Every accepted or rejected manifest, from either channel, is written to the
+audit log at instance scope (no site), as `release_flags.manifest_accepted` or
+`release_flags.manifest_rejected`.
+
+**Revoking a key.** A stored manifest counts only while the key that signed it
+is still in `LUMIBASE_RELEASE_PUBLIC_KEYS` with the same PEM. Removing a key, for
+example after a leak, withdraws every manifest it signed: flags fall back to
+their stage default until a manifest signed by a trusted key arrives.
 
 ## Configuration
 
@@ -99,9 +110,9 @@ off.
 
 | Method and path | Who | Purpose |
 |---|---|---|
-| `GET /api/v1/release-flags` | Any member | Members get `{ key, enabled }` per flag; site admins also get stage, source, owner and removal date. |
+| `GET /api/v1/release-flags` | Any member | Members get `{ key, enabled }` for released flags only, so unreleased keys stay hidden; site admins get every flag with stage, source, owner and removal date. |
 | `PUT /api/v1/release-flags/site` | Site admin | `{ "flags": { "<key>": true \| false \| null } }`. `null` clears the choice. |
-| `GET /api/v1/release-flags/manifest` | Bootstrap admin | Accepted manifest, trusted key ids, last pull result. |
+| `GET /api/v1/release-flags/manifest` | Bootstrap admin | Accepted manifest (with `trusted`: whether its key is still trusted), trusted key ids, last pull result. |
 | `PUT /api/v1/release-flags/manifest` | Bootstrap admin | Submit a signed envelope. |
 | `POST /api/v1/release-flags/manifest/pull` | Bootstrap admin | Fetch from the configured URL now. |
 

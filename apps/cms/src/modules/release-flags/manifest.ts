@@ -120,6 +120,14 @@ export async function verifyReleaseManifest(
   if (!parsed.success) return { ok: false, reason: 'MALFORMED_PAYLOAD' };
 
   const issuedAtMs = Date.parse(parsed.data.issuedAt);
+  const manifest: VerifiedManifest = { envelope: envelope.data, payload: parsed.data, issuedAtMs };
+  const current = options.current;
+  // Re-delivery of the manifest already in force is a no-op even after its
+  // `notAfter` (which only limits acceptance) — checked before the time and
+  // audience rules so a pull URL that keeps serving it does not report failure.
+  if (current && issuedAtMs === current.issuedAtMs && payload === current.payload) {
+    return { ok: true, manifest, unchanged: true };
+  }
   if (issuedAtMs > options.now + MANIFEST_MAX_FUTURE_SKEW_MS) return { ok: false, reason: 'NOT_YET_VALID' };
   if (parsed.data.notAfter && Date.parse(parsed.data.notAfter) < options.now) {
     return { ok: false, reason: 'EXPIRED' };
@@ -130,14 +138,7 @@ export async function verifyReleaseManifest(
     return { ok: false, reason: 'WRONG_AUDIENCE' };
   }
 
-  const manifest: VerifiedManifest = { envelope: envelope.data, payload: parsed.data, issuedAtMs };
-  const current = options.current;
-  if (current) {
-    if (issuedAtMs === current.issuedAtMs && payload === current.payload) {
-      return { ok: true, manifest, unchanged: true };
-    }
-    if (issuedAtMs <= current.issuedAtMs) return { ok: false, reason: 'STALE' };
-  }
+  if (current && issuedAtMs <= current.issuedAtMs) return { ok: false, reason: 'STALE' };
   return { ok: true, manifest, unchanged: false };
 }
 

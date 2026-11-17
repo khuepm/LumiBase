@@ -2,8 +2,9 @@
  * Release-flag surface (#869). Mounted at `/api/v1/release-flags` on the
  * authenticated `api` chain (tenant → db → auth → membership → …).
  *
- *   GET  /               members: `{ key, enabled }[]` for the active site;
- *                        site admins: full state, stage, source, owner
+ *   GET  /               members: `{ key, enabled }[]` of RELEASED flags only
+ *                        (unreleased keys stay hidden); site admins: every
+ *                        flag with full state, stage, source, owner
  *   PUT  /site           site admin: `{ flags: { key: boolean | null } }`
  *   GET  /manifest       bootstrap admin: accepted manifest + pull status
  *   PUT  /manifest       bootstrap admin: submit a signed manifest envelope
@@ -33,7 +34,10 @@ import {
   manifestUrlAllowed,
   pullReleaseManifest,
   saveSiteReleaseValues,
+  trustedAcceptedManifest,
+  writeReleaseAudit,
   type AcceptOutcome,
+  type ReleaseAuditContext,
 } from './service';
 
 type AppContext = Context<AppEnv>;
@@ -66,6 +70,15 @@ async function audit(c: AppContext, event: string, metadata: Record<string, unkn
   });
 }
 
+function auditContext(c: AppContext): ReleaseAuditContext {
+  return {
+    actorEmail: c.get('auth')?.email ?? null,
+    ip: c.get('ip') ?? null,
+    userAgent: c.get('userAgent') ?? null,
+    requestId: c.get('requestId') ?? null,
+  };
+}
+
 /** The bootstrap admin, as a person (API keys and anonymous callers never qualify). */
 async function isBootstrapAdmin(c: AppContext): Promise<boolean> {
   const auth = c.get('auth');
@@ -88,7 +101,11 @@ function forbidden(c: AppContext) {
 releaseFlagsRouter.get('/', async (c) => {
   const states = await releaseFlagStates(c);
   if (!(await isSiteAdmin(c))) {
-    return c.json({ data: [...states.values()].map((s) => ({ key: s.key, enabled: s.enabled })) });
+    // Unreleased flags are not listed: a dark feature must not reveal that it
+    // exists (the same reason gated routes answer 404).
+    return c.json({
+      data: [...states.values()].filter((s) => s.released).map((s) => ({ key: s.key, enabled: s.enabled })),
+    });
   }
   const data = [...states.values()].map((state) => {
     const def = RELEASE_FLAGS.get(state.key)!;
@@ -135,6 +152,7 @@ releaseFlagsRouter.get('/manifest', async (c) => {
   if (!(await isBootstrapAdmin(c))) return forbidden(c);
   const env = releaseEnvFrom(c);
   const manifest = await loadAcceptedManifest(systemDbFor(c));
+  const trusted = manifest ? (await trustedAcceptedManifest(manifest, env)) !== null : false;
   return c.json({
     data: {
       configuration: {
@@ -149,6 +167,9 @@ releaseFlagsRouter.get('/manifest', async (c) => {
             acceptedAt: manifest.acceptedAt,
             source: manifest.source,
             flags: manifest.flags,
+            // false once the signing key is removed from LUMIBASE_RELEASE_PUBLIC_KEYS:
+            // the manifest is then ignored and flags fall back to stage defaults.
+            trusted,
           }
         : null,
       lastPull: lastReleasePullStatus(),
@@ -177,21 +198,14 @@ releaseFlagsRouter.put('/manifest', async (c) => {
     input: body,
     source: 'push',
     actorUserId: c.get('auth')?.userId ?? null,
+    audit: auditContext(c),
   });
   if (!outcome.ok) {
-    await audit(c, 'release_flags.manifest_rejected', { reason: outcome.reason });
+    await writeReleaseAudit(systemDbFor(c), 'release_flags.manifest_rejected', { reason: outcome.reason }, auditContext(c));
     return c.json(
       { errors: [{ code: 'MANIFEST_REJECTED', reason: outcome.reason, message: `Manifest rejected: ${outcome.reason}.` }] },
       REJECTION_STATUS[outcome.reason],
     );
-  }
-  if (!outcome.unchanged) {
-    await audit(c, 'release_flags.manifest_accepted', {
-      keyId: outcome.manifest.envelope.keyId,
-      issuedAt: outcome.manifest.issuedAt,
-      flags: outcome.manifest.flags,
-      source: 'push',
-    });
   }
   return c.json({
     data: {
@@ -218,12 +232,9 @@ releaseFlagsRouter.post('/manifest/pull', async (c) => {
       409,
     );
   }
-  const outcome = await pullReleaseManifest({ systemDb: systemDbFor(c), env });
+  const outcome = await pullReleaseManifest({ systemDb: systemDbFor(c), env, audit: auditContext(c) });
   if (!outcome.ok) {
     return c.json({ errors: [{ code: 'PULL_FAILED', reason: outcome.reason, message: `Pull failed: ${outcome.reason}.` }] }, 502);
-  }
-  if (!outcome.unchanged) {
-    await audit(c, 'release_flags.manifest_accepted', { issuedAt: outcome.issuedAt, source: 'pull' });
   }
   return c.json({ data: outcome });
 });

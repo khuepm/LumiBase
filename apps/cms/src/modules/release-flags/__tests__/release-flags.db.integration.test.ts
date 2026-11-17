@@ -1,4 +1,4 @@
-import { releaseManifests, settings, sites, type Database } from '@lumibase/database';
+import { auditLog, releaseManifests, settings, sites, type Database } from '@lumibase/database';
 import { MemoryCacheProvider } from '@lumibase/runtime';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -117,6 +117,70 @@ describe.skipIf(!hasDbIntegrationUrl)('release flags — DB integration', () => 
     expect(outcome).toEqual({ ok: false, reason: 'STALE' });
     resetReleaseFlagStateForTests();
     expect(await loadAcceptedManifest(db)).toMatchObject({ issuedAtMs: NOW - 1000, flags: { 'dark-one': true } });
+  });
+
+  it('two replicas accepting the same new manifest at once both succeed (no spurious STALE)', async () => {
+    const m = manifest(NOW - 1000, { 'dark-one': true });
+    const outcomes = await Promise.all([accept(m), accept(m), accept(m)]);
+    expect(outcomes.every((o) => o.ok)).toBe(true);
+    expect(outcomes.filter((o) => o.ok && !o.unchanged)).toHaveLength(1);
+  });
+
+  it('withdraws a stored manifest once its signing key is no longer trusted', async () => {
+    await accept(manifest(NOW - 1000, { 'dark-one': true }));
+    const evaluate = (e: ReleaseEnv) =>
+      evaluateReleaseFlags({ systemDb: db, db, cache: null, siteId: SITE_A, env: e, registry });
+    expect((await evaluate(env)).get('dark-one')).toMatchObject({ released: true, releasedBy: 'manifest' });
+
+    const rotated = makeSigner('lumibase-release-v2');
+    expect((await evaluate({ LUMIBASE_RELEASE_PUBLIC_KEYS: JSON.stringify(rotated.publicKeys) })).get('dark-one'))
+      .toMatchObject({ released: false, releasedBy: 'stage' });
+    // Same key id, different PEM (key replaced) also counts as revoked.
+    const swapped = { LUMIBASE_RELEASE_PUBLIC_KEYS: JSON.stringify({ [signer.keyId]: rotated.publicKeyPem }) };
+    expect((await evaluate(swapped)).get('dark-one')).toMatchObject({ released: false, releasedBy: 'stage' });
+  });
+
+  it('audits every accepted manifest at instance scope, including background pulls', async () => {
+    const before = await db.select().from(auditLog).where(eq(auditLog.event, 'release_flags.manifest_accepted'));
+    await pullReleaseManifest({
+      systemDb: db,
+      env: { ...env, LUMIBASE_RELEASE_MANIFEST_URL: 'https://releases.example.test/m.json' },
+      now: NOW,
+      fetchImpl: async () => new Response(JSON.stringify(manifest(NOW - 1000, { 'dark-one': true }))),
+    });
+    const after = await db.select().from(auditLog).where(eq(auditLog.event, 'release_flags.manifest_accepted'));
+    const added = after.filter((row) => !before.some((b) => b.id === row.id));
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({ siteId: null, metadata: { source: 'pull', flags: { 'dark-one': true } } });
+    await db.delete(auditLog).where(inArray(auditLog.id, added.map((r) => r.id)));
+  });
+
+  it('refuses to follow a redirect on pull and asks fetch not to follow one', async () => {
+    let seen: RequestInit | undefined;
+    const outcome = await pullReleaseManifest({
+      systemDb: db,
+      env: { ...env, LUMIBASE_RELEASE_MANIFEST_URL: 'https://releases.example.test/m.json' },
+      now: NOW,
+      fetchImpl: async (_url, init) => {
+        seen = init;
+        return new Response(null, { status: 302, headers: { location: 'https://evil.example/m.json' } });
+      },
+    });
+    expect(outcome).toEqual({ ok: false, reason: 'REDIRECT_REFUSED' });
+    expect(seen?.redirect).toBe('manual');
+  });
+
+  it('concurrent site writes to different flags keep both choices', async () => {
+    await Promise.all([
+      saveSiteReleaseValues(db, null, SITE_A, { 'dark-one': true }),
+      saveSiteReleaseValues(db, null, SITE_A, { 'other-flag': false }),
+      saveSiteReleaseValues(db, null, SITE_A, { 'third-flag': true }),
+    ]);
+    const [row] = await db.select().from(settings).where(eq(settings.siteId, SITE_A));
+    expect(row?.value).toEqual({ 'dark-one': true, 'other-flag': false, 'third-flag': true });
+    await saveSiteReleaseValues(db, null, SITE_A, { 'other-flag': null });
+    const [after] = await db.select().from(settings).where(eq(settings.siteId, SITE_A));
+    expect(after?.value).toEqual({ 'dark-one': true, 'third-flag': true });
   });
 
   it('accepting the same manifest twice is a no-op', async () => {

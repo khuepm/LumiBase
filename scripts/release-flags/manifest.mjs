@@ -5,7 +5,7 @@
  *   node scripts/release-flags/manifest.mjs keygen  --out <dir> [--key-id lumibase-release-v1]
  *   node scripts/release-flags/manifest.mjs sign    --key <private.pem> --key-id <id>
  *        --flags key=on,other=off [--audience id1,id2] [--not-after 2026-12-31T00:00:00Z]
- *        [--issued-at <iso>] [--out manifest.json]
+ *        [--issued-at <iso>] [--out manifest.json] [--allow-empty]
  *
  * `keygen` writes an Ed25519 key pair and prints the JSON line to put in
  * `LUMIBASE_RELEASE_PUBLIC_KEYS`. Keep the private key out of the repository.
@@ -40,9 +40,10 @@ function fail(message) {
 function parseFlags(raw) {
   const flags = {};
   for (const entry of (raw ?? '').split(/[\s,]+/).filter(Boolean)) {
-    const [key, value = ''] = entry.split('=');
+    const parts = entry.split('=');
+    const [key, value = ''] = parts;
     const v = value.toLowerCase();
-    if (!/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/.test(key ?? '') || (!ON.has(v) && !OFF.has(v))) {
+    if (parts.length !== 2 || !/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/.test(key ?? '') || (!ON.has(v) && !OFF.has(v))) {
       fail(`bad flag entry "${entry}" (expected key=on|off)`);
     }
     flags[key] = ON.has(v);
@@ -78,6 +79,11 @@ if (command === 'keygen') {
     audience: opt.audience ? opt.audience.split(',').map((s) => s.trim()).filter(Boolean) : '*',
     flags: parseFlags(opt.flags),
   };
+  // A manifest replaces the previous one as a whole, so an empty one withdraws
+  // every released feature. Refuse it unless that is explicitly intended.
+  if (Object.keys(payload.flags).length === 0 && opt['allow-empty'] !== 'true') {
+    fail('no flags given (--flags key=on,...). An empty manifest withdraws every released feature; pass --allow-empty if that is intended.');
+  }
   const bytes = Buffer.from(JSON.stringify(payload), 'utf8');
   const signature = sign(null, bytes, createPrivateKey(readFileSync(keyPath)));
   const envelope = { keyId, payload: bytes.toString('base64'), signature: signature.toString('base64') };

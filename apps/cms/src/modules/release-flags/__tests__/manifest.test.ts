@@ -111,6 +111,16 @@ describe('verifyReleaseManifest', () => {
       expect(await verifyReleaseManifest(sibling, opts({ current }))).toEqual({ ok: false, reason: 'STALE' });
     });
 
+    it('treats re-delivery of the accepted manifest as a no-op even after notAfter', async () => {
+      const withExpiry = signer.envelope(payload({ notAfter: iso(NOW + 1000) }));
+      const accepted2 = { issuedAtMs: NOW - 60_000, payload: withExpiry.payload };
+      const later = NOW + 60_000; // past notAfter
+      expect(await verifyReleaseManifest(withExpiry, opts({ current: accepted2, now: later }))).toMatchObject({
+        ok: true,
+        unchanged: true,
+      });
+    });
+
     it('accepts a newer manifest', async () => {
       const newer = signer.envelope(payload({ issuedAt: iso(NOW), flags: { 'content-environments': false } }));
       expect(await verifyReleaseManifest(newer, opts({ current }))).toMatchObject({ ok: true, unchanged: false });

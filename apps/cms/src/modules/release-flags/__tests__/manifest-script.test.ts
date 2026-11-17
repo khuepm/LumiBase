@@ -40,6 +40,26 @@ describe('manifest.mjs ↔ verifyReleaseManifest', () => {
     }
   });
 
+  it('refuses an empty manifest unless --allow-empty is passed', async () => {
+    const key = join(dir, 'k-test.private.pem');
+    expect(() =>
+      execFileSync('node', [SCRIPT, 'sign', '--key', key, '--key-id', 'k-test'], { stdio: 'pipe' }),
+    ).toThrow();
+    const out = execFileSync('node', [SCRIPT, 'sign', '--key', key, '--key-id', 'k-test', '--allow-empty'], {
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+    expect(JSON.parse(Buffer.from(JSON.parse(out).payload, 'base64').toString('utf8')).flags).toEqual({});
+  });
+
+  it('refuses an entry with more than one "="', () => {
+    expect(() =>
+      execFileSync('node', [SCRIPT, 'sign', '--key', join(dir, 'k-test.private.pem'), '--key-id', 'k-test', '--flags', 'a=on=off'], {
+        stdio: 'pipe',
+      }),
+    ).toThrow();
+  });
+
   it('refuses a malformed flag entry', () => {
     expect(() =>
       execFileSync('node', [SCRIPT, 'sign', '--key', join(dir, 'k-test.private.pem'), '--key-id', 'k', '--flags', 'Bad=on'], {

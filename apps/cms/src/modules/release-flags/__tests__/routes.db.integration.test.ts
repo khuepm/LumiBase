@@ -1,6 +1,6 @@
 import { auditLog, releaseManifests, settings, sites, users, type Database } from '@lumibase/database';
 import { MemoryCacheProvider } from '@lumibase/runtime';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { connectDbIntegration, hasDbIntegrationUrl } from '../../../__tests__/helpers/db-harness';
@@ -101,18 +101,27 @@ describe.skipIf(!hasDbIntegrationUrl)('/release-flags routes — DB integration'
     await db.delete(settings).where(inArray(settings.siteId, [SITE, OTHER_SITE]));
   });
 
-  it('members see only key + enabled; site admins see the full state', async () => {
+  it('members see only released flags as key + enabled; site admins see the full state', async () => {
     const member = await call(principals.member(), 'GET', '/release-flags');
     expect(member.status).toBe(200);
     const memberBody = (await member.json()) as { data: Array<Record<string, unknown>> };
-    expect(memberBody.data).toContainEqual({ key: 'content-environments', enabled: false });
-    expect(Object.keys(memberBody.data[0]!).sort()).toEqual(['enabled', 'key']);
-
+    // Dark and not released: the key itself stays hidden from members.
+    expect(memberBody.data.find((f) => f.key === 'content-environments')).toBeUndefined();
+    // Site admins see every declared flag, released or not.
     const admin = await call(principals.siteAdmin(), 'GET', '/release-flags');
     const adminBody = (await admin.json()) as { data: Array<Record<string, unknown>> };
     expect(adminBody.data.find((f) => f.key === 'content-environments')).toMatchObject({
       stage: 'dark', released: false, releasedBy: 'stage', siteToggle: true, owner: '#853',
     });
+
+    await call(principals.bootstrap(), 'PUT', '/release-flags/manifest', manifest(Date.now() - 1000, { 'content-environments': true }));
+    resetReleaseFlagStateForTests();
+    const released = (await (await call(principals.member(), 'GET', '/release-flags')).json()) as {
+      data: Array<Record<string, unknown>>;
+    };
+    expect(released.data).toContainEqual({ key: 'content-environments', enabled: false });
+    expect(Object.keys(released.data[0]!).sort()).toEqual(['enabled', 'key']);
+
   });
 
   it('PUT /site is site-admin only and validates keys', async () => {
@@ -162,9 +171,14 @@ describe.skipIf(!hasDbIntegrationUrl)('/release-flags routes — DB integration'
     expect(await status.json()).toMatchObject({
       data: {
         configuration: { trustedKeyIds: ['lumibase-release-v1'], pullConfigured: false },
-        manifest: { keyId: 'lumibase-release-v1', source: 'push', flags: { 'content-environments': true } },
+        manifest: { keyId: 'lumibase-release-v1', source: 'push', flags: { 'content-environments': true }, trusted: true },
       },
     });
+    // Accepted and rejected manifests are audited at instance scope (no site).
+    const instanceAudits = await db.select().from(auditLog).where(isNull(auditLog.siteId));
+    expect(instanceAudits.some((a) => a.event === 'release_flags.manifest_accepted' && a.actorEmail === 'boot@rf.test')).toBe(true);
+    expect(instanceAudits.some((a) => a.event === 'release_flags.manifest_rejected')).toBe(true);
+    await db.delete(auditLog).where(and(isNull(auditLog.siteId), inArray(auditLog.event, ['release_flags.manifest_accepted', 'release_flags.manifest_rejected'])));
 
     const pull = await call(principals.bootstrap(), 'POST', '/release-flags/manifest/pull');
     expect(pull.status).toBe(409);

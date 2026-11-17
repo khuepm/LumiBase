@@ -1,10 +1,10 @@
 ---
-version: 57
-lastUpdated: 2026-11-17T12:28:40.703Z
+version: 58
+lastUpdated: 2026-11-17T14:46:38.217Z
 sourceLang: en
-contentHash: 452cad6250192370
-codeVerified: 2026-11-17T12:28:40.703Z
-codeVerifiedHash: 452cad6250192370
+contentHash: a7889a6379628460
+codeVerified: 2026-11-17T14:46:38.217Z
+codeVerifiedHash: a7889a6379628460
 codeVerifiedClaims: 646
 ---
 
@@ -343,7 +343,7 @@ manifest and chosen per site. Full guide: [Release flags](../features/release-fl
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `GET` | `/api/v1/release-flags` | member | `{ key, enabled }[]` for the active site; site admins also get stage, `releasedBy`, `enabledBy`, `siteValue`, owner and `removeBy` |
+| `GET` | `/api/v1/release-flags` | member | `{ key, enabled }[]` of released flags only for the active site; site admins get every flag plus stage, `releasedBy`, `enabledBy`, `siteValue`, owner and `removeBy` |
 | `PUT` | `/api/v1/release-flags/site` | site-admin | Body `{ flags: { "<key>": true \| false \| null } }`; `null` clears the choice. `400 UNKNOWN_FLAG` / `NOT_SITE_TOGGLE` |
 | `GET` | `/api/v1/release-flags/manifest` | bootstrap admin | Accepted manifest, trusted key ids, pull configuration and last pull result |
 | `PUT` | `/api/v1/release-flags/manifest` | bootstrap admin | Body `{ keyId, payload, signature }` (Ed25519 over the base64-decoded payload). `422` / `409` `MANIFEST_REJECTED` with a `reason` |

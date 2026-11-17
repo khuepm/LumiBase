@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-11-17T13:19:10.827Z
+version: 3
+lastUpdated: 2026-11-17T14:46:37.198Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 95787bae84a97b77
+sourceHash: c9ed73e7edd52284
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T13:19:10.827Z
-codeVerifiedHash: 95787bae84a97b77
+codeVerified: 2026-11-17T14:46:37.198Z
+codeVerifiedHash: c9ed73e7edd52284
 codeVerifiedClaims: 26
 ---
 
@@ -57,7 +57,9 @@ node scripts/release-flags/manifest.mjs sign \
 ```
 
 Manifest mới thay thế toàn bộ manifest trước. Hãy liệt kê mọi flag muốn phát
-hành, không chỉ flag vừa đổi.
+hành, không chỉ flag vừa đổi. `sign` từ chối manifest không có flag nào, vì nó
+sẽ rút lại mọi tính năng đã phát hành; thêm `--allow-empty` nếu đó đúng là ý
+bạn.
 
 Một instance chỉ chấp nhận manifest khi đủ tất cả các điều kiện sau:
 
@@ -86,6 +88,16 @@ Có hai kênh. Cả hai đi qua cùng một bước xác minh.
 
 Nếu tải lỗi hoặc manifest bị từ chối, instance giữ manifest đã chấp nhận trước
 đó. Mất kết nối tới LumiBase không bao giờ làm tắt một tính năng đã phát hành.
+Kênh pull không đi theo redirect.
+
+Mọi manifest được chấp nhận hay bị từ chối, từ kênh nào cũng vậy, đều được ghi
+vào audit log ở cấp instance (không gắn site), với sự kiện
+`release_flags.manifest_accepted` hoặc `release_flags.manifest_rejected`.
+
+**Thu hồi khoá.** Manifest đã lưu chỉ có hiệu lực khi khoá đã ký nó vẫn nằm
+trong `LUMIBASE_RELEASE_PUBLIC_KEYS` với cùng PEM. Gỡ một khoá, ví dụ sau khi
+khoá bị lộ, sẽ rút lại mọi manifest khoá đó đã ký: các flag quay về mặc định
+theo stage cho tới khi có manifest ký bằng khoá còn được tin cậy.
 
 ## Cấu hình
 
@@ -101,9 +113,9 @@ Nếu tải lỗi hoặc manifest bị từ chối, instance giữ manifest đã
 
 | Phương thức và đường dẫn | Ai | Mục đích |
 |---|---|---|
-| `GET /api/v1/release-flags` | Mọi thành viên | Thành viên nhận `{ key, enabled }` cho mỗi flag; admin của site nhận thêm stage, nguồn quyết định, owner và ngày gỡ. |
+| `GET /api/v1/release-flags` | Mọi thành viên | Thành viên chỉ nhận `{ key, enabled }` của các flag đã phát hành, nên key chưa phát hành vẫn bị ẩn; admin của site nhận mọi flag kèm stage, nguồn quyết định, owner và ngày gỡ. |
 | `PUT /api/v1/release-flags/site` | Admin của site | `{ "flags": { "<key>": true \| false \| null } }`. `null` xoá lựa chọn. |
-| `GET /api/v1/release-flags/manifest` | Bootstrap admin | Manifest đã chấp nhận, các key id được tin cậy, kết quả lần pull gần nhất. |
+| `GET /api/v1/release-flags/manifest` | Bootstrap admin | Manifest đã chấp nhận (kèm `trusted`: khoá ký còn được tin cậy hay không), các key id được tin cậy, kết quả lần pull gần nhất. |
 | `PUT /api/v1/release-flags/manifest` | Bootstrap admin | Gửi một envelope có chữ ký. |
 | `POST /api/v1/release-flags/manifest/pull` | Bootstrap admin | Tải ngay từ URL đã cấu hình. |
 

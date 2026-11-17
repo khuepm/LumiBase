@@ -3,7 +3,9 @@ import type { CacheProvider } from '@lumibase/runtime';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
+import { verifyEd25519 } from '@lumibase/contracts/extensions';
 import { createProcessCache } from '../../services/process-cache';
+import { AuditLogger } from '../audit/logger';
 import {
   MANIFEST_MAX_PAYLOAD_CHARS,
   parseReleasePublicKeys,
@@ -84,6 +86,75 @@ export async function loadAcceptedManifest(systemDb: Database): Promise<StoredMa
   }
 }
 
+const trustCache = new Map<string, boolean>();
+
+function decodePayload(payload: string): Uint8Array | null {
+  try {
+    return Uint8Array.from(atob(payload), (ch) => ch.charCodeAt(0));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The stored manifest, but only while the key that signed it is still trusted.
+ * Removing a key from `LUMIBASE_RELEASE_PUBLIC_KEYS` (rotation, or a leaked
+ * key) therefore withdraws every manifest it signed: flags fall back to the
+ * next source. The signature is re-checked against the currently configured
+ * PEM (memoised per key + signature), so swapping the PEM behind a key id also
+ * counts as revoking it.
+ */
+export async function trustedAcceptedManifest(
+  stored: StoredManifest | null,
+  env: ReleaseEnv,
+): Promise<StoredManifest | null> {
+  if (!stored) return null;
+  const pem = parseReleasePublicKeys(env.LUMIBASE_RELEASE_PUBLIC_KEYS)[stored.envelope.keyId];
+  if (!pem) return null;
+  const memoKey = `${stored.envelope.keyId}\n${pem}\n${stored.envelope.signature}`;
+  let ok = trustCache.get(memoKey);
+  if (ok === undefined) {
+    const bytes = decodePayload(stored.envelope.payload);
+    ok = bytes ? await verifyEd25519(pem, stored.envelope.signature, bytes) : false;
+    if (trustCache.size > 64) trustCache.clear();
+    trustCache.set(memoKey, ok);
+  }
+  return ok ? stored : null;
+}
+
+/** Who triggered an accept, for the instance-level audit trail. */
+export interface ReleaseAuditContext {
+  readonly actorEmail?: string | null;
+  readonly ip?: string | null;
+  readonly userAgent?: string | null;
+  readonly requestId?: string | null;
+}
+
+/**
+ * Release decisions affect every tenant, so they are audited at instance
+ * scope (`site_id` NULL) — one trail whichever site the caller went through,
+ * and also for background pulls that have no caller. Best effort.
+ */
+export async function writeReleaseAudit(
+  systemDb: Database,
+  event: string,
+  metadata: Record<string, unknown>,
+  ctx: ReleaseAuditContext = {},
+): Promise<void> {
+  try {
+    await new AuditLogger({ db: systemDb, siteId: null }).write({
+      event,
+      actorEmail: ctx.actorEmail ?? null,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.userAgent ?? null,
+      requestId: ctx.requestId ?? null,
+      metadata,
+    });
+  } catch (err) {
+    console.warn('[release-flags] audit write failed', formatSafeError(err));
+  }
+}
+
 export type AcceptOutcome =
   | { ok: true; unchanged: boolean; manifest: StoredManifest; unknownKeys: string[] }
   | { ok: false; reason: ManifestRejection | 'KEYS_NOT_CONFIGURED' };
@@ -100,6 +171,7 @@ export async function acceptReleaseManifest(args: {
   input: unknown;
   source: 'push' | 'pull';
   actorUserId: string | null;
+  audit?: ReleaseAuditContext;
   now?: number;
   registry?: ReadonlyMap<string, ReleaseFlagDefinition>;
 }): Promise<AcceptOutcome> {
@@ -141,7 +213,21 @@ export async function acceptReleaseManifest(args: {
     .returning({ id: releaseManifests.id });
   manifestCache.clear();
 
-  if (written.length === 0) return { ok: false, reason: 'STALE' };
+  if (written.length === 0) {
+    // Another replica (or a racing pull) may have just stored this very
+    // manifest: that is success, not STALE.
+    const stored = await loadAcceptedManifest(args.systemDb);
+    if (stored && stored.issuedAtMs === record.issuedAtMs && stored.envelope.payload === record.envelope.payload) {
+      return { ok: true, unchanged: true, manifest: stored, unknownKeys };
+    }
+    return { ok: false, reason: 'STALE' };
+  }
+  await writeReleaseAudit(
+    args.systemDb,
+    'release_flags.manifest_accepted',
+    { keyId: record.envelope.keyId, issuedAt: record.issuedAt, flags: record.flags, source: record.source },
+    args.audit,
+  );
   return { ok: true, unchanged: false, manifest: record, unknownKeys };
 }
 
@@ -195,6 +281,7 @@ export async function pullReleaseManifest(args: {
   env: ReleaseEnv;
   fetchImpl?: typeof fetch;
   now?: number;
+  audit?: ReleaseAuditContext;
 }): Promise<PullOutcome> {
   const now = args.now ?? Date.now();
   lastPullAttemptAt = now;
@@ -211,11 +298,16 @@ export async function pullReleaseManifest(args: {
 
   let body: unknown;
   try {
+    // `manual` + refuse 3xx rather than `redirect: 'error'`, which the Workers
+    // runtime does not accept; following redirects is refused either way.
     const res = await (args.fetchImpl ?? fetch)(url, {
       headers: { accept: 'application/json' },
-      redirect: 'error',
+      redirect: 'manual',
       signal: AbortSignal.timeout(PULL_TIMEOUT_MS),
     });
+    if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400)) {
+      return finish({ ok: false, reason: 'REDIRECT_REFUSED' });
+    }
     if (!res.ok) return finish({ ok: false, reason: `HTTP_${res.status}` });
     const text = await res.text();
     if (text.length > MANIFEST_MAX_PAYLOAD_CHARS * 2) return finish({ ok: false, reason: 'TOO_LARGE' });
@@ -231,6 +323,7 @@ export async function pullReleaseManifest(args: {
     input: body,
     source: 'pull',
     actorUserId: null,
+    audit: args.audit,
     now,
   });
   if (!outcome.ok) return finish({ ok: false, reason: outcome.reason });
@@ -293,8 +386,10 @@ export async function loadSiteReleaseValues(
 }
 
 /**
- * Merge `changes` into the site's stored choices (`null` clears a choice) and
- * drop the cached copy so the next evaluation reads the new value.
+ * Merge `changes` into the site's stored choices (`null` clears a choice) in a
+ * single SQL statement — concurrent writers to different keys never lose each
+ * other's choice — and write the result through to the cache, so a reader that
+ * raced the write cannot leave a stale copy behind.
  */
 export async function saveSiteReleaseValues(
   db: Database,
@@ -302,31 +397,41 @@ export async function saveSiteReleaseValues(
   siteId: string,
   changes: Readonly<Record<string, boolean | null>>,
 ): Promise<Record<string, boolean>> {
-  const [row] = await db
-    .select({ value: settings.value })
-    .from(settings)
-    .where(and(eq(settings.siteId, siteId), eq(settings.key, SITE_RELEASE_FLAGS_KEY)))
-    .limit(1);
-  const next: Record<string, boolean> = {};
-  for (const [key, value] of Object.entries(asRecord(row?.value))) {
-    if (typeof value === 'boolean') next[key] = value;
-  }
+  const set: Record<string, boolean> = {};
+  const cleared: string[] = [];
   for (const [key, value] of Object.entries(changes)) {
-    if (value === null) delete next[key];
-    else next[key] = value;
+    if (value === null) cleared.push(key);
+    else set[key] = value;
   }
-  await db
+  const clearedArray = cleared.length
+    ? sql`ARRAY[${sql.join(cleared.map((k) => sql`${k}`), sql`, `)}]::text[]`
+    : sql`'{}'::text[]`;
+  const [row] = await db
     .insert(settings)
-    .values({ siteId, key: SITE_RELEASE_FLAGS_KEY, value: next, scope: 'site' })
+    .values({ siteId, key: SITE_RELEASE_FLAGS_KEY, value: set, scope: 'site' })
     .onConflictDoUpdate({
       target: [settings.siteId, settings.key],
-      set: { value: next, updatedAt: new Date() },
-    });
+      set: {
+        value: sql`(CASE WHEN jsonb_typeof(${settings.value}) = 'object' THEN ${settings.value} ELSE '{}'::jsonb END - ${clearedArray}) || ${JSON.stringify(set)}::jsonb`,
+        updatedAt: new Date(),
+      },
+    })
+    .returning({ value: settings.value });
+  const stored = asRecord(row?.value);
+  const next: Record<string, boolean> = {};
+  for (const [key, value] of Object.entries(stored)) {
+    if (typeof value === 'boolean') next[key] = value;
+  }
   if (cache) {
     try {
-      await cache.delete(siteReleaseCacheKey(siteId));
+      await cache.set(siteReleaseCacheKey(siteId), JSON.stringify(stored), { ttl: SITE_CACHE_TTL_SECONDS });
     } catch (err) {
-      console.warn('[release-flags] site cache delete failed; relying on TTL', formatSafeError(err));
+      console.warn('[release-flags] site cache write failed; relying on TTL', formatSafeError(err));
+      try {
+        await cache.delete(siteReleaseCacheKey(siteId));
+      } catch {
+        // TTL bounds staleness.
+      }
     }
   }
   return next;
@@ -353,7 +458,7 @@ export async function evaluateReleaseFlags(args: {
     console.warn('[release-flags] ignoring LUMIBASE_RELEASE_FLAGS entry', { entry });
   }
   const [manifest, siteValues] = await Promise.all([
-    loadAcceptedManifest(args.systemDb),
+    loadAcceptedManifest(args.systemDb).then((stored) => trustedAcceptedManifest(stored, args.env)),
     args.siteId ? loadSiteReleaseValues(args.db, args.cache, args.siteId) : Promise.resolve({}),
   ]);
   const inputs = { envOverrides: overrides, manifestFlags: manifest?.flags ?? null, siteValues };
@@ -365,6 +470,7 @@ export async function evaluateReleaseFlags(args: {
 /** Test hook: forget process-level state. */
 export function resetReleaseFlagStateForTests(): void {
   manifestCache.clear();
+  trustCache.clear();
   lastPullAttemptAt = 0;
   lastPullStatus = null;
   warnedOverrides.clear();
