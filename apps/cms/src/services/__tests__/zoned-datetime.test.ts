@@ -22,6 +22,7 @@ import { buildFieldTypeMap, buildFilter, buildSort, ItemServiceError } from '../
 import { castKindForFieldType, ZONED_DATETIME_FILTER_TYPE } from '../json-filter-cast';
 import { assertZonedDateTimeOptions, SchemaServiceError, type CompiledField } from '../schema-service';
 import { mapFieldType, ZonedDateTimeType } from '../../graphql/type-mapping';
+import { DateTimeScalar } from '../../graphql/scalars';
 
 /**
  * Timezone-aware datetime field (#747): instant + IANA zone storage, DST
@@ -416,6 +417,9 @@ describe('GraphQL', () => {
   it('types a zoned field as ZonedDateTime and resolves legacy strings', () => {
     expect(mapFieldType(compiled('t', 'datetime', { timezone: true }))).toBe(ZonedDateTimeType);
     expect(mapFieldType(compiled('t', 'datetime'))).not.toBe(ZonedDateTimeType);
+    // #865: the canonical `datetime` spelling is a DateTime, not a String.
+    expect(mapFieldType(compiled('t', 'datetime'))).toBe(DateTimeScalar);
+    expect(mapFieldType(compiled('t', 'dateTime'))).toBe(DateTimeScalar);
     const f = ZonedDateTimeType.getFields();
     const info = {} as never;
     const value = { instant: '2026-01-01T00:00:00.000Z', tz: 'Asia/Tokyo', offset: '+09:00' };
