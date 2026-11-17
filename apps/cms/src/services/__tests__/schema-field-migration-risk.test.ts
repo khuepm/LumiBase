@@ -51,6 +51,26 @@ describe('SchemaService field migration risk', () => {
       }),
     ).not.toThrow();
   });
+
+  // #865: any truthy `migrationPlan` used to confirm the change, `{}` included.
+  it.each([
+    ['an empty plan', {}],
+    ['a plan without a strategy', { note: 'trust me' }],
+    ['a blank strategy', { strategy: '   ' }],
+    ['a non-string strategy', { strategy: true }],
+  ])('rejects risky changes with %s', (_label, migrationPlan) => {
+    expect(() =>
+      assertFieldMutationAllowed(existing, { name: 'headline', type: 'text' }, 2, { migrationPlan }),
+    ).toThrowError(/requires a migration plan/);
+  });
+
+  it('only counts confirmRiskyChange when it is exactly true', () => {
+    expect(() =>
+      assertFieldMutationAllowed(existing, { name: 'title', type: 'text' }, 2, {
+        confirmRiskyChange: 'false' as unknown as boolean,
+      }),
+    ).toThrowError(SchemaServiceError);
+  });
 });
 
 describe('SchemaService field deletion risk', () => {

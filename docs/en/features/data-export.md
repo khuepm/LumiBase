@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 2
-lastUpdated: 2026-11-12T10:11:39.685Z
-contentHash: fe376fc30fa5e639
-codeVerified: 2026-11-12T10:11:39.685Z
-codeVerifiedHash: fe376fc30fa5e639
+version: 3
+lastUpdated: 2026-11-16T15:44:59.118Z
+contentHash: 2c7b37b7c7e92681
+codeVerified: 2026-11-16T15:44:59.118Z
+codeVerifiedHash: 2c7b37b7c7e92681
 codeVerifiedClaims: 6
 ---
 
@@ -32,7 +32,10 @@ GET /api/v1/items/{collection}/export
 | `status` | item status | any | |
 
 The response is a download (`Content-Disposition: attachment; filename="<collection>-<date>.<format>"`,
-`Cache-Control: no-store`). Bad input is rejected before the first byte is sent.
+`Cache-Control: no-store`). Bad input and missing permissions are rejected
+before the first byte is sent. That includes `read` on every collection that
+`relations=slug` or `relations=embed` expands: without it the export is
+`403 FORBIDDEN`, not a file.
 The request uses the caller's `read` permission: row rules filter the rows and
 field rules mask the values, exactly as in the list endpoint. Each export writes
 an `items_exported` entry to the audit log (collection, format, fields, locales,
@@ -42,6 +45,18 @@ relation mode, whether a filter was used).
 curl -H "Authorization: Bearer $TOKEN" -H "X-Lumi-Site: $SITE" \
   "https://api.example.com/api/v1/items/products/export?format=csv&locales=en,vi" -o products.csv
 ```
+
+A failure after streaming has started (a database error, or an
+`items.export.before` hook that throws) cannot change the `200` that was already
+sent, so it is marked in the body and the stream then ends with an error:
+
+- CSV: the last line is `#lumibase-export-error,<CODE>` (for example
+  `FORBIDDEN`, or `EXPORT_FAILED` when there is no code). The error message is
+  not written.
+- JSON: the document is left unclosed, so it does not parse.
+
+Treat either as a failed export and run it again. Reading such a file back as an
+import is refused.
 
 With the SDK:
 

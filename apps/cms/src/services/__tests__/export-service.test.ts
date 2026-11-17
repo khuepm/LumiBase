@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import {
+  EXPORT_ERROR_MARKER,
   EXPORT_PAGE_SIZE,
   ExportError,
   csvHeader,
@@ -238,5 +239,60 @@ describe('iterateExport / streamExport', () => {
     expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
     const text = new TextDecoder().decode(bytes);
     expect(text.trim().split('\r\n')).toHaveLength(3);
+  });
+
+  /** Read a stream to its end or its error, keeping what arrived before it (#855). */
+  async function drain(stream: ReadableStream<Uint8Array>): Promise<{ text: string; error: unknown }> {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return { text, error: null };
+        text += decoder.decode(value, { stream: true });
+      }
+    } catch (error) {
+      return { text, error };
+    }
+  }
+
+  const failing = (code?: string) => ({
+    list: async (): Promise<ItemRow[]> => {
+      throw Object.assign(new Error('Action "read" on "authors" is not allowed.'), code ? { code } : {});
+    },
+  });
+
+  it('ends a CSV that fails mid-stream with an error marker row, then errors the stream (#855)', async () => {
+    const { text, error } = await drain(streamExport(plan({ fields: ['price'] }), { format: 'csv' }, failing('FORBIDDEN')));
+    expect(error).toBeInstanceOf(Error);
+    const lines = text.replace(/^\uFEFF/, '').split('\r\n');
+    expect(lines[0]).toBe('id,status,sort,created_at,updated_at,price');
+    expect(lines[1]).toBe(`${EXPORT_ERROR_MARKER},FORBIDDEN`);
+    // The message (which may carry internals) is never written into the file.
+    expect(text).not.toContain('not allowed');
+  });
+
+  it('writes a generic code when the failure has none', async () => {
+    const { text } = await drain(streamExport(plan({ fields: ['price'] }), { format: 'csv' }, failing()));
+    expect(text).toContain(`${EXPORT_ERROR_MARKER},EXPORT_FAILED\r\n`);
+  });
+
+  it('leaves a JSON export that fails mid-stream unclosed, so it never parses', async () => {
+    const { text, error } = await drain(streamExport(plan({ format: 'json', fields: ['price'] }), { format: 'json' }, failing('FORBIDDEN')));
+    expect(error).toBeInstanceOf(Error);
+    expect(() => JSON.parse(text)).toThrow();
+  });
+
+  it('a truncated CSV is refused on import instead of reading as fewer rows', async () => {
+    const p = plan({ fields: ['price'] });
+    const { text } = await drain(streamExport(p, { format: 'csv' }, {
+      list: async (params: ListItemsParams) => {
+        if (params.filter) throw Object.assign(new Error('db down'), { code: 'INTERNAL' });
+        return Array.from({ length: EXPORT_PAGE_SIZE }, (_, i) => row(`id${String(i).padStart(5, '0')}`, { price: i }));
+      },
+    }));
+    expect(text).toContain(`${EXPORT_ERROR_MARKER},INTERNAL`);
+    expect(() => parseExport(text, 'csv', FIELDS)).toThrow(/incomplete/);
   });
 });

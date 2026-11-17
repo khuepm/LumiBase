@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 2
-lastUpdated: 2026-11-12T10:11:39.685Z
+version: 3
+lastUpdated: 2026-11-16T15:44:59.118Z
 translatedFrom: en
-sourceHash: fe376fc30fa5e639
+sourceHash: 2c7b37b7c7e92681
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T10:11:39.685Z
-codeVerifiedHash: fe376fc30fa5e639
+codeVerified: 2026-11-16T15:44:59.118Z
+codeVerifiedHash: 2c7b37b7c7e92681
 codeVerifiedClaims: 6
 ---
 
@@ -35,7 +35,10 @@ GET /api/v1/items/{collection}/export
 | `status` | trạng thái item | mọi trạng thái | |
 
 Phản hồi là một file tải về (`Content-Disposition: attachment; filename="<collection>-<date>.<format>"`,
-`Cache-Control: no-store`). Đầu vào sai bị từ chối trước khi gửi byte đầu tiên.
+`Cache-Control: no-store`). Đầu vào sai và thiếu quyền bị từ chối trước khi gửi
+byte đầu tiên. Điều đó gồm cả quyền `read` trên mọi collection mà
+`relations=slug` hoặc `relations=embed` mở rộng: thiếu quyền này thì export trả
+về `403 FORBIDDEN`, không phải một file.
 Request dùng quyền `read` của người gọi: luật theo dòng lọc các dòng và luật theo
 trường che giá trị, y hệt endpoint danh sách. Mỗi lần export ghi một mục
 `items_exported` vào audit log (collection, định dạng, các trường, locale, chế độ
@@ -45,6 +48,17 @@ quan hệ, có dùng filter hay không).
 curl -H "Authorization: Bearer $TOKEN" -H "X-Lumi-Site: $SITE" \
   "https://api.example.com/api/v1/items/products/export?format=csv&locales=en,vi" -o products.csv
 ```
+
+Lỗi xảy ra sau khi đã bắt đầu truyền luồng (lỗi database, hoặc hook
+`items.export.before` ném lỗi) không thể đổi mã `200` đã gửi, nên lỗi được đánh
+dấu trong nội dung rồi luồng kết thúc với lỗi:
+
+- CSV: dòng cuối là `#lumibase-export-error,<CODE>` (ví dụ `FORBIDDEN`, hoặc
+  `EXPORT_FAILED` khi lỗi không có mã). Thông báo lỗi không được ghi ra.
+- JSON: tài liệu bị bỏ dở không đóng, nên không parse được.
+
+Hãy coi cả hai trường hợp là export thất bại và chạy lại. Đọc lại file như vậy
+làm dữ liệu import sẽ bị từ chối.
 
 Với SDK:
 
