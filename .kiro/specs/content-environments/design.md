@@ -119,6 +119,8 @@ merge_runs {
 
 Bản trước của mục này viết "`lumibase_items.id` là primary key toàn cục nên Fork phải cấp id mới cho item". Điều đó đúng trên `main` nhưng **không còn đúng** khi PR #811 (branch `feature/friendly-dijkstra-dupuli`, migration `0035_items_site_scoped_pk`) merge, và #811 dự kiến merge **trước** khi feature này được code. Thiết kế nhắm vào khoá cuối cùng.
 
+> **Cập nhật 2026-11-16 (#853, #868):** #811 đã merge; `0035_items_site_scoped_pk` có trên `main` và `lumibase_items` khoá `(site_id, id)` (`cms.ts:267`). Cột "Sau #811" dưới đây là trạng thái hiện tại; Phase B không còn bị chặn bởi #811.
+
 | | `main` hiện tại | Sau #811 (khoá đích) |
 |---|---|---|
 | Khoá `lumibase_items` | `PRIMARY KEY (id)` toàn instance: `id: id()` với `id = () => text('id')...primaryKey()` (`packages/database/src/schema/cms.ts:23`, `:187`) | `PRIMARY KEY (site_id, id)` (`0035_items_site_scoped_pk.sql`; `cms.ts:194`, `:235` trên nhánh #811) |
@@ -136,11 +138,19 @@ Bản trước của mục này viết "`lumibase_items.id` là primary key toà
 
 **Hệ quả cho lineage.** Với identity mapping, dòng lineage `kind='item'` có `envRowId = originRowId` (giữ cả hai cột để mọi `kind` cùng một hình dạng; assert bằng nhau cho `item`). Lineage item vẫn cần vì nó mang `baseHash`/Base (§3.3), cờ `external`, và phân biệt "item fork từ Origin" với "item tạo mới trong Environment" (`originRowId` null tới khi promote). Unique dùng cho resume (§3.1) là `(environmentId, kind, originRowId)` partial `WHERE originRowId IS NOT NULL`; giữ unique `(environmentId, kind, envRowId)`.
 
-**Rủi ro mới do identity mapping:** khi hai site giữ cùng một id, mọi query khớp item chỉ bằng `id` sẽ chạm nhầm site kia. Trên `main`, các chỗ `eq(items.id, …)` không lọc site là `scheduler-worker.ts:101`, `:154`, `:257` — đúng các chỗ #811 sửa; các join chỉ theo `item_id` (vd. `modules/data-rights/automated-decisions-service.ts`, cũng được #811 sửa) là lớp lỗi cần canh tiếp. Với id remap, các lỗi này nằm im; với identity, chúng thành lỗi rò rỉ ngay khi có Environment đầu tiên. Vì vậy test ở §2.2 là điều kiện của GB.
+**Rủi ro mới do identity mapping:** khi hai site giữ cùng một id, mọi query khớp item chỉ bằng `id` sẽ chạm nhầm site kia. Trước #811, các chỗ `eq(items.id, …)` không lọc site là `scheduler-worker.ts:101`, `:154`, `:257` — đúng các chỗ #811 sửa; các join chỉ theo `item_id` (vd. `modules/data-rights/automated-decisions-service.ts`, cũng được #811 sửa) là lớp lỗi cần canh tiếp. Với id remap, các lỗi này nằm im; với identity, chúng thành lỗi rò rỉ ngay khi có Environment đầu tiên. Vì vậy test ở §2.2 là điều kiện của GB.
+
+**Trạng thái sau audit (#853, `main` `010c1944`):** không còn chỗ nào khớp chỉ theo id. 44 chỗ lọc `items.id` và 23 chỗ lọc `<bảng>.itemId` trong `apps/cms/src` đều có điều kiện site; `scheduler-worker.ts` không còn khớp chỉ theo id. Hai lớp chặn hồi quy (#868):
+
+- **Tripwire tĩnh** `apps/cms/src/__tests__/item-reference-scope.wiring.test.ts`: mọi `eq`/`ne`/`inArray`/`notInArray` trên `items.id` hoặc `<bảng>.itemId` phải nằm trong câu lệnh có điều kiện site, hoặc ghép với biến/method đã mang điều kiện site; ngoại lệ phải ghi lý do trong allow-list, và list chỉ được thu nhỏ.
+- **FK composite cùng site** (migration `0041_item_reference_fks`) cho mười bảng tham chiếu mềm. `CASCADE`: `shares`, `ai_embeddings`, `content_versions`, `preview_secrets`, `content_drifts`, `translation_suggestions`, `ai_automation_actions`. `SET NULL (item_id)`: `review_runs`, `review_sessions`, `git_provenance`. Cộng ba FK của #811, mọi cột `item_id` trỏ vào item đều bị DB ép cùng site, trừ ba bảng cố ý không có FK:
+  - `activity`: `item_id` đa hình (scim, agent, kill switch… ghi id của bản ghi không phải item).
+  - `cdc_change_events`: outbox chỉ-ghi-thêm; sự kiện xoá phải sống lâu hơn item.
+  - `firebase_sync_log`: log đồng bộ, phải sống lâu hơn item.
 
 ### 2.2 Chiến lược test theo khoá đích
 
-Phase B **không** bắt đầu trước khi #811 merge (ghi ở G0). Không viết hai nhánh code cho hai khoá.
+Phase B **không** bắt đầu trước khi #811 merge (ghi ở G0; đã thoả: #811 đã merge). Không viết hai nhánh code cho hai khoá.
 
 1. Integration test chạy trên Postgres đã áp migration `0032` (Node 24); fixture không giả định id item duy nhất toàn instance.
 2. Fork giữ id: sau fork, `(origin, id)` và `(env, id)` cùng tồn tại; số dòng và `id` khớp trong phạm vi.
@@ -372,7 +382,7 @@ Không đăng ký skill nào ở v1. Nếu sau này thêm, `promote_schema` mang
 
 ## 14. Open questions (đã chốt)
 
-Cả chín mục dưới đây đã được owner duyệt theo đúng khuyến nghị của G0 và mang nhãn `Decided (owner, 2026-11-16)`. Tên mục giữ là "Open questions" để các tham chiếu `§14.x` trong spec không đổi; không mục nào còn mở. Con số thời gian ở §14.1 là mục tiêu cần đo ở gate GB, chưa phải số đã đo. §14.9 có điều kiện: chỉ có hiệu lực sau khi PR #811 merge (hiện còn mở).
+Cả chín mục dưới đây đã được owner duyệt theo đúng khuyến nghị của G0 và mang nhãn `Decided (owner, 2026-11-16)`. Tên mục giữ là "Open questions" để các tham chiếu `§14.x` trong spec không đổi; không mục nào còn mở. Con số thời gian ở §14.1 là mục tiêu cần đo ở gate GB, chưa phải số đã đo. §14.9 có điều kiện: chỉ có hiệu lực sau khi PR #811 merge (đã merge, xem cập nhật ở §2.1).
 
 1. **Chi phí fork site lớn — giới hạn item và ngân sách thời gian.** v1 copy hàng thật, chặn bằng `contentScope` và giới hạn số item. Copy-on-write hoặc Neon branch là hướng sau, nhưng Neon branch không dùng được cho Docker.
    - *Dữ kiện:* code đã có hai mẫu batch resumable để bám theo — lô mặc định 100, tối đa 500 dòng mỗi lô theo cursor (`envelope-migration-worker.ts:52`, `rewrap-worker.ts:42`), insert item theo chunk 100 (`BULK_INSERT_CHUNK`, `item-service.ts:76`); giới hạn bulk API mặc định 500 (`bulkMaxItems`, `item-service.ts:78-82`). Queue consumer trên Workers đang cấu hình `max_batch_size` 1–10 (`apps/cms/wrangler.toml:127-172`). Fork phải decrypt/encrypt lại field mã hoá (§2.1), nên chi phí mỗi item cao hơn một `INSERT … SELECT`.
