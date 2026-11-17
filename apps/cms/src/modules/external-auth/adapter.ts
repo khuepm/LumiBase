@@ -17,9 +17,11 @@ import type { AppEnv } from '../../env';
 import { AuditLogger } from '../audit/logger';
 import { mcpResourceContext } from '../../middleware/mcp-oauth';
 import { isMcpResourceUri } from '../../services/mcp-oauth';
+import { isEmailIdentityConflict } from '../email-identity/service';
 import {
   verifyExternalJwt,
   type TrustedIssuer,
+  type VerifiedPrincipalDraft,
   type VerifierDeps,
   type VerifyOutcome,
 } from './verifier';
@@ -150,58 +152,103 @@ export async function tryExternalJwt(c: Context<AppEnv>, token: string): Promise
       return [...resolved];
     },
 
-    provisionUser: async (draft, roleIds) => {
-      const primaryRole = roleIds[0] ?? null;
-      // Match by external_id within active users.
-      const [existing] = await db
-        .select({ id: users.id, status: users.status })
-        .from(users)
-        .where(eq(users.externalId, draft.externalId))
-        .limit(1);
-
-      if (existing) {
-        if (existing.status !== 'active') return { error: '401', code: 'USER_INACTIVE' };
-        // Ensure a site membership so PermissionService can resolve the role.
-        await ensureMembership(db, existing.id, siteId, primaryRole);
-        return { userId: existing.id };
-      }
-
-      if (!draft.issuerConfig.jitProvisioning) {
-        return { error: '403', code: 'USER_NOT_PROVISIONED' };
-      }
-
-      // JIT: create the user + membership idempotently.
-      const [created] = await db
-        .insert(users)
-        .values({ externalId: draft.externalId, email: draft.email ?? `${draft.externalId}@external`, status: 'active' })
-        .onConflictDoNothing({ target: users.externalId })
-        .returning({ id: users.id });
-      let userId = created?.id;
-      if (!userId) {
-        const [row] = await db.select({ id: users.id }).from(users).where(eq(users.externalId, draft.externalId)).limit(1);
-        userId = row?.id;
-      }
-      if (!userId) return { error: '401', code: 'PROVISION_FAILED' };
-      await ensureMembership(db, userId, siteId, primaryRole);
-
-      await new AuditLogger({ db, siteId }).write({
-        event: 'external_user_provisioned',
-        actorEmail: draft.email ?? null,
+    provisionUser: (draft, roleIds) =>
+      provisionExternalUser(db, siteId, draft, roleIds, {
         ip: c.get('ip') ?? null,
         userAgent: c.get('userAgent') ?? null,
         requestId: c.get('requestId') ?? null,
-        metadata: { externalId: draft.externalId, issuer: draft.issuerConfig.issuer, roleIds } as Record<string, unknown>,
-      });
-      return { userId };
-    },
+      }),
   };
 
   return verifyExternalJwt(token, deps);
 }
 
+/** Request metadata recorded on the `external_user_provisioned` audit event. */
+export interface ProvisionAuditMeta {
+  readonly ip: string | null;
+  readonly userAgent: string | null;
+  readonly requestId: string | null;
+}
+
+type ProvisionResult = Awaited<ReturnType<VerifierDeps['provisionUser']>>;
+
+/**
+ * Resolve (or JIT-create) the account for an external identity and ensure its
+ * membership of `siteId`.
+ *
+ * Email identity (#794, #861): the JIT insert only absorbs a conflict on
+ * `external_id`. An address that is already taken by another account — the
+ * same address, or an alias of it under `root` mode — or a membership refused
+ * by a `strict` site's `user_sites_site_identity_unique` index raises 23505.
+ * That is answered as a 403 `EMAIL_IDENTITY_CONFLICT`, never a 500, and the
+ * existing account is NOT linked: the IdP's email claim is not proof of control
+ * of that mailbox. The account and its membership commit together, so a refused
+ * membership leaves no orphan account behind.
+ */
+export async function provisionExternalUser(
+  db: AppEnv['Variables']['db'],
+  siteId: string,
+  draft: VerifiedPrincipalDraft,
+  roleIds: string[],
+  meta: ProvisionAuditMeta,
+): Promise<ProvisionResult> {
+  const primaryRole = roleIds[0] ?? null;
+  try {
+    // Match by external_id within active users.
+    const [existing] = await db
+      .select({ id: users.id, status: users.status })
+      .from(users)
+      .where(eq(users.externalId, draft.externalId))
+      .limit(1);
+
+    if (existing) {
+      if (existing.status !== 'active') return { error: '401', code: 'USER_INACTIVE' };
+      // Ensure a site membership so PermissionService can resolve the role.
+      await ensureMembership(db, existing.id, siteId, primaryRole);
+      return { userId: existing.id };
+    }
+
+    if (!draft.issuerConfig.jitProvisioning) {
+      return { error: '403', code: 'USER_NOT_PROVISIONED' };
+    }
+
+    // JIT: create the user + membership idempotently, in one transaction.
+    const userId = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(users)
+        .values({ externalId: draft.externalId, email: draft.email ?? `${draft.externalId}@external`, status: 'active' })
+        .onConflictDoNothing({ target: users.externalId })
+        .returning({ id: users.id });
+      let id = created?.id;
+      if (!id) {
+        const [row] = await tx.select({ id: users.id }).from(users).where(eq(users.externalId, draft.externalId)).limit(1);
+        id = row?.id;
+      }
+      if (id) await ensureMembership(tx, id, siteId, primaryRole);
+      return id;
+    });
+    if (!userId) return { error: '401', code: 'PROVISION_FAILED' };
+
+    await new AuditLogger({ db, siteId }).write({
+      event: 'external_user_provisioned',
+      actorEmail: draft.email ?? null,
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+      requestId: meta.requestId,
+      metadata: { externalId: draft.externalId, issuer: draft.issuerConfig.issuer, roleIds } as Record<string, unknown>,
+    });
+    return { userId };
+  } catch (err) {
+    if (isEmailIdentityConflict(err)) return { error: '403', code: 'EMAIL_IDENTITY_CONFLICT' };
+    throw err;
+  }
+}
+
+type MembershipWriter = Pick<AppEnv['Variables']['db'], 'insert'>;
+
 /** Idempotently ensure (userId, siteId) membership with the resolved role. */
 async function ensureMembership(
-  db: AppEnv['Variables']['db'],
+  db: MembershipWriter,
   userId: string,
   siteId: string,
   roleId: string | null,

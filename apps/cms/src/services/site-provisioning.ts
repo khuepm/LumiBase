@@ -39,9 +39,12 @@ export async function provisionSite(db: ProvisionDb, input: {
   }
   const administratorRoleId = await upsertSiteRole(db, id, 'administrator');
   const memberRoleId = await upsertSiteRole(db, id, 'member');
+  // Target `(user_id, site_id)` (#861): "already a member" stays a no-op, while
+  // a strict site's `user_sites_site_identity_unique` violation surfaces
+  // instead of being dropped by a target-less DO NOTHING.
   if (input.creatorUserId) await db.insert(userSites).values({
     userId: input.creatorUserId, siteId: id, roleId: administratorRoleId,
-  }).onConflictDoNothing();
+  }).onConflictDoNothing({ target: [userSites.userId, userSites.siteId] });
   return { site, administratorRoleId, memberRoleId };
 }
 export async function finalizeSiteProvisioning(db: Database, env: AppEnv['Bindings'], runtime: RuntimeContext | undefined, siteId: string) {

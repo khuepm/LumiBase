@@ -6,7 +6,10 @@ import {
   collections,
   fields,
   items,
+  permissions as permissionsTable,
+  policies,
   relations,
+  rolePolicies,
   roles,
   sites,
   userSites,
@@ -28,6 +31,7 @@ import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpe
 const SITE = 'site_export_route_it';
 const ADMIN = 'usr_export_route_admin';
 const STRANGER = 'usr_export_route_stranger';
+const READER = 'usr_export_route_reader';
 
 const PRODUCT_FIELDS = (collectionId: string) => [
   { siteId: SITE, collectionId, name: 'title', type: 'json', interface: 'translatable-text' },
@@ -62,6 +66,7 @@ describe.skipIf(!hasDbIntegrationUrl)('GET /items/:collection/export — DB inte
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
     await db.delete(users).where(eq(users.id, ADMIN)).catch(() => undefined);
     await db.delete(users).where(eq(users.id, STRANGER)).catch(() => undefined);
+    await db.delete(users).where(eq(users.id, READER)).catch(() => undefined);
   });
 
   let svc: ItemService;
@@ -92,6 +97,18 @@ describe.skipIf(!hasDbIntegrationUrl)('GET /items/:collection/export — DB inte
       ...PRODUCT_FIELDS(copy),
     ]);
     await db.insert(relations).values({ siteId: SITE, manyCollection: 'products', manyField: 'author_id', oneCollection: 'authors', type: 'm2o' });
+
+    // READER can read `products` but not the related `authors` (#855).
+    await db.insert(users).values({ id: READER, email: 'export-reader@x.dev', status: 'active' }).onConflictDoNothing();
+    const readerRole = (
+      await db.insert(roles).values({ siteId: SITE, name: 'Reader', adminAccess: false, appAccess: true }).returning({ id: roles.id })
+    )[0]!.id;
+    await db.insert(userSites).values({ userId: READER, siteId: SITE, roleId: readerRole });
+    const readerPolicy = (
+      await db.insert(policies).values({ siteId: SITE, name: 'Products reader', adminAccess: false, appAccess: true }).returning({ id: policies.id })
+    )[0]!.id;
+    await db.insert(permissionsTable).values({ siteId: SITE, policyId: readerPolicy, collection: 'products', action: 'read', fields: ['*'] });
+    await db.insert(rolePolicies).values({ roleId: readerRole, policyId: readerPolicy, priority: 0 });
 
     svc = new ItemService({ db, siteId: SITE });
     authorId = ((await svc.create('authors', { data: { name: 'Lan', slug: 'lan' } })) as { id: string }).id;
@@ -196,6 +213,25 @@ describe.skipIf(!hasDbIntegrationUrl)('GET /items/:collection/export — DB inte
   it('403s for a principal without read access', async () => {
     principal = STRANGER;
     expect((await get('products/export')).status).toBe(403);
+  });
+
+  it('403s before streaming when a relation to expand is not readable (#855)', async () => {
+    principal = READER;
+    // Without relation expansion the reader exports normally.
+    const plain = await get('products/export?format=csv&fields=price');
+    expect(plain.status).toBe(200);
+    expect((await plain.text()).trim().split('\r\n')).toHaveLength(4);
+    for (const mode of ['embed', 'slug']) {
+      for (const format of ['csv', 'json']) {
+        const res = await get(`products/export?format=${format}&relations=${mode}`);
+        expect(res.status, `${format} relations=${mode}`).toBe(403);
+        expect(res.headers.get('content-type')).toContain('application/json');
+        expect(((await res.json()) as { errors: Array<{ code: string }> }).errors[0]!.code).toBe('FORBIDDEN');
+      }
+    }
+    // Refused before the audit entry: nothing was exported.
+    const audit = await db.select().from(auditLog).where(and(eq(auditLog.siteId, SITE), eq(auditLog.event, 'items_exported')));
+    expect(audit).toHaveLength(1);
   });
 
   it('writes an items_exported audit entry', async () => {

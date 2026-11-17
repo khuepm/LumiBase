@@ -26,6 +26,14 @@ export const TRANSLATABLE_INTERFACE = 'translatable-text';
 /** Structural columns written first, in this order, for every row. */
 export const EXPORT_STRUCTURAL_COLUMNS = ['id', 'status', 'sort', 'created_at', 'updated_at'] as const;
 
+/**
+ * First cell of the row a CSV export ends with when it fails after streaming
+ * has begun (#855): `#lumibase-export-error,<CODE>`. Item ids never start with
+ * `#`, so the row cannot be mistaken for data, and `parseExport` refuses a file
+ * that contains it. JSON needs no marker: a failed export is left unclosed.
+ */
+export const EXPORT_ERROR_MARKER = '#lumibase-export-error';
+
 /** Page size used to stream through `ItemService.list` (its own cap is 200). */
 export const EXPORT_PAGE_SIZE = 200;
 
@@ -329,8 +337,15 @@ export function streamExport(
   const iter = iterateExport(plan, options, source);
   let started = false;
   let first = true;
+  // Set once a CSV failure marker is queued; the stream errors on the next
+  // pull, so the marker is delivered before the error drops the queue.
+  let failure: { error: unknown } | null = null;
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
+      if (failure) {
+        controller.error(failure.error);
+        return;
+      }
       try {
         if (!started) {
           started = true;
@@ -362,6 +377,12 @@ export function streamExport(
         first = false;
         controller.enqueue(encoder.encode(chunk));
       } catch (err) {
+        if (plan.format === 'csv' && started) {
+          // Every row ends in CRLF, so the marker always starts a new line.
+          controller.enqueue(encoder.encode(`${EXPORT_ERROR_MARKER},${exportErrorCode(err)}\r\n`));
+          failure = { error: err };
+          return;
+        }
         controller.error(err);
       }
     },
@@ -369,6 +390,16 @@ export function streamExport(
       await iter.return(undefined);
     },
   });
+}
+
+/**
+ * The code written into the CSV failure marker: the error's own code when it is
+ * a plain `UPPER_SNAKE` token (`FORBIDDEN`, `INVALID_FILTER`), else a generic
+ * one. The message is never written, as it may carry internals.
+ */
+function exportErrorCode(err: unknown): string {
+  const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined;
+  return typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(code) ? code : 'EXPORT_FAILED';
 }
 
 // ── Decoding (import side) ──────────────────────────────────────────────────
@@ -495,6 +526,13 @@ export function parseExport(
 
   const [rawHeader, ...rows] = parseCsv(body);
   if (!rawHeader?.length) throw new ExportError('VALIDATION', 'CSV has no header row.');
+  const marker = rows.find((cells) => cells[0] === EXPORT_ERROR_MARKER);
+  if (marker) {
+    throw new ExportError(
+      'VALIDATION',
+      `Export file is incomplete: the export failed part-way (${marker[1] ?? 'EXPORT_FAILED'}). Export again.`,
+    );
+  }
   const header = rawHeader.map((h) => h ?? '');
   const cols = header.map((h) => {
     if ((EXPORT_STRUCTURAL_COLUMNS as readonly string[]).includes(h)) return { kind: 'structural' as const, name: h };

@@ -1,10 +1,10 @@
 ---
-version: 57
-lastUpdated: 2026-11-16T02:07:12.500Z
+version: 58
+lastUpdated: 2026-11-17T19:26:03.593Z
 sourceLang: en
-contentHash: 60789a554c502313
-codeVerified: 2026-11-16T02:07:12.500Z
-codeVerifiedHash: 60789a554c502313
+contentHash: 94c6ed3f2c080f93
+codeVerified: 2026-11-17T19:26:03.593Z
+codeVerifiedHash: 94c6ed3f2c080f93
 codeVerifiedClaims: 636
 ---
 
@@ -394,6 +394,12 @@ Every applied change writes an audit event (`email_identity_mode_changed` /
 - `POST /api/v1/users/invite` looks the account up case-insensitively (and by
   root mailbox under `root`) and returns public fields only. Inviting an alias
   of an existing member of a strict site answers `409 EMAIL_IDENTITY_CONFLICT`.
+  An existing account is bound only when its mailbox is proven (#856): a
+  password account past email verification, a pending invitation, or a
+  social-login account linked under that address. Any other match (an SSO JIT
+  or SCIM account whose email came from the IdP, or a self-registration that
+  never verified) answers `409 INVITEE_EMAIL_UNVERIFIED` and is not bound. The
+  same rule applies to `POST /api/v1/orgs/:orgId/members` invited by `email`.
 - SCIM (`/scim/v2/Users`) answers `409` with `scimType: "uniqueness"` when the
   address resolves to an existing account or collides on a strict site.
 
