@@ -120,9 +120,17 @@ export default function StoryCanvas({
       wake();
     };
 
+    /** Client coordinates to the stage's -1..1 space (the stage is 100lvh, not innerHeight). */
+    const toStage = (event: MouseEvent): [number, number] => {
+      const rect = stage.getBoundingClientRect();
+      return [
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        1 - ((event.clientY - rect.top) / rect.height) * 2,
+      ];
+    };
     const onPointerMove = (event: PointerEvent) => {
       if (event.pointerType !== "mouse") return;
-      scene?.setPointer((event.clientX / window.innerWidth) * 2 - 1, 1 - (event.clientY / window.innerHeight) * 2, true);
+      scene?.setPointer(...toStage(event), true);
     };
     const onPointerLeave = () => scene?.setPointer(0, 0, false);
     const onClick = (event: MouseEvent) => {
@@ -130,7 +138,7 @@ export default function StoryCanvas({
       // Leave real controls alone and treat everything else as a poke.
       const target = event.target as Element | null;
       if (target?.closest("a, button, input, textarea, select, summary, [role='button']")) return;
-      scene?.poke((event.clientX / window.innerWidth) * 2 - 1, 1 - (event.clientY / window.innerHeight) * 2);
+      scene?.poke(...toStage(event));
     };
     const onVisibility = () => {
       if (!document.hidden) wake();
@@ -143,6 +151,7 @@ export default function StoryCanvas({
     const resizeObserver = new ResizeObserver(() => {
       resize();
       measure();
+      wake();
     });
 
     // three.js is the heaviest thing on the page; load it after first paint so
@@ -190,8 +199,17 @@ export default function StoryCanvas({
       window.removeEventListener("click", onClick);
       document.removeEventListener("visibilitychange", onVisibility);
       mobile.removeEventListener("change", resize);
-      scene?.dispose();
+      const finished = scene;
+      finished?.dispose();
       sceneRef.current = null;
+      // Browsers cap live GL contexts, so hand this one back — but only on a
+      // real unmount. When `reduced` flips, the effect re-runs on the same
+      // canvas, and a lost context there would leave the next scene blank.
+      if (finished) {
+        setTimeout(() => {
+          if (!canvas.isConnected) finished.loseContext();
+        }, 0);
+      }
       wakeRef.current = () => {};
     };
     // `level` is pushed through its own effect; re-creating the scene for it

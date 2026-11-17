@@ -12,18 +12,21 @@ It replaces the iridescent page, which is kept on `feature/iridescent-landing` f
   intent (scattered pages fall into order), earned autonomy (a staircase of stars — picking a
   level makes Lumi hop to it), Mission Control, MCP (visiting agents orbit inside a ring of
   rules), provenance (a trail of crumbs), and an epilogue back at the lamp.
-- Lumi is procedural: shell-textured fur (the same sphere drawn in layers, strands kept by the
-  fragment shader), a face, and an antenna on a spring. Fur trails behind motion. No model file.
+- Lumi is procedural: a velvet coat (an opaque core with a sheen toward the silhouette, under a
+  few transparent shells of short, dense fuzz that soften the outline — no separate strands), a
+  face, and an antenna on a spring. The nap trails behind motion. No model file.
 - Everything else is procedural too — sky, stars, moon, paper-cut hills, castle, lamp, sparkles.
   The scene downloads no textures or models; the only new asset is the three.js bundle.
 - Clicking Lumi makes it hop; clicking the lamp shakes loose a fountain of sparks. On desktop
   Lumi watches the pointer.
 - Product copy and claims are carried over from the iridescent page; only the framing changed.
-- Against `main` this is a smaller page: the FAQ section and its `FAQPage` structured data are
-  gone, as are the feature cards, and `CosmicBackground` is no longer mounted in the root layout,
-  so the pricing and legal pages lose the starfield. All three came with the iridescent page this
-  was built on; none was re-decided here.
-  Footer anchors (`#content-os`, `#ai-harness`, `#studio`, `#runtime`) and the legal/pricing
+- Against `main` this is a smaller page: the detailed feature cards (collection builder,
+  field-level permissions, realtime collaboration, typegen, CDC) and the positioning, trust-ladder
+  and studio sections are gone. The FAQ and its `FAQPage` structured data stay, as an afterword
+  below the story (`StoryFaq.tsx`).
+- `CosmicBackground` moved from the root layout into `SiteBackground`, which renders it on every
+  page except home (the scene is home's backdrop), so pricing and legal pages keep the starfield.
+- Footer anchors (`#content-os`, `#ai-harness`, `#studio`, `#runtime`) and the legal/pricing
   routes are unchanged, as are metadata and structured data.
 - No CMS, database, setup, authentication, deployment, or shell contracts change.
 
@@ -46,6 +49,7 @@ It replaces the iridescent page, which is kept on `feature/iridescent-landing` f
 - `src/components/storybook/StorybookLanding.tsx` and its CSS module: chapters, copy, controls.
 - `src/components/storybook/StoryCanvas.tsx`: mounts the scene, feeds it scroll/pointer/level,
   owns the fallbacks.
+- `src/components/storybook/StoryFaq.tsx`: the FAQ afterword and its `FAQPage` JSON-LD.
 - `src/components/storybook/LumiMark.tsx`: the SVG Lumi (header logo and no-WebGL fallback).
 - `src/components/storybook/scene/timeline.ts`: the choreography as pure numbers — where Lumi
   stands in each chapter, per layout. Unit-tested (`timeline.test.ts`); change staging here.

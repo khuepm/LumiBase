@@ -47,6 +47,8 @@ export interface StoryScene {
   /** Draw one frame. `now` is a `requestAnimationFrame` timestamp. */
   render(now: number): void;
   dispose(): void;
+  /** Release the WebGL context now rather than at GC. Only once the canvas is gone for good. */
+  loseContext(): void;
 }
 
 const FOV = 35;
@@ -637,8 +639,8 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
       lumi.dispose();
       for (const item of disposables) item.dispose();
       renderer.dispose();
-      // dispose() frees three's resources but keeps the GL context alive until
-      // the canvas is collected. Browsers cap live contexts, so hand it back.
+    },
+    loseContext() {
       renderer.forceContextLoss();
     },
   };
