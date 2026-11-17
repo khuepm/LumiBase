@@ -1,10 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowRight, Menu, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import LumiMark from "@/components/storybook/LumiMark";
 import styles from "./Header.module.css";
 
 const links = [
@@ -40,13 +40,8 @@ export default function Header() {
         onClick={() => setOpen(false)}
         aria-label="LumiBase home"
       >
-        <Image
-          src="/assets/iridescent/wordmark.webp"
-          width={1500}
-          height={297}
-          alt="LumiBase"
-          sizes="145px"
-        />
+        <LumiMark size={38} />
+        <span>LumiBase</span>
       </Link>
       <nav className={styles.desktopNav} aria-label="Main navigation">
         {links.map((link) => (

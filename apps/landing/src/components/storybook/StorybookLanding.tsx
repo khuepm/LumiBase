@@ -374,7 +374,7 @@ export default function StorybookLanding() {
                 <span className={styles.stepIcon}>
                   <Icon size={18} strokeWidth={1.5} aria-hidden="true" />
                 </span>
-                {title}
+                <span>{title}</span>
               </li>
             ))}
           </ol>

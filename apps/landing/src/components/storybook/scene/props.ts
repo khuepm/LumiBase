@@ -226,12 +226,12 @@ export function createStairs(glowMap: THREE.Texture, track: Track): Stairs {
         step.mesh.rotation.set(-0.25, Math.sin(time * 0.6 + i) * 0.35, 0);
         step.mesh.scale.setScalar(size * weight * (1 + 0.12 * current));
         step.material.emissive.copy(waiting).lerp(earned, step.lit);
-        step.material.emissiveIntensity = 0.35 + 1.1 * step.lit;
+        step.material.emissiveIntensity = 0.28 + 0.4 * step.lit;
         step.material.opacity = weight;
         step.glow.position.copy(step.mesh.position);
         step.glow.position.z -= size * 0.4;
-        step.glow.scale.setScalar(size * (2.2 + 2.2 * step.lit));
-        step.glowMaterial.opacity = weight * (0.12 + 0.5 * step.lit);
+        step.glow.scale.setScalar(size * (2.4 + 1.6 * step.lit));
+        step.glowMaterial.opacity = weight * (0.06 + 0.17 * step.lit);
       }
     },
   };
@@ -326,7 +326,7 @@ const DOTS = 44;
 export function createTrail(glowMap: THREE.Texture, track: Track): Trail {
   const group = new THREE.Group();
   const beadGeometry = track(new THREE.SphereGeometry(1, 18, 14));
-  const lit = new THREE.Color("#ffc24a").multiplyScalar(2.2);
+  const lit = new THREE.Color("#ffc24a").multiplyScalar(1.25);
   const dim = new THREE.Color("#4b4190");
   const beads = Array.from({ length: BEADS }, () => {
     const material = track(new THREE.MeshBasicMaterial({ color: dim.clone(), transparent: true }));
@@ -394,12 +394,12 @@ export function createTrail(glowMap: THREE.Texture, track: Track): Trail {
         const target = progress * 1.25 > t ? 1 : 0;
         bead.lit += (target - bead.lit) * 0.1;
         bead.mesh.position.copy(point);
-        bead.mesh.scale.setScalar(size * (0.3 + 0.12 * bead.lit) * weight);
+        bead.mesh.scale.setScalar(size * (0.2 + 0.08 * bead.lit) * weight);
         bead.material.color.copy(dim).lerp(lit, bead.lit);
         bead.material.opacity = weight;
         bead.glow.position.copy(point);
-        bead.glow.scale.setScalar(size * (1.2 + 1.8 * bead.lit) * weight);
-        bead.glowMaterial.opacity = (0.1 + 0.6 * bead.lit) * weight;
+        bead.glow.scale.setScalar(size * (1.1 + 1.3 * bead.lit) * weight);
+        bead.glowMaterial.opacity = (0.08 + 0.34 * bead.lit) * weight;
       }
     },
   };

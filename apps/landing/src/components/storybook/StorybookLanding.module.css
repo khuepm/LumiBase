@@ -72,7 +72,8 @@
   min-height: 100svh;
   display: flex;
   align-items: center;
-  padding: 96px clamp(24px, 7vw, 128px);
+  /* Top padding clears the sticky header when a chapter is centred. */
+  padding: calc(var(--header-h) + 28px) clamp(24px, 7vw, 128px) 56px;
   scroll-margin-top: var(--header-h);
 }
 .prologue {
@@ -339,15 +340,15 @@
 
 .levels {
   display: grid;
-  gap: 8px;
-  margin: 26px 0 18px;
+  gap: 6px;
+  margin: 20px 0 16px;
 }
 .levels button {
   display: grid;
   grid-template-columns: 44px auto 1fr;
   align-items: baseline;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 10px 16px;
   border: 1px solid var(--panel-line);
   border-radius: 14px;
   background: rgb(17 12 42 / 55%);
@@ -388,7 +389,8 @@
   color: var(--gold);
 }
 .levelDescription {
-  min-height: 5em;
+  min-height: 4.9em;
+  margin-bottom: 16px !important;
   padding-left: 16px;
   border-left: 2px solid rgb(255 198 90 / 55%);
   color: var(--cream) !important;
@@ -617,27 +619,32 @@
 /* ── Chapter five: the trail ───────────────────────────────────────────── */
 
 .lineage {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 6px;
-  margin: 24px 0 28px;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  margin: 26px 0 30px;
 }
 .lineage li {
-  display: inline-flex;
-  align-items: center;
+  position: relative;
+  display: grid;
+  justify-items: center;
   gap: 8px;
   color: var(--cream);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
 }
 .lineage li .stepIcon {
+  position: relative;
+  z-index: 1;
   margin: 0;
+  background-color: #15103a;
 }
+/* The crumbs between one stop and the next. */
 .lineage li + li::before {
   content: "";
-  width: 18px;
-  height: 0;
-  margin-right: 2px;
-  border-top: 2px dotted rgb(255 198 90 / 55%);
+  position: absolute;
+  top: 16px;
+  right: 50%;
+  width: 100%;
+  border-top: 2px dotted rgb(255 198 90 / 50%);
 }
 
 /* ── Epilogue ──────────────────────────────────────────────────────────── */
@@ -645,7 +652,7 @@
 .epilogue {
   align-items: flex-start;
   justify-content: center;
-  padding-top: clamp(64px, 12vh, 150px);
+  padding-top: calc(var(--header-h) + clamp(12px, 4vh, 56px));
   text-align: center;
 }
 .epilogue .copy {
@@ -696,9 +703,13 @@
   .split .copy {
     width: 100%;
   }
+  /* No pool of night here: it would sit over the scene at the top of the
+     screen. A shadow keeps the text legible against the stars instead. */
   .copy::before {
-    inset: -10% -12%;
-    background: radial-gradient(closest-side, rgb(8 6 26 / 86%), rgb(8 6 26 / 60%) 60%, transparent);
+    display: none;
+  }
+  .copy {
+    text-shadow: 0 1px 16px rgb(8 6 26 / 95%);
   }
   /* At ground level the lamp needs the bottom of the screen, so copy goes up. */
   .prologue,
@@ -757,6 +768,41 @@
   }
   .scrollHint {
     display: none;
+  }
+}
+
+/* On a phone the copy scrolls up into the part of the screen the scene uses.
+   Each block fades out as it crosses that line, so Lumi is never read through
+   a paragraph. The top 38% of the viewport is the scene's. */
+@supports (animation-timeline: view()) {
+  @media (max-width: 860px) and (prefers-reduced-motion: no-preference) {
+    .chapter:not(.prologue) .copy,
+    .consoleWrap {
+      animation: none;
+    }
+    .chapter:not(.prologue, .epilogue) .copy > :not(.levels, .steps, .connections, .lineage),
+    .chapter:not(.prologue, .epilogue) :is(.levels, .steps, .connections) > *,
+    .lineage,
+    .consoleWrap {
+      animation: pass linear both;
+      animation-timeline: view(block 38% 0%);
+    }
+  }
+}
+@keyframes pass {
+  entry 0% {
+    opacity: 0;
+    transform: translateY(26px);
+  }
+  entry 85% {
+    opacity: 1;
+    transform: none;
+  }
+  exit 0% {
+    opacity: 1;
+  }
+  exit 85% {
+    opacity: 0;
   }
 }
 

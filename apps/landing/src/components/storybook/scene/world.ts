@@ -115,7 +115,7 @@ export function createSky(track: <T extends Disposable>(item: T) => T): Sky {
           float n2 = fbm(p * 2.3 + vec2(-uTime * 0.006, 4.0 + uAltitude * 0.6));
           float band = smoothstep(0.42, 0.85, n1);
           col += uNebulaA * band * band * (0.1 + 0.16 * uAltitude);
-          col += uNebulaB * smoothstep(0.55, 0.9, n2) * (0.03 + 0.09 * uAltitude);
+          col += uNebulaB * smoothstep(0.5, 1.0, n2) * (0.02 + 0.045 * uAltitude);
 
           // The lamp lights the air around it.
           vec2 d = (vUv * 2.0 - 1.0 - uGlow) * vec2(uAspect, 1.0);

@@ -314,8 +314,8 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
     heavens.position.set(camera.position.x * 0.9, camera.position.y * 0.94, 0);
     stars.update(time, renderer.getPixelRatio() * Math.max(0.8, height / 900), 0.55 + 0.45 * altitude);
     const moonHalf = halfHeightAt(MOON_Z);
-    const moonX = layout === "desktop" ? 0.8 : 0.58;
-    const moonY = layout === "desktop" ? 0.6 : 0.8;
+    const moonX = layout === "desktop" ? 0.63 : 0.58;
+    const moonY = layout === "desktop" ? 0.72 : 0.8;
     moon.position.set(moonX * moonHalf * aspect, moonY * moonHalf + camera.position.y * 0.02, MOON_Z);
     moon.scale.setScalar(moonHalf * (layout === "desktop" ? 0.46 : 0.34));
 

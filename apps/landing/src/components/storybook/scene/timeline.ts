@@ -108,11 +108,11 @@ const LUMI: Record<Layout, readonly Anchor[]> = {
   desktop: [
     { x: 0.47, y: 0.16, s: 0.27 },
     { x: 0.52, y: 0.1, s: 0.21 },
-    { x: 0.5, y: 0, s: 0.14 }, // overridden by the trust staircase
-    { x: 0.8, y: 0.62, s: 0.115 },
+    { x: 0.5, y: 0, s: 0.12 }, // overridden by the trust staircase
+    { x: 0.82, y: 0.47, s: 0.115 },
     { x: 0.5, y: 0.02, s: 0.19 },
     { x: 0.74, y: 0.5, s: 0.15 },
-    { x: 0, y: -0.24, s: 0.23 },
+    { x: 0, y: -0.24, s: 0.165 },
   ],
   // On a phone the scene takes the top of the screen and the copy the bottom —
   // except at ground level, where the lamp needs the hill and the copy goes up.
@@ -139,7 +139,7 @@ export function lumiAnchor(layout: Layout, c: number): Anchor {
 /** Where step `level` (0..4) of the trust staircase stands. */
 export function trustStep(layout: Layout, level: number): Anchor {
   return layout === "desktop"
-    ? { x: 0.2 + 0.15 * level, y: -0.56 + 0.2 * level, s: 0.075 }
+    ? { x: 0.16 + 0.15 * level, y: -0.6 + 0.2 * level, s: 0.07 }
     : { x: -0.66 + 0.33 * level, y: 0.42 + 0.055 * level, s: 0.05 };
 }
 
@@ -147,7 +147,7 @@ export function trustStep(layout: Layout, level: number): Anchor {
 export function lumiOnStep(layout: Layout, level: number): Anchor {
   const step = trustStep(layout, level);
   const s = LUMI[layout][TRUST_CHAPTER]!.s;
-  return { x: step.x, y: step.y + step.s * 0.9 + s * 1.25, s };
+  return { x: step.x, y: step.y + step.s * 0.8 + s * 1.3, s };
 }
 
 /**
