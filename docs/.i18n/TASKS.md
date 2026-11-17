@@ -1,9 +1,13 @@
 # Giao việc: dịch docs EN⇄VI — LumiBase
 
-> **Backlog đã đóng — ảnh chụp 2026-08-24, tại `v0.26.0`.** 146 cặp doc —
-> **146 up-to-date, 0 còn việc, 0 conflict**; `verify-code-refs` 0 finding;
-> `check-parity` 0 cặp single-sided. Bảng ở [§7](#7-bảng-nhiệm-vụ) giữ lại làm dấu vết
-> (52 dòng `DONE`), không còn là danh sách việc.
+> **Backlog đã đóng — ảnh chụp 2026-11-16.** 209 cặp doc — **209 up-to-date, 0 còn
+> việc, 0 conflict**; `verify-code-refs` 0 finding; `check-parity` **0 problem** trên
+> toàn repo (#814, #852). Điều kiện cuối của [§8](#8-definition-of-done) đã đạt nên CI
+> đã bỏ `|| true`: parity và verify trên toàn repo giờ **chặn PR**. Bảng ở
+> [§7](#7-bảng-nhiệm-vụ) giữ lại làm dấu vết (52 dòng `DONE`), không còn là danh sách việc.
+>
+> _Ảnh chụp 2026-08-24 (`v0.26.0`): 146 cặp, 146 up-to-date, nhưng `check-parity` vẫn
+> còn lỗi cấu trúc ở 15 cặp — detect chỉ so hash nên không thấy._
 >
 > §1–§6 vẫn là quy trình bắt buộc cho **mọi** thay đổi docs sau này: mỗi lần sửa
 > `docs/en/**` hoặc `docs/vi/**` phải cập nhật locale còn lại rồi stamp lại cặp đó,
@@ -415,10 +419,14 @@ artifact máy sinh không nằm trong commit.
 checker · không tự merge.
 
 **Toàn bộ backlog xong** khi: `pnpm docs:i18n:detect` báo `planned: 0` và
-`pnpm docs:i18n:parity` (không tham số) báo 0 problem trên toàn bộ 146 cặp. Lúc đó
+`pnpm docs:i18n:parity` (không tham số) báo 0 problem trên toàn bộ các cặp. Lúc đó
 bỏ `|| true` ở hai step parity/verify trong `.github/workflows/docs-i18n-sync.yml`
 để từ đó về sau CI chặn thẳng — và mục *docs/en ⇄ docs/vi sync* của
 `.kiro/steering/v1-release-criteria.md` §5 được tick.
+
+**Trạng thái (2026-11-16):** đã đạt và `|| true` đã bỏ. Mục *docs/en ⇄ docs/vi sync*
+trong v1-release-criteria là `(at-tag)` nên chỉ tick lúc cắt tag, khi CI xanh tại
+commit được tag.
 
 ---
 

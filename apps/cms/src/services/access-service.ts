@@ -13,7 +13,7 @@ import type { CacheProvider } from '@lumibase/runtime';
 import { and, eq } from 'drizzle-orm';
 import { createPlaintextToken } from './api-key-token';
 import { PermissionService } from './permission-service';
-import { inviteUserToSite } from '../modules/email-identity/invite';
+import { inviteRefusalMessage, inviteUserToSite } from '../modules/email-identity/invite';
 
 /**
  * Thin, tenant-scoped service over RBAC + identity tables, used by the governed
@@ -192,7 +192,7 @@ export class AccessService {
   async inviteUser(input: { email: string; roleId?: string }) {
     const invited = await inviteUserToSite(this.deps.db, { siteId: this.deps.siteId, ...input });
     if (!invited.ok) {
-      throw new Error(`${invited.code}: this mailbox is already a member of this site under another address`);
+      throw new Error(`${invited.code}: ${inviteRefusalMessage(invited.code)}`);
     }
     if (input.roleId) await this.bumpPermissions();
     return invited.user;

@@ -880,6 +880,19 @@ export class ItemService {
   }
 
   /**
+   * Check `read` on every collection an export will expand (#855). Relation
+   * expansion checks it lazily, only once a page has rows to expand, which is
+   * after the export's 200 and header are already sent. Calling this before
+   * streaming turns a missing grant into a 403 instead of a truncated file.
+   */
+  async assertExportRelationsReadable(relationsToExpand: ReadonlyArray<{ related: string }>): Promise<void> {
+    for (const related of new Set(relationsToExpand.map((r) => r.related))) {
+      await this.resolveCollection(related);
+      await this.perm(related, 'read');
+    }
+  }
+
+  /**
    * Per-row transform for collection export (#727): runs the extensions'
    * `items.export.before` hook. Returns `null` when no hook extension is
    * enabled, so the exporter skips the call entirely. A hook returns

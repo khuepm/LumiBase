@@ -1,10 +1,10 @@
 ---
-version: 5
-lastUpdated: 2026-11-16T02:39:04.778Z
+version: 6
+lastUpdated: 2026-11-17T19:26:39.389Z
 sourceLang: en
-contentHash: 0f91099a6200ee10
-codeVerified: 2026-11-16T02:39:04.778Z
-codeVerifiedHash: 0f91099a6200ee10
+contentHash: bd2b3b94530b8811
+codeVerified: 2026-11-17T19:26:39.389Z
+codeVerifiedHash: bd2b3b94530b8811
 codeVerifiedClaims: 6
 ---
 
@@ -179,7 +179,7 @@ Generated base collection interfaces represent stored values. Generated `Collect
 The schema service classifies risky field mutations before apply:
 
 - Rename: use `renameFrom` and preserve current `type`/`interface` in the SDK rename helper.
-- Type change with existing data: requires `migrationPlan` and `confirmRiskyChange`.
+- Rename or type change with existing data: requires a `migrationPlan` that names a non-empty string `strategy` (for example `{ "strategy": "cast" }`), or `confirmRiskyChange: true`. An empty or strategy-less plan such as `{}` is refused with `409 FIELD_MIGRATION_REQUIRED`. The plan is not executed yet; it only confirms the change.
 - Delete with existing data: requires an explicit destructive path. The SDK accepts delete options such as `confirmRiskyChange`, `migrationPlan`, `force`, and `backupToRevisions`.
 
 Schema diff reports `risk` and `runtimeImpact` so Studio and automation can require confirmation before destructive changes.

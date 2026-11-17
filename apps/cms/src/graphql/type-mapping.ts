@@ -142,6 +142,8 @@ export function mapFieldType(field: CompiledField): GraphQLOutputType {
     // bigInteger is kept as String to avoid 53-bit precision loss.
     case 'bigInteger':
       return GraphQLString;
+    // `datetime` is the canonical FieldType spelling; `dateTime` is legacy (#865).
+    case 'datetime':
     case 'dateTime':
     case 'date':
     case 'time':

@@ -6,7 +6,7 @@ translatedFrom: en
 sourceHash: d57fc8f37ace9f78
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T07:36:34.866Z
+codeVerified: 2026-11-17T19:26:37.076Z
 codeVerifiedHash: d57fc8f37ace9f78
 codeVerifiedClaims: 14
 ---

@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 5
-lastUpdated: 2026-11-16T02:39:04.778Z
+version: 6
+lastUpdated: 2026-11-17T19:26:39.389Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 0f91099a6200ee10
+sourceHash: bd2b3b94530b8811
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-16T02:39:04.778Z
-codeVerifiedHash: 0f91099a6200ee10
+codeVerified: 2026-11-17T19:26:39.389Z
+codeVerifiedHash: bd2b3b94530b8811
 codeVerifiedClaims: 6
 ---
 
@@ -185,7 +185,7 @@ Generated base collection interfaces biểu diễn stored values. Generated `Col
 Schema service phân loại risky field mutations trước apply:
 
 - Rename: dùng `renameFrom` và giữ nguyên `type`/`interface` hiện tại trong SDK rename helper.
-- Đổi type khi đã có data: cần `migrationPlan` và `confirmRiskyChange`.
+- Đổi tên hoặc đổi type khi đã có data: cần `migrationPlan` có `strategy` là chuỗi không rỗng (ví dụ `{ "strategy": "cast" }`), hoặc `confirmRiskyChange: true`. Plan rỗng hoặc không có strategy như `{}` bị từ chối với `409 FIELD_MIGRATION_REQUIRED`. Plan chưa được thực thi; nó chỉ xác nhận thay đổi.
 - Xóa field khi đã có data: cần destructive path rõ ràng. SDK nhận delete options như `confirmRiskyChange`, `migrationPlan`, `force`, `backupToRevisions`.
 
 Schema diff trả `risk` và `runtimeImpact` để Studio/automation yêu cầu xác nhận trước thay đổi phá hủy.
