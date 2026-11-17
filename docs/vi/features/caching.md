@@ -2,14 +2,14 @@
 title: Caching
 description: HTTP cache ở edge, CacheProvider tầng ứng dụng, và các lớp phòng thủ cache penetration
 translatedFrom: en
-sourceHash: f41782992197134a
-version: 8
-lastUpdated: 2026-11-16T15:44:54.958Z
+sourceHash: 5b9a0da181fc2c3c
+version: 9
+lastUpdated: 2026-11-17T19:24:51.757Z
 sourceLang: en
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-16T15:44:54.958Z
-codeVerifiedHash: f41782992197134a
+codeVerified: 2026-11-17T19:24:51.757Z
+codeVerifiedHash: 5b9a0da181fc2c3c
 codeVerifiedClaims: 18
 ---
 
@@ -37,8 +37,8 @@ Một request được trả lời bởi tầng đầu tiên có sẵn dữ li�
 Purge theo tag là một lời gọi bất kể bao nhiêu URL bị ảnh hưởng, và nó chạm được cả những bản mà tiến trình này chưa từng ghi lại. Purge theo URL không cần CDN hỗ trợ tag, nhưng chỉ chạm được những gì ta đã index. Việc một tài khoản có làm được cách thứ nhất hay không thì code không nhìn thấy, nên LumiBase không bắt bạn cấu hình câu trả lời — nó thử tag trước rồi tự lùi:
 
 1. Mỗi response delivery công khai mang `Cache-Tag: deliver:<siteId>, items:<siteId>:<collection>` và ghi URL của nó dưới đúng các tag đó trong `edgeurls:<tag>` — giới hạn 200 URL mỗi tag.
-   Mỗi URL được thêm vào một tập hợp chứ không nối vào một danh sách dùng chung, nên các cache miss đồng thời không bao giờ làm rơi URL của nhau: một Redis sorted set (`lumi:set:edgeurls:<tag>`, cắt còn 200 mục mới nhất khi ghi), hoặc trên Workers KV là một key cho mỗi URL (`lumi:set:edgeurls:<tag>:<sha256(url)>`, lấy 200 mục mới nhất lúc purge, phần còn lại hết hạn theo TTL).
-2. Một lần ghi gọi `invalidateItemsTag` / `invalidateDeliverTag`, hàm này rút hết tập hợp đó và đưa **cả tag lẫn URL** cho `EdgeCacheProvider.purge()`.
+   Mỗi URL được thêm vào một tập hợp chứ không nối vào một danh sách dùng chung, nên các cache miss đồng thời không bao giờ làm rơi URL của nhau: một Redis sorted set (`lumi:set:edgeurls:<tag>`, cắt còn 200 mục mới nhất khi ghi), hoặc trên Workers KV là một key cho mỗi lần thêm (`lumi:set:edgeurls:<tag>:<reverse time>:<sha256(url)>`, nên `list` trả về mục mới nhất trước và một lần purge lấy 200 mục mới nhất dù có bao nhiêu lần thêm; phần còn lại hết hạn theo TTL).
+2. Một lần ghi gọi `invalidateItemsTag` / `invalidateDeliverTag`, hàm này đọc tập hợp đó và đưa **cả tag lẫn URL** cho `EdgeCacheProvider.purge()`. Chỉ sau khi lời gọi purge trả về thì các URL đã đọc mới bị xoá khỏi index; nếu nó ném lỗi, chúng vẫn nằm trong index cho lần purge sau.
 3. Provider xoá colo cục bộ qua `caches.default.delete`, rồi — khi có `CF_PURGE_ZONE_ID` + `CF_PURGE_API_TOKEN` — gọi zone purge API bằng **tag**, và chỉ khi lời gọi đó bị từ chối mới thử lại bằng danh sách **URL**, theo lô 30.
 
 Chính cơ chế lùi này là lý do index URL tồn tại. Ở nơi purge theo tag chạy được, index là thừa; ở nơi không chạy được, nó là toàn bộ cơ chế.
