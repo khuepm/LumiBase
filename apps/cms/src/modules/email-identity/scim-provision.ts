@@ -7,12 +7,22 @@
  * The outcome now depends only on this site's own membership:
  *
  *   - no account resolves to the address → create it and its membership;
- *   - an account resolves but is not a member of this site → provision the
- *     membership (same contract as `inviteUserToSite`) and answer as a create;
- *     the existing account's profile is not overwritten by this site's IdP;
+ *   - an account resolves, is not a member of this site and its mailbox is
+ *     proven (`isInviteBindable`, #856 — the same rule as `inviteUserToSite`)
+ *     → provision the membership and answer as a create; the existing
+ *     account's profile is not overwritten by this site's IdP;
+ *   - an account resolves but its mailbox is not proven (an SSO JIT / SCIM
+ *     account whose email came from some IdP, or an unverified
+ *     self-registration) → it is NOT bound, and the answer is the same generic
+ *     `CONFLICT` as below — the response never says "exists on another site"
+ *     or "unverified";
  *   - the account is already a member of this site, or another alias of a
- *     member collides on a `strict` site → `CONFLICT` (RFC 7644 §3.3 409),
- *     which only describes this site's own users.
+ *     member collides on a `strict` site → `CONFLICT` (RFC 7644 §3.3 409).
+ *
+ * Residual signal (documented, accepted): a `CONFLICT` for an address this
+ * site cannot list via `GET /Users` implies an unproven account exists
+ * elsewhere. Binding it instead would hand this site's role to whoever the
+ * other IdP asserted that address for, so refusing is the safer side.
  *
  * Lookup is identity-aware (`emailLookup`), so under `root` an alias resolves
  * to its account here exactly as it does at login.
@@ -21,6 +31,7 @@
 import { and, eq } from 'drizzle-orm';
 import { userSites, users, type Database } from '@lumibase/database';
 
+import { isInviteBindable } from './invite';
 import { emailLookup, isEmailIdentityConflict } from './service';
 
 export type ScimUserRow = typeof users.$inferSelect;
@@ -37,10 +48,15 @@ export interface ScimProvisionInput {
 
 export type ScimProvisionResult =
   | { readonly ok: true; readonly user: ScimUserRow; readonly created: boolean }
-  /** Already a member of this site (or a strict-site alias collision). */
+  /**
+   * Generic refusal: already a member of this site, a strict-site alias
+   * collision, or an existing account whose mailbox is not proven. One code on
+   * purpose, so the response does not tell these apart.
+   */
   | { readonly ok: false; readonly code: 'CONFLICT' };
 
-class AlreadyMember extends Error {}
+/** Generic refusal (see {@link ScimProvisionResult}). */
+class ProvisionRefused extends Error {}
 
 async function attempt(db: Database, input: ScimProvisionInput): Promise<{ user: ScimUserRow; created: boolean }> {
   const { where } = await emailLookup(db, input.userName);
@@ -52,7 +68,9 @@ async function attempt(db: Database, input: ScimProvisionInput): Promise<{ user:
         .from(userSites)
         .where(and(eq(userSites.siteId, input.siteId), eq(userSites.userId, existing.id)))
         .limit(1);
-      if (membership) throw new AlreadyMember();
+      if (membership) throw new ProvisionRefused();
+      // #856: never bind an account whose mailbox is unproven to this site.
+      if (!(await isInviteBindable(tx, existing.id))) throw new ProvisionRefused();
       await tx
         .insert(userSites)
         .values({ userId: existing.id, siteId: input.siteId })
@@ -85,7 +103,7 @@ export async function provisionScimUser(db: Database, input: ScimProvisionInput)
       const { user, created } = await attempt(db, input);
       return { ok: true, user, created };
     } catch (err) {
-      if (err instanceof AlreadyMember) return { ok: false, code: 'CONFLICT' };
+      if (err instanceof ProvisionRefused) return { ok: false, code: 'CONFLICT' };
       if (!isEmailIdentityConflict(err)) throw err;
       // A concurrent create may have taken the address between our lookup and
       // insert; one retry finds it. A second conflict is this site's own

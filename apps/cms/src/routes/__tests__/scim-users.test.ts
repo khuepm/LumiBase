@@ -30,6 +30,8 @@ interface UserRow {
   status: string;
   createdAt: Date;
   updatedAt: Date;
+  /** Projection read by `isInviteBindable` (#856). */
+  hasPassword?: boolean;
 }
 
 interface Writes {
@@ -130,6 +132,7 @@ function post(app: Hono<AppEnv>, body: unknown) {
   });
 }
 
+/** Another site's SSO JIT / SCIM account: IdP externalId, no password, no social identity. */
 const foreignUser: UserRow = {
   id: 'usr_other_site',
   email: 'alice@example.com',
@@ -140,6 +143,9 @@ const foreignUser: UserRow = {
   createdAt: new Date('2025-01-01T00:00:00Z'),
   updatedAt: new Date('2025-01-01T00:00:00Z'),
 };
+
+/** Another site's password account past email verification — bindable (#856). */
+const provenForeignUser: UserRow = { ...foreignUser, id: 'usr_other_site', hasPassword: true };
 
 describe('SCIM POST /Users — no cross-tenant account enumeration (#862)', () => {
   it('creates the account and membership when no account resolves', async () => {
@@ -152,8 +158,8 @@ describe('SCIM POST /Users — no cross-tenant account enumeration (#862)', () =
     );
   });
 
-  it('links an account that belongs only to another site instead of answering 409', async () => {
-    const { db, writes } = makeFakeDb({ existingUser: foreignUser, memberOfSite: false });
+  it('links a proven account that belongs only to another site instead of answering 409', async () => {
+    const { db, writes } = makeFakeDb({ existingUser: provenForeignUser, memberOfSite: false });
     const res = await post(buildApp(db), { userName: 'Alice@Example.com', name: { givenName: 'Mallory' } });
 
     expect(res.status).toBe(201);
@@ -167,6 +173,20 @@ describe('SCIM POST /Users — no cross-tenant account enumeration (#862)', () =
       siteId: SITE,
     });
     expect(writes.updates.filter((w) => w.table === 'lumibase_users')).toHaveLength(0);
+  });
+
+  it('does not bind an unproven account from another site, answering the same generic 409 as a member (#856)', async () => {
+    const unproven = makeFakeDb({ existingUser: foreignUser, memberOfSite: false });
+    const member = makeFakeDb({ existingUser: provenForeignUser, memberOfSite: true });
+
+    const resUnproven = await post(buildApp(unproven.db), { userName: 'alice@example.com' });
+    const resMember = await post(buildApp(member.db), { userName: 'alice@example.com' });
+
+    expect(resUnproven.status).toBe(409);
+    expect(unproven.writes.inserts).toHaveLength(0);
+    // Byte-identical to the "already a member here" answer: the body does not
+    // say the account exists on another site or that it is unverified.
+    expect(await resUnproven.text()).toBe(await resMember.text());
   });
 
   it('keeps 409 uniqueness for an account already a member of this site', async () => {
