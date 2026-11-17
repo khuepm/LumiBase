@@ -46,3 +46,7 @@ v1 includes immutable revisions and installation provenance sufficient for futur
 | New revision published | Existing installation unchanged |
 
 All implementation acceptance boxes remain pending; this planning change does not ship the feature.
+
+## Detailed AC traceability
+
+[Task index](tasks.md) maps each R requirement through its work-item header to stable BTxx-ACyy criteria. [Execution and acceptance](execution-and-acceptance.md) defines shared fixtures and release gates. The same complete work breakdown and AC text is present in GitHub #901–#910; no implementation is marked done by this specification.
