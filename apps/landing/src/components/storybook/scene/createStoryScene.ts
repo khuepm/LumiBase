@@ -184,34 +184,55 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
   let width = 1;
   let height = 1;
   let composer: EffectComposer | null = null;
-  let bloom: UnrealBloomPass | null = null;
-  let renderTarget: THREE.WebGLRenderTarget | null = null;
 
+  /** The composer owns its render targets but not the passes added to it. */
+  function disposeComposer() {
+    if (!composer) return;
+    for (const pass of composer.passes) pass.dispose();
+    composer.dispose();
+    composer = null;
+  }
+
+  /**
+   * Build the post-processing chain for the current quality rung. Only a rung
+   * change needs this; a resize just resizes what is already there.
+   */
   function buildComposer() {
     const quality = QUALITY[rung]!;
-    composer?.dispose();
-    renderTarget?.dispose();
-    bloom?.dispose();
+    disposeComposer();
     const pixelRatio = Math.min(window.devicePixelRatio || 1, quality.pixelRatio);
     renderer.setPixelRatio(pixelRatio);
     renderer.setSize(width, height, false);
-    renderTarget = new THREE.WebGLRenderTarget(width * pixelRatio, height * pixelRatio, {
+    // The composer takes this target as its own and disposes it with itself.
+    const target = new THREE.WebGLRenderTarget(width * pixelRatio, height * pixelRatio, {
       type: THREE.HalfFloatType,
       samples: quality.samples,
     });
-    composer = new EffectComposer(renderer, renderTarget);
+    composer = new EffectComposer(renderer, target);
     composer.setPixelRatio(pixelRatio);
     composer.setSize(width, height);
     composer.addPass(new RenderPass(scene, camera));
-    bloom = null;
     if (quality.bloom) {
       // Threshold above 1: only things brighter than paper-white glow, so the
       // lamp, the stars and the antenna bloom and Lumi's coat does not.
-      bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 0.5, 0.75, 1.15);
-      composer.addPass(bloom);
+      composer.addPass(new UnrealBloomPass(new THREE.Vector2(width, height), 0.5, 0.75, 1.15));
     }
     composer.addPass(new OutputPass());
     lumi.setShells(quality.shells);
+    builtPixelRatio = pixelRatio;
+  }
+  let builtPixelRatio = 0;
+
+  function resizeComposer() {
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, QUALITY[rung]!.pixelRatio);
+    // Moving to a screen with another pixel ratio changes the target's size in
+    // a way setSize alone would not pick up.
+    if (!composer || pixelRatio !== builtPixelRatio) {
+      buildComposer();
+      return;
+    }
+    renderer.setSize(width, height, false);
+    composer.setSize(width, height);
   }
 
   function fitStage() {
@@ -231,6 +252,8 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
 
   let clock = 0;
   let last = -1;
+  /** Vertical camera lean toward the pointer; kept apart from the climb. */
+  let leanY = 0;
   let introStart = -1;
   let hopStart = -10;
   let hopHeight = 1;
@@ -287,8 +310,52 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
   }
 
   // Frame-time watchdog for the quality ladder.
-  let slowFrames = 0;
-  let judged = 0;
+  //
+  // Slow frames alone do not mean a slow GPU: a phone in low-power mode is
+  // locked to 30fps however light the scene is, and lowering quality there
+  // buys nothing. So a step down is a *probe* — if two rungs make no
+  // difference to frame time, the display is the limit, and the scene goes
+  // back to the quality it started at and stops judging.
+  const WINDOW = 60;
+  const WARMUP = 24;
+  const samples = new Float32Array(WINDOW);
+  let sampled = -WARMUP;
+  let probe: { from: number; baseline: number; steps: number } | null = null;
+  let settled = false;
+
+  function judge(frame: number) {
+    if (settled || frame <= 0 || frame > 0.5) return;
+    if (sampled < 0) {
+      sampled++; // let a rebuilt chain warm up before measuring it
+      return;
+    }
+    samples[sampled++] = frame;
+    if (sampled < WINDOW) return;
+    sampled = -WARMUP;
+    const median = Array.from(samples).sort((a, b) => a - b)[WINDOW >> 1]!;
+
+    if (probe) {
+      if (median < probe.baseline * 0.85) {
+        probe = null; // the step helped; keep it and keep watching
+      } else if (probe.steps < 2 && rung < QUALITY.length - 1) {
+        probe.steps++;
+        rung++;
+        buildComposer();
+        return;
+      } else {
+        rung = probe.from; // capped by the display, not by us
+        probe = null;
+        settled = true;
+        buildComposer();
+        return;
+      }
+    }
+    if (median > 1 / 45 && rung < QUALITY.length - 1) {
+      probe = { from: rung, baseline: median, steps: 1 };
+      rung++;
+      buildComposer();
+    }
+  }
 
   function render(now: number) {
     const seconds = now / 1000;
@@ -308,7 +375,8 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
     // ── Camera: climbs off the hill, and leans a touch toward the pointer ──
     const lean = pointerActive && !reduced ? 1 : 0;
     camera.position.x = THREE.MathUtils.damp(camera.position.x, pointer.x * 0.22 * lean, 3, dt);
-    camera.position.y = altitude * RISE() + (reduced ? 0 : THREE.MathUtils.damp(0, pointer.y * 0.12 * lean, 3, dt));
+    leanY = reduced ? 0 : THREE.MathUtils.damp(leanY, pointer.y * 0.12 * lean, 3, dt);
+    camera.position.y = altitude * RISE() + leanY;
     camera.lookAt(camera.position.x * 0.4, camera.position.y, 0);
 
     // ── Heavens ────────────────────────────────────────────────────────────
@@ -506,21 +574,7 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
     if (composer) composer.render(dt);
     else renderer.render(scene, camera);
 
-    // ── Quality watchdog ───────────────────────────────────────────────────
-    // Sample a second of frames once things have settled; if most ran long,
-    // drop a rung. Never climbs back, so it cannot oscillate.
-    if (!reduced && clock > 1.5 && rawDt > 0 && rawDt < 0.5 && rung < QUALITY.length - 1) {
-      judged++;
-      if (rawDt > 1 / 38) slowFrames++;
-      if (judged >= 60) {
-        if (slowFrames > 36) {
-          rung++;
-          buildComposer();
-        }
-        judged = 0;
-        slowFrames = 0;
-      }
-    }
+    if (!reduced && clock > 1.5) judge(rawDt);
   }
 
   return {
@@ -573,17 +627,18 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
       aspect = width / height;
       camera.aspect = aspect;
       camera.updateProjectionMatrix();
-      buildComposer();
+      resizeComposer();
       fitStage();
     },
     render,
     dispose() {
-      composer?.dispose();
-      renderTarget?.dispose();
-      bloom?.dispose();
+      disposeComposer();
       lumi.dispose();
       for (const item of disposables) item.dispose();
       renderer.dispose();
+      // dispose() frees three's resources but keeps the GL context alive until
+      // the canvas is collected. Browsers cap live contexts, so hand it back.
+      renderer.forceContextLoss();
     },
   };
 }

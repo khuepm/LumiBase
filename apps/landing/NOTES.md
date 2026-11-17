@@ -19,6 +19,10 @@ It replaces the iridescent page, which is kept on `feature/iridescent-landing` f
 - Clicking Lumi makes it hop; clicking the lamp shakes loose a fountain of sparks. On desktop
   Lumi watches the pointer.
 - Product copy and claims are carried over from the iridescent page; only the framing changed.
+- Against `main` this is a smaller page: the FAQ section and its `FAQPage` structured data are
+  gone, as are the feature cards, and `CosmicBackground` is no longer mounted in the root layout,
+  so the pricing and legal pages lose the starfield. All three came with the iridescent page this
+  was built on; none was re-decided here.
   Footer anchors (`#content-os`, `#ai-harness`, `#studio`, `#runtime`) and the legal/pricing
   routes are unchanged, as are metadata and structured data.
 - No CMS, database, setup, authentication, deployment, or shell contracts change.

@@ -15,7 +15,10 @@ function canUseWebGL(): boolean {
   if (webglSupport === undefined) {
     try {
       const probe = document.createElement("canvas");
-      webglSupport = !!(probe.getContext("webgl2") ?? probe.getContext("webgl"));
+      const gl = probe.getContext("webgl2") ?? probe.getContext("webgl");
+      webglSupport = !!gl;
+      // Browsers cap live contexts; do not leave the probe's one behind.
+      gl?.getExtension("WEBGL_lose_context")?.loseContext();
     } catch {
       webglSupport = false;
     }
@@ -44,6 +47,8 @@ export default function StoryCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<StoryScene | null>(null);
+  /** Asks for a frame. Under reduced motion nothing else would draw one. */
+  const wakeRef = useRef<() => void>(() => {});
   const reduced = useStaticMotion();
   // Read through useSyncExternalStore so server and first client render agree
   // without a setState inside an effect.
@@ -54,6 +59,7 @@ export default function StoryCanvas({
 
   useEffect(() => {
     sceneRef.current?.setLevel(level);
+    wakeRef.current();
   }, [level]);
 
   useEffect(() => {
@@ -68,6 +74,7 @@ export default function StoryCanvas({
     let onScreen = true;
     let centers: number[] = [];
     const mobile = window.matchMedia(MOBILE_QUERY);
+    const coarse = window.matchMedia("(pointer: coarse)");
     const layoutNow = (): Layout => (mobile.matches ? "mobile" : "desktop");
 
     const measure = () => {
@@ -91,15 +98,20 @@ export default function StoryCanvas({
     const wake = () => {
       if (!raf && scene) raf = requestAnimationFrame(loop);
     };
+    wakeRef.current = wake;
 
     let lastWidth = 0;
     let lastHeight = 0;
     const resize = () => {
       if (!scene) return;
       const { clientWidth, clientHeight } = stage;
-      // Mobile browsers resize the viewport as the address bar slides away;
-      // rebuilding render targets for that would hitch every scroll.
-      if (clientWidth === lastWidth && Math.abs(clientHeight - lastHeight) < 120) return;
+      if (clientWidth === lastWidth && clientHeight === lastHeight) return;
+      // On touch devices the address bar sliding away resizes the viewport on
+      // every scroll; following that would hitch, and the stage is sized in
+      // lvh so it should not move anyway. Anywhere else a small change is a
+      // real one (devtools, a downloads bar) and ignoring it stretches the
+      // picture and puts Lumi somewhere other than where a click lands.
+      if (coarse.matches && clientWidth === lastWidth && Math.abs(clientHeight - lastHeight) < 120) return;
       lastWidth = clientWidth;
       lastHeight = clientHeight;
       scene.setLayout(layoutNow());
@@ -180,6 +192,7 @@ export default function StoryCanvas({
       mobile.removeEventListener("change", resize);
       scene?.dispose();
       sceneRef.current = null;
+      wakeRef.current = () => {};
     };
     // `level` is pushed through its own effect; re-creating the scene for it
     // would restart the story.
