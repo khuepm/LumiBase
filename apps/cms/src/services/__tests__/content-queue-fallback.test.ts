@@ -31,13 +31,32 @@ function settingsDb(rows: Array<{ value: unknown }>): Database {
   return { select: () => ({ from: () => ({ where: async () => rows }) }) } as unknown as Database;
 }
 
+/** Settings read that resolves on a later macrotask, like a real network round trip. */
+function slowSettingsDb(rows: Array<{ value: unknown }>): Database {
+  const where = () => new Promise<Array<{ value: unknown }>>((resolve) => setTimeout(() => resolve(rows), 5));
+  return { select: () => ({ from: () => ({ where }) }) } as unknown as Database;
+}
+
 describe('dispatchItemRevalidation without a revalidation-dispatch binding (B131)', () => {
   it('dispatches inline instead of enqueueing', async () => {
     const queue = queueWithout('revalidation-dispatch');
-    const db = settingsDb([{ value: [{ id: 't1', status: 'active' }] }]);
+    const db = slowSettingsDb([{ value: [{ id: 't1', status: 'active' }] }]);
     await dispatchItemRevalidation({ db, queue, siteId: 'site_a', collection: 'posts' });
-    await vi.waitFor(() => expect(dispatchRevalidation).toHaveBeenCalledWith([{ id: 't1', status: 'active' }], ['posts']));
+    // Done by the time the call resolves: on Workers nothing keeps a detached
+    // promise alive after the response, so the inline path must be awaited (#863).
+    expect(dispatchRevalidation).toHaveBeenCalledWith([{ id: 't1', status: 'active' }], ['posts']);
     expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('never fails the write when the inline dispatch throws (#863)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.mocked(dispatchRevalidation).mockRejectedValueOnce(new Error('target down'));
+    const db = settingsDb([{ value: [{ id: 't1', status: 'active' }] }]);
+    await expect(
+      dispatchItemRevalidation({ db, queue: queueWithout('revalidation-dispatch'), siteId: 'site_a', collection: 'posts' }),
+    ).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith('[content-invalidation] revalidation dispatch failed', expect.objectContaining({ siteId: 'site_a' }));
+    warn.mockRestore();
   });
 
   it('still enqueues when the binding exists', async () => {

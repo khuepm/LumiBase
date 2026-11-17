@@ -1,11 +1,11 @@
 ---
 sourceLang: en
-version: 2
-lastUpdated: 2026-11-12T18:23:47.335Z
-contentHash: 337314e0f842957a
-codeVerified: 2026-11-12T18:23:47.335Z
-codeVerifiedHash: 337314e0f842957a
-codeVerifiedClaims: 22
+version: 3
+lastUpdated: 2026-11-16T15:40:01.990Z
+contentHash: ecb2a5851a2a04d2
+codeVerified: 2026-11-16T15:40:01.990Z
+codeVerifiedHash: ecb2a5851a2a04d2
+codeVerifiedClaims: 24
 ---
 
 # One-click deploys
@@ -28,10 +28,11 @@ of the repository. `railway.json` is the exception: a Railway service created
 from the repository **builds `docker/Dockerfile` from source** — see
 [Railway](#railway) for what that build lacks.
 
-The templates need an image from the first release after `2.0.0`: they rely on
-the entrypoint deriving `CORS_ALLOWED_ORIGINS`, which `2.0.0` (today's `latest`)
-does not do, so until that release is published a deploy stops at production
-validation with `CORS_ALLOWED_ORIGINS is required in production`.
+The templates need `2.1.0` or later: they rely on the entrypoint deriving
+`CORS_ALLOWED_ORIGINS`, which `2.0.0` does not do, so an older image stops at
+production validation with `CORS_ALLOWED_ORIGINS is required in production`.
+`render.yaml` and `fly.toml` pin the release image of the commit you deploy
+from; see [Pin a version](#pin-a-version).
 
 ## What every template sets up
 
@@ -79,10 +80,11 @@ new one.
 
 ## Render
 
-> **Unattended upgrades.** `render.yaml` deploys `:latest` and the image runs
-> migrations on every start, so any restart after a new release — including a
-> major one — upgrades the instance and migrates its database. Pin your copy:
-> `url: ghcr.io/khuepm/lumibase-cms:<version>`. See [Pin a version](#pin-a-version).
+> **Pinned release.** `render.yaml` deploys a release tag,
+> `url: ghcr.io/khuepm/lumibase-cms:<version>`, never `:latest`: the image runs
+> migrations on every start, so a floating tag would turn any restart after a new
+> release — including a major one — into an unattended upgrade. See
+> [Pin a version](#pin-a-version).
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/khuepm/lumibase)
 
@@ -136,10 +138,11 @@ service created from the repository uses `railway.json` and builds from source.
 
 ## Fly.io
 
-> **Unattended upgrades.** `fly.toml` deploys `:latest` and the image runs
-> migrations on every start, so a `fly deploy` or machine restart after a new
-> release — including a major one — upgrades the app and migrates its database.
-> Pin it in `[build]`: `image = "ghcr.io/khuepm/lumibase-cms:<version>"`.
+> **Pinned release.** `fly.toml` deploys a release tag in `[build]`,
+> `image = "ghcr.io/khuepm/lumibase-cms:<version>"`, never `:latest`: the image
+> runs migrations on every start, so a floating tag would turn a `fly deploy` or
+> machine restart after a new release — including a major one — into an
+> unattended upgrade. See [Pin a version](#pin-a-version).
 
 Fly has no deploy button, generates no secrets, and runs Postgres and Redis as
 separate resources. From an empty directory:
@@ -188,15 +191,21 @@ B211.
 
 ## Pin a version
 
-Render and Fly point at `latest`, which follows the newest release, and the
-image runs pending migrations whenever it starts: a platform restart after a
-release is an upgrade nobody scheduled, and after a major release one that may
-need the manual steps in its upgrade notes. The default stays `latest` because
-the templates only work with an image that has the current entrypoint, and no
-published release tag has it yet (see the note at the top).
+Every template that runs the published image deploys a release tag, never
+`latest` or `edge`. The image runs pending migrations whenever it starts, so
+with a floating tag a platform restart after a release is an upgrade nobody
+scheduled, and after a major release one that may need the manual steps in its
+upgrade notes.
 
-For production, pin the release you tested — the line to change is
-`url: ghcr.io/khuepm/lumibase-cms:<version>` in `render.yaml`,
+`render.yaml` and `fly.toml` carry the release of the repository commit they come
+from: `pnpm version:sync` moves their image line with each release, and
+`scripts/__tests__/deploy-manifests.test.mjs` fails on a floating tag or a tag
+that differs from the root `package.json` version. The Railway template has no
+file in the repository to pin, so its `lumibase` service is given the tag by
+hand (see [Railway](#railway)).
+
+The image changes only when the line you deploy from changes. To upgrade, edit
+it — `url: ghcr.io/khuepm/lumibase-cms:<version>` in `render.yaml`,
 `image = "ghcr.io/khuepm/lumibase-cms:<version>"` in `fly.toml`, or the image
-of the Railway service — and change it deliberately, after reading the release's
-upgrade notes; see [Docker → Updating](./docker.md#updating).
+of the Railway service — deliberately, after reading the release's upgrade
+notes; see [Docker → Updating](./docker.md#updating).

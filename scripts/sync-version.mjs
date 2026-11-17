@@ -53,6 +53,18 @@ const EXTRA_VERSION_FILES = [
     path: 'deploy/helm/lumibase/Chart.yaml',
     pattern: /^(appVersion:[ \t]*")([^"]*)(")/m,
   },
+  // The Render and Fly one-click templates (#741, #866) pin the release image:
+  // it migrates the database on every start, so a floating tag would turn a
+  // platform restart after a major release into an unattended upgrade. The
+  // anchors skip comment lines, so only the live image reference moves.
+  {
+    path: 'render.yaml',
+    pattern: /^([ \t]*url:[ \t]*ghcr\.io\/khuepm\/lumibase-cms:)([^\s#]+)()/m,
+  },
+  {
+    path: 'fly.toml',
+    pattern: /^([ \t]*image[ \t]*=[ \t]*"ghcr\.io\/khuepm\/lumibase-cms:)([^"]*)(")/m,
+  },
 ];
 
 async function readJson(filePath) {

@@ -525,22 +525,41 @@ scimRouter.post("/Groups", async (c) => {
     displayName: string;
     members?: Array<{ value: string }>;
   };
-  const inserted = await db
-    .insert(teams)
-    .values({ siteId, name: body.displayName })
-    .returning();
-
-  if (body.members?.length) {
-    for (const m of body.members) {
-      await db
-        .insert(teamMembers)
-        .values({ teamId: inserted[0]!.id, userId: m.value })
-        .onConflictDoNothing();
-      await db
-        .insert(userSites)
-        .values({ userId: m.value, siteId })
-        .onConflictDoNothing();
-    }
+  // Team + memberships commit together (#861). The membership insert targets
+  // `(user_id, site_id)` only, so "already a member" is a no-op while an alias
+  // of an existing member of a `strict` site (`user_sites_site_identity_unique`)
+  // is answered as RFC 7644 §3.3 409 `uniqueness` instead of being dropped by a
+  // target-less ON CONFLICT DO NOTHING and reported as success.
+  let inserted: Array<typeof teams.$inferSelect>;
+  try {
+    inserted = await db.transaction(async (tx) => {
+      const rows = await tx
+        .insert(teams)
+        .values({ siteId, name: body.displayName })
+        .returning();
+      for (const m of body.members ?? []) {
+        await tx
+          .insert(teamMembers)
+          .values({ teamId: rows[0]!.id, userId: m.value })
+          .onConflictDoNothing();
+        await tx
+          .insert(userSites)
+          .values({ userId: m.value, siteId })
+          .onConflictDoNothing({ target: [userSites.userId, userSites.siteId] });
+      }
+      return rows;
+    });
+  } catch (err) {
+    if (!isEmailIdentityConflict(err)) throw err;
+    return c.json(
+      {
+        schemas: [SCIM_ERROR],
+        status: "409",
+        scimType: "uniqueness",
+        detail: "A member is already on this site under another address of the same mailbox",
+      },
+      409,
+    );
   }
 
   return c.json(

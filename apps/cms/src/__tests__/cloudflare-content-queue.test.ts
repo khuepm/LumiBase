@@ -85,6 +85,15 @@ describe('content-indexing on Workers (B131)', () => {
     expect(createDb).not.toHaveBeenCalled();
   });
 
+  it('configures each index once per isolate, not once per batch (#863)', async () => {
+    const job = (id: string) => ({ id, jobName: 'search:index', data: { siteId: 'site_863', collection: 'posts', id, data: { title: 'x' } } });
+    await processCloudflareContentIndexingQueue(batch(INDEXING, [message(job('a'), 'm1')]), env);
+    await processCloudflareContentIndexingQueue(batch(INDEXING, [message(job('b'), 'm2')]), env);
+    const configuredFor863 = search.configureIndex.mock.calls.filter((call: unknown[]) => call[0] === 'site_863__posts');
+    expect(configuredFor863).toHaveLength(1);
+    expect(search.index).toHaveBeenCalledTimes(2);
+  });
+
   it('retries a failing or malformed message without logging its body, and keeps going', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     search.index.mockRejectedValueOnce(new Error('meili down'));
