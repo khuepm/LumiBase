@@ -12,8 +12,9 @@ It replaces the iridescent page, which is kept on `feature/iridescent-landing` f
   intent (scattered pages fall into order), earned autonomy (a staircase of stars — picking a
   level makes Lumi hop to it), Mission Control, MCP (visiting agents orbit inside a ring of
   rules), provenance (a trail of crumbs), and an epilogue back at the lamp.
-- Lumi is procedural: shell-textured fur (the same sphere drawn in layers, strands kept by the
-  fragment shader), a face, and an antenna on a spring. Fur trails behind motion. No model file.
+- Lumi is procedural: a velvet coat (an opaque core with a sheen toward the silhouette, under a
+  few transparent shells of short, dense fuzz that soften the outline — no separate strands), a
+  face, and an antenna on a spring. The nap trails behind motion. No model file.
 - Everything else is procedural too — sky, stars, moon, paper-cut hills, castle, lamp, sparkles.
   The scene downloads no textures or models; the only new asset is the three.js bundle.
 - Clicking Lumi makes it hop; clicking the lamp shakes loose a fountain of sparks. On desktop
