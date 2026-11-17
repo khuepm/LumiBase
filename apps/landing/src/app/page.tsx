@@ -1,5 +1,6 @@
 import { version as lumibaseVersion } from "../../package.json";
 import StorybookLanding from "@/components/storybook/StorybookLanding";
+import StoryFaq, { faqPageJsonLd } from "@/components/storybook/StoryFaq";
 
 const softwareApplicationJsonLd = {
   "@context": "https://schema.org",
@@ -30,7 +31,12 @@ export default function Home() {
           __html: JSON.stringify(softwareApplicationJsonLd),
         }}
       />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqPageJsonLd) }}
+      />
       <StorybookLanding />
+      <StoryFaq />
     </>
   );
 }
