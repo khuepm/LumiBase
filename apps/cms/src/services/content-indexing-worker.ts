@@ -109,13 +109,23 @@ export function dbCurrentItemReader(db: Database): CurrentItemReader {
   };
 }
 
+export interface ContentIndexingWorkerOptions {
+  /**
+   * Index names already configured. Pass a long-lived set when this function
+   * runs more than once per process: the Workers consumer registers per batch,
+   * and a fresh set each time re-applied the settings on every batch (#863).
+   * Defaults to a new set, which is right for a register-once runtime.
+   */
+  configured?: Set<string>;
+}
+
 /**
  * Tracks index names this process has already configured, so settings
  * (stop words, typo tolerance, …) are applied once per index rather than on
  * every document. `configureIndex` is idempotent, so a missed entry only costs
  * a redundant settings call.
  */
-function makeConfiguredSet(): Set<string> {
+export function makeConfiguredSet(): Set<string> {
   return new Set<string>();
 }
 
@@ -170,11 +180,14 @@ export async function processSearchRemoveJob(
  * Registers the content-indexing consumer on a long-lived runtime (Docker/Node).
  * No-op when there is no queue or no search provider configured.
  */
-export function registerContentIndexingWorker(deps: ContentIndexingWorkerDeps): void {
+export function registerContentIndexingWorker(
+  deps: ContentIndexingWorkerDeps,
+  options: ContentIndexingWorkerOptions = {},
+): void {
   const { queue, search, db } = deps;
   if (!queue || !search) return;
 
-  const configured = makeConfiguredSet();
+  const configured = options.configured ?? makeConfiguredSet();
   const readCurrent = db ? dbCurrentItemReader(db) : undefined;
 
   queue.process<SearchIndexJob | SearchRemoveJob>(CONTENT_INDEXING_QUEUE, async (job) => {

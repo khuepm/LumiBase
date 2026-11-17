@@ -1,11 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-07-18T20:49:50.811Z
+version: 3
+lastUpdated: 2026-11-16T15:44:56.235Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 69fb55e16335b41b
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: f09ac8ab62f698ae
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-16T15:44:56.235Z
+codeVerifiedHash: f09ac8ab62f698ae
+codeVerifiedClaims: 8
 ---
 
 # GraphQL API Specification
@@ -61,7 +64,7 @@ Mỗi item type phơi ra các cột cấu trúc `id`, `status`, `sort`, `created
 | `integer` | `Int` |
 | `float`, `decimal` | `Float` |
 | `bigInteger` | `String` (avoids 53-bit precision loss) |
-| `dateTime`, `date`, `time`, `timestamp` | `DateTime` (ISO-8601 string) |
+| `datetime` (chuẩn), `dateTime` (cũ), `date`, `time`, `timestamp` | `DateTime` (ISO-8601 string) |
 | `string`, `text`, `uuid`, `hash`, `slug`, `code`, `color` | `String` |
 | `json`, `csv`, `geometry`, `files` | `JSON` |
 
