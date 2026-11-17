@@ -1,5 +1,5 @@
 import { version as lumibaseVersion } from "../../package.json";
-import IridescentLanding from "@/components/IridescentLanding";
+import StorybookLanding from "@/components/storybook/StorybookLanding";
 
 const softwareApplicationJsonLd = {
   "@context": "https://schema.org",
@@ -30,7 +30,7 @@ export default function Home() {
           __html: JSON.stringify(softwareApplicationJsonLd),
         }}
       />
-      <IridescentLanding />
+      <StorybookLanding />
     </>
   );
 }
