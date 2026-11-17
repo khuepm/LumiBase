@@ -60,11 +60,30 @@ test('fly.toml: no secrets in [env], setup gated, port/health/signal match the i
   assert.match(toml, /^\s*auto_stop_machines = "off"$/m, 'a stopped machine runs no scheduler or workers');
 });
 
-test('the templates deploying :latest say how to pin, next to the image line', () => {
-  // :latest + migrate-on-start is an unattended upgrade; the one-line pin must
-  // sit where an operator edits the image.
-  assert.match(read('render.yaml'), /# .*url: ghcr\.io\/khuepm\/lumibase-cms:<version>\n(?:\s*#.*\n)*\s*url: ghcr\.io\/khuepm\/lumibase-cms:latest$/m);
-  assert.match(read('fly.toml'), /# .*image = "ghcr\.io\/khuepm\/lumibase-cms:<version>"\n(?:\s*#.*\n)*\s*image = "ghcr\.io\/khuepm\/lumibase-cms:latest"$/m);
+const TEMPLATES = ['render.yaml', 'fly.toml', 'railway.json', 'docker/railway-template-variables.json'];
+const rootVersion = JSON.parse(read('package.json')).version;
+
+test('no template deploys a floating image tag (#866)', () => {
+  // The image migrates the database on every start: a floating tag turns a
+  // platform restart after a (major) release into an unattended upgrade. Same
+  // rule as the Railway template variables.
+  for (const rel of TEMPLATES) {
+    const text = read(rel);
+    for (const [ref, tag] of text.matchAll(/lumibase-cms:([A-Za-z0-9_.<>-]+)/g)) {
+      assert.ok(!['latest', 'edge'].includes(tag), `${rel} references ${ref}; pin a release tag`);
+    }
+  }
+});
+
+test('Render and Fly pin the current release image, kept in step by version:sync', () => {
+  const render = read('render.yaml').match(/^[ \t]*url:[ \t]*ghcr\.io\/khuepm\/lumibase-cms:([^\s#]+)/m)?.[1];
+  const fly = read('fly.toml').match(/^[ \t]*image[ \t]*=[ \t]*"ghcr\.io\/khuepm\/lumibase-cms:([^"]*)"/m)?.[1];
+  assert.equal(render, rootVersion, 'render.yaml image tag must equal the root package.json version');
+  assert.equal(fly, rootVersion, 'fly.toml image tag must equal the root package.json version');
+  // `pnpm version:check` is what the release workflow runs; it must cover both.
+  const sync = read('scripts/sync-version.mjs');
+  assert.match(sync, /path: 'render\.yaml'/);
+  assert.match(sync, /path: 'fly\.toml'/);
 });
 
 test('railway.json builds the production Dockerfile and checks /health', () => {
