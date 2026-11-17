@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-11-16T20:33:00.302Z
+version: 4
+lastUpdated: 2026-11-17T19:26:46.796Z
 sourceLang: en
-contentHash: d7b612ca6449d260
-codeVerified: 2026-11-16T20:33:00.302Z
-codeVerifiedHash: d7b612ca6449d260
+contentHash: c5c6e58c6a908aa1
+codeVerified: 2026-11-17T19:26:46.796Z
+codeVerifiedHash: c5c6e58c6a908aa1
 codeVerifiedClaims: 14
 ---
 
@@ -117,6 +117,12 @@ carries `dataHash`, a SHA-256 of the stored `data` at the write that produced it
 If the stored data has changed since, the snapshot is skipped, because the newer
 write enqueued its own job. This needs a database connection on both runtimes
 (`rotatorDb` on Docker, the system connection on Workers).
+
+Jobs enqueued before this check existed have no `dataHash`. The worker indexes
+such a job only when its `data` equals the stored data, and otherwise drops it
+with a warning, so an old snapshot cannot overwrite a newer entry. After an
+upgrade with jobs still queued, run `lumibase reindex` to restore any entry a
+dropped job left out of date.
 
 ### Reindex CLI
 

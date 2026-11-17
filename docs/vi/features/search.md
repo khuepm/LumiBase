@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-11-16T20:33:00.302Z
+version: 4
+lastUpdated: 2026-11-17T19:26:46.796Z
 sourceLang: en
 translatedFrom: en
-sourceHash: d7b612ca6449d260
+sourceHash: c5c6e58c6a908aa1
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-16T20:33:00.302Z
-codeVerifiedHash: d7b612ca6449d260
+codeVerified: 2026-11-17T19:26:46.796Z
+codeVerifiedHash: c5c6e58c6a908aa1
 codeVerifiedClaims: 14
 ---
 
@@ -119,6 +119,12 @@ mang `dataHash`, là SHA-256 của `data` đã lưu tại lần ghi tạo ra job
 liệu đã lưu thay đổi kể từ đó, snapshot bị bỏ qua, vì lần ghi mới hơn đã enqueue
 job riêng của nó. Việc này cần kết nối database trên cả hai runtime (`rotatorDb`
 trên Docker, kết nối system trên Workers).
+
+Job được enqueue trước khi có bước kiểm tra này không có `dataHash`. Worker chỉ
+index job như vậy khi `data` của nó bằng dữ liệu đã lưu, nếu không thì bỏ job và
+ghi cảnh báo, nên snapshot cũ không thể ghi đè entry mới hơn. Sau khi nâng cấp mà
+queue vẫn còn job, chạy `lumibase reindex` để khôi phục entry mà job bị bỏ để lại
+ở trạng thái cũ.
 
 ### Reindex CLI
 
