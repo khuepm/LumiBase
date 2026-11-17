@@ -188,6 +188,17 @@ describe('content-indexing never applies a stale snapshot on retry (#857)', () =
     expect(retriedV1.ack).toHaveBeenCalledOnce();
   });
 
+  it('a legacy hash-less job retried after an upgrade does not overwrite a newer update', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // Enqueued before the upgrade (no dataHash) with v1; v2 has been written since.
+    fake.itemRows = [{ data: v2, deletedAt: null }];
+    const legacyV1 = message({ id: 'j1', jobName: 'search:index', data: { siteId: 'site_a', collection: 'posts', id: 'p1', data: v1 } });
+    await processCloudflareContentIndexingQueue(batch(INDEXING, [legacyV1]), env);
+    expect(search.index).not.toHaveBeenCalled();
+    expect(legacyV1.ack).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
+
   it('still applies a snapshot that matches the current row', async () => {
     fake.itemRows = [{ data: v2, deletedAt: null }];
     const current = message({ id: 'j2', jobName: 'search:index', data: { siteId: 'site_a', collection: 'posts', id: 'p1', data: v2, dataHash: await searchSnapshotHash(v2) } });
