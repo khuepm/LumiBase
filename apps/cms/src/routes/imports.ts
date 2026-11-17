@@ -150,8 +150,12 @@ importsRouter.post('/', async (c) => {
   if (!compiled) return fail(c, 404, 'NOT_FOUND', `Collection "${collection}" not found.`);
 
   // Fail fast on permissions; ItemService re-checks every row while running.
+  // `read` is required too: every worker step reads the collection's schema
+  // through `describeForExport`, so a write-only principal would get a 202 and
+  // then a job failed with FORBIDDEN on its first step (#860).
   const permissions = permissionServiceForRequest(c);
-  for (const action of mode === 'upsert' ? (['create', 'update'] as const) : (['create'] as const)) {
+  const required = mode === 'upsert' ? (['read', 'create', 'update'] as const) : (['read', 'create'] as const);
+  for (const action of required) {
     if (!(await permissions.canAccess(collection, action))) {
       return fail(c, 403, 'FORBIDDEN', `Action "${action}" on "${collection}" is not allowed.`);
     }

@@ -1,4 +1,4 @@
--- 0041_import_chunks — staged, pre-parsed import rows (#859).
+-- 0042_import_chunks — staged, pre-parsed import rows (#859).
 --
 -- Additive only: one new table, no backfill, nothing existing altered. Jobs
 -- queued before this migration still carry their raw file in
