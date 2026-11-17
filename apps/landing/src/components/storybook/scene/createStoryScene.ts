@@ -297,7 +297,8 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
     last = seconds;
     // Under reduced motion the clock is parked, so idle animation never runs.
     if (!reduced) clock += dt;
-    const time = reduced ? 2 : clock;
+    // A parked clock must sit before Lumi's first blink, or the eyes stay shut.
+    const time = reduced ? 1 : clock;
     if (introStart < 0) introStart = clock;
 
     const c = chapter;

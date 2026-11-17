@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useStaticMotion } from "@/components/scroll/useStaticMotion";
 import LumiMark from "./LumiMark";
 import { chapterFromScroll, type Layout } from "./scene/timeline";
@@ -9,14 +9,22 @@ import styles from "./StorybookLanding.module.css";
 
 const MOBILE_QUERY = "(max-width: 860px)";
 
+let webglSupport: boolean | undefined;
+/** Probed once: creating a context is not free, and the answer never changes. */
 function canUseWebGL(): boolean {
-  try {
-    const probe = document.createElement("canvas");
-    return !!(probe.getContext("webgl2") ?? probe.getContext("webgl"));
-  } catch {
-    return false;
+  if (webglSupport === undefined) {
+    try {
+      const probe = document.createElement("canvas");
+      webglSupport = !!(probe.getContext("webgl2") ?? probe.getContext("webgl"));
+    } catch {
+      webglSupport = false;
+    }
   }
+  return webglSupport;
 }
+const subscribeNever = () => () => {};
+/** The server cannot know, so it renders the canvas and the client corrects it. */
+const assumeWebGL = () => true;
 
 /**
  * The 3D stage behind the story. It owns nothing the page needs to be read:
@@ -37,8 +45,12 @@ export default function StoryCanvas({
   const stageRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<StoryScene | null>(null);
   const reduced = useStaticMotion();
-  // "pending" until the scene has drawn once; "fallback" if it never can.
-  const [status, setStatus] = useState<"pending" | "live" | "fallback">("pending");
+  // Read through useSyncExternalStore so server and first client render agree
+  // without a setState inside an effect.
+  const supported = useSyncExternalStore(subscribeNever, canUseWebGL, assumeWebGL);
+  // "pending" until the scene has drawn once; "failed" if loading it threw.
+  const [progress, setProgress] = useState<"pending" | "live" | "failed">("pending");
+  const status = !supported || progress === "failed" ? "fallback" : progress;
 
   useEffect(() => {
     sceneRef.current?.setLevel(level);
@@ -48,11 +60,7 @@ export default function StoryCanvas({
     const canvas = canvasRef.current;
     const stage = stageRef.current;
     const story = storyRef.current;
-    if (!canvas || !stage || !story) return;
-    if (!canUseWebGL()) {
-      setStatus("fallback");
-      return;
-    }
+    if (!canvas || !stage || !story || !supported) return;
 
     let disposed = false;
     let scene: StoryScene | null = null;
@@ -151,12 +159,12 @@ export default function StoryCanvas({
         requestAnimationFrame((now) => {
           if (disposed) return;
           draw(now);
-          setStatus("live");
+          setProgress("live");
           wake();
         });
       })
       .catch(() => {
-        if (!disposed) setStatus("fallback");
+        if (!disposed) setProgress("failed");
       });
 
     return () => {
@@ -176,7 +184,7 @@ export default function StoryCanvas({
     // `level` is pushed through its own effect; re-creating the scene for it
     // would restart the story.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reduced, storyRef]);
+  }, [reduced, storyRef, supported]);
 
   return (
     <div ref={stageRef} className={styles.stage} aria-hidden="true">

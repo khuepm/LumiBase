@@ -1,48 +1,66 @@
-# Iridescent landing page
+# Storybook landing page
 
-Visual reconstruction of the user-supplied LumiBase composition dated September 19, 2026 (`04_04_55 AM.png`), implemented in the existing Next.js app. The reference is a static image; interactions and responsive layouts are implemented here, not inferred from a source website.
+The home page is a fairy tale told in WebGL: LumiBase steps out of a storybook, and Lumi — the
+mascot — takes the genie's place, rising out of a lamp to help anyone bring an idea to life.
+It replaces the iridescent page, which is kept on `feature/iridescent-landing` for comparison.
 
 ## Design and implementation
 
-- Navy canvas with cyan, violet, pink, and pearl highlights; transparent artwork is layered around live HTML copy and controls.
-- Sections: hero, content intent, earned autonomy, Mission Control, MCP, provenance, open-source runtime.
-- Trust levels are selectable. Mission Control rows reveal illustrative change details; no backend operations are performed.
-- Copy distinguishes bounded autonomy, human-approved promotion, publishing standards, and the governed HTTP MCP endpoint.
-- The existing flower-video footer, reveal animations, oversized wordmark, and neon accents are preserved.
-- Existing footer product anchors and legal/pricing routes remain available. Metadata and SoftwareApplication structured data are preserved; the removed FAQ no longer emits FAQ structured data.
-- Decorative motion respects reduced-motion preferences. Native links, labeled buttons, focus outlines, a skip link, and expandable preview rows remain keyboard accessible.
+- One pinned three.js scene sits behind the page for the length of the story. All copy is HTML
+  laid over it, so the page reads in full without WebGL, without JavaScript, and to crawlers.
+- Seven screen-tall chapters drive the scene by scroll position: prologue (lamp, hills, castle),
+  intent (scattered pages fall into order), earned autonomy (a staircase of stars — picking a
+  level makes Lumi hop to it), Mission Control, MCP (visiting agents orbit inside a ring of
+  rules), provenance (a trail of crumbs), and an epilogue back at the lamp.
+- Lumi is procedural: shell-textured fur (the same sphere drawn in layers, strands kept by the
+  fragment shader), a face, and an antenna on a spring. Fur trails behind motion. No model file.
+- Everything else is procedural too — sky, stars, moon, paper-cut hills, castle, lamp, sparkles.
+  The scene downloads no textures or models; the only new asset is the three.js bundle.
+- Clicking Lumi makes it hop; clicking the lamp shakes loose a fountain of sparks. On desktop
+  Lumi watches the pointer.
+- Product copy and claims are carried over from the iridescent page; only the framing changed.
+  Footer anchors (`#content-os`, `#ai-harness`, `#studio`, `#runtime`) and the legal/pricing
+  routes are unchanged, as are metadata and structured data.
 - No CMS, database, setup, authentication, deployment, or shell contracts change.
+
+## Performance and accessibility
+
+- three.js (about 160 KB gzipped) is a dynamic import started after first paint; the heading and
+  call to action never wait on it. The canvas fades in once a frame exists.
+- A quality ladder (pixel ratio, fur layers, multisampling, bloom) starts lower on phones and
+  low-core devices and steps down when frames run long. It never steps back up.
+- Rendering stops when the tab is hidden or the stage is off screen.
+- `prefers-reduced-motion`: no intro, no idle motion, no particles; the scene is redrawn only
+  when the reader scrolls or resizes.
+- Without WebGL (or if the scene fails to load) a CSS night sky and an SVG Lumi stand in.
+- On phones the scene takes the top of the screen. Copy fades as it scrolls into that band
+  (CSS scroll-driven animation); browsers without it show the copy over the scene instead.
+- The canvas is `aria-hidden`; controls are native links and buttons with visible focus.
 
 ## Files
 
-- `src/components/IridescentLanding.tsx` and its CSS module: page content, artwork placement, and illustrative interactions.
-- `src/components/Header.tsx` and its CSS module: desktop navigation and mobile menu.
-- `src/app/page.tsx`: server page and structured data.
-- `src/app/layout.tsx`: shared layout; retired the global WebGL starfield from this layout.
-- `public/assets/iridescent/`: locally served WebP assets, about 1 MB total. Original user-supplied PNGs remain unchanged.
+- `src/components/storybook/StorybookLanding.tsx` and its CSS module: chapters, copy, controls.
+- `src/components/storybook/StoryCanvas.tsx`: mounts the scene, feeds it scroll/pointer/level,
+  owns the fallbacks.
+- `src/components/storybook/LumiMark.tsx`: the SVG Lumi (header logo and no-WebGL fallback).
+- `src/components/storybook/scene/timeline.ts`: the choreography as pure numbers — where Lumi
+  stands in each chapter, per layout. Unit-tested (`timeline.test.ts`); change staging here.
+- `src/components/storybook/scene/lumi.ts`, `world.ts`, `props.ts`, `textures.ts`: the mascot,
+  the stage, and one prop per chapter.
+- `src/components/storybook/scene/createStoryScene.ts`: renderer, post-processing, the frame.
+- `src/components/Header.tsx` and its CSS module: restyled to the storybook palette.
 
-## Artwork sources
+## Verification
 
-All source filenames start with `ChatGPT Image Sep 19, 2026, ` and end in `.png`. They were supplied directly by the user for this implementation. Transparent outer padding was trimmed and images were resized and encoded as WebP (quality 86, alpha quality 95); no artwork was regenerated.
+`lint`, `typecheck`, `test` and `build` pass for `@lumibase/landing`. The page was checked in
+headless Chromium on software WebGL (SwiftShader) at 1440×900 and an iPhone 13 viewport, with
+each chapter centred, with reduced motion, and from the static export under `out/`.
 
-| Output | Source timestamp | Export width |
-|---|---|---|
-| wordmark.webp | 01_42_11 AM | 1500 |
-| butterfly.webp | 03_45_49 AM (1) | 680 |
-| flower.webp | 03_45_49 AM (2) | 680 |
-| ribbon.webp | 03_45_51 AM (3) | 800 |
-| fish.webp | 03_45_51 AM (4) | 850 |
-| crystal.webp | 03_45_51 AM (5) | 600 |
-| mcp.webp | 03_45_52 AM (6) | 480 |
-| agent-api.webp | 03_45_52 AM (7) | 420 |
-| sdk.webp | 03_45_52 AM (8) | 360 |
-| garden-orb.webp | 01_57_58 AM (5) | 820 |
-| world-orb.webp | 01_57_59 AM (7) | 650 |
-| bird.webp | 01_57_57 AM (3) | 600 |
+Not verified: frame rate on real GPUs and real phones (software rendering says nothing about
+it — the quality ladder is the mitigation, not a measurement), Safari and Firefox, and the
+no-WebGL fallback in a browser that genuinely lacks WebGL.
 
 ## Local development
-
-Use the repo-pinned pnpm 9.12.0 with the installed workspace dependencies:
 
 ```sh
 pnpm --filter @lumibase/landing dev --port 3010
@@ -52,7 +70,7 @@ pnpm --filter @lumibase/landing test
 pnpm --filter @lumibase/landing build
 ```
 
-This change is developed on `feature/iridescent-landing`; production deployment is a separate action.
+This change is developed on `feature/storybook-landing`; production deployment is a separate action.
 
 ---
 
