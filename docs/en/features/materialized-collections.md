@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-11-14T03:13:32.604Z
+version: 3
+lastUpdated: 2026-11-16T15:30:25.203Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 4ec2a8e5dd0e8d00
+sourceHash: 12a79164d9af0cae
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T03:13:32.604Z
-codeVerifiedHash: 4ec2a8e5dd0e8d00
+codeVerified: 2026-11-16T15:30:25.203Z
+codeVerifiedHash: 12a79164d9af0cae
 codeVerifiedClaims: 8
 ---
 

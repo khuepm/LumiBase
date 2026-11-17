@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-11-14T03:13:32.604Z
+version: 3
+lastUpdated: 2026-11-16T15:30:25.203Z
 sourceLang: vi
-contentHash: 4ec2a8e5dd0e8d00
-codeVerified: 2026-11-14T03:13:32.604Z
-codeVerifiedHash: 4ec2a8e5dd0e8d00
+contentHash: 12a79164d9af0cae
+codeVerified: 2026-11-16T15:30:25.203Z
+codeVerifiedHash: 12a79164d9af0cae
 codeVerifiedClaims: 8
 ---
 
@@ -56,23 +56,23 @@ DELETE /api/v1/materialize/:id         Drop materialization
 
 Implementation: `apps/cms/src/routes/materialize.ts`.
 
-## Physical Table Strategy
+## Chiến lược bảng vật lý
 
-LumiBase dynamically compiles logical collections into physical database tables for maximum read performance:
+LumiBase biên dịch động các collection logic thành bảng database vật lý để đạt hiệu năng đọc cao nhất:
 
-### 1. DDL Operations (`materialize-service.ts`)
-- **`createPhysicalTable()`**: Generates and executes `CREATE TABLE IF NOT EXISTS mat_{target}` containing columns: `id`, `status`, `data` (JSONB), `created_at`, and `updated_at`.
-- **`refreshPhysicalTable()`**: Performs `TRUNCATE` and `INSERT INTO ... SELECT` from the main `items` table, applying the configured projection and filters to flatten the JSONB structure.
-- **`dropPhysicalTable()`**: Runs `DROP TABLE IF EXISTS mat_{target}` when a materialization is deleted.
-- **`installAutoRefreshTrigger()`**: Attaches a PostgreSQL trigger on the `items` table that notifies the system of changes for automatic refresh.
+### 1. Thao tác DDL (`materialize-service.ts`)
+- **`createPhysicalTable()`**: Sinh và thực thi `CREATE TABLE IF NOT EXISTS mat_{target}` với các cột: `id`, `status`, `data` (JSONB), `created_at` và `updated_at`.
+- **`refreshPhysicalTable()`**: Thực hiện `TRUNCATE` rồi `INSERT INTO ... SELECT` từ bảng chính `items`, áp dụng projection và filter đã cấu hình để làm phẳng cấu trúc JSONB.
+- **`dropPhysicalTable()`**: Chạy `DROP TABLE IF EXISTS mat_{target}` khi một materialization bị xoá.
+- **`installAutoRefreshTrigger()`**: Gắn một PostgreSQL trigger lên bảng `items` để báo cho hệ thống khi có thay đổi, phục vụ refresh tự động.
 
-### 2. Auto-Refresh Integration
-The `ItemService` includes a post-write trigger:
-- Whenever an item is created, updated, or deleted, `ItemService.commit()` queries the materialization registry.
-- If the collection is materialized with the `auto` strategy, it enqueues a refresh task to keep the physical table synchronized.
+### 2. Tích hợp auto-refresh
+`ItemService` có một trigger chạy sau khi ghi:
+- Mỗi khi một item được tạo, cập nhật hoặc xoá, `ItemService.commit()` truy vấn registry của materialization.
+- Nếu collection được materialize với strategy `auto`, nó đưa một tác vụ refresh vào hàng đợi để giữ bảng vật lý đồng bộ.
 
 ## Truy vấn materialized data
-Delivery API supports reading directly from the materialized physical tables via the `/api/v1/materialize/:id/data` endpoint, bypassing JSONB parsing completely.
+Delivery API hỗ trợ đọc trực tiếp từ các bảng vật lý đã materialize qua endpoint `/api/v1/materialize/:id/data`, bỏ qua hoàn toàn bước parse JSONB.
 
 Khi feature đầy đủ, route `/items/:collection` sẽ tự động detect và route qua materialized table nếu:
 
