@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-11-16T20:34:21.315Z
+version: 6
+lastUpdated: 2026-11-17T19:32:27.731Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 31a90e7ae6a0231a
+sourceHash: aa083ee0dd2aa77e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-16T20:34:21.315Z
-codeVerifiedHash: 31a90e7ae6a0231a
+codeVerified: 2026-11-17T19:32:27.731Z
+codeVerifiedHash: aa083ee0dd2aa77e
 codeVerifiedClaims: 12
 ---
 
@@ -134,7 +134,10 @@ realtime `import.progress` cho người đã upload.
 **Cách job chạy.** Request upload khởi động job và xử lý nó trong khoảng
 20 giây. Sau đó một cron mỗi phút (Cron Trigger trên Workers, hoặc scheduler của
 Node trên Docker) chạy tiếp. File được parse một lần khi tạo job, và các dòng
-được lưu theo từng phần; mỗi bước chỉ đọc phần kế tiếp. Mỗi phần là một
+được lưu theo từng phần; mỗi bước chỉ đọc phần kế tiếp. Job và mọi phần của
+nó được commit cùng nhau, nên worker không bao giờ nhận một job mà các dòng mới
+được lưu một phần, và job kết thúc hoặc bị huỷ xoá các phần còn lại trong cùng
+commit với trạng thái cuối của nó. Mỗi phần là một
 transaction của database: các dòng và
 bộ đếm tiến độ được commit cùng nhau, nên một worker chết giữa chừng không để lại
 gì, và phần đó được chạy lại từ dòng đã commit cuối cùng, không tạo bản trùng.

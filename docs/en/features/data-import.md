@@ -1,10 +1,10 @@
 ---
-version: 5
-lastUpdated: 2026-11-16T20:34:21.315Z
+version: 6
+lastUpdated: 2026-11-17T19:32:27.731Z
 sourceLang: en
-contentHash: 31a90e7ae6a0231a
-codeVerified: 2026-11-16T20:34:21.315Z
-codeVerifiedHash: 31a90e7ae6a0231a
+contentHash: aa083ee0dd2aa77e
+codeVerified: 2026-11-17T19:32:27.731Z
+codeVerifiedHash: aa083ee0dd2aa77e
 codeVerifiedClaims: 12
 ---
 
@@ -133,7 +133,10 @@ receives an `import.progress` realtime event for the uploader.
 about 20 seconds. After that, a one-minute cron (Workers Cron Trigger, or the
 Node scheduler on Docker) resumes it. The file is parsed once, when the job is
 created, and its rows are stored in chunks; each step reads only the next
-chunk. Each chunk is one database transaction:
+chunk. The job and all of its chunks commit together, so a worker never picks
+up a job whose rows are only partly stored, and a job that finishes or is
+cancelled drops its remaining chunks in the same commit as its final status.
+Each chunk is one database transaction:
 the rows and the progress counter commit together, so a worker that dies
 mid-chunk leaves nothing behind and the chunk is replayed from the last
 committed row, with no duplicates. The transaction locks the job, so a second

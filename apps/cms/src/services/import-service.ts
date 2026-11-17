@@ -162,6 +162,20 @@ async function stageChunks(db: Database, siteId: string, jobId: string, chunks: 
   }
 }
 
+/**
+ * Transaction-scoped advisory lock on one site's imports. Both per-site
+ * decisions take it, so each is one atomic check-then-write:
+ *  - `createImportJob`: pending budget check → insert job → stage its chunks
+ *    (#859). A job only becomes visible, to the budget and to workers, with
+ *    all of its chunks in the same commit.
+ *  - `runImportStep` starting a queued job: running count → claim (#860).
+ * Under READ COMMITTED each statement after the lock sees every job the
+ * previous holder committed.
+ */
+function importSiteLock(siteId: string) {
+  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`lumibase_import:${siteId}`}, 0))`;
+}
+
 /** Public shape of a job (never includes the uploaded source). */
 export interface ImportJobView {
   id: string;
@@ -238,7 +252,7 @@ export async function createImportJob(input: {
   return input.db.transaction(async (tx) => {
     const db = tx as unknown as Database;
     // Serialise creates per site so two uploads cannot both pass the budget check.
-    await db.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`lumibase_import:${input.siteId}`}, 0))`);
+    await db.execute(importSiteLock(input.siteId));
     const [pending] = (await db
       .select({
         jobs: sql<number>`count(*)::int`,
@@ -329,11 +343,6 @@ async function defaultItemServiceFor(
     );
 }
 
-/** Transaction-scoped advisory lock serialising job starts within one site. */
-function importSiteLock(siteId: string) {
-  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`lumibase_import:${siteId}`}, 0))`;
-}
-
 /** Thrown inside the chunk transaction when another worker owns the job. */
 class LeaseLostError extends Error {}
 
@@ -369,24 +378,28 @@ async function finish(
   extra: Partial<typeof importJobs.$inferInsert> = {},
 ): Promise<ImportJobRow | undefined> {
   const now = deps.now?.() ?? new Date();
-  const [row] = await deps.db
-    .update(importJobs)
-    .set({
-      ...extra,
-      status,
-      message,
-      source: '',
-      finishedAt: now,
-      updatedAt: now,
-      leaseOwner: null,
-      leaseUntil: null,
-    })
-    .where(and(eq(importJobs.id, jobId), eq(importJobs.leaseOwner, owner)))
-    .returning(importJobColumns);
-  if (row) {
-    await deps.db.delete(importChunks).where(eq(importChunks.jobId, jobId));
-    await publishProgress(deps, row);
-  }
+  // The terminal status and the removal of the staged rows commit together: a
+  // crash between them must not leave a finished job with chunks, or chunks
+  // gone under a job that still reads as queued/running.
+  const row = await deps.db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(importJobs)
+      .set({
+        ...extra,
+        status,
+        message,
+        source: '',
+        finishedAt: now,
+        updatedAt: now,
+        leaseOwner: null,
+        leaseUntil: null,
+      })
+      .where(and(eq(importJobs.id, jobId), eq(importJobs.leaseOwner, owner)))
+      .returning(importJobColumns);
+    if (updated) await tx.delete(importChunks).where(eq(importChunks.jobId, jobId));
+    return updated;
+  });
+  if (row) await publishProgress(deps, row);
   return row;
 }
 
@@ -704,15 +717,19 @@ export async function runImportTick(deps: ImportStepDeps, opts: { budgetMs?: num
  */
 export async function requestCancel(db: Database, siteId: string, jobId: string): Promise<ImportJobRow> {
   const now = new Date();
-  const [queued] = await db
-    .update(importJobs)
-    .set({ status: 'cancelled', cancelRequestedAt: now, message: 'Cancelled before it started.', source: '', finishedAt: now, updatedAt: now })
-    .where(and(eq(importJobs.id, jobId), eq(importJobs.siteId, siteId), eq(importJobs.status, 'queued'), isNull(importJobs.leaseUntil)))
-    .returning(importJobColumns);
-  if (queued) {
-    await db.delete(importChunks).where(and(eq(importChunks.jobId, jobId), eq(importChunks.siteId, siteId)));
-    return queued;
-  }
+  // Cancelling a queued job and dropping its staged rows is one commit. A
+  // worker claiming it at the same moment blocks on the row and then finds it
+  // no longer `queued`, so it never starts a job whose chunks are gone.
+  const queued = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(importJobs)
+      .set({ status: 'cancelled', cancelRequestedAt: now, message: 'Cancelled before it started.', source: '', finishedAt: now, updatedAt: now })
+      .where(and(eq(importJobs.id, jobId), eq(importJobs.siteId, siteId), eq(importJobs.status, 'queued'), isNull(importJobs.leaseUntil)))
+      .returning(importJobColumns);
+    if (row) await tx.delete(importChunks).where(and(eq(importChunks.jobId, jobId), eq(importChunks.siteId, siteId)));
+    return row;
+  });
+  if (queued) return queued;
   const [running] = await db
     .update(importJobs)
     .set({ cancelRequestedAt: now, updatedAt: now })
