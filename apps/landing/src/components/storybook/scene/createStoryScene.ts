@@ -104,7 +104,7 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
   const room = new RoomEnvironment();
   const environment = track(pmrem.fromScene(room, 0.04));
   scene.environment = environment.texture;
-  scene.environmentIntensity = 0.85;
+  scene.environmentIntensity = 0.55;
   room.dispose();
   pmrem.dispose();
 
@@ -174,7 +174,7 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
   scene.add(sparkles.points);
 
   // A little fill so the gold and the stars read; the fur lights itself.
-  const key = new THREE.DirectionalLight("#ffe9c4", 2.2);
+  const key = new THREE.DirectionalLight("#ffe9c4", 1.5);
   key.position.set(-3, 5, 6);
   const moonlight = new THREE.DirectionalLight("#8f9dff", 1.1);
   moonlight.position.set(5, 3, -2);
@@ -207,7 +207,7 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
     if (quality.bloom) {
       // Threshold above 1: only things brighter than paper-white glow, so the
       // lamp, the stars and the antenna bloom and Lumi's coat does not.
-      bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 0.62, 0.8, 1.02);
+      bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 0.5, 0.75, 1.15);
       composer.addPass(bloom);
     }
     composer.addPass(new OutputPass());
@@ -317,7 +317,7 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
     const moonX = layout === "desktop" ? 0.8 : 0.58;
     const moonY = layout === "desktop" ? 0.6 : 0.8;
     moon.position.set(moonX * moonHalf * aspect, moonY * moonHalf + camera.position.y * 0.02, MOON_Z);
-    moon.scale.setScalar(moonHalf * (layout === "desktop" ? 0.62 : 0.4));
+    moon.scale.setScalar(moonHalf * (layout === "desktop" ? 0.46 : 0.34));
 
     if (!reduced) {
       const t = (time - streakStart) / 1.1;

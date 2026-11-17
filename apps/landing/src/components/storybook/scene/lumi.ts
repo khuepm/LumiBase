@@ -199,9 +199,11 @@ const FUR_FRAG = /* glsl */ `
 
     // Lamp light from below.
     float under = smoothstep(0.1, -0.9, N.y);
-    lit += uWarm * under * uUnderlight * 0.55;
+    lit += uWarm * under * uUnderlight * 0.38;
 
-    gl_FragColor = vec4(lit, 1.0);
+    // Held just under paper-white so the coat keeps its texture and stays out
+    // of the bloom pass; only the antenna is allowed to glow.
+    gl_FragColor = vec4(min(lit * 0.86, vec3(0.98)), 1.0);
   }
 `;
 

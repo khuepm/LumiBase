@@ -256,9 +256,9 @@ export function createMoon(track: <T extends Disposable>(item: T) => T): THREE.M
           // A second disc, offset, bites the crescent out of the first.
           float bite = smoothstep(r * 0.9, r * 0.9 - 0.02, length(vUv - vec2(0.17, 0.09)));
           float crescent = disc * (1.0 - bite);
-          float earthshine = disc * bite * 0.06;
-          float halo = exp(-max(d - r * 0.6, 0.0) * 5.5) * 0.3;
-          vec3 col = uLit * crescent * 1.5 + uLit * earthshine + uHalo * halo;
+          float earthshine = disc * bite * 0.025;
+          float halo = exp(-max(d - r * 0.75, 0.0) * 7.0) * 0.16;
+          vec3 col = uLit * crescent * 1.25 + uLit * earthshine + uHalo * halo;
           float alpha = clamp(crescent + earthshine * 4.0 + halo, 0.0, 1.0);
           gl_FragColor = vec4(col, alpha * uOpacity);
         }
@@ -488,7 +488,7 @@ export function createLamp(
       roughness: 0.3,
       metalness: 1,
       emissive: new THREE.Color("#7a3c08"),
-      emissiveIntensity: 0.35,
+      emissiveIntensity: 0.15,
     }),
   );
   const trim = track(
@@ -577,7 +577,7 @@ export function createLamp(
     setGlow(amount) {
       glow.scale.setScalar(0.5 + 1.3 * amount);
       glowMaterial.opacity = 0.2 + 0.8 * amount;
-      gold.emissiveIntensity = 0.25 + 0.5 * amount;
+      gold.emissiveIntensity = 0.08 + 0.22 * amount;
     },
   };
 }
