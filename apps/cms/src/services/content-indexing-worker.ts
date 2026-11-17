@@ -26,7 +26,8 @@ import { buildSearchDocument } from './search-document';
  * `search:index` snapshot is written, the worker re-reads the item row: a
  * deleted or missing item is removed from the index instead (delete wins), and
  * a snapshot whose `dataHash` no longer matches the stored data is skipped —
- * the write that changed the data enqueued its own, newer job.
+ * the write that changed the data enqueued its own, newer job. A legacy job
+ * without `dataHash` is applied only when its data equals the stored data.
  */
 
 export const CONTENT_INDEXING_QUEUE = 'content-indexing';
@@ -156,7 +157,21 @@ export async function processSearchIndexJob(
       await processSearchRemoveJob(search, payload);
       return;
     }
-    if (payload.dataHash !== undefined && payload.dataHash !== (await searchSnapshotHash(current.data))) return;
+    if (payload.dataHash !== undefined) {
+      if (payload.dataHash !== (await searchSnapshotHash(current.data))) return;
+    } else if (canonicalJson(payload.data) !== canonicalJson(current.data)) {
+      // Legacy job (enqueued before #857, no hash). Its snapshot is provably
+      // current only when it equals the stored data; otherwise the item changed
+      // since (or has encrypted fields, which this worker cannot decrypt) and
+      // the old snapshot could overwrite a newer entry. Drop it; the next edit or
+      // `lumibase reindex` brings the entry up to date. Never log the data.
+      console.warn('[content-indexing] dropped legacy search:index job that no longer matches the item', {
+        siteId: payload.siteId,
+        collection: payload.collection,
+        id: payload.id,
+      });
+      return;
+    }
   }
   const indexName = searchIndexName(payload.siteId, payload.collection);
   await ensureConfigured(search, indexName, configured);
