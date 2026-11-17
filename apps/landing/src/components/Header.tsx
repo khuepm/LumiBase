@@ -14,23 +14,35 @@ const links = [
 ];
 
 export default function Header() {
-  const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  // The menu belongs to the page it was opened on, so any navigation —
+  // back/forward included — closes it without an effect.
+  const [openOn, setOpenOn] = useState<string | null>(null);
+  const open = openOn === pathname;
+  const setOpen = (next: boolean) => setOpenOn(next ? pathname : null);
+  const header = useRef<HTMLElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setOpen(false);
+        setOpenOn(null);
         menuButton.current?.focus();
       }
     };
+    const onPointerDown = (event: PointerEvent) => {
+      if (!header.current?.contains(event.target as Node)) setOpenOn(null);
+    };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
   }, [open]);
 
   return (
-    <header className={styles.header}>
+    <header ref={header} className={styles.header}>
       <a href="#main-content" className={styles.skip}>
         Skip to content
       </a>
@@ -69,7 +81,6 @@ export default function Header() {
         className={styles.mobileNav}
         aria-label="Mobile navigation"
         hidden={!open}
-        key={pathname}
       >
         {links.map((link) => (
           <Link
