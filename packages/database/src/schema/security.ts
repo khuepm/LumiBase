@@ -65,6 +65,16 @@ export const systemState = pgTable(
     emailIdentityMode: text('email_identity_mode', { enum: ['exact', 'root'] })
       .default('exact')
       .notNull(),
+    /**
+     * Last release manifest this instance accepted (#869). Holds the signed
+     * envelope as received plus the verified payload and when/how it arrived.
+     * Written only by the release-flags service after Ed25519 verification,
+     * under a conditional UPDATE that refuses an older `issuedAtMs`, so a
+     * replayed manifest cannot roll flags back. Null until the first accept.
+     * Instance-wide by design: release gates belong to the deployment, not to
+     * a tenant (per-site choices live in `settings` key `release.flags`).
+     */
+    releaseManifest: jsonb('release_manifest'),
     /** Wall-clock time at which `state` flipped to `initialized`. */
     initializedAt: timestamp('initialized_at'),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),

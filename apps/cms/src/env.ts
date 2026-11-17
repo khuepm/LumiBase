@@ -65,6 +65,20 @@ export interface Bindings {
   LUMIBASE_BUILD_TIME?: string;
   /** Release track for the artifact, e.g. development, staging, production. */
   LUMIBASE_RELEASE_CHANNEL?: string;
+  // ── Release flags (#869, modules/release-flags) ─────────────────────────
+  /**
+   * Operator override of the release gate: `key=on,other=off`. Wins over the
+   * signed manifest — the operator's kill switch. Unknown keys are ignored.
+   */
+  LUMIBASE_RELEASE_FLAGS?: string;
+  /** JSON `{ keyId: pem }` of Ed25519 keys trusted to sign release manifests. */
+  LUMIBASE_RELEASE_PUBLIC_KEYS?: string;
+  /** Opt-in pull channel: https URL serving the signed manifest envelope. */
+  LUMIBASE_RELEASE_MANIFEST_URL?: string;
+  /** Pull interval in seconds (default 300, minimum 60). */
+  LUMIBASE_RELEASE_MANIFEST_REFRESH_S?: string;
+  /** This deployment's id, matched against a manifest's `audience` list. */
+  LUMIBASE_INSTANCE_ID?: string;
   /** Runtime mode: `'cloudflare'` or `'docker'`. Defaults to `'docker'`. */
   LUMIBASE_RUNTIME?: string;
   // ── Email service (services/email/*) ────────────────────────────────────

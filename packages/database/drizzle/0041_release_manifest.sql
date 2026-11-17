@@ -1,0 +1,11 @@
+-- 0041_release_manifest — instance release gates (#869).
+--
+-- Adds one nullable column to the singleton lumibase_system_state row: the last
+-- signed release manifest the instance accepted. Additive only; no backfill
+-- (null = "no manifest", every flag falls back to its stage default, which is
+-- exactly the pre-#869 behaviour). Not site-scoped: release gates belong to
+-- the deployment; per-site choices live in lumibase_settings (key
+-- `release.flags`), which is already under site_isolation.
+-- Re-runnable (IF NOT EXISTS). Rollback:
+--   ALTER TABLE lumibase_system_state DROP COLUMN IF EXISTS release_manifest;
+ALTER TABLE lumibase_system_state ADD COLUMN IF NOT EXISTS release_manifest jsonb;

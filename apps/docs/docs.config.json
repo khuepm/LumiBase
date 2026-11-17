@@ -77,7 +77,8 @@
           "features/jev-draft-review-pilot",
           "features/jev-automation",
           "features/jev-semantic-drift",
-          "features/rls-request-scope"
+          "features/rls-request-scope",
+          "features/release-flags"
         ]
       },
       {

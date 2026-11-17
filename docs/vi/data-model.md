@@ -1,13 +1,13 @@
 ---
-version: 24
-lastUpdated: 2026-11-15T23:40:59.736Z
+version: 25
+lastUpdated: 2026-11-17T12:28:51.663Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ef6fd16483d977a5
+sourceHash: fed3c22a2828e9fd
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T23:40:59.736Z
-codeVerifiedHash: ef6fd16483d977a5
+codeVerified: 2026-11-17T12:28:51.663Z
+codeVerifiedHash: fed3c22a2828e9fd
 codeVerifiedClaims: 22
 ---
 
@@ -82,6 +82,8 @@ Unique index: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, 
 - `identityKey` text (migration `0027`) — bằng `users.email_root` khi site strict, ngược lại là null. Unique index `user_sites_site_identity_unique` trên `(site_id, identity_key)` chỉ cho một membership mỗi hộp thư gốc trên site strict (null không bao giờ xung đột). Được trigger điền khi insert và cập nhật lại khi email của thành viên thay đổi.
 
 **Chính sách định danh email (migration `0027`).** Tầng instance nằm ở `system_state.email_identity_mode` (`exact` | `root`, mặc định `exact`; instance hiện có được backfill thành `exact`, nên nâng cấp không đổi hành vi). Mọi writer — route, SCIM, setup, seed, bản app cũ — đều có cùng giá trị cột dẫn xuất vì trigger tính chúng: `lumibase_users_email_identity()` trên `users` (đọc singleton `FOR SHARE`), `lumibase_user_sites_identity_key()` trên `user_sites` (đọc site `FOR SHARE`) và `lumibase_users_rekey_memberships()` sau khi đổi email. Endpoint đổi policy giữ `FOR UPDATE` trên cùng các hàng đó, nên không hàng nào bị gán khoá theo policy cũ. Xem [Quản lý người dùng](./security/user-management.md) và `/api/v1/admin/email-identity` trong API spec.
+
+**Release manifest (migration `0041`).** `system_state.release_manifest` (jsonb, nullable) giữ manifest phát hành có chữ ký gần nhất mà deployment đã chấp nhận: envelope như khi nhận, `flags` đã xác minh, `issuedAt` / `issuedAtMs`, `acceptedAt`, `source` (`push` | `pull`) và `acceptedBy`. Cột chỉ được ghi sau khi xác minh Ed25519, bằng một câu UPDATE có điều kiện từ chối `issuedAtMs` cũ hơn. Lựa chọn theo site cho release flag không nằm ở đây: chúng nằm trong `settings` với key `release.flags`. Instance cũ có giá trị null, nghĩa là mọi flag dùng mặc định theo stage. Xem [Release flags](./features/release-flags.md).
 
 ### `teams` / `team_members`
 - `teams`: `id`, `siteId`, `name`, `description`.
