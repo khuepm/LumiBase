@@ -1,10 +1,10 @@
 ---
-version: 56
-lastUpdated: 2026-11-15T23:40:56.423Z
+version: 57
+lastUpdated: 2026-11-17T07:36:34.949Z
 sourceLang: en
-contentHash: fb7e23a8ff3b4d56
-codeVerified: 2026-11-15T23:40:56.423Z
-codeVerifiedHash: fb7e23a8ff3b4d56
+contentHash: 3ed142a7f0469c5d
+codeVerified: 2026-11-17T07:36:34.949Z
+codeVerifiedHash: 3ed142a7f0469c5d
 codeVerifiedClaims: 636
 ---
 
@@ -705,13 +705,17 @@ columns), a relation's `onDelete` is enforced in the application layer. On
 item, the delete is blocked with **409 `DEPENDENT_RECORDS_EXIST`** and a
 `dependents` array. (`set null`/`cascade` are **not** auto-applied on
 soft-delete — that would break soft-delete's recoverability; the editor clears
-them explicitly.) `GET …/dependents` returns
-`{ data: { blocking, dependents: [{ relation, collection, field, onDelete, count,
-sample }] } }`. `POST …/resolve-dependents` takes
+them explicitly.) Rich text that links to or embeds the item also blocks the
+delete: those groups have `kind: "richtext"`, `relation: "richtext:<collection>.<field>"`
+and `onDelete: "restrict"`, and are cleared by editing the referencing content
+(see [Rich text](../features/rich-text.md)). `GET …/dependents` returns
+`{ data: { blocking, dependents: [{ relation, kind, collection, field, onDelete,
+count, sample }] } }`. `POST …/resolve-dependents` takes
 `{ action: "set_null"|"delete"|"reassign", relation, newTargetId?, hard? }` and
 runs transactionally (delete delegates to the normal item-delete path).
 Errors: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null on a
-required field), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
+required field), `INVALID_TARGET` (422, reassign), `RICHTEXT_REFERENCE` (422, a
+rich-text group cannot be batch-resolved), `NOT_FOUND` (404).
 
 **Export.** `GET /items/:collection/export?format=csv|json&fields=&locales=&relations=id|slug|embed&filter=&sort=&status=`
 streams every matching row (keyset-paged, so any size). It uses the caller's

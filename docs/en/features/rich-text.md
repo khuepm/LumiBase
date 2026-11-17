@@ -1,11 +1,11 @@
 ---
-version: 3
+version: 4
 sourceLang: en
-lastUpdated: 2026-11-16T02:48:05.145Z
-contentHash: bd436a08b0a8e84a
-codeVerified: 2026-11-16T02:48:05.145Z
-codeVerifiedHash: bd436a08b0a8e84a
-codeVerifiedClaims: 12
+lastUpdated: 2026-11-17T07:36:34.866Z
+contentHash: d57fc8f37ace9f78
+codeVerified: 2026-11-17T07:36:34.866Z
+codeVerifiedHash: d57fc8f37ace9f78
+codeVerifiedClaims: 14
 ---
 
 # Rich text
@@ -248,11 +248,23 @@ through the allowlist sanitiser — and a Markdown hook's result is used only if
 it is a valid document. On the server, pass the same plugin object to the
 serialisers: `richTextToHtml(doc, { plugins: [plugin] })`.
 
-## Files in rich text
+## Files and items referenced from rich text
 
 A file embedded in rich text is a reference by id, so the media library's
 **Where used** report lists the item, and deleting the file follows the
 site's safe-delete policy (refuse, or require `?confirm=true`).
+
+An item that rich text links to or embeds — through a `ref` link, an inline or
+block `embed`, or a custom block's `ref` / `refs`, in any field including
+nested blocks — cannot be deleted while the reference exists. `DELETE` answers
+**409 `DEPENDENT_RECORDS_EXIST`** with a dependents group of `kind: "richtext"`
+per referencing collection and field (`DependentsService.resolveRichTextDependents`
+in `apps/cms/src/services/dependents-service.ts`). Studio's delete dialog lists
+the referencing items with a button to open each one; remove the link or embed
+there, then delete again. These groups cannot be batch-resolved
+(`resolve-dependents` answers `RICHTEXT_REFERENCE`). A link from an item to
+itself, and references from deleted items or other sites, do not block.
+
 `collectRichTextRefs` returns every reference in a document.
 
 ## Multi-tenancy
@@ -261,12 +273,11 @@ Rich text adds no table, cache key or background job: documents live in the
 item's `data` like any other field, read and written through the same
 site-scoped item queries. Plugins registered by extensions are code loaded
 per Studio session and carry no tenant data. The file-usage check runs the
-site-scoped query of the media library.
+site-scoped query of the media library, and the rich-text dependents check
+scans only the deleting site's live items.
 
 ## Not yet included
 
 - A visual preview of embedded files and items in the editor canvas (they
   show as labelled cards).
-- Item references in rich text do not block deleting the referenced item;
-  the reference then renders as an inert element.
 - Extension-defined marks (only blocks can be added today).

@@ -1,14 +1,14 @@
 ---
-version: 3
+version: 4
 sourceLang: en
-lastUpdated: 2026-11-16T02:48:05.145Z
+lastUpdated: 2026-11-17T07:36:34.866Z
 translatedFrom: en
-sourceHash: bd436a08b0a8e84a
+sourceHash: d57fc8f37ace9f78
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-16T02:48:05.145Z
-codeVerifiedHash: bd436a08b0a8e84a
-codeVerifiedClaims: 12
+codeVerified: 2026-11-17T07:36:34.866Z
+codeVerifiedHash: d57fc8f37ace9f78
+codeVerifiedClaims: 14
 ---
 
 # Rich text
@@ -252,11 +252,23 @@ qua bộ làm sạch theo allowlist — và kết quả của hook Markdown ch�
 nếu là tài liệu hợp lệ. Phía server, truyền cùng đối tượng plugin cho các
 serialiser: `richTextToHtml(doc, { plugins: [plugin] })`.
 
-## File trong rich text
+## File và item được tham chiếu từ rich text
 
 File nhúng trong rich text là tham chiếu theo id, nên báo cáo **Where used**
 của media library liệt kê item đó, và việc xoá file tuân theo chính sách xoá
 an toàn của site (từ chối, hoặc yêu cầu `?confirm=true`).
+
+Item mà rich text liên kết tới hoặc nhúng — qua liên kết `ref`, `embed` inline
+hoặc khối, hay `ref` / `refs` của custom block, ở bất kỳ trường nào kể cả block
+lồng nhau — không thể bị xoá khi tham chiếu còn tồn tại. `DELETE` trả
+**409 `DEPENDENT_RECORDS_EXIST`** kèm một nhóm phụ thuộc `kind: "richtext"`
+cho mỗi collection và trường đang tham chiếu (`DependentsService.resolveRichTextDependents`
+trong `apps/cms/src/services/dependents-service.ts`). Hộp thoại xoá của Studio
+liệt kê các item đang tham chiếu kèm nút mở từng item; hãy gỡ liên kết hoặc
+nhúng ở đó rồi xoá lại. Các nhóm này không xử lý hàng loạt được
+(`resolve-dependents` trả `RICHTEXT_REFERENCE`). Liên kết của một item tới chính
+nó, và tham chiếu từ item đã xoá hoặc từ site khác, không chặn việc xoá.
+
 `collectRichTextRefs` trả về mọi tham chiếu trong một tài liệu.
 
 ## Multi-tenancy
@@ -265,12 +277,11 @@ Rich text không thêm bảng, cache key hay job nền: tài liệu nằm trong 
 của item như mọi trường khác, được đọc ghi qua cùng các truy vấn item có phạm
 vi site. Plugin do extension đăng ký là mã được tải theo phiên Studio và không
 mang dữ liệu tenant. Kiểm tra file đang được dùng chạy truy vấn có phạm vi site
-của media library.
+của media library, và kiểm tra phụ thuộc rich text chỉ quét các item còn sống
+của site đang xoá.
 
 ## Chưa có
 
 - Bản xem trước trực quan của file và item nhúng trong vùng soạn thảo (hiện
   là thẻ có nhãn).
-- Tham chiếu item trong rich text không chặn việc xoá item được tham chiếu;
-  khi đó tham chiếu được dựng thành một phần tử trơ.
 - Mark do extension định nghĩa (hiện chỉ thêm được khối).

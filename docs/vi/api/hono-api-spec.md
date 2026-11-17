@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 55
-lastUpdated: 2026-11-15T23:40:56.423Z
+version: 56
+lastUpdated: 2026-11-17T07:36:34.949Z
 sourceLang: en
 translatedFrom: en
-sourceHash: fb7e23a8ff3b4d56
+sourceHash: 3ed142a7f0469c5d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T23:40:56.423Z
-codeVerifiedHash: fb7e23a8ff3b4d56
+codeVerified: 2026-11-17T07:36:34.949Z
+codeVerifiedHash: 3ed142a7f0469c5d
 codeVerifiedClaims: 636
 ---
 
@@ -619,7 +619,7 @@ khác origin gửi được `If-Match` và đọc được `ETag` (cả hai đã
 allow/expose của CORS). SDK nhận tag qua
 `items(name).patch(id, input, { ifMatch: row.version })`.
 
-**Các bản ghi phụ thuộc (Dependent records).** Vì các tham chiếu item nằm trong JSONB (không phải cột FK vật lý), `onDelete` của một quan hệ được thực thi ở lớp ứng dụng. Khi `DELETE`, nếu một quan hệ khai báo `restrict` vẫn còn bản ghi trỏ tới item, lệnh xóa sẽ bị chặn với **409 `DEPENDENT_RECORDS_EXIST`** và một mảng `dependents`. (`set null`/`cascade` **không** tự động áp dụng khi xóa mềm — điều đó sẽ làm hỏng khả năng phục hồi của xóa mềm; trình biên tập phải xóa chúng một cách tường minh.) `GET …/dependents` trả về `{ data: { blocking, dependents: [{ relation, collection, field, onDelete, count, sample }] } }`. `POST …/resolve-dependents` nhận `{ action: "set_null"|"delete"|"reassign", relation, newTargetId?, hard? }` và chạy trong một transaction (lệnh delete ủy quyền cho đường dẫn xóa item thông thường). Lỗi: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null trên trường bắt buộc), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
+**Các bản ghi phụ thuộc (Dependent records).** Vì các tham chiếu item nằm trong JSONB (không phải cột FK vật lý), `onDelete` của một quan hệ được thực thi ở lớp ứng dụng. Khi `DELETE`, nếu một quan hệ khai báo `restrict` vẫn còn bản ghi trỏ tới item, lệnh xóa sẽ bị chặn với **409 `DEPENDENT_RECORDS_EXIST`** và một mảng `dependents`. (`set null`/`cascade` **không** tự động áp dụng khi xóa mềm — điều đó sẽ làm hỏng khả năng phục hồi của xóa mềm; trình biên tập phải xóa chúng một cách tường minh.) Rich text liên kết tới hoặc nhúng item cũng chặn lệnh xóa: các nhóm đó có `kind: "richtext"`, `relation: "richtext:<collection>.<field>"` và `onDelete: "restrict"`, và được gỡ bằng cách sửa nội dung đang tham chiếu (xem [Rich text](../features/rich-text.md)). `GET …/dependents` trả về `{ data: { blocking, dependents: [{ relation, kind, collection, field, onDelete, count, sample }] } }`. `POST …/resolve-dependents` nhận `{ action: "set_null"|"delete"|"reassign", relation, newTargetId?, hard? }` và chạy trong một transaction (lệnh delete ủy quyền cho đường dẫn xóa item thông thường). Lỗi: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null trên trường bắt buộc), `INVALID_TARGET` (422, reassign), `RICHTEXT_REFERENCE` (422, không thể xử lý hàng loạt nhóm rich text), `NOT_FOUND` (404).
 
 **Export.** `GET /items/:collection/export?format=csv|json&fields=&locales=&relations=id|slug|embed&filter=&sort=&status=` xuất theo luồng mọi dòng khớp (phân trang keyset, nên không giới hạn kích thước). Endpoint dùng quyền `read` của người gọi và cú pháp `filter`/`sort` của endpoint danh sách, chạy hook `items.export.before` của extension cho từng dòng, và ghi một mục audit `items_exported`. CSV ghi một cột `field.locale` cho mỗi locale của trường dịch được và vô hiệu hoá công thức bảng tính; JSON có dạng `{ collection, format: "lumibase-export@1", exportedAt, fields, locales, relations, items: [{ id, status, sort, created_at, updated_at, data }] }`. Lỗi trả về trước khi bắt đầu stream: `400 VALIDATION` / `400 UNKNOWN_FIELD` / `400 INVALID_FILTER`, `403 FORBIDDEN`, `404 NOT_FOUND`. Xem [Data export](../features/data-export.md).
 
