@@ -55,7 +55,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - Migration `0038_dam_assets` is additive and idempotent (`lumibase_files.content_hash` / `version` / `scan_status` / `updated_at`, new `lumibase_file_versions`). No backfill is required: existing files keep `scan_status = skipped` (served as before) and a NULL hash, which only means they do not show up as duplicates until replaced. If you run with `LUMIBASE_DB_RLS=enforce`, re-apply `rls-policies.sql` so the new table gets the `site_isolation` policy pair.
 
 ### Upgrade notes
-- Migration `0041_release_manifest` adds one nullable column, `lumibase_system_state.release_manifest` (additive, idempotent, no backfill). Until a manifest is accepted every flag uses its stage default, so nothing changes on upgrade. To accept manifests, set `LUMIBASE_RELEASE_PUBLIC_KEYS`.
+- Migration `0041_release_manifest` adds one table, `lumibase_release_manifests` (a deployment-wide singleton; additive, idempotent, no backfill). Until a manifest is accepted every flag uses its stage default, so nothing changes on upgrade. An image running against the previous schema keeps working: flag evaluation falls back to stage defaults while the table is missing. To accept manifests, set `LUMIBASE_RELEASE_PUBLIC_KEYS`.
 - Migration `0040_locale_generation` adds `lumibase_locale_generation_jobs` and `lumibase_translation_suggestions` (additive, no backfill) and both are added to `rls-policies.sql`.
 
 ### Changed

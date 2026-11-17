@@ -7,7 +7,7 @@
 - [x] 1. Registry có kiểu + kiểm tra khai báo + test hết hạn `removeBy` (Req 1)
 - [x] 2. Resolver thuần hai lớp + parse `LUMIBASE_RELEASE_FLAGS`; unit + property test (Req 2.1–2.3)
 - [x] 3. Manifest Ed25519: schema, xác minh, chống replay; test (Req 3.1–3.2)
-- [x] 4. Migration `0041_release_manifest` + UPDATE có điều kiện; DB test race (đã kiểm bằng đột biến: bỏ điều kiện → test fail) (Req 3.3)
+- [x] 4. Migration `0041_release_manifest` (bảng `lumibase_release_manifests`) + upsert có điều kiện; DB test race (đã kiểm bằng đột biến: bỏ điều kiện → test fail) và test schema N-1 (bảng chưa có → mặc định theo stage) (Req 3.3)
 - [x] 5. Push + pull + trạng thái lần pull; lỗi pull giữ manifest cũ (Req 3.4–3.6)
 - [x] 6. Site choice + xoá cache khi ghi; test cô lập hai site và cache dùng chung (Req 4)
 - [x] 7. `requireReleaseFlag` / `isReleaseFlagEnabled`, memo theo request; test route 404 → 200 theo site (Req 2.4–2.5)

@@ -6651,7 +6651,7 @@ paths:
         '200': { description: Accepted (or unchanged) }
         '400': { description: '`MANIFEST_REJECTED` with reason `MALFORMED_ENVELOPE`' }
         '403': { description: Not the bootstrap admin, or an API key }
-        '409': { description: '`MANIFEST_REJECTED` with reason `STALE`, `KEYS_NOT_CONFIGURED` or `NOT_INITIALIZED`' }
+        '409': { description: '`MANIFEST_REJECTED` with reason `STALE` or `KEYS_NOT_CONFIGURED`' }
         '422': { description: '`MANIFEST_REJECTED` with reason `BAD_SIGNATURE`, `UNKNOWN_KEY`, `EXPIRED`, `NOT_YET_VALID`, `WRONG_AUDIENCE` or `MALFORMED_PAYLOAD`' }
   /release-flags/manifest/pull:
     post:

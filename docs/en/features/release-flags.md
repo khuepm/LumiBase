@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-11-17T12:27:27.277Z
+version: 2
+lastUpdated: 2026-11-17T13:19:10.827Z
 sourceLang: en
-contentHash: 370a9d07de55c42c
-codeVerified: 2026-11-17T12:27:27.277Z
-codeVerifiedHash: 370a9d07de55c42c
+contentHash: 95787bae84a97b77
+codeVerified: 2026-11-17T13:19:10.827Z
+codeVerifiedHash: 95787bae84a97b77
 codeVerifiedClaims: 26
 ---
 
@@ -151,7 +151,7 @@ Rules for a new flag:
 
 | Resource | Scope | Why |
 |---|---|---|
-| Accepted manifest (`lumibase_system_state.release_manifest`) | Deployment-wide | It records what the deployment released. It holds no tenant data. |
+| Accepted manifest (`lumibase_release_manifests`, one row) | Deployment-wide | It records what the deployment released. It holds no tenant data. |
 | `LUMIBASE_RELEASE_FLAGS`, trusted keys, pull URL | Deployment-wide | Operator configuration. |
 | Site choices (`lumibase_settings`, key `release.flags`) | Per site | Under the existing `site_isolation` RLS policy. |
 | Cache entry `release-flags:site:{siteId}` | Per site | The key contains the site id. |

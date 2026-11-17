@@ -1,4 +1,4 @@
-import { auditLog, settings, sites, systemState, users, type Database } from '@lumibase/database';
+import { auditLog, releaseManifests, settings, sites, users, type Database } from '@lumibase/database';
 import { MemoryCacheProvider } from '@lumibase/runtime';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -27,8 +27,7 @@ describe.skipIf(!hasDbIntegrationUrl)('/release-flags routes — DB integration'
   let db: Database;
   let bootstrapId = '';
   let memberId = '';
-  let createdSingleton = false;
-  let savedManifest: unknown = null;
+  let savedManifests: (typeof releaseManifests.$inferSelect)[] = [];
   /** The instance's real bootstrap admin, demoted for the test and restored after. */
   let previousBootstrapId: string | null = null;
 
@@ -65,12 +64,7 @@ describe.skipIf(!hasDbIntegrationUrl)('/release-flags routes — DB integration'
 
   beforeAll(async () => {
     db = await connectDbIntegration('release-flags-routes');
-    const [row] = await db.select().from(systemState).where(eq(systemState.id, 'singleton')).limit(1);
-    if (row) savedManifest = row.releaseManifest;
-    else {
-      await db.insert(systemState).values({ id: 'singleton' });
-      createdSingleton = true;
-    }
+    savedManifests = await db.select().from(releaseManifests);
     const org = sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`;
     await db.insert(sites).values([
       { id: SITE, name: SITE, organizationId: org },
@@ -97,13 +91,13 @@ describe.skipIf(!hasDbIntegrationUrl)('/release-flags routes — DB integration'
       await db.update(users).set({ isBootstrap: true }).where(eq(users.id, previousBootstrapId));
     }
     await db.delete(sites).where(inArray(sites.id, [SITE, OTHER_SITE]));
-    if (createdSingleton) await db.delete(systemState).where(eq(systemState.id, 'singleton'));
-    else await db.update(systemState).set({ releaseManifest: savedManifest }).where(eq(systemState.id, 'singleton'));
+    await db.delete(releaseManifests);
+    if (savedManifests.length) await db.insert(releaseManifests).values(savedManifests);
   });
 
   beforeEach(async () => {
     resetReleaseFlagStateForTests();
-    await db.update(systemState).set({ releaseManifest: null }).where(eq(systemState.id, 'singleton'));
+    await db.delete(releaseManifests);
     await db.delete(settings).where(inArray(settings.siteId, [SITE, OTHER_SITE]));
   });
 

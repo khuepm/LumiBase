@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-11-17T12:27:27.277Z
+version: 2
+lastUpdated: 2026-11-17T13:19:10.827Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 370a9d07de55c42c
+sourceHash: 95787bae84a97b77
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T12:27:27.277Z
-codeVerifiedHash: 370a9d07de55c42c
+codeVerified: 2026-11-17T13:19:10.827Z
+codeVerifiedHash: 95787bae84a97b77
 codeVerifiedClaims: 26
 ---
 
@@ -152,7 +152,7 @@ Quy tắc cho một flag mới:
 
 | Tài nguyên | Phạm vi | Lý do |
 |---|---|---|
-| Manifest đã chấp nhận (`lumibase_system_state.release_manifest`) | Toàn deployment | Ghi nhận những gì deployment đã phát hành. Không chứa dữ liệu tenant. |
+| Manifest đã chấp nhận (`lumibase_release_manifests`, một dòng) | Toàn deployment | Ghi nhận những gì deployment đã phát hành. Không chứa dữ liệu tenant. |
 | `LUMIBASE_RELEASE_FLAGS`, khoá tin cậy, URL pull | Toàn deployment | Cấu hình của operator. |
 | Lựa chọn của site (`lumibase_settings`, key `release.flags`) | Theo site | Nằm dưới policy RLS `site_isolation` sẵn có. |
 | Cache `release-flags:site:{siteId}` | Theo site | Key chứa site id. |

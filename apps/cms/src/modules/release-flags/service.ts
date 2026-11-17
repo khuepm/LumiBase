@@ -1,4 +1,4 @@
-import { settings, systemState, type Database } from '@lumibase/database';
+import { releaseManifests, settings, type Database } from '@lumibase/database';
 import type { CacheProvider } from '@lumibase/runtime';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { and, eq, sql } from 'drizzle-orm';
@@ -18,8 +18,8 @@ import { parseReleaseFlagOverrides, resolveReleaseFlag, type ReleaseFlagState } 
  * Storage and orchestration for release flags (#869).
  *
  * Resource classification (DoD §2b):
- *  - **Deployment-wide**: the accepted manifest (`lumibase_system_state`, the
- *    singleton row), the env overrides and the trusted public keys. They decide
+ *  - **Deployment-wide**: the accepted manifest (`lumibase_release_manifests`,
+ *    a singleton row), the env overrides and the trusted public keys. They decide
  *    what this deployment has released and contain no tenant data.
  *  - **Per site**: each site's choices for `siteToggle` flags, stored in
  *    `lumibase_settings` (key `release.flags`, already under `site_isolation`)
@@ -64,15 +64,16 @@ const manifestCache = createProcessCache<StoredManifest | null>({ ttlMs: MANIFES
  * 30 s: another replica that accepts a manifest is picked up within that
  * window; the replica that accepted it clears its own cache immediately.
  * A read failure answers `null` for this call only (not cached), so flags fall
- * back to stage defaults rather than failing the request.
+ * back to stage defaults rather than failing the request — including on a
+ * schema that predates migration `0041` while an upgrade is rolling out.
  */
 export async function loadAcceptedManifest(systemDb: Database): Promise<StoredManifest | null> {
   try {
     return await manifestCache.get(async () => {
       const [row] = await systemDb
-        .select({ manifest: systemState.releaseManifest })
-        .from(systemState)
-        .where(eq(systemState.id, 'singleton'))
+        .select({ manifest: releaseManifests.manifest })
+        .from(releaseManifests)
+        .where(eq(releaseManifests.id, 'current'))
         .limit(1);
       const parsed = storedManifestSchema.safeParse(row?.manifest);
       return parsed.success ? parsed.data : null;
@@ -85,13 +86,13 @@ export async function loadAcceptedManifest(systemDb: Database): Promise<StoredMa
 
 export type AcceptOutcome =
   | { ok: true; unchanged: boolean; manifest: StoredManifest; unknownKeys: string[] }
-  | { ok: false; reason: ManifestRejection | 'KEYS_NOT_CONFIGURED' | 'NOT_INITIALIZED' };
+  | { ok: false; reason: ManifestRejection | 'KEYS_NOT_CONFIGURED' };
 
 /**
  * Verify `input` and, when it is newer than the stored one, persist it. The
- * write is a conditional UPDATE (`issuedAtMs` strictly greater), so two
- * replicas pulling at once, or a replay racing a fresh manifest, cannot store
- * an older manifest over a newer one.
+ * write is one upsert whose update applies only when `issued_at_ms` is
+ * strictly greater, so two replicas pulling at once, or a replay racing a
+ * fresh manifest, cannot store an older manifest over a newer one.
  */
 export async function acceptReleaseManifest(args: {
   systemDb: Database;
@@ -129,26 +130,18 @@ export async function acceptReleaseManifest(args: {
     source: args.source,
     acceptedBy: args.actorUserId,
   };
-  const updated = await args.systemDb
-    .update(systemState)
-    .set({ releaseManifest: record, updatedAt: new Date(now) })
-    .where(
-      and(
-        eq(systemState.id, 'singleton'),
-        sql`(${systemState.releaseManifest} IS NULL OR (${systemState.releaseManifest}->>'issuedAtMs')::bigint < ${record.issuedAtMs})`,
-      ),
-    )
-    .returning({ id: systemState.id });
+  const written = await args.systemDb
+    .insert(releaseManifests)
+    .values({ id: 'current', issuedAtMs: record.issuedAtMs, manifest: record, updatedAt: new Date(now) })
+    .onConflictDoUpdate({
+      target: releaseManifests.id,
+      set: { issuedAtMs: record.issuedAtMs, manifest: record, updatedAt: new Date(now) },
+      setWhere: sql`${releaseManifests.issuedAtMs} < ${record.issuedAtMs}`,
+    })
+    .returning({ id: releaseManifests.id });
   manifestCache.clear();
 
-  if (updated.length === 0) {
-    const [exists] = await args.systemDb
-      .select({ id: systemState.id })
-      .from(systemState)
-      .where(eq(systemState.id, 'singleton'))
-      .limit(1);
-    return { ok: false, reason: exists ? 'STALE' : 'NOT_INITIALIZED' };
-  }
+  if (written.length === 0) return { ok: false, reason: 'STALE' };
   return { ok: true, unchanged: false, manifest: record, unknownKeys };
 }
 

@@ -166,7 +166,6 @@ const REJECTION_STATUS: Record<Exclude<AcceptOutcome, { ok: true }>['reason'], 4
   WRONG_AUDIENCE: 422,
   STALE: 409,
   KEYS_NOT_CONFIGURED: 409,
-  NOT_INITIALIZED: 409,
 };
 
 releaseFlagsRouter.put('/manifest', async (c) => {

@@ -1,4 +1,4 @@
-import { settings, sites, systemState, type Database } from '@lumibase/database';
+import { releaseManifests, settings, sites, type Database } from '@lumibase/database';
 import { MemoryCacheProvider } from '@lumibase/runtime';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -17,9 +17,10 @@ import {
 import { iso, makeSigner } from './signing';
 
 /**
- * Release flags against real Postgres (#869): the conditional UPDATE that
- * refuses older manifests, the singleton precondition, per-site isolation of
- * site choices, and cache invalidation after a write.
+ * Release flags against real Postgres (#869): the conditional upsert that
+ * refuses older manifests, behaviour on a schema without the manifest table
+ * (N-1 upgrade window), per-site isolation of site choices, and cache
+ * invalidation after a write.
  */
 
 const SITE_A = 'rf-site-a';
@@ -36,17 +37,11 @@ const manifest = (issuedAtMs: number, flags: Record<string, boolean>) =>
 
 describe.skipIf(!hasDbIntegrationUrl)('release flags — DB integration', () => {
   let db: Database;
-  let createdSingleton = false;
-  let savedManifest: unknown = null;
+  let saved: (typeof releaseManifests.$inferSelect)[] = [];
 
   beforeAll(async () => {
     db = await connectDbIntegration('release-flags');
-    const [row] = await db.select().from(systemState).where(eq(systemState.id, 'singleton')).limit(1);
-    if (row) savedManifest = row.releaseManifest;
-    else {
-      await db.insert(systemState).values({ id: 'singleton' });
-      createdSingleton = true;
-    }
+    saved = await db.select().from(releaseManifests);
     const org = sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`;
     await db
       .insert(sites)
@@ -61,13 +56,13 @@ describe.skipIf(!hasDbIntegrationUrl)('release flags — DB integration', () => 
     if (!db) return;
     await db.delete(settings).where(inArray(settings.siteId, [SITE_A, SITE_B]));
     await db.delete(sites).where(inArray(sites.id, [SITE_A, SITE_B]));
-    if (createdSingleton) await db.delete(systemState).where(eq(systemState.id, 'singleton'));
-    else await db.update(systemState).set({ releaseManifest: savedManifest }).where(eq(systemState.id, 'singleton'));
+    await db.delete(releaseManifests);
+    if (saved.length) await db.insert(releaseManifests).values(saved);
   });
 
   beforeEach(async () => {
     resetReleaseFlagStateForTests();
-    await db.update(systemState).set({ releaseManifest: null }).where(eq(systemState.id, 'singleton'));
+    await db.delete(releaseManifests);
     await db.delete(settings).where(inArray(settings.siteId, [SITE_A, SITE_B]));
   });
 
@@ -95,7 +90,7 @@ describe.skipIf(!hasDbIntegrationUrl)('release flags — DB integration', () => 
   it('the database refuses an older write even when the caller read a stale state (race)', async () => {
     // Replica A has stored a newer manifest. Replica B read the state before
     // that write landed, so its own verification sees no manifest and passes.
-    // Only the conditional UPDATE stands between B and a rollback.
+    // Only the conditional upsert stands between B and a rollback.
     await accept(manifest(NOW - 1000, { 'dark-one': true }));
     resetReleaseFlagStateForTests();
 
@@ -200,26 +195,31 @@ describe.skipIf(!hasDbIntegrationUrl)('release flags — DB integration', () => 
   });
 });
 
-describe.skipIf(!hasDbIntegrationUrl)('release flags — before setup', () => {
+describe.skipIf(!hasDbIntegrationUrl)('release flags — schema without the manifest table (N-1)', () => {
   let db: Database;
-  let saved: (typeof systemState.$inferSelect)[] = [];
 
   beforeAll(async () => {
-    db = await connectDbIntegration('release-flags-uninitialized');
-    saved = await db.select().from(systemState);
-    await db.delete(systemState);
+    db = await connectDbIntegration('release-flags-n-minus-1');
   });
 
-  afterAll(async () => {
-    if (!db) return;
-    if (saved.length) await db.insert(systemState).values(saved).onConflictDoNothing();
-  });
-
-  it('answers NOT_INITIALIZED when the singleton row does not exist yet', async () => {
+  // During a rolling upgrade the new image can run against the previous
+  // schema, where `lumibase_release_manifests` does not exist yet. Flag
+  // evaluation must degrade to stage defaults instead of failing requests.
+  // Simulated inside a transaction that renames the table and is rolled back.
+  it('evaluates flags from stage defaults when the table is missing', async () => {
     resetReleaseFlagStateForTests();
-    const outcome = await acceptReleaseManifest({
-      systemDb: db, env, input: manifest(NOW, {}), source: 'push', actorUserId: null, now: NOW, registry,
-    });
-    expect(outcome).toEqual({ ok: false, reason: 'NOT_INITIALIZED' });
+    const rollback = new Error('rollback');
+    await expect(
+      db.transaction(async (tx) => {
+        await tx.execute(sql`ALTER TABLE lumibase_release_manifests RENAME TO lumibase_release_manifests_hidden`);
+        const states = await evaluateReleaseFlags({
+          systemDb: tx as unknown as Database, db: tx as unknown as Database, cache: null, siteId: null, env, registry,
+        });
+        expect(states.get('dark-one')).toMatchObject({ released: false, releasedBy: 'stage' });
+        expect(states.get('ga-one')).toMatchObject({ released: true, releasedBy: 'stage' });
+        throw rollback;
+      }),
+    ).rejects.toBe(rollback);
+    resetReleaseFlagStateForTests();
   });
 });
