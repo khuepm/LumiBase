@@ -44,7 +44,7 @@ export const MarkdownInterface: InterfaceComponent<string> = ({
     const current = value ?? '';
     const start = el?.selectionStart ?? current.length;
     const end = el?.selectionEnd ?? current.length;
-    const picked = await openPicker({ multiple: true, kind: 'image', title: 'Insert from library' });
+    const picked = await openPicker({ multiple: true, title: 'Insert from library' });
     if (!picked?.length) return;
     const snippet = picked.map(assetMarkdown).join('\n');
     onChange(current.slice(0, start) + snippet + current.slice(end));

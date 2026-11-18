@@ -54,7 +54,7 @@ export const WysiwygInterface: InterfaceComponent<string> = ({
   const insertFromLibrary = async () => {
     if (disabled || !openPicker) return;
     rememberSelection();
-    const picked = await openPicker({ multiple: true, kind: 'image', title: 'Insert from library' });
+    const picked = await openPicker({ multiple: true, title: 'Insert from library' });
     if (!picked?.length || !ref.current) return;
     ref.current.focus();
     const sel = window.getSelection();
