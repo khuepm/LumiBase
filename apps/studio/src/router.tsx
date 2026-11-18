@@ -43,6 +43,8 @@ const IntentPage = lazy(() => import('./modules/intents/intent-page').then((m) =
 const ItemsListPage = lazy(() => import('./modules/content/items-list').then((m) => ({ default: m.ItemsListPage })));
 const ReviewQueuePage = lazy(() => import('./modules/editorial/review-queue').then((m) => ({ default: m.ReviewQueuePage })));
 const ReleasesPage = lazy(() => import('./modules/editorial/releases-page').then((m) => ({ default: m.ReleasesPage })));
+const PagesListPage = lazy(() => import('./modules/pages/pages-list').then((m) => ({ default: m.PagesListPage })));
+const PageComposerPage = lazy(() => import('./modules/pages/page-composer').then((m) => ({ default: m.PageComposerPage })));
 const CollectionsListPage = lazy(() => import('./modules/data-model/list').then((m) => ({ default: m.CollectionsListPage })));
 const McpSetupPage = lazy(() => import('./modules/data-model/mcp-setup').then((m) => ({ default: m.McpSetupPage })));
 const CollectionDetailPage = lazy(() => import('./modules/data-model/detail').then((m) => ({ default: m.CollectionDetailPage })));
@@ -523,6 +525,28 @@ const adminPathReleasesRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/releases',
   component: withSuspense(ReleasesPage),
+});
+
+// Visual page composer (epic #667, V06 #684).
+const pagesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/pages',
+  component: withSuspense(PagesListPage),
+});
+const pageComposerRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/pages/$id',
+  component: withSuspense(PageComposerPage),
+});
+const adminPathPagesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/pages',
+  component: withSuspense(PagesListPage),
+});
+const adminPathPageComposerRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/pages/$id',
+  component: withSuspense(PageComposerPage),
 });
 
 const contentItemRoute = createRoute({
@@ -1420,6 +1444,8 @@ const routeTree = rootRoute.addChildren([
     contentCollectionRoute,
     contentReviewsRoute,
     releasesRoute,
+    pagesRoute,
+    pageComposerRoute,
     contentItemRoute,
     intentRoute,
     dataModelRoute,
@@ -1504,6 +1530,8 @@ const routeTree = rootRoute.addChildren([
     adminPathContentCollectionRoute,
     adminPathContentReviewsRoute,
     adminPathReleasesRoute,
+    adminPathPagesRoute,
+    adminPathPageComposerRoute,
     adminPathContentItemRoute,
     adminPathIntentRoute,
     adminPathDataModelRoute,

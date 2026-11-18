@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PreviewTokenResource } from '@lumibase/sdk';
-import { PreviewOriginSchema, PREVIEW_TOKEN_MAX_TTL_SECONDS, PREVIEW_TOKEN_MIN_TTL_SECONDS } from '@lumibase/contracts';
+import {
+  PreviewOriginSchema,
+  PREVIEW_TOKEN_MAX_TTL_SECONDS,
+  PREVIEW_TOKEN_MIN_TTL_SECONDS,
+  validatePreviewUrlTemplate,
+} from '@lumibase/contracts';
 import { Eye, Plus, RotateCcw, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getApiClient } from '@/lib/api';
@@ -29,6 +34,7 @@ export function PreviewSettingsPage() {
 
   const [origins, setOrigins] = useState<string[]>([]);
   const [ttl, setTtl] = useState(900);
+  const [pageUrl, setPageUrl] = useState('');
   const [draftOrigin, setDraftOrigin] = useState('');
   const [originError, setOriginError] = useState<string | null>(null);
 
@@ -36,10 +42,18 @@ export function PreviewSettingsPage() {
     if (!settingsQuery.data) return;
     setOrigins(settingsQuery.data.allowedOrigins);
     setTtl(settingsQuery.data.ttlSeconds);
+    setPageUrl(settingsQuery.data.pageUrl ?? '');
   }, [settingsQuery.data]);
 
   const save = useMutation({
-    mutationFn: async () => (await client.preview.updateSettings({ allowedOrigins: origins, ttlSeconds: ttl })).data,
+    mutationFn: async () =>
+      (
+        await client.preview.updateSettings({
+          allowedOrigins: origins,
+          ttlSeconds: ttl,
+          pageUrl: pageUrl.trim() || null,
+        })
+      ).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['preview-settings'] }),
   });
   const revoke = useMutation({
@@ -63,6 +77,7 @@ export function PreviewSettingsPage() {
   };
 
   const tokens: PreviewTokenResource[] = tokensQuery.data ?? [];
+  const pageUrlIssue = pageUrl.trim() ? validatePreviewUrlTemplate(pageUrl.trim())?.message ?? null : null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 p-6">
@@ -135,11 +150,26 @@ export function PreviewSettingsPage() {
             className="mt-1 w-40 rounded-md border bg-background px-2 py-1.5 text-sm"
           />
         </label>
+        <label className="block text-xs font-medium text-muted-foreground">
+          Page URL (page composer preview)
+          <input
+            value={pageUrl}
+            onChange={(e) => setPageUrl(e.target.value)}
+            placeholder="https://www.example.com/{slug}"
+            aria-invalid={pageUrlIssue ? true : undefined}
+            className="mt-1 w-full rounded-md border bg-background px-2 py-1.5 font-mono text-xs"
+          />
+        </label>
+        {pageUrlIssue && (
+          <p role="alert" className="text-xs text-destructive">
+            {pageUrlIssue}
+          </p>
+        )}
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => save.mutate()}
-            disabled={save.isPending}
+            disabled={save.isPending || Boolean(pageUrlIssue)}
             className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
           >
             {save.isPending ? 'Saving…' : 'Save'}

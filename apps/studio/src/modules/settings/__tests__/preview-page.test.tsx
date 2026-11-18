@@ -60,6 +60,7 @@ describe('PreviewSettingsPage', () => {
       expect(preview.updateSettings).toHaveBeenCalledWith({
         allowedOrigins: ['https://a.example', 'http://localhost:3000'],
         ttlSeconds: 900,
+        pageUrl: null,
       }),
     );
 
@@ -86,6 +87,25 @@ describe('PreviewUrlSection', () => {
       expect(schema.updateCollection).toHaveBeenCalledWith('posts', {
         meta: { editorialWorkflow: true, previewUrl: 'http://localhost:3000/api/preview?token={token}&id={id}' },
       }),
+    );
+  });
+});
+
+describe('PreviewSettingsPage page URL (V06 #684)', () => {
+  it('validates and saves the page composer preview URL', async () => {
+    preview.getSettings.mockResolvedValue({ data: { allowedOrigins: [], ttlSeconds: 600, pageUrl: null } });
+    preview.listTokens.mockResolvedValue({ data: [] });
+    preview.updateSettings.mockResolvedValue({ data: {} });
+    wrap(<PreviewSettingsPage />);
+    await screen.findByDisplayValue('600'); // settings loaded
+    const input = screen.getByPlaceholderText('https://www.example.com/{slug}');
+    fireEvent.change(input, { target: { value: 'javascript:alert(1)' } });
+    expect(screen.getByRole('alert').textContent).toContain('http');
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(input, { target: { value: 'https://www.example.com/{slug}' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(preview.updateSettings).toHaveBeenCalledWith({ allowedOrigins: [], ttlSeconds: 600, pageUrl: 'https://www.example.com/{slug}' }),
     );
   });
 });
