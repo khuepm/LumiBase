@@ -231,10 +231,16 @@ export class RedisCacheProvider implements CacheProvider, UniqueCounterProvider,
     }
     return {
       members,
-      ack: async () => {
-        if (pairs.length === 0) return;
+      ack: async (subset?: readonly string[]) => {
+        const only = subset ? new Set(subset) : null;
+        const acked: string[] = [];
+        for (let i = 0; i + 1 < pairs.length; i += 2) {
+          const member = pairs[i] as string;
+          if (!only || only.has(member)) acked.push(member, pairs[i + 1] as string);
+        }
+        if (acked.length === 0) return;
         await this.ensureConnected();
-        await this.client.eval(ACK_MEMBERS_SCRIPT, 1, setKey, ...pairs);
+        await this.client.eval(ACK_MEMBERS_SCRIPT, 1, setKey, ...acked);
       },
     };
   }

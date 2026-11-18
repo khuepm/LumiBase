@@ -38,6 +38,8 @@ export interface KVListResult {
  * `lumi:set:{key}:{reverse time}:{sha256(member)}`.
  */
 const SET_KEY_PREFIX = 'lumi:set:';
+/** Per-member pointer to its current ordered key; outside the `list` prefix. */
+const SET_POINTER_PREFIX = 'lumi:setptr:';
 /** Workers KV rejects an `expirationTtl` below 60 seconds. */
 const KV_MIN_TTL_SECONDS = 60;
 /** Upper bound on keys one read scans, to stay inside per-invocation KV limits. */
@@ -218,17 +220,28 @@ export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProv
    * The reverse-time segment makes KV's lexicographic `list` return the
    * newest adds first, so a read selects the newest `limit` members without
    * scanning the whole set, however many adds it holds. `limit` cannot be
-   * enforced on write without a read-modify-write; older adds (including
-   * earlier adds of a member that was re-added) expire through `ttl`.
+   * enforced on write without a read-modify-write; older adds expire through
+   * `ttl`.
+   *
+   * A re-add deletes the member's previous key, found through a per-member
+   * pointer `lumi:setptr:{key}:{sha256(member)}` (outside the list prefix).
+   * Without it, a hot URL re-recorded on every edge miss leaves one key per
+   * add, and those copies can fill the read's scan window so other recent
+   * URLs are not purged. Two concurrent re-adds of the *same* member can each
+   * miss the other's key; the read folds that duplicate and it expires through
+   * `ttl`. Adds of different members never touch each other's keys.
    */
   async addMember(key: string, member: string, opts?: { ttl?: number; limit?: number }): Promise<void> {
     const t = Date.now();
-    const memberKey = `${SET_KEY_PREFIX}${key}:${reverseTime(t)}:${await sha256Hex(member)}`;
+    const hash = await sha256Hex(member);
+    const memberKey = `${SET_KEY_PREFIX}${key}:${reverseTime(t)}:${hash}`;
+    const pointerKey = `${SET_POINTER_PREFIX}${key}:${hash}`;
     const metadata: MemberMetadata = { m: member, t };
-    await this.kv.put(memberKey, member, {
-      metadata,
-      ...(opts?.ttl ? { expirationTtl: Math.max(opts.ttl, KV_MIN_TTL_SECONDS) } : {}),
-    });
+    const expiry = opts?.ttl ? { expirationTtl: Math.max(opts.ttl, KV_MIN_TTL_SECONDS) } : {};
+    const previous = await this.kv.get(pointerKey);
+    await this.kv.put(memberKey, member, { metadata, ...expiry });
+    await this.kv.put(pointerKey, memberKey, expiry);
+    if (previous && previous !== memberKey) await this.kv.delete(previous);
   }
 
   /**
@@ -269,10 +282,10 @@ export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProv
       cursor = page.list_complete ? undefined : page.cursor;
     } while (cursor && scanned < SET_READ_SCAN_LIMIT);
 
-    const names = [...found.values()].flat();
     return {
       members: [...found.keys()].reverse(),
-      ack: async () => {
+      ack: async (subset?: readonly string[]) => {
+        const names = (subset ?? [...found.keys()]).flatMap((m) => found.get(m) ?? []);
         await Promise.all(names.map((name) => this.kv.delete(name)));
       },
     };

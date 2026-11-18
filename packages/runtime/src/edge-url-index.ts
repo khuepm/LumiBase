@@ -82,8 +82,10 @@ export async function recordEdgeUrl(
 }
 
 /**
- * Purge every edge URL recorded under `tag`, then drop the entries it read.
- * A purge that throws leaves the index intact for the next attempt.
+ * Purge every edge URL recorded under `tag`, then drop the entries the purge
+ * reached. A purge that throws, or a URL the provider reports as failed
+ * ({@link EdgeCacheProvider.purgeWithOutcome}), leaves those entries indexed
+ * for the next attempt.
  *
  * Returns how many URLs the edge provider reported purging (0 when there is
  * no edge, no index, or the purge failed) — an observability signal only.
@@ -108,15 +110,24 @@ export async function purgeEdgeByTag(
     const urls = batch ? [...new Set([...legacy, ...batch.members])] : legacy;
     // Pass the tag even with an empty URL list: a provider whose CDN supports
     // tag purge can act on copies this index never recorded.
-    const purged = await edgeCache.purge({ urls, tags: [tag] });
-    // Drop the index even when the purge reported 0: the entries it points at
-    // are expiring on their own clock anyway, and keeping a list that failed
-    // once would make every later purge retry the same dead URLs forever.
+    // A throw lands in the catch below before anything is acknowledged. The
+    // shipped providers never throw, though — they fail soft and return a
+    // count — so a provider that can name its failed URLs is asked to.
+    const target = { urls, tags: [tag] };
+    const outcome = edgeCache.purgeWithOutcome
+      ? await edgeCache.purgeWithOutcome(target)
+      : { purged: await edgeCache.purge(target), failedUrls: [] as string[] };
+    // Acknowledge only what the purge reached; a refused URL stays indexed and
+    // the next purge of this tag retries it. That retry is bounded: the index
+    // entry expires with the edge copy's own TTL, so a URL that keeps failing
+    // is retried until its copy would have expired anyway, and no longer.
     // Only what was read is acknowledged, so a URL recorded during the purge
-    // stays indexed.
-    await batch?.ack();
-    await cache.delete(key);
-    return purged;
+    // stays indexed too.
+    const failed = new Set(outcome.failedUrls);
+    await batch?.ack(batch.members.filter((u) => !failed.has(u)));
+    // The legacy list is one value; keep all of it while any of it failed.
+    if (!legacy.some((u) => failed.has(u))) await cache.delete(key);
+    return outcome.purged;
   } catch {
     return 0;
   }

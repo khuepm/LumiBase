@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryCacheProvider } from '../memory-cache';
+import { CloudflareEdgeCacheProvider } from '../adapters/cloudflare/edge-cache';
 import { CloudflareCacheProvider, type KVNamespace } from '../adapters/cloudflare/cache';
 import {
   EDGE_URL_INDEX_LIMIT,
@@ -32,9 +33,14 @@ function fakeEdge(): EdgeCacheProvider & { purged: string[][] } {
  * real binding. Every call yields to the event loop, so concurrent callers
  * interleave the way they do against the real (remote) KV.
  */
-function createListableKv(): KVNamespace {
+function createListableKv(opts?: { macrotaskYield?: boolean }): KVNamespace {
   const store = new Map<string, { value: string; metadata?: unknown }>();
-  const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+  // Bulk tests (thousands of sequential writes) yield a microtask instead of a
+  // timer turn; the concurrency tests keep the timer turn so writers interleave.
+  const tick =
+    opts?.macrotaskYield === false
+      ? () => Promise.resolve()
+      : () => new Promise<void>((resolve) => setTimeout(resolve, 0));
   async function get(key: string, type?: 'text' | 'json'): Promise<unknown> {
     await tick();
     const raw = store.get(key)?.value;
@@ -120,7 +126,7 @@ describe('edge URL index — concurrent writers (#864)', () => {
   }
 
   it('Cloudflare: purges the newest 200 URLs even after more than 1000 writes under one tag', async () => {
-    const cache = new CloudflareCacheProvider(createListableKv());
+    const cache = new CloudflareCacheProvider(createListableKv({ macrotaskYield: false }));
     const edge = fakeEdge();
     const total = 1100;
     let now = 1_700_000_000_000;
@@ -315,5 +321,145 @@ describe('edge URL index', () => {
       recordEdgeUrl(broken, ['deliver:site-a'], 'https://acme.test/a'),
     ).resolves.toBeUndefined();
     expect(await purgeEdgeByTag(broken, fakeEdge(), 'deliver:site-a')).toBe(0);
+  });
+});
+
+/**
+ * #864 review, second round — the shipped Cloudflare provider never throws:
+ * a refused zone purge comes back as a count. The index must still keep the
+ * URLs the CDN refused, so these tests use the real provider with the zone
+ * API answering 4xx/5xx, not an edge double that throws.
+ */
+describe('edge URL index — zone purge refused by the CDN (#864)', () => {
+  function zoneEdge(statuses: number[]): {
+    edge: CloudflareEdgeCacheProvider;
+    bodies: Array<Record<string, string[]>>;
+  } {
+    const bodies: Array<Record<string, string[]>> = [];
+    let call = 0;
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, string[]>);
+      const status = statuses[Math.min(call, statuses.length - 1)] ?? 200;
+      call += 1;
+      return new Response('{}', { status });
+    });
+    const edge = new CloudflareEdgeCacheProvider({
+      zoneId: 'zone-1',
+      apiToken: 'tok-1',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    return { edge, bodies };
+  }
+
+  const providers: Array<[string, () => CacheProvider]> = [
+    ['MemoryCacheProvider', () => new MemoryCacheProvider()],
+    ['CloudflareCacheProvider (listable KV)', () => new CloudflareCacheProvider(createListableKv())],
+  ];
+
+  for (const [name, factory] of providers) {
+    it(`a 503 on tag and URL purge keeps every URL; the retry purges them — ${name}`, async () => {
+      const cache = factory();
+      const urls = ['https://acme.test/a', 'https://acme.test/b'];
+      for (const url of urls) await recordEdgeUrl(cache, ['deliver:site-a'], url, { ttl: 300 });
+      // Round 1: tag call 503, URL call 503. Round 2: tag call 403 (plan has
+      // no tag purge), URL call 200.
+      const { edge, bodies } = zoneEdge([503, 503, 403, 200]);
+
+      expect(await purgeEdgeByTag(cache, edge, 'deliver:site-a')).toBe(0);
+      expect(await purgeEdgeByTag(cache, edge, 'deliver:site-a')).toBe(2);
+
+      expect(bodies[1]).toEqual({ files: urls });
+      // The retry still carried both URLs: nothing was acknowledged on the 503.
+      expect(bodies[3]).toEqual({ files: urls });
+    });
+
+    it(`a refused URL batch stays indexed while the accepted batch is acknowledged — ${name}`, async () => {
+      const cache = factory();
+      const urls = Array.from({ length: 35 }, (_, i) => `https://acme.test/p${String(i).padStart(2, '0')}`);
+      for (const url of urls) await recordEdgeUrl(cache, ['deliver:site-a'], url, { ttl: 300 });
+      // No tags accepted; first URL batch (30) 200, second batch (5) 500, then
+      // everything succeeds.
+      const { edge, bodies } = zoneEdge([403, 200, 500, 403, 200]);
+
+      await purgeEdgeByTag(cache, edge, 'deliver:site-a');
+      const refused = bodies[2]?.files ?? [];
+      expect(refused).toHaveLength(5);
+
+      await purgeEdgeByTag(cache, edge, 'deliver:site-a');
+      expect([...(bodies[4]?.files ?? [])].sort()).toEqual([...refused].sort());
+    });
+  }
+
+  it('a successful tag purge acknowledges every URL', async () => {
+    const cache = new MemoryCacheProvider();
+    await recordEdgeUrl(cache, ['deliver:site-a'], 'https://acme.test/a', { ttl: 300 });
+    const { edge, bodies } = zoneEdge([200]);
+
+    await purgeEdgeByTag(cache, edge, 'deliver:site-a');
+    await purgeEdgeByTag(cache, edge, 'deliver:site-a');
+
+    expect(bodies).toEqual([{ tags: ['deliver:site-a'] }, { tags: ['deliver:site-a'] }]);
+    expect((await cache.readMembers(edgeUrlIndexKey('deliver:site-a'))).members).toEqual([]);
+  });
+
+  it('keeps a pre-upgrade JSON list while any of its URLs was refused', async () => {
+    const cache = new MemoryCacheProvider();
+    await cache.set(edgeUrlIndexKey('deliver:site-a'), JSON.stringify(['https://acme.test/old']));
+    const { edge, bodies } = zoneEdge([403, 503, 403, 200]);
+
+    await purgeEdgeByTag(cache, edge, 'deliver:site-a');
+    expect(await cache.get(edgeUrlIndexKey('deliver:site-a'))).not.toBeNull();
+
+    await purgeEdgeByTag(cache, edge, 'deliver:site-a');
+    expect(bodies[3]).toEqual({ files: ['https://acme.test/old'] });
+    expect(await cache.get(edgeUrlIndexKey('deliver:site-a'))).toBeNull();
+  });
+});
+
+/**
+ * #864 review, second round — on Workers KV every add is a key. A URL that is
+ * re-recorded on every edge miss must not leave one key per add, or its
+ * copies fill the read's scan window and other recent URLs go unpurged.
+ */
+describe('edge URL index — Workers KV hot URL (#864)', () => {
+  it('300 URLs then 1200 re-adds of one URL still purges the newest 200 distinct URLs', async () => {
+    const cache = new CloudflareCacheProvider(createListableKv({ macrotaskYield: false }));
+    const edge = fakeEdge();
+    let now = 1_700_000_000_000;
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const older: string[] = [];
+    try {
+      for (let i = 0; i < 300; i += 1) {
+        now += 1;
+        const url = `https://acme.test/p${i}`;
+        older.push(url);
+        await recordEdgeUrl(cache, ['deliver:site-a'], url, { ttl: 300 });
+      }
+      for (let i = 0; i < 1200; i += 1) {
+        now += 1;
+        await recordEdgeUrl(cache, ['deliver:site-a'], 'https://acme.test/hot', { ttl: 300 });
+      }
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(await purgeEdgeByTag(cache, edge, 'deliver:site-a')).toBe(EDGE_URL_INDEX_LIMIT);
+    expect(edge.purged[0]).toEqual([...older.slice(-(EDGE_URL_INDEX_LIMIT - 1)), 'https://acme.test/hot']);
+  });
+
+  it('a re-add replaces the member key instead of adding a second one', async () => {
+    const kv = createListableKv();
+    const cache = new CloudflareCacheProvider(kv);
+    let now = 1_000;
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      await cache.addMember('k', 'm', { ttl: 300 });
+      now += 5;
+      await cache.addMember('k', 'm', { ttl: 300 });
+    } finally {
+      spy.mockRestore();
+    }
+    const listed = await kv.list?.({ prefix: 'lumi:set:k:' });
+    expect(listed?.keys).toHaveLength(1);
   });
 });

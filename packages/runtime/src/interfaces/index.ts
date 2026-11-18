@@ -1,4 +1,4 @@
-export type { EdgeCacheProvider } from './edge-cache';
+export type { EdgeCacheProvider, EdgePurgeOutcome } from './edge-cache';
 export type {
   CacheEntry,
   CacheEvent,

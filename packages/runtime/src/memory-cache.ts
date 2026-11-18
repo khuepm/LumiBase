@@ -181,10 +181,12 @@ export class MemoryCacheProvider implements CacheProvider, MemberSetProvider {
     if (opts?.limit !== undefined) read = opts.limit > 0 ? read.slice(-opts.limit) : [];
     return {
       members: read.map(([member]) => member),
-      ack: async () => {
+      ack: async (subset?: readonly string[]) => {
         const current = this.sets.get(key);
         if (!current) return;
+        const only = subset ? new Set(subset) : null;
         for (const [member, generation] of read) {
+          if (only && !only.has(member)) continue;
           if (current.members.get(member) === generation) current.members.delete(member);
         }
         if (current.members.size === 0) this.sets.delete(key);

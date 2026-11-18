@@ -115,8 +115,13 @@ export interface MemberSetProvider {
 /** Members read by {@link MemberSetProvider.readMembers}. */
 export interface MemberBatch {
   members: string[];
-  /** Remove the members read here, unless they were re-added since. */
-  ack(): Promise<void>;
+  /**
+   * Remove the members read here, unless they were re-added since. Pass a
+   * subset to acknowledge only those and keep the rest for the next read —
+   * e.g. the URLs a CDN purge reached, not the ones it refused (#864).
+   * Members not in this batch are ignored.
+   */
+  ack(members?: readonly string[]): Promise<void>;
 }
 
 /** True when `cache` implements {@link MemberSetProvider}. */

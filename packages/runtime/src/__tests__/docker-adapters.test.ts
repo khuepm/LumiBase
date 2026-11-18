@@ -305,6 +305,30 @@ describe('RedisCacheProvider', () => {
         '1700000000002',
       );
     });
+
+    it('acks only the given subset, ignoring members it did not read', async () => {
+      mockRedis.zrange.mockResolvedValueOnce(['https://acme.test/b', '1700000000001', 'https://acme.test/c', '1700000000002']);
+      const batch = await provider.readMembers('edgeurls:deliver:site-a', { limit: 2 });
+
+      await batch.ack(['https://acme.test/c', 'https://acme.test/never-read']);
+
+      expect(mockRedis.eval).toHaveBeenCalledWith(
+        expect.stringContaining('ZSCORE'),
+        1,
+        'lumi:set:edgeurls:deliver:site-a',
+        'https://acme.test/c',
+        '1700000000002',
+      );
+    });
+
+    it('an empty subset acks nothing', async () => {
+      mockRedis.zrange.mockResolvedValueOnce(['https://acme.test/b', '1700000000001']);
+      const batch = await provider.readMembers('k');
+
+      await batch.ack([]);
+
+      expect(mockRedis.eval).not.toHaveBeenCalled();
+    });
   });
 
   describe('close', () => {
