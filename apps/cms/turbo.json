@@ -10,10 +10,16 @@
       //   - fidelity/golden/*: mcp-tool-schema-golden + mcp-rest-body-golden
       //     + mcp-recorded-requests (replays the stdio tools' recorded requests)
       //   - canonical-agent-tool-schemas.json: g2-agent-tool-schemas
+      //   - packages/cli src + test fixtures: the Contentful migration DB
+      //     integration tests import the CLI command and read its fixture
+      // src/__tests__/turbo-test-inputs.test.ts fails when a CMS test reads a
+      // non-dependency package file that no glob here covers (#865).
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/packages/mcp-server/src/__tests__/fidelity/golden/**",
-        "$TURBO_ROOT$/packages/mcp-server/src/__tests__/canonical-agent-tool-schemas.json"
+        "$TURBO_ROOT$/packages/mcp-server/src/__tests__/canonical-agent-tool-schemas.json",
+        "$TURBO_ROOT$/packages/cli/src/**",
+        "$TURBO_ROOT$/packages/cli/test/fixtures/**"
       ]
     }
   }

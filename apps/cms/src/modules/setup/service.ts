@@ -73,7 +73,7 @@ import {
 } from './path-validator';
 import { verifySetupToken } from './setup-token';
 import { canonicalEmail, type EmailIdentityMode } from '../email-identity/normalize';
-import { userEmailCondition } from '../email-identity/service';
+import { isEmailIdentityConflict, userEmailCondition } from '../email-identity/service';
 
 // ── public types ────────────────────────────────────────────────────────
 
@@ -247,6 +247,8 @@ export type SetupServiceError =
   | { readonly code: 'PATH_PREDICTABLE'; readonly message: string }
   | { readonly code: 'PATH_RESERVED'; readonly message: string }
   | { readonly code: 'PATH_TAKEN' }
+  /** An account or default-site membership collides with another address of the same mailbox (#861). */
+  | { readonly code: 'EMAIL_IDENTITY_CONFLICT' }
   | { readonly code: 'INTERNAL'; readonly cause?: unknown };
 
 export type SetupCompleteOutcome =
@@ -719,9 +721,12 @@ export class SetupService {
         //        a re-entrant wizard run idempotent via the
         //        `roles_site_system_key_unique` index.
         const adminRoleId = provisioned.administratorRoleId;
+        // Target `(user_id, site_id)` (#861) so a strict-site identity
+        // violation surfaces (→ EMAIL_IDENTITY_CONFLICT) instead of being
+        // dropped by a target-less DO NOTHING.
         await tx.insert(userSites).values({
           userId: newUser.id, siteId: DEFAULT_SITE_ID, roleId: adminRoleId,
-        }).onConflictDoNothing();
+        }).onConflictDoNothing({ target: [userSites.userId, userSites.siteId] });
         await tx
           .insert(userRoles)
           .values({
@@ -787,7 +792,7 @@ export class SetupService {
                 siteId: DEFAULT_SITE_ID,
                 roleId,
               })
-              .onConflictDoNothing();
+              .onConflictDoNothing({ target: [userSites.userId, userSites.siteId] });
             invitedCount += 1;
           }
         }
@@ -963,6 +968,9 @@ export class SetupService {
         // whatever the state machine thought (#732): the caller lost a race.
         if (pgConstraintName(err) === BOOTSTRAP_UNIQUE_CONSTRAINT) {
           return { ok: false, error: { code: 'SETUP_RACE_LOST' } };
+        }
+        if (isEmailIdentityConflict(err)) {
+          return { ok: false, error: { code: 'EMAIL_IDENTITY_CONFLICT' } };
         }
         return { ok: false, error: { code: 'PATH_TAKEN' } };
       }
