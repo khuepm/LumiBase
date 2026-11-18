@@ -1639,6 +1639,56 @@ export interface DamSettingsResource {
   stripGpsOnPublic: boolean;
   extractMetadata: boolean;
   scan: { enabled: boolean; provider: "http"; onError: "quarantine" | "allow" };
+  /** Video pipeline (#871): transcoding through the deployment's provider. */
+  video: { enabled: boolean; signedPlayback: boolean; playbackTtlSeconds: number };
+}
+
+export type VideoStatus = "uploaded" | "processing" | "ready" | "failed";
+
+/** Processing state of a video file (#871). */
+export interface VideoAssetResource {
+  fileId: string;
+  fileVersion: number;
+  provider: string;
+  status: VideoStatus;
+  error: string | null;
+  attempts: number;
+  durationMs: number | null;
+  width: number | null;
+  height: number | null;
+  renditions: Array<{ width: number; height: number; bitrate?: number }>;
+  signedPlayback: boolean;
+  submittedAt: string | null;
+  readyAt: string | null;
+  updatedAt: string;
+}
+
+/** HLS manifest + poster of a ready video; provider-signed URLs expire at `expiresAt`. */
+export interface VideoPlaybackResource {
+  hls: string;
+  poster: string | null;
+  expiresAt: string | null;
+  durationMs: number | null;
+  width: number | null;
+  height: number | null;
+}
+
+export type CaptionKind = "subtitles" | "captions" | "descriptions" | "chapters";
+
+/** A caption / subtitle track of a video: a WebVTT file linked for one locale and kind (#871). */
+export interface CaptionTrackResource {
+  id: string;
+  fileId: string;
+  captionFileId: string;
+  locale: string;
+  kind: CaptionKind;
+  label: string;
+  isDefault: boolean;
+  /** Version-pinned delivery URL of the WebVTT file; null when the caller cannot see it. */
+  src: string | null;
+  captionVersion: number | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface UploadTypeCatalogueEntry {

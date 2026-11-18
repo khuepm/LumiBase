@@ -95,7 +95,11 @@ import {
   FileReferenceResource,
   FolderTreeNodeResource,
   FileListQuery,
+  CaptionKind,
+  CaptionTrackResource,
   DamSettingsResource,
+  VideoAssetResource,
+  VideoPlaybackResource,
   UploadConfigResource,
   WebhookResource,
   ActivityResource,
@@ -923,6 +927,41 @@ export function legacyRest() {
        */
       delete: (id: string, opts?: { confirm?: boolean }) =>
         client.rawRequest<null>(`/api/v1/files/${id}${opts?.confirm ? "?confirm=true" : ""}`, { method: "DELETE" }),
+      /** Video pipeline (#871): processing state, retry and playback URLs. */
+      video: {
+        get: (id: string) =>
+          client.rawRequest<VideoAssetResource | null>(`/api/v1/files/${encodeURIComponent(id)}/video`),
+        retry: (id: string) =>
+          client.rawRequest<VideoAssetResource | null>(`/api/v1/files/${encodeURIComponent(id)}/video/retry`, { method: "POST" }),
+        playback: (id: string) =>
+          client.rawRequest<VideoPlaybackResource>(`/api/v1/files/${encodeURIComponent(id)}/video/playback`),
+      },
+      /** Caption / subtitle tracks of a video (#871). */
+      captions: {
+        list: (id: string) =>
+          client.rawRequest<CaptionTrackResource[]>(`/api/v1/files/${encodeURIComponent(id)}/captions`),
+        add: (
+          id: string,
+          input: { captionFileId: string; locale: string; kind?: CaptionKind; label?: string | null; isDefault?: boolean },
+        ) =>
+          client.rawRequest<CaptionTrackResource>(`/api/v1/files/${encodeURIComponent(id)}/captions`, {
+            method: "POST",
+            body: JSON.stringify(input),
+          }),
+        update: (
+          id: string,
+          captionId: string,
+          patch: { captionFileId?: string; locale?: string; kind?: CaptionKind; label?: string | null; isDefault?: boolean },
+        ) =>
+          client.rawRequest<CaptionTrackResource>(
+            `/api/v1/files/${encodeURIComponent(id)}/captions/${encodeURIComponent(captionId)}`,
+            { method: "PATCH", body: JSON.stringify(patch) },
+          ),
+        remove: (id: string, captionId: string) =>
+          client.rawRequest<null>(`/api/v1/files/${encodeURIComponent(id)}/captions/${encodeURIComponent(captionId)}`, {
+            method: "DELETE",
+          }),
+      },
       getPresignedUrl: (filename: string) =>
         client.rawRequest<{ url: string; method: string; key: string }>("/api/v1/files/presigned-url", {
           method: "POST",

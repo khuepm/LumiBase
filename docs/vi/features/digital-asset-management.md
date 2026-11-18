@@ -1,13 +1,13 @@
 ---
-version: 4
+version: 5
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-11-18T05:46:17.651Z
-sourceHash: 94f0a1eaa0b36da0
-codeVerified: 2026-11-18T05:46:17.651Z
-codeVerifiedHash: 94f0a1eaa0b36da0
+lastUpdated: 2026-11-18T05:52:36.761Z
+sourceHash: a94a85385fafc977
+codeVerified: 2026-11-18T05:52:36.761Z
+codeVerifiedHash: a94a85385fafc977
 codeVerifiedClaims: 52
 ---
 
@@ -199,35 +199,6 @@ và `MALWARE_SCAN_FIELD=FILES`. Trên Cloudflare, trỏ nó tới bất kỳ d�
 quét HTTPS nào. Adapter đọc được các dạng response ClamAV REST phổ biến cũng
 như dạng chung `{ infected, viruses }`.
 
-## Phụ đề và caption (#871)
-
-Một track phụ đề hoặc caption là một file WebVTT trong thư viện, được gắn với
-một video cho một locale. Track vẫn là một asset bình thường: quyền thư mục,
-phiên bản và thay tại chỗ của riêng nó, nên sửa lỗi chính tả trong phụ đề vẫn
-giữ mọi liên kết. Upload nó như mọi file. `text/vtt` (`.vtt`) có trong
-catalogue upload nhưng tắt mặc định, nên hãy bật nó trong
-**Settings → Uploads**. Bộ bảo vệ upload yêu cầu chữ ký `WEBVTT`, nên một tài
-liệu HTML hay SVG không thể giả làm phụ đề.
-
-- `GET /api/v1/files/:id/captions` liệt kê các track của một video (files
-  `read`). Mỗi track mang những gì phần tử HTML `<track>` cần: `kind`,
-  `locale` (`srclang`), `label`, `isDefault` và `src`, một URL bất biến ghim
-  theo version `GET /api/v1/files/<caption>/content?v=<n>`. Track mà caller
-  không thấy được file phụ đề sẽ được liệt kê với `src: null`.
-- `POST /api/v1/files/:id/captions` gắn một track (files `update` trên
-  video), với body `{ captionFileId, locale, kind?, label?, isDefault? }`:
-  - `kind` là `subtitles` (mặc định), `captions`, `descriptions` hoặc
-    `chapters`;
-  - video phải là `video/*` (`422 NOT_A_VIDEO`);
-  - track phải là file `text/vtt` mà caller thấy được
-    (`415 CAPTION_NOT_VTT`, `404 CAPTION_FILE_NOT_FOUND`);
-  - locale phải là một locale của site (`422 LOCALE_NOT_ENABLED`);
-  - mỗi video, locale và kind chỉ có một track (`409 CAPTION_EXISTS`).
-- `PATCH /api/v1/files/:id/captions/:captionId` đổi `captionFileId`,
-  `locale`, `kind`, `label` hoặc `isDefault`. Mỗi video và kind có tối đa một
-  track mặc định, nên đặt một track làm mặc định sẽ bỏ cờ của các track khác.
-- `DELETE /api/v1/files/:id/captions/:captionId` gỡ track. File WebVTT vẫn ở
-  trong thư viện. Xoá một trong hai file sẽ gỡ liên kết.
 ## Pipeline video (#871)
 
 Video không transcode được trong Worker, nên CMS giao chúng cho một **video
@@ -297,6 +268,53 @@ Trỏ webhook của provider tới
 `<LUMIBASE_PUBLIC_URL>/api/v1/video/webhook/cloudflare-stream` hoặc
 `…/webhook/mux`.
 
+**Trong Studio.** Ngăn chi tiết asset của một file video hiển thị:
+
+- trạng thái xử lý, được hỏi lại định kỳ trong lúc provider làm việc;
+- lỗi và nút **Retry processing** khi xử lý thất bại;
+- trình phát xem trước khi video đã sẵn sàng.
+
+Trình phát chạy HLS qua hls.js, được tải lười. CSP của Studio chỉ cho phép
+`'self'` và `blob:` cho media và ảnh, nên poster và các track WebVTT được tải
+về trước rồi phát từ URL `blob:`. Track đi qua SDK, vốn mang theo phiên đăng
+nhập. Khi thiếu Media Source (webview iOS cũ trong shell desktop/mobile),
+trình phát quay về HLS gốc.
+
+## Phụ đề và caption (#871)
+
+Một track phụ đề hoặc caption là một file WebVTT trong thư viện, được gắn với
+một video cho một locale. Track vẫn là một asset bình thường: quyền thư mục,
+phiên bản và thay tại chỗ của riêng nó, nên sửa lỗi chính tả trong phụ đề vẫn
+giữ mọi liên kết. Upload nó như mọi file. `text/vtt` (`.vtt`) có trong
+catalogue upload nhưng tắt mặc định, nên hãy bật nó trong
+**Settings → Uploads**. Bộ bảo vệ upload yêu cầu chữ ký `WEBVTT`, nên một tài
+liệu HTML hay SVG không thể giả làm phụ đề.
+
+- `GET /api/v1/files/:id/captions` liệt kê các track của một video (files
+  `read`). Mỗi track mang những gì phần tử HTML `<track>` cần: `kind`,
+  `locale` (`srclang`), `label`, `isDefault` và `src`, một URL bất biến ghim
+  theo version `GET /api/v1/files/<caption>/content?v=<n>`. Track mà caller
+  không thấy được file phụ đề sẽ được liệt kê với `src: null`.
+- `POST /api/v1/files/:id/captions` gắn một track (files `update` trên
+  video), với body `{ captionFileId, locale, kind?, label?, isDefault? }`:
+  - `kind` là `subtitles` (mặc định), `captions`, `descriptions` hoặc
+    `chapters`;
+  - video phải là `video/*` (`422 NOT_A_VIDEO`);
+  - track phải là file `text/vtt` mà caller thấy được
+    (`415 CAPTION_NOT_VTT`, `404 CAPTION_FILE_NOT_FOUND`);
+  - locale phải là một locale của site (`422 LOCALE_NOT_ENABLED`);
+  - mỗi video, locale và kind chỉ có một track (`409 CAPTION_EXISTS`).
+- `PATCH /api/v1/files/:id/captions/:captionId` đổi `captionFileId`,
+  `locale`, `kind`, `label` hoặc `isDefault`. Mỗi video và kind có tối đa một
+  track mặc định, nên đặt một track làm mặc định sẽ bỏ cờ của các track khác.
+- `DELETE /api/v1/files/:id/captions/:captionId` gỡ track. File WebVTT vẫn ở
+  trong thư viện. Xoá một trong hai file sẽ gỡ liên kết.
+
+Trong Studio, mục **Captions & subtitles** ở ngăn chi tiết của video liệt kê
+các track, bật/tắt track mặc định, gỡ track, và thêm track từ một file WebVTT
+chọn trong thư viện media, kèm ngôn ngữ (các locale của site), kind và nhãn
+tuỳ chọn.
+
 ## Thiết lập
 
 `GET /api/v1/files/settings` trả về thiết lập, và
@@ -340,5 +358,3 @@ Chúng được lưu trong `settings` dưới key `files.dam`:
   một lần `PUT` có chữ ký.
 - Rich text chưa nhúng ảnh qua picker (R03). API picker ở trên là điểm tích
   hợp.
-- Trình phát, trạng thái xử lý, nút thử lại và trình sửa phụ đề trong Studio
-  là phần tiếp theo của #871.

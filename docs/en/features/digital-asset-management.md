@@ -1,10 +1,10 @@
 ---
-version: 4
+version: 5
 sourceLang: en
-lastUpdated: 2026-11-18T05:46:17.651Z
-contentHash: 94f0a1eaa0b36da0
-codeVerified: 2026-11-18T05:46:17.651Z
-codeVerifiedHash: 94f0a1eaa0b36da0
+lastUpdated: 2026-11-18T05:52:36.761Z
+contentHash: a94a85385fafc977
+codeVerified: 2026-11-18T05:52:36.761Z
+codeVerifiedHash: a94a85385fafc977
 codeVerifiedClaims: 52
 ---
 
@@ -200,35 +200,6 @@ and `MALWARE_SCAN_FIELD=FILES`. On Cloudflare, point it at any HTTPS
 scanning service. The adapter parses the common ClamAV REST response
 shapes as well as a generic `{ infected, viruses }`.
 
-## Captions and subtitles (#871)
-
-A caption or subtitle track is a WebVTT file in the library, linked to a
-video for one locale. The track stays an ordinary asset: its own folder
-permissions, versions and replace in place, so fixing a typo in a subtitle
-keeps every link. Upload it like any file. `text/vtt` (`.vtt`) is in the
-upload catalogue but off by default, so enable it under
-**Settings → Uploads**. The upload guard requires the `WEBVTT` signature, so
-an HTML or SVG document cannot pass as captions.
-
-- `GET /api/v1/files/:id/captions` lists the tracks of a video (files `read`).
-  Each track carries what an HTML `<track>` element needs: `kind`, `locale`
-  (`srclang`), `label`, `isDefault` and `src`, a version-pinned, immutable
-  `GET /api/v1/files/<caption>/content?v=<n>` URL. A track whose caption file
-  the caller cannot see is listed with `src: null`.
-- `POST /api/v1/files/:id/captions` attaches a track (files `update` on the
-  video), with body `{ captionFileId, locale, kind?, label?, isDefault? }`:
-  - `kind` is `subtitles` (default), `captions`, `descriptions` or `chapters`;
-  - the video must be `video/*` (`422 NOT_A_VIDEO`);
-  - the track must be a `text/vtt` file the caller can see
-    (`415 CAPTION_NOT_VTT`, `404 CAPTION_FILE_NOT_FOUND`);
-  - the locale must be one of the site's locales
-    (`422 LOCALE_NOT_ENABLED`);
-  - there is one track per video, locale and kind (`409 CAPTION_EXISTS`).
-- `PATCH /api/v1/files/:id/captions/:captionId` changes `captionFileId`,
-  `locale`, `kind`, `label` or `isDefault`. There is at most one default per
-  video and kind, so setting one clears the others.
-- `DELETE /api/v1/files/:id/captions/:captionId` detaches the track. The
-  WebVTT file stays in the library. Deleting either file removes the link.
 ## Video pipeline (#871)
 
 Videos cannot be transcoded in a Worker, so the CMS hands them to an
@@ -299,6 +270,53 @@ Point the provider's webhook at
 `<LUMIBASE_PUBLIC_URL>/api/v1/video/webhook/cloudflare-stream` or
 `…/webhook/mux`.
 
+**In Studio.** The asset drawer of a video file shows:
+
+- the processing state, polled while the provider works;
+- the error and a **Retry processing** button when processing failed;
+- a preview player once the video is ready.
+
+The player runs HLS through hls.js, loaded lazily. Studio's CSP allows only
+`'self'` and `blob:` for media and images, so the poster and the WebVTT tracks
+are fetched first and played from `blob:` URLs. The tracks go through the SDK,
+which carries the session. Where Media Source is missing (older iOS webviews
+in the desktop/mobile shell) the player falls back to native HLS.
+
+## Captions and subtitles (#871)
+
+A caption or subtitle track is a WebVTT file in the library, linked to a
+video for one locale. The track stays an ordinary asset: its own folder
+permissions, versions and replace in place, so fixing a typo in a subtitle
+keeps every link. Upload it like any file. `text/vtt` (`.vtt`) is in the
+upload catalogue but off by default, so enable it under
+**Settings → Uploads**. The upload guard requires the `WEBVTT` signature, so
+an HTML or SVG document cannot pass as captions.
+
+- `GET /api/v1/files/:id/captions` lists the tracks of a video (files `read`).
+  Each track carries what an HTML `<track>` element needs: `kind`, `locale`
+  (`srclang`), `label`, `isDefault` and `src`, a version-pinned, immutable
+  `GET /api/v1/files/<caption>/content?v=<n>` URL. A track whose caption file
+  the caller cannot see is listed with `src: null`.
+- `POST /api/v1/files/:id/captions` attaches a track (files `update` on the
+  video), with body `{ captionFileId, locale, kind?, label?, isDefault? }`:
+  - `kind` is `subtitles` (default), `captions`, `descriptions` or `chapters`;
+  - the video must be `video/*` (`422 NOT_A_VIDEO`);
+  - the track must be a `text/vtt` file the caller can see
+    (`415 CAPTION_NOT_VTT`, `404 CAPTION_FILE_NOT_FOUND`);
+  - the locale must be one of the site's locales
+    (`422 LOCALE_NOT_ENABLED`);
+  - there is one track per video, locale and kind (`409 CAPTION_EXISTS`).
+- `PATCH /api/v1/files/:id/captions/:captionId` changes `captionFileId`,
+  `locale`, `kind`, `label` or `isDefault`. There is at most one default per
+  video and kind, so setting one clears the others.
+- `DELETE /api/v1/files/:id/captions/:captionId` detaches the track. The
+  WebVTT file stays in the library. Deleting either file removes the link.
+
+In Studio, the **Captions & subtitles** section of a video's drawer lists the
+tracks, toggles the default, removes a track, and adds one from a WebVTT file
+picked in the media library with a language (the site's locales), a kind and
+an optional label.
+
 ## Settings
 
 `GET /api/v1/files/settings` returns the settings, and
@@ -342,5 +360,3 @@ stored in `settings` under the key `files.dam`:
   use the single signed `PUT`.
 - Rich text does not embed images through the picker yet (R03). The picker
   API above is the integration point.
-- The Studio player, processing status, retry button and caption editor are
-  the next slice of #871.
