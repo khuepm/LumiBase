@@ -37,6 +37,10 @@ Nguồn: `.kiro/research/competitor-features-2026-07.md` (D01–D08). Doc ngư�
 - [x] D07 #707 — `modules/malware-scan` (HTTP adapter, job quét, audit),
   gate `423` khi phân phối, `POST /files/:id/scan`, profile compose `malware-scan`.
 - [ ] D04 #704 — upload resumable (TUS / R2 multipart). **Chưa làm** — backlog B220.
+- [ ] #871 video pipeline. Phần 1 xong: port provider + adapter Cloudflare
+  Stream / Mux, `lumibase_video_assets` (`uploaded → processing → ready/failed`),
+  webhook có chữ ký, URL nguồn có chữ ký, phát có chữ ký, sweeper `video-sweep`.
+  Còn lại: caption/phụ đề gắn locale; Studio (trình phát, trạng thái, thử lại).
 
 ## Theo dõi sau
 

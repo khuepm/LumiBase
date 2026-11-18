@@ -46,6 +46,19 @@ export const damSettingsSchema = z
         onError: z.enum(['quarantine', 'allow']).default('quarantine'),
       })
       .default({ enabled: false, provider: 'http', onError: 'quarantine' }),
+    /**
+     * Video pipeline (#871). Off by default. When on and the deployment has a
+     * video provider (`VIDEO_PROVIDER`), uploaded `video/*` files are sent to
+     * it for transcoding (renditions + HLS + poster).
+     */
+    video: z
+      .object({
+        enabled: z.boolean().default(false),
+        /** Playback URLs are provider-signed and expire (`playbackTtlSeconds`). */
+        signedPlayback: z.boolean().default(true),
+        playbackTtlSeconds: z.number().int().min(60).max(86_400).default(3600),
+      })
+      .default({ enabled: false, signedPlayback: true, playbackTtlSeconds: 3600 }),
   })
   .strict();
 

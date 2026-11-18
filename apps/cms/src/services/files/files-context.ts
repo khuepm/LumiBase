@@ -9,6 +9,16 @@ import type { AppEnv } from '../../env';
 import { isSiteAdmin } from '../../middleware/site-admin';
 import { AuditLogger } from '../../modules/audit/logger';
 import { scannerFromEnv, type MalwareScanner, type ScanAuditEntry } from '../../modules/malware-scan';
+import {
+  DrizzleVideoAssetRepository,
+  publicOriginFromEnv,
+  sourceSecretFromEnv,
+  sourceUrlBuilder,
+  videoProviderFromEnv,
+  type VideoAssetRepository,
+  type VideoAuditEntry,
+  type VideoProvider,
+} from '../../modules/video';
 import { buildRequestPermissionContext, permissionServiceForRequest } from '../item-service-factory';
 import { loadDamSettings, type DamSettings } from './dam-settings';
 import type { FilesAccess, FilesAction } from './file-access';
@@ -22,19 +32,35 @@ export interface FilesContext {
   storage: StorageProvider;
   settings: DamSettings;
   scanner: MalwareScanner | null;
-  audit: (entry: ScanAuditEntry) => Promise<void>;
+  audit: (entry: ScanAuditEntry | VideoAuditEntry) => Promise<void>;
+  /** Video pipeline (#871); absent in contexts that do not process video. */
+  video?: {
+    assets: VideoAssetRepository;
+    provider: VideoProvider | null;
+    sourceUrl: (fileId: string, version: number) => Promise<string | null>;
+  };
 }
 
 export async function filesContext(c: Context<AppEnv>): Promise<FilesContext> {
   const db = c.get('db');
   const siteId = c.get('siteId');
+  const env = c.env as unknown as Record<string, unknown> | undefined;
   return {
     siteId,
     repo: new DrizzleFileRepository(db, siteId),
     usage: new DrizzleFileUsageSource(db, siteId),
     storage: c.get('runtime').storage,
     settings: await loadDamSettings(db, siteId),
-    scanner: scannerFromEnv(c.env as unknown as Record<string, unknown> | undefined),
+    scanner: scannerFromEnv(env),
+    video: {
+      assets: new DrizzleVideoAssetRepository(db, siteId),
+      provider: videoProviderFromEnv(env),
+      sourceUrl: sourceUrlBuilder({
+        secret: sourceSecretFromEnv(env),
+        origin: publicOriginFromEnv(env) ?? new URL(c.req.url).origin,
+        siteId,
+      }),
+    },
     audit: async (entry) => {
       await new AuditLogger({ db, siteId }).write({
         event: entry.event,

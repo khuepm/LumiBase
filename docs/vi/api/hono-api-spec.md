@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 56
-lastUpdated: 2026-11-16T15:46:10.249Z
+version: 57
+lastUpdated: 2026-11-18T05:19:30.476Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ae62be6b4f9529f8
+sourceHash: 9e560af12d85ba0b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-16T15:46:10.249Z
-codeVerifiedHash: ae62be6b4f9529f8
-codeVerifiedClaims: 636
+codeVerified: 2026-11-18T05:19:30.476Z
+codeVerifiedHash: 9e560af12d85ba0b
+codeVerifiedClaims: 646
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -848,6 +848,11 @@ Response: `Cache-Control: private, no-store`, `X-Robots-Tag: noindex, nofollow`,
 | `GET/PUT` | `/api/v1/files/settings` | Thiết lập DAM (`files.dam`); `PUT` cần site admin |
 | `GET` | `/api/v1/files/folders` · `/folders/tree` | Thư mục (dạng phẳng / lồng nhau kèm `path`) |
 | `POST/PATCH/DELETE` | `/api/v1/files/folders[/:id]` | Tạo / đổi tên+di chuyển (`409 FOLDER_CYCLE`) / xoá thư mục rỗng (`409 FOLDER_NOT_EMPTY`); site admin |
+| `GET` | `/api/v1/files/:id/video` | Trạng thái xử lý video (`uploaded`/`processing`/`ready`/`failed`); `meta.enabled`, `meta.providerConfigured` (#871) |
+| `POST` | `/api/v1/files/:id/video/retry` | Gửi lại video thất bại hoặc đang xếp hàng (files `update`); `409 VIDEO_NOT_RETRYABLE`, `503 VIDEO_PROVIDER_NOT_CONFIGURED` |
+| `GET` | `/api/v1/files/:id/video/playback` | `{ hls, poster, expiresAt }`, do provider ký và có hạn khi bật `video.signedPlayback`; `409 VIDEO_NOT_READY` |
+| `POST` | `/api/v1/video/webhook/:provider` | **Công khai**, callback của provider được kiểm chữ ký (`cloudflare-stream`, `mux`); `401` khi chữ ký sai |
+| `GET` | `/api/v1/video/source/:token` | **Công khai**, URL có chữ ký sống ngắn để provider kéo bản gốc; một `404` cho mọi lỗi |
 | `GET` | `/api/v1/assets/:id` | Phục vụ/biến đổi hình ảnh (tham số query bên dưới) |
 | `POST` | `/api/v1/media/:key` | Upload bytes media thô (RBAC `media:create`; bảo vệ upload áp dụng) |
 | `GET` | `/api/v1/media/:key` | Tải về media (phục vụ dạng `attachment` + `nosniff`); kèm tham số biến đổi → 302 tới file biến đổi |

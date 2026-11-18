@@ -25,6 +25,14 @@ import { filesContext, resolveFilesAccess, type FilesContext } from '../services
 import { buildFolderTree, checkFolderMove, descendantIds, type FolderRow } from '../services/files/folder-tree';
 import { stripGpsMetadata } from '../services/files/media-metadata';
 import { isServable, runFileScan } from '../modules/malware-scan';
+import {
+  isVideoEligible,
+  presentVideoAsset,
+  queueVideo,
+  retryVideo,
+  submitVideo,
+  type VideoJobDeps,
+} from '../modules/video';
 
 /**
  * /files — the digital asset library (#670).
@@ -174,12 +182,43 @@ function purgeAfterReplace(c: Context<AppEnv>, ctx: FilesContext, file: FileReco
 
 function scheduleScan(c: Context<AppEnv>, ctx: FilesContext, file: FileRecord): void {
   if (file.scanStatus !== 'pending') return;
-  background(c, 'malware scan', () =>
-    runFileScan(
+  background(c, 'malware scan', async () => {
+    const outcome = await runFileScan(
       { repo: ctx.repo, storage: ctx.storage, scanner: ctx.scanner, settings: ctx.settings, audit: ctx.audit },
       file.id,
-    ),
-  );
+    );
+    // A video waits for the scan; hand it to the provider once it is servable.
+    const deps = videoDeps(ctx);
+    if (deps && outcome.status === 'clean' && isVideoEligible(deps, file)) await submitVideo(deps, file.id);
+    return outcome;
+  });
+}
+
+/** Video job dependencies for this request, or null when the context has no pipeline. */
+function videoDeps(ctx: FilesContext): VideoJobDeps | null {
+  if (!ctx.video) return null;
+  return {
+    repo: ctx.repo,
+    videos: ctx.video.assets,
+    provider: ctx.video.provider,
+    settings: ctx.settings,
+    sourceUrl: ctx.video.sourceUrl,
+    audit: ctx.audit,
+  };
+}
+
+/**
+ * Queue a new or replaced video for transcoding (#871) and submit it after
+ * the response. A file still waiting on its malware scan is submitted when
+ * the scan comes back clean (above) or by the sweep.
+ */
+function scheduleVideo(c: Context<AppEnv>, ctx: FilesContext, file: FileRecord): void {
+  const deps = videoDeps(ctx);
+  if (!deps || !isVideoEligible(deps, file)) return;
+  background(c, 'video submit', async () => {
+    const queued = await queueVideo(deps, file);
+    if (queued && isServable(file.scanStatus)) await submitVideo(deps, file.id);
+  });
 }
 
 function csv(v: string | undefined): string[] | undefined {
@@ -491,6 +530,7 @@ filesRouter.post('/', async (c) => {
     recordUsage({ kind: USAGE_KINDS.storageBytes, quantity: input.filesize, unit: 'bytes', attributes: { source: 'files', op: 'add' } });
     const { file, duplicates: dupes } = await svc.ingestRegistered(row);
     scheduleScan(c, g.ctx, file);
+    scheduleVideo(c, g.ctx, file);
     return c.json({
       data: file,
       meta: { duplicates: dupes.filter((f) => canActOnFile(g.access, f, g.folders)).map((f) => ({ id: f.id, filenameDownload: f.filenameDownload, folder: f.folder })) },
@@ -638,6 +678,7 @@ filesRouter.put('/:id/content', async (c) => {
     }
     purgeAfterReplace(c, g.ctx, result.file);
     scheduleScan(c, g.ctx, result.file);
+    scheduleVideo(c, g.ctx, result.file);
     c.header('ETag', `"v${result.file.version}"`);
     return c.json({ data: result.file, meta: { previousVersion: result.previous } });
   } catch (err) {
@@ -664,6 +705,7 @@ filesRouter.post('/:id/versions/:versionId/restore', async (c) => {
     const result = await service(g.ctx).restoreVersion(file.id, c.req.param('versionId'), c.get('auth')?.userId ?? null);
     purgeAfterReplace(c, g.ctx, result.file);
     scheduleScan(c, g.ctx, result.file);
+    scheduleVideo(c, g.ctx, result.file);
     return c.json({ data: result.file, meta: { previousVersion: result.previous } });
   } catch (err) {
     return handleError(c, err);
@@ -700,6 +742,90 @@ filesRouter.post('/:id/scan', requireSiteAdmin(), async (c) => {
   }
 });
 
+// --- Video pipeline (#871) --------------------------------------------------
+
+/** Processing state of a video file: `uploaded → processing → ready | failed`. */
+filesRouter.get('/:id/video', async (c) => {
+  const g = await guard(c, 'read');
+  if (g instanceof Response) return g;
+  try {
+    const file = await loadFile(g, c.req.param('id'));
+    const asset = g.ctx.video ? await g.ctx.video.assets.get(file.id) : null;
+    return c.json({
+      data: asset ? presentVideoAsset(asset) : null,
+      meta: {
+        enabled: g.ctx.settings.video.enabled,
+        providerConfigured: Boolean(g.ctx.video?.provider),
+      },
+    });
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+/** Send a failed (or never-submitted) video to the provider again. */
+filesRouter.post('/:id/video/retry', async (c) => {
+  const g = await guard(c, 'update');
+  if (g instanceof Response) return g;
+  try {
+    const file = await loadFile(g, c.req.param('id'));
+    const deps = videoDeps(g.ctx);
+    if (!deps?.provider) return fail(c, 503, 'VIDEO_PROVIDER_NOT_CONFIGURED', 'No video provider is configured for this deployment (VIDEO_PROVIDER).');
+    if (!g.ctx.settings.video.enabled) return fail(c, 409, 'VIDEO_DISABLED', 'The video pipeline is not enabled for this site.');
+    if (!isVideoEligible(deps, file)) return fail(c, 422, 'NOT_A_VIDEO', 'Only video/* files are processed.');
+    const current = await deps.videos.get(file.id);
+    if (current && (current.status === 'processing' || current.status === 'ready') && current.fileVersion === file.version) {
+      return fail(c, 409, 'VIDEO_NOT_RETRYABLE', `The video is ${current.status}; only failed or queued videos can be retried.`, { status: current.status });
+    }
+    const { outcome, asset } = await retryVideo(deps, file);
+    return c.json({ data: asset ? presentVideoAsset(asset) : null, meta: { outcome } });
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+/**
+ * Playback URLs for a ready video: the HLS manifest and a poster. With
+ * `signedPlayback` (default) both are provider-signed and expire after
+ * `playbackTtlSeconds`, the same short-lived-URL model as signed transforms;
+ * the response itself is never cached.
+ */
+filesRouter.get('/:id/video/playback', async (c) => {
+  const g = await guard(c, 'read');
+  if (g instanceof Response) return g;
+  try {
+    const file = await loadFile(g, c.req.param('id'));
+    const provider = g.ctx.video?.provider;
+    if (!g.ctx.video || !provider) return fail(c, 503, 'VIDEO_PROVIDER_NOT_CONFIGURED', 'No video provider is configured for this deployment (VIDEO_PROVIDER).');
+    const asset = await g.ctx.video.assets.get(file.id);
+    if (!asset || asset.status !== 'ready' || asset.fileVersion !== file.version || !asset.providerAssetId) {
+      return fail(c, 409, 'VIDEO_NOT_READY', 'The video has not finished processing.', { status: asset?.status ?? null });
+    }
+    if (asset.provider !== provider.name) {
+      return fail(c, 409, 'VIDEO_PROVIDER_CHANGED', 'The video was processed by another provider; retry it to re-process.', { provider: asset.provider });
+    }
+    const expiresAt = new Date(Date.now() + g.ctx.settings.video.playbackTtlSeconds * 1000);
+    const urls = await provider.playback(
+      { providerAssetId: asset.providerAssetId, playbackId: asset.playbackId, signed: asset.signedPlayback },
+      expiresAt,
+    );
+    c.header('Cache-Control', 'private, no-store');
+    return c.json({
+      data: {
+        hls: urls.hls,
+        poster: urls.poster,
+        expiresAt: urls.expiresAt ? urls.expiresAt.toISOString() : null,
+        durationMs: asset.durationMs,
+        width: asset.width,
+        height: asset.height,
+      },
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'VideoProviderError') return fail(c, 503, 'VIDEO_PROVIDER_ERROR', err.message);
+    return handleError(c, err);
+  }
+});
+
 /**
  * Safe delete (#706). A file that content still references is refused with
  * `409 FILE_IN_USE` and the reference list; under the default `confirm`
@@ -711,7 +837,14 @@ filesRouter.delete('/:id', async (c) => {
   if (g instanceof Response) return g;
   try {
     const file = await loadFile(g, c.req.param('id'));
+    // Read the video row before the delete cascades it away.
+    const video = g.ctx.video ? await g.ctx.video.assets.get(file.id) : null;
     const result = await service(g.ctx).delete(file.id, { confirm: c.req.query('confirm') === 'true' });
+    const provider = g.ctx.video?.provider;
+    const providerAssetId = video?.providerAssetId;
+    if (provider && providerAssetId && video.provider === provider.name) {
+      background(c, 'video provider delete', () => provider.remove(providerAssetId));
+    }
     if (typeof result.file.filesize === 'number') {
       recordUsage({ kind: USAGE_KINDS.storageBytes, quantity: -result.file.filesize, unit: 'bytes', attributes: { source: 'files', op: 'remove' } });
     }
