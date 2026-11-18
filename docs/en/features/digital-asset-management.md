@@ -1,11 +1,11 @@
 ---
-version: 3
+version: 4
 sourceLang: en
-lastUpdated: 2026-11-18T05:33:16.586Z
-contentHash: 7408737bb33e1a8c
-codeVerified: 2026-11-18T05:33:16.586Z
-codeVerifiedHash: 7408737bb33e1a8c
-codeVerifiedClaims: 36
+lastUpdated: 2026-11-18T05:46:17.651Z
+contentHash: 94f0a1eaa0b36da0
+codeVerified: 2026-11-18T05:46:17.651Z
+codeVerifiedHash: 94f0a1eaa0b36da0
+codeVerifiedClaims: 52
 ---
 
 # Digital Asset Management
@@ -229,6 +229,75 @@ an HTML or SVG document cannot pass as captions.
   video and kind, so setting one clears the others.
 - `DELETE /api/v1/files/:id/captions/:captionId` detaches the track. The
   WebVTT file stays in the library. Deleting either file removes the link.
+## Video pipeline (#871)
+
+Videos cannot be transcoded in a Worker, so the CMS hands them to an
+external **video provider** behind a port
+(`apps/cms/src/modules/video/provider.ts`). Two adapters ship:
+**Cloudflare Stream** and **Mux**. Both speak plain HTTP, so the pipeline
+runs the same on Workers and Docker. Business logic never names a provider.
+
+Off by default. When a site enables `video.enabled` and the deployment has a
+provider, every new or replaced `video/*` file gets a row in
+`lumibase_video_assets` and moves through these states:
+
+| State | Meaning |
+|---|---|
+| `uploaded` | queued; waits for the malware scan (#707) to mark the file servable |
+| `processing` | submitted; the provider is building the renditions, HLS manifest and poster |
+| `ready` | playable; duration and dimensions are copied onto the file (`duration` in seconds, `width`, `height`) |
+| `failed` | the provider rejected it, five submissions failed, or it took longer than 24 hours |
+
+1. **Submit.** After the upload response (`waitUntil` on Workers, a detached
+   task on Node), the CMS sends the provider a short-lived signed URL,
+   `GET /api/v1/video/source/<token>`. The token names the site, file and
+   version and expires after six hours, and its key is derived from
+   `JWT_SECRET`. The provider pulls the original from it. A file that is
+   still being scanned is submitted once the scan comes back clean.
+2. **Webhook.** The provider calls `POST /api/v1/video/webhook/<provider>`.
+   The signature is checked against the deployment's webhook secret, with a
+   five-minute replay window. The site, file and version come from the
+   passthrough the CMS attached at submit time. An event for an older version
+   or another asset is ignored.
+3. **Sweep.** Every five minutes (Docker leader-locked cron, Workers
+   five-minute trigger), `video-sweep`:
+   - submits queued rows, including retryable failures (up to five attempts);
+   - polls processing rows whose webhook never came;
+   - re-queues a submit interrupted mid-flight;
+   - fails anything processing for more than 24 hours.
+
+A replace re-queues the file and deletes the previous provider asset.
+Deleting the file deletes its provider asset too.
+
+**Endpoints.**
+
+- `GET /api/v1/files/:id/video` returns the state (`meta.enabled`,
+  `meta.providerConfigured`).
+- `POST /api/v1/files/:id/video/retry` (files `update`) re-submits a failed or
+  queued video.
+- `GET /api/v1/files/:id/video/playback` returns `{ hls, poster, expiresAt }`
+  for a ready video. With `video.signedPlayback` (the default) both URLs are
+  signed by the provider and expire after `video.playbackTtlSeconds`: the same
+  short-lived-URL model as signed transforms. The response is
+  `Cache-Control: private, no-store`. It answers `409 VIDEO_NOT_READY` until
+  the current version is ready.
+
+The provider is a **deployment** setting:
+
+| Variable | Meaning |
+|---|---|
+| `VIDEO_PROVIDER` | `cloudflare-stream` or `mux`; unset = no transcoding |
+| `LUMIBASE_PUBLIC_URL` | public origin the provider pulls sources from; the sweep cannot submit without it |
+| `CF_STREAM_ACCOUNT_ID`, `CF_STREAM_API_TOKEN` | Stream API access |
+| `CF_STREAM_WEBHOOK_SECRET` | secret returned when the account webhook was registered |
+| `CF_STREAM_CUSTOMER_DOMAIN` | playback host, e.g. `customer-<code>.cloudflarestream.com` |
+| `MUX_TOKEN_ID`, `MUX_TOKEN_SECRET` | Mux API access token |
+| `MUX_WEBHOOK_SECRET` | Mux webhook signing secret |
+| `MUX_SIGNING_KEY_ID`, `MUX_SIGNING_KEY_PRIVATE` | signing key for signed playback (the base64 key Mux hands out, or a PEM) |
+
+Point the provider's webhook at
+`<LUMIBASE_PUBLIC_URL>/api/v1/video/webhook/cloudflare-stream` or
+`…/webhook/mux`.
 
 ## Settings
 
@@ -244,18 +313,24 @@ stored in `settings` under the key `files.dam`:
 | `extractMetadata` | `true` | EXIF/IPTC/XMP extraction |
 | `scan.enabled` | `false` | malware scanning |
 | `scan.onError` | `quarantine` | `quarantine` or `allow` |
+| `video.enabled` | `false` | video pipeline |
+| `video.signedPlayback` | `true` | provider-signed, expiring playback URLs |
+| `video.playbackTtlSeconds` | `3600` | playback URL lifetime (60–86400) |
 
 ## Multi-tenancy
 
 - **Isolated per site:** `lumibase_files`, `lumibase_folders`,
-  `lumibase_file_versions` and `lumibase_file_captions` all carry `site_id` and are in the RLS
+  `lumibase_file_versions`, `lumibase_file_captions` and `lumibase_video_assets` all carry `site_id` and are in the RLS
   `site_isolation` list. Every repository query is filtered by `site_id`
   (`DrizzleFileRepository`). Archived binaries live under `sites/<site>/…`.
   Cache tags (`file:<site>:<id>`) and the `files.dam` setting are per site.
   Duplicate lookups and "where used" only search the caller's site.
-- **Shared across the deployment:** the scanner endpoint (`MALWARE_SCAN_*`).
-  It is an operator-controlled service identity, not tenant data, and a
-  tenant can only switch scanning on for its own site.
+- **Shared across the deployment:** the scanner endpoint (`MALWARE_SCAN_*`)
+  and the video provider account (`VIDEO_PROVIDER`, `CF_STREAM_*`, `MUX_*`).
+  They are operator-controlled service identities, not tenant data, and a
+  tenant can only switch scanning or video on for its own site. Provider
+  webhooks carry the site in a signed passthrough; the webhook and source
+  routes query only that site's rows.
 - **How it is verified:** `apps/cms/src/routes/__tests__/files-dam.test.ts`
   runs two sites side by side. Site A cannot read, replace or delete site B's
   file (404, nothing written), and duplicate lookups never return the other
@@ -267,5 +342,5 @@ stored in `settings` under the key `files.dam`:
   use the single signed `PUT`.
 - Rich text does not embed images through the picker yet (R03). The picker
   API above is the integration point.
-- Video transcoding (#871 part 1, PR #937) and the Studio caption editor and
-  player are separate slices of #871.
+- The Studio player, processing status, retry button and caption editor are
+  the next slice of #871.

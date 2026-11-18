@@ -1,14 +1,14 @@
 ---
-version: 3
+version: 4
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-11-18T05:33:16.586Z
-sourceHash: 7408737bb33e1a8c
-codeVerified: 2026-11-18T05:33:16.586Z
-codeVerifiedHash: 7408737bb33e1a8c
-codeVerifiedClaims: 36
+lastUpdated: 2026-11-18T05:46:17.651Z
+sourceHash: 94f0a1eaa0b36da0
+codeVerified: 2026-11-18T05:46:17.651Z
+codeVerifiedHash: 94f0a1eaa0b36da0
+codeVerifiedClaims: 52
 ---
 
 # Quản lý tài sản số (Digital Asset Management)
@@ -228,6 +228,74 @@ liệu HTML hay SVG không thể giả làm phụ đề.
   track mặc định, nên đặt một track làm mặc định sẽ bỏ cờ của các track khác.
 - `DELETE /api/v1/files/:id/captions/:captionId` gỡ track. File WebVTT vẫn ở
   trong thư viện. Xoá một trong hai file sẽ gỡ liên kết.
+## Pipeline video (#871)
+
+Video không transcode được trong Worker, nên CMS giao chúng cho một **video
+provider** bên ngoài qua một port (`apps/cms/src/modules/video/provider.ts`).
+Có sẵn hai adapter: **Cloudflare Stream** và **Mux**. Cả hai chỉ dùng HTTP,
+nên pipeline chạy như nhau trên Workers và Docker. Business logic không bao
+giờ gọi tên provider.
+
+Tắt theo mặc định. Khi một site bật `video.enabled` và deployment có
+provider, mọi file `video/*` mới hoặc được thay có một dòng trong
+`lumibase_video_assets` và đi qua các trạng thái sau:
+
+| Trạng thái | Ý nghĩa |
+|---|---|
+| `uploaded` | đang xếp hàng; chờ quét mã độc (#707) đánh dấu file phân phối được |
+| `processing` | đã gửi; provider đang dựng renditions, manifest HLS và poster |
+| `ready` | phát được; thời lượng và kích thước được chép sang file (`duration` tính bằng giây, `width`, `height`) |
+| `failed` | provider từ chối, năm lần gửi thất bại, hoặc xử lý quá 24 giờ |
+
+1. **Gửi.** Sau response upload (`waitUntil` trên Workers, một tác vụ tách
+   rời trên Node), CMS gửi cho provider một URL có chữ ký, sống ngắn,
+   `GET /api/v1/video/source/<token>`. Token ghi site, file và version, hết
+   hạn sau sáu giờ, và khoá của nó được dẫn xuất từ `JWT_SECRET`. Provider
+   kéo bản gốc từ URL đó. File còn đang được quét sẽ được gửi khi kết quả
+   quét là sạch.
+2. **Webhook.** Provider gọi `POST /api/v1/video/webhook/<provider>`. Chữ ký
+   được kiểm theo webhook secret của deployment, với cửa sổ chống replay năm
+   phút. Site, file và version lấy từ passthrough CMS gắn lúc gửi. Sự kiện
+   cho version cũ hơn hoặc asset khác bị bỏ qua.
+3. **Quét định kỳ.** Mỗi năm phút (cron Docker có leader lock, trigger năm
+   phút của Workers), `video-sweep`:
+   - gửi các dòng đang xếp hàng, kể cả lỗi thử lại được (tối đa năm lần);
+   - hỏi trạng thái các dòng đang xử lý mà webhook không tới;
+   - xếp hàng lại một lần gửi bị ngắt giữa chừng;
+   - đánh dấu thất bại mọi thứ xử lý quá 24 giờ.
+
+Thay file sẽ xếp hàng lại và xoá asset provider của version trước. Xoá file
+cũng xoá asset provider của nó.
+
+**Endpoint.**
+
+- `GET /api/v1/files/:id/video` trả trạng thái (`meta.enabled`,
+  `meta.providerConfigured`).
+- `POST /api/v1/files/:id/video/retry` (files `update`) gửi lại một video
+  thất bại hoặc đang xếp hàng.
+- `GET /api/v1/files/:id/video/playback` trả `{ hls, poster, expiresAt }` cho
+  video đã sẵn sàng. Với `video.signedPlayback` (mặc định) cả hai URL được
+  provider ký và hết hạn sau `video.playbackTtlSeconds`: cùng mô hình URL
+  sống ngắn như signed transforms. Response là
+  `Cache-Control: private, no-store`. Endpoint trả `409 VIDEO_NOT_READY` cho
+  tới khi version hiện tại sẵn sàng.
+
+Provider là thiết lập **cấp deployment**:
+
+| Biến | Ý nghĩa |
+|---|---|
+| `VIDEO_PROVIDER` | `cloudflare-stream` hoặc `mux`; không đặt = không transcode |
+| `LUMIBASE_PUBLIC_URL` | origin công khai mà provider kéo nguồn về; thiếu nó thì lượt quét định kỳ không gửi được |
+| `CF_STREAM_ACCOUNT_ID`, `CF_STREAM_API_TOKEN` | quyền gọi Stream API |
+| `CF_STREAM_WEBHOOK_SECRET` | secret trả về khi đăng ký webhook của account |
+| `CF_STREAM_CUSTOMER_DOMAIN` | host phát, ví dụ `customer-<code>.cloudflarestream.com` |
+| `MUX_TOKEN_ID`, `MUX_TOKEN_SECRET` | access token của Mux API |
+| `MUX_WEBHOOK_SECRET` | secret ký webhook của Mux |
+| `MUX_SIGNING_KEY_ID`, `MUX_SIGNING_KEY_PRIVATE` | khoá ký cho phát có chữ ký (khoá base64 Mux cấp, hoặc PEM) |
+
+Trỏ webhook của provider tới
+`<LUMIBASE_PUBLIC_URL>/api/v1/video/webhook/cloudflare-stream` hoặc
+`…/webhook/mux`.
 
 ## Thiết lập
 
@@ -243,18 +311,24 @@ Chúng được lưu trong `settings` dưới key `files.dam`:
 | `extractMetadata` | `true` | trích EXIF/IPTC/XMP |
 | `scan.enabled` | `false` | quét mã độc |
 | `scan.onError` | `quarantine` | `quarantine` hoặc `allow` |
+| `video.enabled` | `false` | pipeline video |
+| `video.signedPlayback` | `true` | URL phát do provider ký, có hạn |
+| `video.playbackTtlSeconds` | `3600` | thời gian sống của URL phát (60–86400) |
 
 ## Multi-tenancy
 
 - **Cô lập theo site:** `lumibase_files`, `lumibase_folders`,
-  `lumibase_file_versions` và `lumibase_file_captions` đều mang `site_id` và nằm trong danh sách RLS
+  `lumibase_file_versions`, `lumibase_file_captions` và `lumibase_video_assets` đều mang `site_id` và nằm trong danh sách RLS
   `site_isolation`. Mọi query của repository được lọc theo `site_id`
   (`DrizzleFileRepository`). Binary lưu trữ nằm dưới `sites/<site>/…`. Cache
   tag (`file:<site>:<id>`) và thiết lập `files.dam` là theo site. Tra cứu
   trùng lặp và "dùng ở đâu" chỉ tìm trong site của caller.
-- **Dùng chung toàn deployment:** endpoint scanner (`MALWARE_SCAN_*`). Đây là
+- **Dùng chung toàn deployment:** endpoint scanner (`MALWARE_SCAN_*`) và
+  tài khoản video provider (`VIDEO_PROVIDER`, `CF_STREAM_*`, `MUX_*`). Đây là
   định danh dịch vụ do operator kiểm soát, không phải dữ liệu tenant, và một
-  tenant chỉ có thể bật quét cho chính site của mình.
+  tenant chỉ có thể bật quét hoặc video cho chính site của mình. Webhook của
+  provider mang site trong một passthrough có chữ ký; route webhook và route
+  nguồn chỉ truy vấn dòng của site đó.
 - **Cách kiểm chứng:** `apps/cms/src/routes/__tests__/files-dam.test.ts` chạy
   hai site song song. Site A không đọc, thay hay xoá được file của site B
   (404, không ghi gì), và tra cứu trùng lặp không bao giờ trả về file cùng
@@ -266,5 +340,5 @@ Chúng được lưu trong `settings` dưới key `files.dam`:
   một lần `PUT` có chữ ký.
 - Rich text chưa nhúng ảnh qua picker (R03). API picker ở trên là điểm tích
   hợp.
-- Transcode video (#871 phần 1, PR #937) cùng trình sửa phụ đề và trình phát
-  trong Studio là các phần riêng của #871.
+- Trình phát, trạng thái xử lý, nút thử lại và trình sửa phụ đề trong Studio
+  là phần tiếp theo của #871.

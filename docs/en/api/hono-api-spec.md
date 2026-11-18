@@ -1,11 +1,11 @@
 ---
-version: 58
-lastUpdated: 2026-11-18T05:33:14.828Z
+version: 59
+lastUpdated: 2026-11-18T05:46:14.477Z
 sourceLang: en
-contentHash: aed0ac1ed2c9f5d5
-codeVerified: 2026-11-18T05:33:14.828Z
-codeVerifiedHash: aed0ac1ed2c9f5d5
-codeVerifiedClaims: 638
+contentHash: c4fa831c1e397fcc
+codeVerified: 2026-11-18T05:46:14.477Z
+codeVerifiedHash: c4fa831c1e397fcc
+codeVerifiedClaims: 648
 ---
 
 # Hono API Specification — LumiBase
@@ -971,6 +971,11 @@ identical body. Responses: `Cache-Control: private, no-store`,
 | `GET` | `/api/v1/files/:id/captions` | Caption/subtitle tracks of a video as `<track>` data (`kind`, `locale`, `label`, `isDefault`, version-pinned `src`) (#871) |
 | `POST` | `/api/v1/files/:id/captions` | Attach a WebVTT file: `{ captionFileId, locale, kind?, label?, isDefault? }`; `409 CAPTION_EXISTS`, `415 CAPTION_NOT_VTT`, `422 LOCALE_NOT_ENABLED` |
 | `PATCH/DELETE` | `/api/v1/files/:id/captions/:captionId` | Edit a track (one default per kind) / detach it (the WebVTT file stays) |
+| `GET` | `/api/v1/files/:id/video` | Video processing state (`uploaded`/`processing`/`ready`/`failed`); `meta.enabled`, `meta.providerConfigured` (#871) |
+| `POST` | `/api/v1/files/:id/video/retry` | Re-submit a failed or queued video (files `update`); `409 VIDEO_NOT_RETRYABLE`, `503 VIDEO_PROVIDER_NOT_CONFIGURED` |
+| `GET` | `/api/v1/files/:id/video/playback` | `{ hls, poster, expiresAt }`, provider-signed and expiring with `video.signedPlayback`; `409 VIDEO_NOT_READY` |
+| `POST` | `/api/v1/video/webhook/:provider` | **Public**, signature-verified provider callback (`cloudflare-stream`, `mux`); `401` on a bad signature |
+| `GET` | `/api/v1/video/source/:token` | **Public**, short-lived signed URL the provider pulls the original from; one `404` for every failure |
 | `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
 | `POST` | `/api/v1/media/:key` | Upload raw media bytes (RBAC `media:create`; upload guard applies) |
 | `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`); with transform params → 302 to derivative |
