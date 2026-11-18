@@ -171,6 +171,8 @@ function scalarFor(type: string): string {
       return 'Float';
     case 'bigInteger':
       return 'String';
+    // `datetime` is the canonical FieldType spelling; `dateTime` is legacy (#865).
+    case 'datetime':
     case 'dateTime':
     case 'date':
     case 'time':

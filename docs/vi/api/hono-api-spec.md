@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 57
-lastUpdated: 2026-11-17T14:46:38.217Z
+version: 58
+lastUpdated: 2026-11-18T04:14:44.447Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a7889a6379628460
+sourceHash: 4aabe6c3f4a73b8e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T14:46:38.217Z
-codeVerifiedHash: a7889a6379628460
+codeVerified: 2026-11-18T04:14:44.447Z
+codeVerifiedHash: 4aabe6c3f4a73b8e
 codeVerifiedClaims: 646
 ---
 
@@ -374,6 +374,13 @@ Mỗi thay đổi được áp dụng đều ghi một audit event (`email_ident
 - `POST /api/v1/users/invite` tra tài khoản không phân biệt hoa/thường (và theo
   hộp thư gốc dưới `root`) và chỉ trả các trường công khai. Mời một alias của
   thành viên hiện có trên site strict trả `409 EMAIL_IDENTITY_CONFLICT`.
+  Một tài khoản đã có chỉ được gắn khi hộp thư của nó đã được chứng minh
+  (#856): tài khoản mật khẩu đã xác minh email, một lời mời đang chờ, hoặc tài
+  khoản đăng nhập mạng xã hội được liên kết dưới chính địa chỉ đó. Mọi kết quả
+  khớp khác (tài khoản SSO JIT hoặc SCIM có email lấy từ IdP, hoặc tài khoản tự
+  đăng ký chưa xác minh) trả `409 INVITEE_EMAIL_UNVERIFIED` và không được gắn.
+  Quy tắc này cũng áp dụng cho `POST /api/v1/orgs/:orgId/members` khi mời bằng
+  `email`.
 - SCIM (`/scim/v2/Users`) trả `409` với `scimType: "uniqueness"` khi địa chỉ
   resolve về một tài khoản đã có hoặc xung đột trên site strict.
 

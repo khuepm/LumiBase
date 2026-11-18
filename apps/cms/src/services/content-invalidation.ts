@@ -116,7 +116,7 @@ export async function runRevalidationDispatch(
 }
 
 /**
- * Enqueue or fire-and-forget ISR revalidation after an item mutation.
+ * Enqueue ISR revalidation after an item mutation, or dispatch it inline.
  * Best-effort — never fails the write path.
  */
 export async function dispatchItemRevalidation(deps: {
@@ -135,13 +135,18 @@ export async function dispatchItemRevalidation(deps: {
       });
       return;
     }
-    void runRevalidationDispatch(deps.db, deps.siteId, deps.collection).catch((error) => {
+    // Awaited, not detached (#863): on Workers nothing keeps a floating
+    // promise alive once the response is sent, so a `void` dispatch could be
+    // cut off. Each target POST is bounded by a 5s timeout in `revalidation`.
+    try {
+      await runRevalidationDispatch(deps.db, deps.siteId, deps.collection);
+    } catch (error) {
       console.warn('[content-invalidation] revalidation dispatch failed', {
         siteId: deps.siteId,
         collection: deps.collection,
         error,
       });
-    });
+    }
   } catch (error) {
     console.warn('[content-invalidation] revalidation enqueue failed', {
       siteId: deps.siteId,

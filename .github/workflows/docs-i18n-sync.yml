@@ -65,38 +65,16 @@ jobs:
       - name: Run detection (plan mode)
         run: node scripts/docs-i18n/sync.mjs
 
-      # Verify the docs' claims about the repo still hold. `sync.mjs` above only
-      # compares hashes between the en/vi pair, which cannot catch both sides
-      # being wrong together — a deleted endpoint documented identically in both
-      # languages reads as perfectly "in sync".
-      #
-      # Report-only for now (`|| true`): the check is being introduced against a
-      # tree that already carries findings, and failing here would block PRs that
-      # never touched the offending docs. Drop the `|| true` once the backlog is
-      # clear so a newly-stale reference cannot land.
-      - name: Verify code references (report only)
-        run: node scripts/docs-i18n/verify-code-refs.mjs || true
-
+      # Reports first, so a failing gate below still leaves them attached for
+      # whoever has to fix the pair. The JSON writers exit non-zero on findings
+      # by design; `|| true` here only keeps the artifact step going — the
+      # enforcing steps after the upload are what fail the job.
       - name: Write code-reference report
         run: node scripts/docs-i18n/verify-code-refs.mjs --json > docs/.i18n/code-refs-report.json || true
-
-      # Structural parity between the two locales: same headings, same code, same
-      # link targets, target actually in the target language. This is the check
-      # that stands in for a human reviewer — translations are hand-written and
-      # merged without a second pass (`docs/.i18n/TASKS.md`).
-      #
-      # Repo-wide run stays report-only: a backlog of legacy pairs still fails
-      # (48 of 148 at the time of writing; the older 77/142 figure in this
-      # comment was stale), and failing on those would block PRs that never
-      # touched them. The enforcing gate is the changed-files step below.
-      - name: Check EN/VI structural parity (report only, whole repo)
-        run: node scripts/docs-i18n/check-parity.mjs || true
 
       - name: Write parity report
         run: node scripts/docs-i18n/check-parity.mjs --json > docs/.i18n/parity-report.json || true
 
-      # Artifacts are uploaded before the gate so a failing run still leaves the
-      # reports attached for whoever has to fix the pair.
       - name: Upload sync report
         if: always()
         uses: actions/upload-artifact@v7
@@ -109,11 +87,33 @@ jobs:
             docs/i18n-sync-log.md
           if-no-files-found: warn
 
+      # Verify the docs' claims about the repo still hold. `sync.mjs` above only
+      # compares hashes between the en/vi pair, which cannot catch both sides
+      # being wrong together — a deleted endpoint documented identically in both
+      # languages reads as perfectly "in sync".
+      #
+      # Enforcing since the backlog reached 0 findings (docs/.i18n/TASKS.md §8):
+      # a newly-stale reference anywhere in docs/ now fails the PR.
+      - name: Verify code references
+        run: node scripts/docs-i18n/verify-code-refs.mjs
+
+      # Structural parity between the two locales: same headings, same code, same
+      # link targets, target actually in the target language. This is the check
+      # that stands in for a human reviewer — translations are hand-written and
+      # merged without a second pass (`docs/.i18n/TASKS.md`).
+      #
+      # Enforcing repo-wide since every pair reached parity 0 (TASKS.md §8).
+      # The changed-files gate below stays: it names the pairs a PR touched,
+      # which is the faster pointer when only one pair broke.
+      - name: Check EN/VI structural parity (whole repo)
+        run: node scripts/docs-i18n/check-parity.mjs
+
       # Enforcing gate, scoped to what this PR actually changed. A contributor
       # is answerable for the pairs they touch, not for the inherited backlog —
       # so this fails only when a changed doc is itself out of parity. That
       # keeps the backlog from growing while leaving it to be retired
-      # separately; drop the scoping (and the `|| true` above) once it is clear.
+      # separately. The whole-repo check above now enforces too; this step is
+      # kept for its narrower, per-PR error message.
       - name: Enforce parity on docs changed by this PR
         shell: bash
         run: |
