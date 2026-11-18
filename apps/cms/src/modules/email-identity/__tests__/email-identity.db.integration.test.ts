@@ -12,6 +12,7 @@ import { hashPassword } from '../../../services/auth/password';
 import { loadLockoutPolicyFromSettings } from '../../login-guard/middleware';
 import { emailRoot } from '../normalize';
 import { inviteUserToSite } from '../invite';
+import { provisionScimUser } from '../scim-provision';
 import {
   isEmailIdentityConflict,
   loadEmailIdentityMode,
@@ -387,6 +388,23 @@ describe.skipIf(!hasDbIntegrationUrl)('Email identity policy — DB integration'
     if (!second.ok) throw new Error(`expected invite to succeed, got ${second.code}`);
     expect(second.created).toBe(false);
     expect(second.user.id).toBe(first.user.id);
+  });
+
+  it('under `root`, SCIM does not bind another site\'s unverified alias account (#912)', async () => {
+    expect((await setInstanceEmailIdentityMode(db, 'root')).ok).toBe(true);
+    // Site STRICT's IdP JIT-created this alias; site OPEN's SCIM provisions the root mailbox.
+    const jitAlias = await addUser(`eidit.scim+x@gmail.com`, { externalId: 'eidit-jit-scim-alias' });
+    await db.insert(userSites).values({ userId: jitAlias.id, siteId: SITE_STRICT });
+    expect(await provisionScimUser(db, { siteId: SITE_OPEN, userName: 'eiditscim@gmail.com' })).toEqual({ ok: false, code: 'CONFLICT' });
+    expect(await membershipCount(jitAlias.id, SITE_OPEN)).toBe(0);
+
+    // A verified alias account is still linked under `root`.
+    const verified = await addUser(`eidit.scimok+y@gmail.com`, { passwordHash: 'secret-hash' });
+    await db.insert(userSites).values({ userId: verified.id, siteId: SITE_STRICT });
+    const linked = await provisionScimUser(db, { siteId: SITE_OPEN, userName: 'eiditscimok@gmail.com' });
+    if (!linked.ok) throw new Error(`expected SCIM link to succeed, got ${linked.code}`);
+    expect(linked.user.id).toBe(verified.id);
+    expect(await membershipCount(verified.id, SITE_OPEN)).toBe(1);
   });
 
   // ── register / login through the real router ─────────────────────────

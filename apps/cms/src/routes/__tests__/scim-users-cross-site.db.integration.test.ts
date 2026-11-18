@@ -116,6 +116,17 @@ describe.skipIf(!hasDbIntegrationUrl)('SCIM POST /Users — cross-site binding (
     expect(await memberOn(SITE_B, scimId)).toBe(false);
   });
 
+  it('does not bind an unverified self-registration from site A', async () => {
+    // `/auth/register` keeps a password account `invited` until the emailed link is clicked.
+    const pendingId = await accountOnSiteA({ email: `pending@${DOMAIN}`, passwordHash: 'pbkdf2$placeholder', status: 'invited' });
+
+    const res = await provisionFromSiteB(`Pending@${DOMAIN}`);
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { detail?: string }).detail).toBe('userName is already in use');
+    expect(await memberOn(SITE_B, pendingId)).toBe(false);
+  });
+
   it('links a verified account from site A (201, membership on site B, profile untouched)', async () => {
     const verifiedId = await accountOnSiteA({
       email: `verified@${DOMAIN}`,
