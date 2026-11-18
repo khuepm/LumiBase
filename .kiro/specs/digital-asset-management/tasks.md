@@ -36,10 +36,13 @@ Nguồn: `.kiro/research/competitor-features-2026-07.md` (D01–D08). Doc ngư�
   `file`/`files` dùng chung picker. Rich text (R03) chưa nhúng — chờ issue R03.
 - [x] D07 #707 — `modules/malware-scan` (HTTP adapter, job quét, audit),
   gate `423` khi phân phối, `POST /files/:id/scan`, profile compose `malware-scan`.
+  Bổ sung: adapter clamd native qua `runtime.clamd` (Docker, `CLAMD_HOST`) và
+  sweeper quét lại file `pending` > 10 phút (Docker cron + Workers cron),
+  partial index `files_pending_scan_idx` (migration 0041).
 - [ ] D04 #704 — upload resumable (TUS / R2 multipart). **Chưa làm** — backlog B220.
 
 ## Theo dõi sau
 
 - B219 key upload có chữ ký chưa có tiền tố tenant.
 - B221 lọc rule `files` trong bộ nhớ (trần 5000 dòng) → biên dịch sang SQL.
-- B222 sweeper quét lại file `pending` bị kẹt.
+- ~~B222 sweeper quét lại file `pending` bị kẹt~~ — xong (#707): `modules/malware-scan/sweeper.ts`.

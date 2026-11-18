@@ -134,8 +134,13 @@ services:
       LUMIBASE_AI_IP_RATE_LIMIT: ${LUMIBASE_AI_IP_RATE_LIMIT:-}
       # Malware scanning for uploads (#707). Unset = no scanner; a site that
       # enables scanning then keeps new files quarantined (fail closed). With
-      # the `malware-scan` profile below:
+      # the `malware-scan` profile below, either talk to clamd directly
+      # (preferred):
+      #   CLAMD_HOST=clamav CLAMD_PORT=3310
+      # or go through the REST front:
       #   MALWARE_SCAN_URL=http://clamav-rest:3000/api/v1/scan MALWARE_SCAN_FIELD=FILES
+      CLAMD_HOST: ${CLAMD_HOST:-}
+      CLAMD_PORT: ${CLAMD_PORT:-}
       MALWARE_SCAN_URL: ${MALWARE_SCAN_URL:-}
       MALWARE_SCAN_TOKEN: ${MALWARE_SCAN_TOKEN:-}
       MALWARE_SCAN_FIELD: ${MALWARE_SCAN_FIELD:-}

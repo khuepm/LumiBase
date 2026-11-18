@@ -34,7 +34,7 @@ export async function filesContext(c: Context<AppEnv>): Promise<FilesContext> {
     usage: new DrizzleFileUsageSource(db, siteId),
     storage: c.get('runtime').storage,
     settings: await loadDamSettings(db, siteId),
-    scanner: scannerFromEnv(c.env as unknown as Record<string, unknown> | undefined),
+    scanner: scannerFromEnv(c.env as unknown as Record<string, unknown> | undefined, c.get('runtime').clamd),
     audit: async (entry) => {
       await new AuditLogger({ db, siteId }).write({
         event: entry.event,

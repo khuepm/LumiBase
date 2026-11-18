@@ -10,6 +10,7 @@ import { ImgproxyMediaProcessor } from './media';
 import { createDockerKeyProvider } from './keys';
 import { DockerRealtimeProvider, getSharedRealtimeHub } from './realtime';
 import { RedisRateLimiter } from '../redis-rate-limiter';
+import { clamdFromEnv } from './clamd';
 
 export {
   DockerRealtimeProvider,
@@ -25,6 +26,7 @@ export { BullMQProvider } from './queue';
 export { ImgproxyMediaProcessor } from './media';
 export { createDockerKeyProvider } from './keys';
 export { RedisRateLimiter } from '../redis-rate-limiter';
+export { NodeClamdClient, clamdFromEnv } from './clamd';
 
 /**
  * Creates a RuntimeContext configured for Docker/Node.js environments.
@@ -79,6 +81,7 @@ export function createDockerRuntime(env: Record<string, unknown>): RuntimeContex
       `${s3Endpoint}/${s3Bucket}`,
     ),
     keys: createDockerKeyProvider(env),
+    clamd: clamdFromEnv(env),
     realtime: new DockerRealtimeProvider(getSharedRealtimeHub()),
     runtime: 'docker',
   };

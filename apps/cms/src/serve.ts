@@ -195,6 +195,7 @@ async function main() {
   let schedulerTask: ScheduledTask | undefined;
   let retentionTask: ScheduledTask | undefined;
   let revisionRetentionTask: ScheduledTask | undefined;
+  let malwareScanSweepTask: ScheduledTask | undefined;
   let deploymentPollTask: ScheduledTask | undefined;
   let flowScheduleTask: ScheduledTask | undefined;
   let goalDispatchTask: ScheduledTask | undefined;
@@ -600,6 +601,29 @@ async function main() {
     ),
   );
 
+  // Pending-scan sweeper (#707, B222): a malware scan runs after the upload
+  // response; if the process died mid-scan the file stays `pending` (never
+  // served). Every five minutes, re-scan files pending for over ten minutes.
+  const { sweepPendingScans } = await import('./modules/malware-scan/sweeper');
+  malwareScanSweepTask = cron.schedule(
+    '*/5 * * * *',
+    leaderLockedCallback(
+      'malware-scan-sweep',
+      270_000,
+      async () => {
+        await sweepPendingScans({
+          db: rotatorDb,
+          storage: runtime.storage,
+          clamd: runtime.clamd,
+          env: process.env as Record<string, unknown>,
+        }).catch((err) => {
+          console.error('[malware-scan-sweep] failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
+
   // ── Reconciler goal dispatch (#455) ─────────────────────────────────────
   //
   // The reconciler creates goals; this tick is what turns them into runs. Before
@@ -777,6 +801,7 @@ async function main() {
     schedulerTask?.stop();
     retentionTask?.stop();
     revisionRetentionTask?.stop();
+    malwareScanSweepTask?.stop();
     deploymentPollTask?.stop();
     flowScheduleTask?.stop();
     goalDispatchTask?.stop();

@@ -288,6 +288,13 @@
       "when": 1795593600000,
       "tag": "0040_locale_generation",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1795680000000,
+      "tag": "0041_malware_scan_pending_idx",
+      "breakpoints": true
     }
   ]
 }

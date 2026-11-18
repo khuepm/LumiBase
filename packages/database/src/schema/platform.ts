@@ -9,6 +9,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { sites, users } from './core';
 
@@ -81,6 +82,13 @@ export const files = pgTable(
   (t) => ({
     siteIdx: index('files_site_idx').on(t.siteId, t.folder),
     hashIdx: index('files_site_hash_idx').on(t.siteId, t.contentHash),
+    /**
+     * Stale-pending lookup for the malware-scan sweeper (#707): tiny, since
+     * only files awaiting a verdict are in it.
+     */
+    pendingScanIdx: index('files_pending_scan_idx')
+      .on(t.updatedAt)
+      .where(sql`${t.scanStatus} = 'pending'`),
   }),
 );
 

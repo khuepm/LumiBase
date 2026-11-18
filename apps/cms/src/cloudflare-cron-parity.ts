@@ -31,6 +31,8 @@ import { formatSafeError } from '@lumibase/contracts/utils';
 export interface WorkerSweepDeps {
   db: Database;
   runtime: RuntimeContext;
+  /** Worker bindings; sweeps that read deployment config (scanner URL) need them. */
+  env?: Record<string, unknown>;
 }
 
 type Sweep = (deps: WorkerSweepDeps) => Promise<unknown>;
@@ -103,6 +105,16 @@ const vetoCommits: Sweep = async ({ db, runtime }) => {
   return sweepDueVetoCommits({ db, cache: runtime.cache, search: runtime.search, queue: runtime.queue });
 };
 
+/**
+ * Pending malware scans (#707, B222). Docker runs it every five minutes. On
+ * Workers the scanner is the HTTP adapter (`MALWARE_SCAN_URL`; no clamd TCP);
+ * overlap is safe because each verdict is written under the file's version.
+ */
+const malwareScanSweep: Sweep = async ({ db, runtime, env }) => {
+  const { sweepPendingScans } = await import('./modules/malware-scan/sweeper');
+  return sweepPendingScans({ db, storage: runtime.storage, clamd: runtime.clamd, env });
+};
+
 /** Retention policies (Req 12.2). Docker runs it hourly at :17. */
 const retention: Sweep = async ({ db, runtime }) => {
   const { sweepRetention } = await import('./services/scheduler-worker');
@@ -126,6 +138,7 @@ export const MINUTE_SWEEPS: Record<string, Sweep> = {
 /** Sweeps Docker runs every five minutes. */
 export const FIVE_MINUTE_SWEEPS: Record<string, Sweep> = {
   'veto-sweep': vetoCommits,
+  'malware-scan-sweep': malwareScanSweep,
 };
 
 /** Sweeps Docker runs hourly. */
