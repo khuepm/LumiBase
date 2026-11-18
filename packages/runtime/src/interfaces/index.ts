@@ -12,7 +12,8 @@ export {
   isNegativeCacheEnvelope,
   NEGATIVE_CACHE_ENVELOPE,
 } from './cache';
-export type { StorageObject, StorageProvider } from './storage';
+export type { StorageObject, StorageProvider, MultipartStorage, MultipartPart } from './storage';
+export { supportsMultipart } from './storage';
 export type { DatabaseProvider } from './database';
 export type { SearchResult, SearchOptions, SearchProvider, SearchIndexSettings } from './search';
 export { searchIndexName } from './search';

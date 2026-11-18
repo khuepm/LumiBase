@@ -128,10 +128,17 @@ export const FIVE_MINUTE_SWEEPS: Record<string, Sweep> = {
   'veto-sweep': vetoCommits,
 };
 
+/** Expired resumable uploads (#704). Docker runs it hourly at :41. */
+const uploadExpiry: Sweep = async ({ db, runtime }) => {
+  const { sweepExpiredUploads } = await import('./services/files/tus/expiry');
+  return sweepExpiredUploads({ db, storage: runtime.storage });
+};
+
 /** Sweeps Docker runs hourly. */
 export const HOURLY_SWEEPS: Record<string, Sweep> = {
   'retention-sweep': retention,
   'revision-retention': revisionRetention,
+  'upload-expiry': uploadExpiry,
 };
 
 /** Runs every sweep in `sweeps` concurrently; resolves when all have settled. Never throws. */

@@ -195,6 +195,7 @@ async function main() {
   let schedulerTask: ScheduledTask | undefined;
   let retentionTask: ScheduledTask | undefined;
   let revisionRetentionTask: ScheduledTask | undefined;
+  let uploadExpiryTask: ScheduledTask | undefined;
   let deploymentPollTask: ScheduledTask | undefined;
   let flowScheduleTask: ScheduledTask | undefined;
   let goalDispatchTask: ScheduledTask | undefined;
@@ -600,6 +601,23 @@ async function main() {
     ),
   );
 
+  // Expired resumable uploads (#704, TUS expiration): abort sessions idle for
+  // 24h and drop their multipart parts. Hourly at :41.
+  const { sweepExpiredUploads } = await import('./services/files/tus/expiry');
+  uploadExpiryTask = cron.schedule(
+    '41 * * * *',
+    leaderLockedCallback(
+      'upload-expiry',
+      3_300_000,
+      async () => {
+        await sweepExpiredUploads({ db: rotatorDb, storage: runtime.storage }).catch((err) => {
+          console.error('[upload-expiry] failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
+
   // ── Reconciler goal dispatch (#455) ─────────────────────────────────────
   //
   // The reconciler creates goals; this tick is what turns them into runs. Before
@@ -777,6 +795,7 @@ async function main() {
     schedulerTask?.stop();
     retentionTask?.stop();
     revisionRetentionTask?.stop();
+    uploadExpiryTask?.stop();
     deploymentPollTask?.stop();
     flowScheduleTask?.stop();
     goalDispatchTask?.stop();

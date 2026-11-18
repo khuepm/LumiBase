@@ -56,6 +56,7 @@ import { deliverRouter } from './routes/deliver';
 import { deploymentsRouter, deploymentsWebhookRouter } from './routes/deployments';
 import { extensionsRouter } from './routes/extensions';
 import { filesRouter } from './routes/files';
+import { TUS_EXPOSE_HEADERS, TUS_REQUEST_HEADERS } from './services/files/tus/protocol';
 import { flowsRouter } from './routes/flows';
 import { itemsRouter } from './routes/items';
 import { importsRouter } from './routes/imports';
@@ -147,8 +148,10 @@ app.use(
     // `If-Match` / `ETag`: optimistic concurrency on item writes
     // (content-environments Phase A). Studio and the Tauri shell are
     // cross-origin, so both must be listed or the browser hides them.
-    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password', 'X-LumiBase-Refresh', 'X-Confirm-Delete', 'If-Match'],
-    exposeHeaders: ['X-Request-Id', 'Retry-After', 'ETag'],
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password', 'X-LumiBase-Refresh', 'X-Confirm-Delete', 'If-Match', ...TUS_REQUEST_HEADERS],
+    // TUS (#704): resumable-upload clients read Location / Upload-Offset, and
+    // Studio reads X-Lumi-File-Id from the completing PATCH.
+    exposeHeaders: ['X-Request-Id', 'Retry-After', 'ETag', ...TUS_EXPOSE_HEADERS, 'X-Lumi-File-Id'],
   }),
 );
 

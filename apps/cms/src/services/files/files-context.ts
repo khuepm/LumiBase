@@ -14,11 +14,14 @@ import { loadDamSettings, type DamSettings } from './dam-settings';
 import type { FilesAccess, FilesAction } from './file-access';
 import { DrizzleFileRepository, type FileRepository } from './file-repository';
 import { DrizzleFileUsageSource, type FileUsageSource } from './file-usage';
+import { DrizzleUploadSessionRepository, type UploadSessionRepository } from './tus/session-repo';
 
 export interface FilesContext {
   siteId: string;
   repo: FileRepository;
   usage: FileUsageSource;
+  /** Resumable (TUS) upload sessions (#704). */
+  uploads: UploadSessionRepository;
   storage: StorageProvider;
   settings: DamSettings;
   scanner: MalwareScanner | null;
@@ -32,6 +35,7 @@ export async function filesContext(c: Context<AppEnv>): Promise<FilesContext> {
     siteId,
     repo: new DrizzleFileRepository(db, siteId),
     usage: new DrizzleFileUsageSource(db, siteId),
+    uploads: new DrizzleUploadSessionRepository(db, siteId),
     storage: c.get('runtime').storage,
     settings: await loadDamSettings(db, siteId),
     scanner: scannerFromEnv(c.env as unknown as Record<string, unknown> | undefined),

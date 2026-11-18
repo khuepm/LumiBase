@@ -1,11 +1,11 @@
 ---
-version: 57
-lastUpdated: 2026-11-16T15:46:10.249Z
+version: 58
+lastUpdated: 2026-11-18T04:54:06.667Z
 sourceLang: en
-contentHash: ae62be6b4f9529f8
-codeVerified: 2026-11-16T15:46:10.249Z
-codeVerifiedHash: ae62be6b4f9529f8
-codeVerifiedClaims: 636
+contentHash: 6f8debc804ad67ea
+codeVerified: 2026-11-18T04:54:06.667Z
+codeVerifiedHash: 6f8debc804ad67ea
+codeVerifiedClaims: 640
 ---
 
 # Hono API Specification — LumiBase
@@ -968,6 +968,11 @@ identical body. Responses: `Cache-Control: private, no-store`,
 | `GET/PUT` | `/api/v1/files/settings` | DAM settings (`files.dam`); `PUT` site admin |
 | `GET` | `/api/v1/files/folders` · `/folders/tree` | Folders (flat / nested with `path`) |
 | `POST/PATCH/DELETE` | `/api/v1/files/folders[/:id]` | Create / rename+move (`409 FOLDER_CYCLE`) / delete empty (`409 FOLDER_NOT_EMPTY`); site admin |
+| `OPTIONS` | `/api/v1/files/tus` | TUS 1.0 discovery: `Tus-Version`, `Tus-Extension: creation,termination,expiration`, `Tus-Max-Size` |
+| `POST` | `/api/v1/files/tus` | Create a resumable upload: `Upload-Length` + `Upload-Metadata` (`filename`, `filetype`, optional `folder`, `alt`) → `201` with `Location`, `Upload-Expires` |
+| `HEAD` | `/api/v1/files/tus/:id` | Committed `Upload-Offset` / `Upload-Length`; `X-Lumi-File-Id` once complete; `410` when expired |
+| `PATCH` | `/api/v1/files/tus/:id` | Append a chunk at `Upload-Offset` (`application/offset+octet-stream`), all-or-nothing; `409 OFFSET_MISMATCH`; the final chunk creates the file (`X-Lumi-File-Id`) |
+| `DELETE` | `/api/v1/files/tus/:id` | Terminate: abort the multipart upload and drop stored parts |
 | `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
 | `POST` | `/api/v1/media/:key` | Upload raw media bytes (RBAC `media:create`; upload guard applies) |
 | `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`); with transform params → 302 to derivative |
@@ -997,7 +1002,8 @@ image URL (CF Image Resizing / Imgproxy). No params → the original bytes.
 
 **Upload policy (`/api/v1/uploads/config`).** Enforced by the `file-upload-policy`
 guard on every upload surface (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`,
-`PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`): a public role cannot upload; the body is size-capped on
+`PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`, and the TUS creation
+declaration `POST /api/v1/files/tus`): a public role cannot upload; the body is size-capped on
 its true byte length; the declared MIME must be in the allowlist and match the
 filename extension; raw bytes are content-sniffed (magic bytes) and executables /
 active-content SVGs are rejected; raster images are scanned for an embedded

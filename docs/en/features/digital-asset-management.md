@@ -1,11 +1,11 @@
 ---
-version: 2
+version: 3
 sourceLang: en
-lastUpdated: 2026-11-15T19:50:20.465Z
-contentHash: efd74f0a8a1ef504
-codeVerified: 2026-11-15T19:50:20.465Z
-codeVerifiedHash: efd74f0a8a1ef504
-codeVerifiedClaims: 30
+lastUpdated: 2026-11-18T04:54:08.544Z
+contentHash: 8a8197eaaf330d9e
+codeVerified: 2026-11-18T04:54:08.544Z
+codeVerifiedHash: 8a8197eaaf330d9e
+codeVerifiedClaims: 36
 ---
 
 # Digital Asset Management
@@ -200,6 +200,51 @@ and `MALWARE_SCAN_FIELD=FILES`. On Cloudflare, point it at any HTTPS
 scanning service. The adapter parses the common ClamAV REST response
 shapes as well as a generic `{ infected, viruses }`.
 
+## Resumable uploads (TUS, D04)
+
+Large files can be uploaded with the [TUS 1.0](https://tus.io/protocols/resumable-upload)
+protocol (core, `creation`, `termination`, `expiration`) at
+`/api/v1/files/tus`. A dropped connection or a page reload no longer
+restarts the upload from zero: the client asks the server how many bytes
+it holds (`HEAD`) and continues from there. Any TUS client works; the
+Studio media library switches to it automatically for files of 32 MiB and
+more (`apps/studio/src/modules/files/tus-client.ts`, 16 MiB chunks, the
+upload URL kept in `localStorage` so a reload resumes).
+
+1. `POST /api/v1/files/tus` with `Upload-Length` and `Upload-Metadata`
+   (`filename`, `filetype`, optional `folder`, `alt`). The upload guard checks
+   the declaration exactly like a direct upload: public roles are refused,
+   the size cap, MIME allowlist, filename hygiene and extension ↔ MIME
+   apply. `files:create` and the folder placement rule are checked too.
+   The answer is `201` with `Location` and `Upload-Expires`.
+2. `PATCH <Location>` with `Upload-Offset` and an
+   `application/offset+octet-stream` body. A chunk is committed **all or
+   nothing**: if storage fails the answer is `503` and the offset does not
+   move. A wrong offset answers `409 OFFSET_MISMATCH` with the stored
+   offset. The first chunk is sniffed against the declared type.
+3. The chunk that reaches `Upload-Length` completes the upload. Permission
+   and placement are **checked again** (a revoked user's upload is
+   discarded), the assembled file gets the polyglot scan, the file row is
+   created, metadata is extracted and the malware scan is scheduled exactly
+   as for a direct upload. The response carries `X-Lumi-File-Id`.
+4. `DELETE <Location>` terminates an upload and drops its stored parts.
+
+**How it runs on both runtimes.** Bytes go straight into a multipart upload
+on R2 (Workers) or S3/MinIO (Docker) through the runtime's `MultipartStorage`
+port (`packages/runtime/src/interfaces/storage.ts`), so no runtime holds the
+whole file in memory. Multipart parts must be the same size, so the server
+cuts the stream into 8 MiB parts and keeps the remainder in a small tail
+object until the next chunk arrives. Progress lives in the
+`lumibase_upload_sessions` table. Each `PATCH` takes a short lease with a
+conditional update, so two concurrent writers cannot both append; a lease
+left by a crashed request expires after five minutes.
+
+**Ownership and expiry.** Only the creator (or a site admin) can see or write
+an upload; anyone else gets `404`. An upload expires 24 hours after its last
+committed chunk (`410` afterwards). An hourly sweep, `upload-expiry`, aborts
+expired multipart uploads and deletes their tail objects (Docker leader-locked
+cron and the Workers hourly cron).
+
 ## Settings
 
 `GET /api/v1/files/settings` returns the settings, and
@@ -217,9 +262,9 @@ stored in `settings` under the key `files.dam`:
 
 ## Multi-tenancy
 
-- **Isolated per site:** `lumibase_files`, `lumibase_folders` and
-  `lumibase_file_versions` all carry `site_id` and are in the RLS
-  `site_isolation` list. Every repository query is filtered by `site_id`
+- **Isolated per site:** `lumibase_files`, `lumibase_folders`,
+  `lumibase_file_versions` and `lumibase_upload_sessions` all carry `site_id`
+  and are in the RLS `site_isolation` list. Every repository query is filtered by `site_id`
   (`DrizzleFileRepository`). Archived binaries live under `sites/<site>/…`.
   Cache tags (`file:<site>:<id>`) and the `files.dam` setting are per site.
   Duplicate lookups and "where used" only search the caller's site.
@@ -233,7 +278,7 @@ stored in `settings` under the key `files.dam`:
 
 ## Not done yet
 
-- Resumable uploads (TUS, D04 #704) are not implemented. Large files still
-  use the single signed `PUT`.
+- TUS `Upload-Defer-Length` (size unknown at creation) answers `501`, and the
+  `concatenation` extension is not offered.
 - Rich text does not embed images through the picker yet (R03). The picker
   API above is the integration point.

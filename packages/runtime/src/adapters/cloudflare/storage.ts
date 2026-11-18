@@ -1,4 +1,4 @@
-import type { StorageProvider, StorageObject } from '../../interfaces';
+import type { MultipartPart, StorageProvider, StorageObject } from '../../interfaces';
 
 /**
  * Cloudflare R2 types (declared locally to avoid requiring @cloudflare/workers-types as a dependency).
@@ -28,11 +28,27 @@ interface R2PutOptions {
   customMetadata?: Record<string, string>;
 }
 
+interface R2UploadedPart {
+  partNumber: number;
+  etag: string;
+}
+
+export interface R2MultipartUpload {
+  readonly key: string;
+  readonly uploadId: string;
+  uploadPart(partNumber: number, value: ArrayBuffer | ReadableStream | string): Promise<R2UploadedPart>;
+  complete(parts: R2UploadedPart[]): Promise<unknown>;
+  abort(): Promise<void>;
+}
+
 export interface R2Bucket {
   put(key: string, value: ReadableStream | ArrayBuffer | string | null, options?: R2PutOptions): Promise<unknown>;
   get(key: string): Promise<R2ObjectBody | null>;
   delete(key: string | string[]): Promise<void>;
   list(options?: R2ListOptions): Promise<R2ListResult>;
+  /** R2 multipart (resumable uploads, #704). Optional so older test doubles still type. */
+  createMultipartUpload?(key: string, options?: R2PutOptions): Promise<R2MultipartUpload>;
+  resumeMultipartUpload?(key: string, uploadId: string): R2MultipartUpload;
 }
 
 /**
@@ -109,5 +125,39 @@ export class CloudflareStorageProvider implements StorageProvider {
     }
 
     return { keys };
+  }
+
+  // ─── Multipart (resumable uploads, #704) ──────────────────────────────────
+
+  private multipart(key: string, uploadId: string): R2MultipartUpload {
+    if (!this.bucket.resumeMultipartUpload) throw new Error('R2 bucket binding does not support multipart uploads.');
+    return this.bucket.resumeMultipartUpload(key, uploadId);
+  }
+
+  async createMultipart(key: string, metadata?: Record<string, string>): Promise<{ uploadId: string }> {
+    if (!this.bucket.createMultipartUpload) throw new Error('R2 bucket binding does not support multipart uploads.');
+    const options: R2PutOptions = {};
+    if (metadata) {
+      options.customMetadata = metadata;
+      if (metadata.contentType) options.httpMetadata = { contentType: metadata.contentType };
+    }
+    const upload = await this.bucket.createMultipartUpload(key, options);
+    return { uploadId: upload.uploadId };
+  }
+
+  async uploadPart(key: string, uploadId: string, partNumber: number, data: Uint8Array): Promise<MultipartPart> {
+    // Copy into a standalone ArrayBuffer: a view into a larger buffer would
+    // upload bytes that are not part of this chunk.
+    const body = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+    const part = await this.multipart(key, uploadId).uploadPart(partNumber, body);
+    return { partNumber: part.partNumber, etag: part.etag };
+  }
+
+  async completeMultipart(key: string, uploadId: string, parts: MultipartPart[]): Promise<void> {
+    await this.multipart(key, uploadId).complete([...parts].sort((a, b) => a.partNumber - b.partNumber));
+  }
+
+  async abortMultipart(key: string, uploadId: string): Promise<void> {
+    await this.multipart(key, uploadId).abort();
   }
 }

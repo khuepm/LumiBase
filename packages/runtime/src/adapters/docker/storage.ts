@@ -4,8 +4,12 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
   ListObjectsV2Command,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
 } from '@aws-sdk/client-s3';
-import type { StorageProvider, StorageObject } from '../../interfaces';
+import type { MultipartPart, StorageProvider, StorageObject } from '../../interfaces';
 
 export interface S3StorageConfig {
   endpoint: string;
@@ -140,5 +144,51 @@ export class S3StorageProvider implements StorageProvider {
     }
 
     return result;
+  }
+
+  // ─── Multipart (resumable uploads, #704) ──────────────────────────────────
+
+  async createMultipart(key: string, metadata?: Record<string, string>): Promise<{ uploadId: string }> {
+    const res = await this.client.send(
+      new CreateMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Metadata: metadata,
+        ...(metadata?.contentType ? { ContentType: metadata.contentType } : {}),
+      }),
+    );
+    if (!res.UploadId) throw new Error('S3 did not return an UploadId.');
+    return { uploadId: res.UploadId };
+  }
+
+  async uploadPart(key: string, uploadId: string, partNumber: number, data: Uint8Array): Promise<MultipartPart> {
+    const res = await this.client.send(
+      new UploadPartCommand({
+        Bucket: this.bucket,
+        Key: key,
+        UploadId: uploadId,
+        PartNumber: partNumber,
+        Body: Buffer.from(data.buffer, data.byteOffset, data.byteLength),
+      }),
+    );
+    if (!res.ETag) throw new Error(`S3 did not return an ETag for part ${partNumber}.`);
+    return { partNumber, etag: res.ETag };
+  }
+
+  async completeMultipart(key: string, uploadId: string, parts: MultipartPart[]): Promise<void> {
+    await this.client.send(
+      new CompleteMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: key,
+        UploadId: uploadId,
+        MultipartUpload: {
+          Parts: [...parts].sort((a, b) => a.partNumber - b.partNumber).map((p) => ({ PartNumber: p.partNumber, ETag: p.etag })),
+        },
+      }),
+    );
+  }
+
+  async abortMultipart(key: string, uploadId: string): Promise<void> {
+    await this.client.send(new AbortMultipartUploadCommand({ Bucket: this.bucket, Key: key, UploadId: uploadId }));
   }
 }

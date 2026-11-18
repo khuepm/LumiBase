@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 56
-lastUpdated: 2026-11-16T15:46:10.249Z
+version: 57
+lastUpdated: 2026-11-18T04:54:06.667Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ae62be6b4f9529f8
+sourceHash: 6f8debc804ad67ea
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-16T15:46:10.249Z
-codeVerifiedHash: ae62be6b4f9529f8
-codeVerifiedClaims: 636
+codeVerified: 2026-11-18T04:54:06.667Z
+codeVerifiedHash: 6f8debc804ad67ea
+codeVerifiedClaims: 640
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -848,6 +848,11 @@ Response: `Cache-Control: private, no-store`, `X-Robots-Tag: noindex, nofollow`,
 | `GET/PUT` | `/api/v1/files/settings` | Thiết lập DAM (`files.dam`); `PUT` cần site admin |
 | `GET` | `/api/v1/files/folders` · `/folders/tree` | Thư mục (dạng phẳng / lồng nhau kèm `path`) |
 | `POST/PATCH/DELETE` | `/api/v1/files/folders[/:id]` | Tạo / đổi tên+di chuyển (`409 FOLDER_CYCLE`) / xoá thư mục rỗng (`409 FOLDER_NOT_EMPTY`); site admin |
+| `OPTIONS` | `/api/v1/files/tus` | Khám phá TUS 1.0: `Tus-Version`, `Tus-Extension: creation,termination,expiration`, `Tus-Max-Size` |
+| `POST` | `/api/v1/files/tus` | Tạo upload tiếp tục được: `Upload-Length` + `Upload-Metadata` (`filename`, `filetype`, tuỳ chọn `folder`, `alt`) → `201` kèm `Location`, `Upload-Expires` |
+| `HEAD` | `/api/v1/files/tus/:id` | `Upload-Offset` / `Upload-Length` đã ghi; `X-Lumi-File-Id` khi hoàn tất; `410` khi đã hết hạn |
+| `PATCH` | `/api/v1/files/tus/:id` | Nối một chunk tại `Upload-Offset` (`application/offset+octet-stream`), tất cả hoặc không; `409 OFFSET_MISMATCH`; chunk cuối tạo file (`X-Lumi-File-Id`) |
+| `DELETE` | `/api/v1/files/tus/:id` | Huỷ: abort multipart upload và xoá các phần đã lưu |
 | `GET` | `/api/v1/assets/:id` | Phục vụ/biến đổi hình ảnh (tham số query bên dưới) |
 | `POST` | `/api/v1/media/:key` | Upload bytes media thô (RBAC `media:create`; bảo vệ upload áp dụng) |
 | `GET` | `/api/v1/media/:key` | Tải về media (phục vụ dạng `attachment` + `nosniff`); kèm tham số biến đổi → 302 tới file biến đổi |
@@ -868,7 +873,7 @@ Tại `/media/:key`, các tham số biến đổi được xác thực đối v�
 
 **Quyền truy cập `/api/v1/files`.** Site admin có toàn quyền; thành viên khác cần một policy permission `files` mà rule của nó được đánh giá trên từng file theo `folder`, `folder_path`, `uploaded_by`, `mime` và `id` (phân quyền theo thư mục). Xem `docs/en/features/digital-asset-management.md` (epic #670).
 
-**Chính sách upload (`/api/v1/uploads/config`).** Được thực thi bởi bộ bảo vệ `file-upload-policy` trên mọi bề mặt upload (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`, `PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`): role public không thể upload; body bị giới hạn dung lượng trên độ dài byte thực tế; MIME được khai báo phải nằm trong danh sách cho phép và khớp với đuôi file; bytes thô được kiểm tra nội dung (magic bytes) và các file thực thi / SVG nội dung hoạt động bị từ chối; hình ảnh raster được quét payload script/executable chèn vào (polyglot) và bị từ chối. Danh sách cho phép + giới hạn giải quyết `per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*) → default`. Xem spec tính năng `.kiro/specs/upload-file-controls/` và `docs/en/security/runtime-security-guards-plan.md` §3 để biết các đảm bảo đầy đủ.
+**Chính sách upload (`/api/v1/uploads/config`).** Được thực thi bởi bộ bảo vệ `file-upload-policy` trên mọi bề mặt upload (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`, `PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`, và khai báo tạo TUS `POST /api/v1/files/tus`): role public không thể upload; body bị giới hạn dung lượng trên độ dài byte thực tế; MIME được khai báo phải nằm trong danh sách cho phép và khớp với đuôi file; bytes thô được kiểm tra nội dung (magic bytes) và các file thực thi / SVG nội dung hoạt động bị từ chối; hình ảnh raster được quét payload script/executable chèn vào (polyglot) và bị từ chối. Danh sách cho phép + giới hạn giải quyết `per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*) → default`. Xem spec tính năng `.kiro/specs/upload-file-controls/` và `docs/en/security/runtime-security-guards-plan.md` §3 để biết các đảm bảo đầy đủ.
 
 ```
 GET  /api/v1/uploads/config

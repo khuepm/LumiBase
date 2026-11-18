@@ -1,10 +1,10 @@
 ---
-version: 24
-lastUpdated: 2026-11-15T23:40:59.736Z
+version: 25
+lastUpdated: 2026-11-18T04:54:08.741Z
 sourceLang: en
-contentHash: ef6fd16483d977a5
-codeVerified: 2026-11-15T23:40:59.736Z
-codeVerifiedHash: ef6fd16483d977a5
+contentHash: 1328d1a4a8c7c30c
+codeVerified: 2026-11-18T04:54:08.741Z
+codeVerifiedHash: 1328d1a4a8c7c30c
 codeVerifiedClaims: 22
 ---
 
@@ -30,7 +30,7 @@ Schema files are split by domain:
 | `core.ts` | `lumibase_organizations`, `lumibase_organization_members`, `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
-| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_upload_sessions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
@@ -294,6 +294,10 @@ When seeding local/staging/prod, seed system collection permissions explicitly. 
 
 ### `folders`
 - `id`, `siteId`, `name`, `parent`. Paths, sub-trees and cycle checks are derived in `apps/cms/src/services/files/folder-tree.ts`.
+
+### `upload_sessions`
+- `id`, `siteId`, `createdBy`, `filename`, `mime`, `length`, `offset`, `storageKey`, `multipartId`, `parts jsonb`, `tailSize`, `folder`, `metadata jsonb`, `status` (`active`/`completed`/`aborted`), `lockToken`, `lockedUntil`, `fileId`, `expiresAt`, `createdAt`, `updatedAt`.
+- One TUS resumable upload in progress: committed `offset`, the multipart parts written so far and the size of the tail object. `lockToken`/`lockedUntil` is the single-writer lease taken by each `PATCH`; `fileId` is set on completion. Index `(siteId, status)` and a partial index on `expiresAt` for active uploads (expiry sweep). Migration `0041_upload_sessions`. See [Digital Asset Management](./features/digital-asset-management.md).
 
 ## 5. UX state (`platform.ts`)
 

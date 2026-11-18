@@ -9,6 +9,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { sites, users } from './core';
 
@@ -117,6 +118,49 @@ export const fileVersions = pgTable(
   (t) => ({
     fileIdx: index('file_versions_file_idx').on(t.siteId, t.fileId, t.version),
     expiryIdx: index('file_versions_expiry_idx').on(t.expiresAt),
+  }),
+);
+
+/**
+ * Resumable (TUS 1.0) upload sessions (#704). One row per in-flight upload:
+ * the declared length, how many bytes are durably stored (`offset`), and the
+ * storage multipart upload behind it. Bytes land in fixed-size parts; the
+ * sub-part remainder of the last PATCH is kept in a tail object until the
+ * next PATCH (or completion) so every non-final part has the same size, as
+ * R2 requires. On completion the parts are stitched into `storage_key`, a
+ * `lumibase_files` row is created and `file_id` points at it.
+ */
+export const uploadSessions = pgTable(
+  'lumibase_upload_sessions',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    createdBy: text('created_by'),
+    filename: text('filename').notNull(),
+    mime: text('mime').notNull(),
+    length: bigint('length', { mode: 'number' }).notNull(),
+    offset: bigint('offset', { mode: 'number' }).default(0).notNull(),
+    storageKey: text('storage_key').notNull(),
+    multipartId: text('multipart_id'),
+    parts: jsonb('parts').default([]).notNull(),
+    tailSize: integer('tail_size').default(0).notNull(),
+    folder: text('folder'),
+    metadata: jsonb('metadata').default({}).notNull(),
+    /** `active` | `completed` | `aborted` */
+    status: text('status').default('active').notNull(),
+    /** Single-writer lease for a PATCH in progress (parts must not interleave). */
+    lockToken: text('lock_token'),
+    lockedUntil: timestamp('locked_until'),
+    fileId: text('file_id'),
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteIdx: index('upload_sessions_site_idx').on(t.siteId, t.status),
+    expiryIdx: index('upload_sessions_expiry_idx').on(t.expiresAt).where(sql`${t.status} = 'active'`),
   }),
 );
 
