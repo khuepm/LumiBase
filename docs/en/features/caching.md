@@ -1,12 +1,12 @@
 ---
 title: Caching
 description: Edge HTTP cache, application CacheProvider, and cache-penetration defences
-version: 9
-lastUpdated: 2026-11-17T19:24:51.757Z
+version: 10
+lastUpdated: 2026-11-18T04:25:25.638Z
 sourceLang: en
-contentHash: 5b9a0da181fc2c3c
-codeVerified: 2026-11-17T19:24:51.757Z
-codeVerifiedHash: 5b9a0da181fc2c3c
+contentHash: 223bc6999f6ddd0d
+codeVerified: 2026-11-18T04:25:25.638Z
+codeVerifiedHash: 223bc6999f6ddd0d
 codeVerifiedClaims: 18
 ---
 
@@ -34,8 +34,8 @@ A request is answered by the first layer that has it, and each layer keeps a cop
 Purging by tag is one call however many URLs are affected, and it reaches copies this process never recorded. Purging by URL needs no tag support at the CDN but only reaches what we indexed. Whether an account can do the first is not visible from code, so LumiBase does not make you configure the answer — it tries tags and falls back:
 
 1. Every publicly cacheable delivery response carries `Cache-Tag: deliver:<siteId>, items:<siteId>:<collection>` and records its URL under those same tags in `edgeurls:<tag>` — capped at 200 URLs per tag.
-   Each URL is added to a set rather than appended to a shared list, so concurrent cache misses never drop each other's URL: a Redis sorted set (`lumi:set:edgeurls:<tag>`, trimmed to the newest 200 on write), or on Workers KV one key per add (`lumi:set:edgeurls:<tag>:<reverse time>:<sha256(url)>`, so `list` returns the newest first and a purge takes the newest 200 however many adds there are; the rest expire on their TTL).
-2. A write calls `invalidateItemsTag` / `invalidateDeliverTag`, which reads that set and hands both the tag and the URLs to `EdgeCacheProvider.purge()`. Only after the purge call returns are the URLs it read removed from the index; if it throws, they stay indexed for the next purge.
+   Each URL is added to a set rather than appended to a shared list, so concurrent cache misses never drop each other's URL: a Redis sorted set (`lumi:set:edgeurls:<tag>`, trimmed to the newest 200 on write), or on Workers KV one key per add (`lumi:set:edgeurls:<tag>:<reverse time>:<sha256(url)>`, so `list` returns the newest first and a purge takes the newest 200 however many adds there are; the rest expire on their TTL). A re-recorded URL replaces its previous key through a per-URL pointer (`lumi:setptr:edgeurls:<tag>:<sha256(url)>`), so a hot URL holds one key and cannot crowd other recent URLs out of the read.
+2. A write calls `invalidateItemsTag` / `invalidateDeliverTag`, which reads that set and hands both the tag and the URLs to `EdgeCacheProvider.purge()`. Only after the purge call returns are URLs removed from the index, and only the ones it reached: if it throws, or the provider reports URLs it could not purge (`EdgeCacheProvider.purgeWithOutcome` — the Cloudflare provider names each URL batch the zone API refused), those URLs stay indexed and the next purge of the tag retries them, until their TTL — the edge copy's own lifetime — runs out. A pre-upgrade JSON list is kept whole while any of its URLs failed.
 3. The provider clears the local colo through `caches.default.delete`, then — when `CF_PURGE_ZONE_ID` + `CF_PURGE_API_TOKEN` are set — calls the zone purge API with the **tag**, and only if that call is refused retries with the **URL** list, in batches of 30.
 
 The fallback is why the URL index exists at all. Where tag purge works, the index is redundant; where it does not, it is the whole mechanism.
