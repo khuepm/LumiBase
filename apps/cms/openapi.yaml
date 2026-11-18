@@ -3655,6 +3655,13 @@ paths:
                 type: object
                 properties:
                   data: { $ref: '#/components/schemas/ShareResource' }
+  /pages/blocks:
+    parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+    get:
+      summary: Registered page blocks (collections with meta.pageBlock) and their fields — the page composer palette
+      responses:
+        '200':
+          description: '{ data: PageBlockDefinition[], meta: { total } }'
   /preview/token:
     parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
     post:

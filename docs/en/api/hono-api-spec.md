@@ -1,11 +1,11 @@
 ---
-version: 57
-lastUpdated: 2026-11-16T15:46:10.249Z
+version: 58
+lastUpdated: 2026-11-18T06:17:04.659Z
 sourceLang: en
-contentHash: ae62be6b4f9529f8
-codeVerified: 2026-11-16T15:46:10.249Z
-codeVerifiedHash: ae62be6b4f9529f8
-codeVerifiedClaims: 636
+contentHash: 91f48a6abe7bd597
+codeVerified: 2026-11-18T06:17:04.659Z
+codeVerifiedHash: 91f48a6abe7bd597
+codeVerifiedClaims: 638
 ---
 
 # Hono API Specification — LumiBase
@@ -654,11 +654,22 @@ matching negative-cache tombstones immediately.
 |--------|------|-------------|
 | `GET` | `/api/v1/pages` | List pages for the active site |
 | `POST` | `/api/v1/pages` | Create `{ slug, title, layoutConfig? }` |
+| `GET` | `/api/v1/pages/blocks` | Registered page blocks (collections with `meta.pageBlock: true`) and their fields — the composer palette |
 | `GET` | `/api/v1/pages/:id` | Get one page |
 | `PATCH` | `/api/v1/pages/:id` | Partial update (`slug` / `title` / `layoutConfig`) |
 | `DELETE` | `/api/v1/pages/:id` | Delete page |
 
 Slug shape matches the Delivery guard (`^[a-z0-9]+(?:[/_-][a-z0-9]+)*$`, ≤200).
+
+**Composer layouts** (`layoutConfig.version: 1`, epic #667 V06) are validated on
+create and patch: every `sections[].component` must be a registered page block,
+`data` is validated against that block's fields (nested `blocks` fields
+included; unknown, encrypted and pii/phi fields are refused), regions must be
+declared in `regions`, and `source` reads published items only. Errors are
+`400` with one entry per problem, each carrying a `field` path such as
+`sections.2.data.title`. Layouts without `version` are stored as before. The
+format is described in [Page composer](../features/page-composer.md); delivery
+is unchanged.
 
 Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` with
 `{ tags?: string[], keys?: string[] }` — every tag/key must include the

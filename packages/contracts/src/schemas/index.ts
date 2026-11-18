@@ -409,3 +409,4 @@ export {
 export * from './field-options';
 export { GeoPointSchema, GeoNearSchema, GeoBBoxSchema } from './geopoint';
 export * from './preview';
+export * from './page-layout';
