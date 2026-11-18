@@ -1,0 +1,323 @@
+{
+  "runs": [
+    {
+      "variant": "storybook",
+      "name": "desktop",
+      "state": {
+        "canvasLive": "true",
+        "fallbackPresent": false,
+        "fallbackVisible": false,
+        "reducedMotion": false,
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.8103.78 Safari/537.36",
+        "viewport": [
+          1440,
+          900
+        ],
+        "docHeight": 8366,
+        "overflowX": false
+      },
+      "errors": [
+        "[warning] [.WebGL-0x1c3401542c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "[warning] [.WebGL-0x1c3401542c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "[warning] [.WebGL-0x1c3401542c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "[warning] [.WebGL-0x1c3401542c00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+      ],
+      "files": [
+        "storybook-desktop-01-hero.jpg",
+        "storybook-desktop-02-content-os.jpg",
+        "storybook-desktop-03-ai-harness.jpg",
+        "storybook-desktop-04-studio.jpg",
+        "storybook-desktop-05-mcp.jpg",
+        "storybook-desktop-06-provenance.jpg",
+        "storybook-desktop-07-runtime.jpg"
+      ]
+    },
+    {
+      "variant": "storybook",
+      "name": "iphone13",
+      "state": {
+        "canvasLive": "true",
+        "fallbackPresent": false,
+        "fallbackVisible": false,
+        "reducedMotion": false,
+        "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1",
+        "viewport": [
+          390,
+          664
+        ],
+        "docHeight": 8551,
+        "overflowX": false
+      },
+      "errors": [
+        "[warning] [.WebGL-0x23e4001c1000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "[warning] [.WebGL-0x23e4001c1000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "[warning] [.WebGL-0x23e4001c1000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "[warning] [.WebGL-0x23e4001c1000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+      ],
+      "files": [
+        "storybook-iphone13-01-hero.jpg",
+        "storybook-iphone13-02-content-os.jpg",
+        "storybook-iphone13-03-ai-harness.jpg",
+        "storybook-iphone13-04-studio.jpg",
+        "storybook-iphone13-05-provenance.jpg",
+        "storybook-iphone13-06-runtime.jpg"
+      ]
+    },
+    {
+      "variant": "storybook",
+      "name": "pixel7",
+      "state": {
+        "canvasLive": "true",
+        "fallbackPresent": false,
+        "fallbackVisible": false,
+        "reducedMotion": false,
+        "ua": "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.8010.12 Mobile Safari/537.36",
+        "viewport": [
+          412,
+          839
+        ],
+        "docHeight": 9186,
+        "overflowX": false
+      },
+      "errors": [
+        "[warning] [.WebGL-0x20dc001c5600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "[warning] [.WebGL-0x20dc001c5600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "[warning] [.WebGL-0x20dc001c5600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "[warning] [.WebGL-0x20dc001c5600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+      ],
+      "files": [
+        "storybook-pixel7-01-hero.jpg",
+        "storybook-pixel7-02-content-os.jpg",
+        "storybook-pixel7-03-ai-harness.jpg",
+        "storybook-pixel7-04-studio.jpg",
+        "storybook-pixel7-05-provenance.jpg",
+        "storybook-pixel7-06-runtime.jpg"
+      ]
+    },
+    {
+      "variant": "storybook",
+      "name": "desktop-reduced-motion",
+      "state": {
+        "canvasLive": "true",
+        "fallbackPresent": false,
+        "fallbackVisible": false,
+        "reducedMotion": true,
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.8103.78 Safari/537.36",
+        "viewport": [
+          1440,
+          900
+        ],
+        "docHeight": 8366,
+        "overflowX": false
+      },
+      "errors": [
+        "[warning] [.WebGL-0x1a94015f4400]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "[warning] [.WebGL-0x1a94015f4400]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "[warning] [.WebGL-0x1a94015f4400]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+      ],
+      "files": [
+        "storybook-desktop-reduced-motion-01-hero.jpg",
+        "storybook-desktop-reduced-motion-02-ai-harness.jpg",
+        "storybook-desktop-reduced-motion-03-mcp.jpg"
+      ]
+    },
+    {
+      "variant": "storybook",
+      "name": "iphone13-reduced-motion",
+      "state": {
+        "canvasLive": "true",
+        "fallbackPresent": false,
+        "fallbackVisible": false,
+        "reducedMotion": true,
+        "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1",
+        "viewport": [
+          390,
+          664
+        ],
+        "docHeight": 8551,
+        "overflowX": false
+      },
+      "errors": [
+        "[warning] [.WebGL-0x12c001bf200]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+        "[warning] [.WebGL-0x12c001bf200]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+      ],
+      "files": [
+        "storybook-iphone13-reduced-motion-01-hero.jpg",
+        "storybook-iphone13-reduced-motion-02-ai-harness.jpg"
+      ]
+    },
+    {
+      "variant": "iridescent",
+      "name": "desktop",
+      "state": {
+        "canvasLive": null,
+        "fallbackPresent": false,
+        "fallbackVisible": false,
+        "reducedMotion": false,
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.8103.78 Safari/537.36",
+        "viewport": [
+          1440,
+          900
+        ],
+        "docHeight": 5068,
+        "overflowX": false
+      },
+      "errors": [
+        "[requestfailed] https://api.getlayers.ai/storage/v1/object/public/public/assets/loopstack-f8c64439bf/flower.mp4 net::ERR_ABORTED"
+      ],
+      "files": [
+        "iridescent-desktop-01-hero.jpg",
+        "iridescent-desktop-02-content-os.jpg",
+        "iridescent-desktop-03-ai-harness.jpg",
+        "iridescent-desktop-04-studio.jpg",
+        "iridescent-desktop-05-mcp.jpg",
+        "iridescent-desktop-06-provenance.jpg",
+        "iridescent-desktop-07-runtime.jpg"
+      ]
+    },
+    {
+      "variant": "iridescent",
+      "name": "iphone13",
+      "state": {
+        "canvasLive": null,
+        "fallbackPresent": false,
+        "fallbackVisible": false,
+        "reducedMotion": false,
+        "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1",
+        "viewport": [
+          390,
+          664
+        ],
+        "docHeight": 5422,
+        "overflowX": false
+      },
+      "errors": [],
+      "files": [
+        "iridescent-iphone13-01-hero.jpg",
+        "iridescent-iphone13-02-content-os.jpg",
+        "iridescent-iphone13-03-ai-harness.jpg",
+        "iridescent-iphone13-04-studio.jpg",
+        "iridescent-iphone13-05-provenance.jpg",
+        "iridescent-iphone13-06-runtime.jpg"
+      ]
+    },
+    {
+      "variant": "iridescent",
+      "name": "pixel7",
+      "state": {
+        "canvasLive": null,
+        "fallbackPresent": false,
+        "fallbackVisible": false,
+        "reducedMotion": false,
+        "ua": "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.8010.12 Mobile Safari/537.36",
+        "viewport": [
+          412,
+          839
+        ],
+        "docHeight": 5422,
+        "overflowX": false
+      },
+      "errors": [],
+      "files": [
+        "iridescent-pixel7-01-hero.jpg",
+        "iridescent-pixel7-02-content-os.jpg",
+        "iridescent-pixel7-03-ai-harness.jpg",
+        "iridescent-pixel7-04-studio.jpg",
+        "iridescent-pixel7-05-provenance.jpg",
+        "iridescent-pixel7-06-runtime.jpg"
+      ]
+    },
+    {
+      "variant": "iridescent",
+      "name": "desktop-reduced-motion",
+      "state": {
+        "canvasLive": null,
+        "fallbackPresent": false,
+        "fallbackVisible": false,
+        "reducedMotion": true,
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.8103.78 Safari/537.36",
+        "viewport": [
+          1440,
+          900
+        ],
+        "docHeight": 5068,
+        "overflowX": false
+      },
+      "errors": [],
+      "files": [
+        "iridescent-desktop-reduced-motion-01-hero.jpg",
+        "iridescent-desktop-reduced-motion-02-ai-harness.jpg",
+        "iridescent-desktop-reduced-motion-03-mcp.jpg"
+      ]
+    },
+    {
+      "variant": "iridescent",
+      "name": "iphone13-reduced-motion",
+      "state": {
+        "canvasLive": null,
+        "fallbackPresent": false,
+        "fallbackVisible": false,
+        "reducedMotion": true,
+        "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1",
+        "viewport": [
+          390,
+          664
+        ],
+        "docHeight": 5422,
+        "overflowX": false
+      },
+      "errors": [],
+      "files": [
+        "iridescent-iphone13-reduced-motion-01-hero.jpg",
+        "iridescent-iphone13-reduced-motion-02-ai-harness.jpg"
+      ]
+    },
+    {
+      "variant": "storybook",
+      "name": "nowebgl-desktop",
+      "state": {
+        "canvasLive": "false",
+        "fallbackPresent": true,
+        "fallbackVisible": true,
+        "reducedMotion": false,
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.8103.78 Safari/537.36",
+        "viewport": [
+          1440,
+          900
+        ],
+        "docHeight": 8366,
+        "overflowX": false
+      },
+      "errors": [],
+      "files": [
+        "storybook-nowebgl-desktop-01-hero.jpg",
+        "storybook-nowebgl-desktop-02-ai-harness.jpg",
+        "storybook-nowebgl-desktop-03-studio.jpg",
+        "storybook-nowebgl-desktop-04-runtime.jpg"
+      ]
+    },
+    {
+      "variant": "storybook",
+      "name": "nowebgl-iphone13",
+      "state": {
+        "canvasLive": "false",
+        "fallbackPresent": true,
+        "fallbackVisible": true,
+        "reducedMotion": false,
+        "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1",
+        "viewport": [
+          390,
+          664
+        ],
+        "docHeight": 8551,
+        "overflowX": false
+      },
+      "errors": [],
+      "files": [
+        "storybook-nowebgl-iphone13-01-hero.jpg",
+        "storybook-nowebgl-iphone13-02-ai-harness.jpg",
+        "storybook-nowebgl-iphone13-03-runtime.jpg"
+      ]
+    }
+  ]
+}
