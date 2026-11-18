@@ -56,6 +56,13 @@ export const UPLOAD_TYPE_CATALOGUE: readonly UploadTypeEntry[] = [
   { mime: 'text/plain', extensions: ['.txt', '.text', '.log', '.md'], label: 'Plain text' },
   { mime: 'video/mp4', extensions: ['.mp4', '.m4v'], label: 'MP4 video', defaultEnabled: false },
   { mime: 'video/webm', extensions: ['.webm'], label: 'WebM video', defaultEnabled: false },
+  {
+    mime: 'text/vtt',
+    extensions: ['.vtt'],
+    label: 'WebVTT captions',
+    note: 'Caption and subtitle tracks for videos; the file must start with the WEBVTT header.',
+    defaultEnabled: false,
+  },
 ] as const;
 
 /** Every MIME type the server has a content validator for. */

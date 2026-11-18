@@ -1,10 +1,10 @@
 ---
-version: 3
+version: 4
 sourceLang: en
-lastUpdated: 2026-11-15T19:51:31.763Z
-contentHash: 0cecb3b0be52686a
-codeVerified: 2026-11-15T19:51:31.763Z
-codeVerifiedHash: 0cecb3b0be52686a
+lastUpdated: 2026-11-18T05:33:17.048Z
+contentHash: a460d0361759b560
+codeVerified: 2026-11-18T05:33:17.048Z
+codeVerifiedHash: a460d0361759b560
 codeVerifiedClaims: 16
 ---
 
@@ -65,6 +65,7 @@ with the declared (normalised) MIME type:
 | `application/pdf` | `%PDF-` at offset 0 |
 | `image/svg+xml` | an SVG document with no active content (§3) |
 | `text/plain`, `text/csv` | text — not HTML, SVG or PHP dressed as text |
+| `text/vtt` | text that opens with the `WEBVTT` signature (#871 caption tracks) |
 | any other type an operator allowed via env | anything **except** an executable or an HTML/SVG/PHP document in disguise |
 
 Executables (PE, ELF, Mach-O, Java class, `#!` scripts) are refused under every
@@ -148,8 +149,8 @@ is never weaker than either.
 
 The checks sit on top of the existing per-site upload policy
 (**Studio → Settings → Uploads**, `GET/PUT /api/v1/uploads/config`): the MIME
-allowlist and size cap are applied first, unchanged. MP4 and WebM are now in the
-catalogue but **off by default** — a site admin opts in, and the sniffing and
+allowlist and size cap are applied first, unchanged. MP4, WebM and WebVTT (`.vtt`, video
+caption tracks) are in the catalogue but **off by default** — a site admin opts in, and the sniffing and
 polyglot checks then apply to them like any other type.
 
 ## What this is not

@@ -181,3 +181,23 @@ function bytesChunk(noise: Uint8Array): Uint8Array {
   const len = noise.length;
   return bytes([(len >>> 24) & 0xff, (len >>> 16) & 0xff, (len >>> 8) & 0xff, len & 0xff], type, noise, [0, 0, 0, 0]);
 }
+
+describe('WebVTT captions (#871)', () => {
+  const enc = (s: string) => new TextEncoder().encode(s);
+  const VTT = 'WEBVTT\n\n00:00.000 --> 00:01.000\n<v Roger>Hello <b>world</b>\n';
+
+  it('accepts a WebVTT file, with or without a BOM or a header comment', () => {
+    expect(compareDeclaredMime(enc(VTT), 'text/vtt')).toMatchObject({ ok: true, kind: 'text' });
+    expect(compareDeclaredMime(new Uint8Array([0xef, 0xbb, 0xbf, ...enc(VTT)]), 'text/vtt').ok).toBe(true);
+    expect(compareDeclaredMime(enc('WEBVTT - Kind: captions\n\n'), 'text/vtt').ok).toBe(true);
+    expect(compareDeclaredMime(enc('WEBVTT'), 'text/vtt').ok).toBe(true);
+  });
+
+  it('refuses text without the signature, a look-alike, and active documents dressed as captions', () => {
+    expect(compareDeclaredMime(enc('1\n00:00:00,000 --> 00:00:01,000\nSRT\n'), 'text/vtt')).toMatchObject({ ok: false, reason: 'content_mime_mismatch' });
+    expect(compareDeclaredMime(enc('WEBVTTX\n'), 'text/vtt').ok).toBe(false);
+    expect(compareDeclaredMime(enc('<html><script>alert(1)</script>WEBVTT'), 'text/vtt')).toMatchObject({ ok: false, reason: 'dangerous_disguised' });
+    expect(compareDeclaredMime(enc('<svg onload=alert(1)>'), 'text/vtt')).toMatchObject({ ok: false, reason: 'dangerous_disguised' });
+    expect(compareDeclaredMime(realPng(), 'text/vtt').ok).toBe(false);
+  });
+});

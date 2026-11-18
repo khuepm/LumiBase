@@ -1,13 +1,13 @@
 ---
-version: 3
+version: 4
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-11-15T19:51:31.763Z
-sourceHash: 0cecb3b0be52686a
-codeVerified: 2026-11-15T19:51:31.763Z
-codeVerifiedHash: 0cecb3b0be52686a
+lastUpdated: 2026-11-18T05:33:17.048Z
+sourceHash: a460d0361759b560
+codeVerified: 2026-11-18T05:33:17.048Z
+codeVerifiedHash: a460d0361759b560
 codeVerifiedClaims: 16
 ---
 
@@ -68,6 +68,7 @@ khai báo (đã chuẩn hoá):
 | `application/pdf` | `%PDF-` ở offset 0 |
 | `image/svg+xml` | tài liệu SVG không có nội dung động (§3) |
 | `text/plain`, `text/csv` | văn bản — không phải HTML, SVG hay PHP giả làm văn bản |
+| `text/vtt` | văn bản mở đầu bằng chữ ký `WEBVTT` (track phụ đề của #871) |
 | mọi loại khác operator cho phép qua env | bất kỳ thứ gì **trừ** file thực thi hoặc tài liệu HTML/SVG/PHP ngụy trang |
 
 File thực thi (PE, ELF, Mach-O, Java class, script `#!`) bị từ chối dưới mọi
@@ -151,8 +152,8 @@ yếu hơn bất kỳ policy nào.
 
 Các kiểm tra nằm chồng lên upload policy theo site sẵn có
 (**Studio → Settings → Uploads**, `GET/PUT /api/v1/uploads/config`): allowlist
-MIME và giới hạn kích thước được áp trước, không đổi. MP4 và WebM giờ có trong
-catalogue nhưng **tắt mặc định** — admin site chủ động bật, và khi đó các kiểm
+MIME và giới hạn kích thước được áp trước, không đổi. MP4, WebM và WebVTT (`.vtt`, track
+phụ đề video) có trong catalogue nhưng **tắt mặc định** — admin site chủ động bật, và khi đó các kiểm
 tra dò nội dung và polyglot áp dụng cho chúng như mọi loại khác.
 
 ## Những gì cơ chế này không phải

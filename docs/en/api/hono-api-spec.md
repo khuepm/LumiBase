@@ -1,11 +1,11 @@
 ---
-version: 57
-lastUpdated: 2026-11-16T15:46:10.249Z
+version: 58
+lastUpdated: 2026-11-18T05:33:14.828Z
 sourceLang: en
-contentHash: ae62be6b4f9529f8
-codeVerified: 2026-11-16T15:46:10.249Z
-codeVerifiedHash: ae62be6b4f9529f8
-codeVerifiedClaims: 636
+contentHash: aed0ac1ed2c9f5d5
+codeVerified: 2026-11-18T05:33:14.828Z
+codeVerifiedHash: aed0ac1ed2c9f5d5
+codeVerifiedClaims: 638
 ---
 
 # Hono API Specification — LumiBase
@@ -968,6 +968,9 @@ identical body. Responses: `Cache-Control: private, no-store`,
 | `GET/PUT` | `/api/v1/files/settings` | DAM settings (`files.dam`); `PUT` site admin |
 | `GET` | `/api/v1/files/folders` · `/folders/tree` | Folders (flat / nested with `path`) |
 | `POST/PATCH/DELETE` | `/api/v1/files/folders[/:id]` | Create / rename+move (`409 FOLDER_CYCLE`) / delete empty (`409 FOLDER_NOT_EMPTY`); site admin |
+| `GET` | `/api/v1/files/:id/captions` | Caption/subtitle tracks of a video as `<track>` data (`kind`, `locale`, `label`, `isDefault`, version-pinned `src`) (#871) |
+| `POST` | `/api/v1/files/:id/captions` | Attach a WebVTT file: `{ captionFileId, locale, kind?, label?, isDefault? }`; `409 CAPTION_EXISTS`, `415 CAPTION_NOT_VTT`, `422 LOCALE_NOT_ENABLED` |
+| `PATCH/DELETE` | `/api/v1/files/:id/captions/:captionId` | Edit a track (one default per kind) / detach it (the WebVTT file stays) |
 | `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
 | `POST` | `/api/v1/media/:key` | Upload raw media bytes (RBAC `media:create`; upload guard applies) |
 | `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`); with transform params → 302 to derivative |
