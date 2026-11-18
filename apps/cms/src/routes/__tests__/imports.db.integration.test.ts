@@ -644,8 +644,7 @@ describe.skipIf(!hasDbIntegrationUrl)('background imports — DB integration', (
       isAvailable: () => true,
       publish: async (_siteId: string, event: { payload?: { job?: { id: string; processedRows: number } } }) => {
         const j = event.payload?.job;
-        if (!j) return;
-        seen.push({ jobId: j.id, cursor: j.processedRows, a: (await chunksOf(a.id)).length, b: (await chunksOf(b.id)).length });
+        if (j) seen.push({ jobId: j.id, cursor: j.processedRows, a: (await chunksOf(a.id)).length, b: (await chunksOf(b.id)).length });
       },
     } as unknown as RealtimeProvider;
     expect(await runImportTick({ db, config: config(), realtime }, { budgetMs: 60_000 })).toBe(2);
