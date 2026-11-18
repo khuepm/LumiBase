@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-11-18T06:17:04.462Z
+version: 2
+lastUpdated: 2026-11-18T06:29:07.740Z
 sourceLang: en
-contentHash: cf046ee898a17fad
-codeVerified: 2026-11-18T06:17:04.462Z
-codeVerifiedHash: cf046ee898a17fad
+contentHash: 3022e13b07860d9c
+codeVerified: 2026-11-18T06:29:07.740Z
+codeVerifiedHash: 3022e13b07860d9c
 codeVerifiedClaims: 12
 ---
 
@@ -14,9 +14,8 @@ codeVerifiedClaims: 12
 > plain `lumibase_pages.layoutConfig` JSON, so
 > `GET /api/v1/deliver/page/:site_id/:slug` is unchanged. Epic #667, V06 #684.
 
-**Status:** the layout format, write-time validation, the block palette API and
-the page preview URL setting are shipped. The Studio composer screen follows in
-a separate change.
+**Status:** shipped — layout format, write-time validation, block palette API,
+the Studio composer (**Pages** in the sidebar) and page preview.
 
 ## 1. Register blocks
 
@@ -33,7 +32,35 @@ PATCH /api/v1/collections/hero
 is the composer palette. Hidden, encrypted and pii/phi fields are left out:
 block data is stored in clear inside the page.
 
-## 2. Layout format (v1)
+In the Studio: **Data model → (collection) → Display → Use as a page block**.
+
+## 2. Compose a page in the Studio
+
+**Pages** (sidebar) lists the site's pages; **New page** creates one with an
+empty composer layout. Open a page to compose it:
+
+- **Blocks** (left) lists the registered page blocks. Pick a region under
+  **Add to region**, then click a block to add it at the end of that region.
+  **New region** adds a region (lowercase key such as `sidebar`); an empty
+  region other than `main` can be removed.
+- **Layout** (middle) shows each region's sections in order. Drag a section by
+  its handle (the keyboard works too: focus the handle, Space, arrows, Space),
+  or use the up/down buttons. The region menu on a section moves it to another
+  region. Sections can be duplicated or removed.
+- **Section settings** (right) edits the selected section's fields with the
+  same editors as item forms, so `blocks` fields inside a block nest further
+  blocks. **Visible in** limits the section to some locales (none checked:
+  every locale). **Data source** binds the section to a collection's latest
+  published items (`data.items` in delivery).
+- **Save** stores the layout. The server validates it, and each problem is
+  shown on its section with the field it concerns.
+- **Preview** opens the page beside the composer (see §5). It reloads after
+  each save.
+
+A page created without the composer opens with its sections loaded as-is.
+Saving it stores them as a composer layout, which is then validated.
+
+## 3. Layout format (v1)
 
 ```json
 {
@@ -77,7 +104,7 @@ fills an encrypted or pii/phi field. Each error has a `field` path such as
 `sections.1.data.title`. Layouts without `version` are stored untouched, as
 before.
 
-## 3. Render it
+## 4. Render it
 
 Delivery returns `sections` in order with `id`, `component`, `styleConfig` and
 `data` (plus `data.items` for a section with a `source`). Pick a region's
@@ -94,10 +121,13 @@ const sidebar = selectPageSections(page.sections, { region: 'sidebar', locale: '
 A section without `styleConfig.region` belongs to `main`; one without
 `styleConfig.locales` shows in every locale.
 
-## 4. Preview
+## 5. Preview
 
-Set the page URL template (`pageUrl`, for example
-`https://www.example.com/{slug}`) with `PUT /api/v1/preview/settings`, so the
-composer can open the page beside the editor. The template follows the same rules as a collection's
+Set **Settings → Preview → Page URL** (`pageUrl`, for example
+`https://www.example.com/{slug}`, or `PUT /api/v1/preview/settings`) so the
+composer can open the page beside the editor. Pages are public, so no preview
+token is involved. Because delivery caches pages, have your frontend fetch
+`/api/v1/deliver/page/...?preview=true` when it renders inside the Studio
+frame, so a just-saved layout shows at once. The template follows the same rules as a collection's
 [Preview URL](./visual-editing.md): absolute `http(s)`, known placeholders
 only.

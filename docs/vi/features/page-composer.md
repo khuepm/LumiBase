@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-11-18T06:17:04.462Z
+version: 2
+lastUpdated: 2026-11-18T06:29:07.740Z
 sourceLang: en
 translatedFrom: en
-sourceHash: cf046ee898a17fad
+sourceHash: 3022e13b07860d9c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-18T06:17:04.462Z
-codeVerifiedHash: cf046ee898a17fad
+codeVerified: 2026-11-18T06:29:07.740Z
+codeVerifiedHash: 3022e13b07860d9c
 codeVerifiedClaims: 12
 ---
 
@@ -17,9 +17,8 @@ codeVerifiedClaims: 12
 > vẫn là JSON `lumibase_pages.layoutConfig` thuần, nên
 > `GET /api/v1/deliver/page/:site_id/:slug` không đổi. Epic #667, V06 #684.
 
-**Status:** đã có định dạng layout, kiểm tra khi ghi, API danh sách block và
-cấu hình URL preview cho trang. Màn hình composer trong Studio sẽ ra ở một thay
-đổi riêng.
+**Status:** đã có — định dạng layout, kiểm tra khi ghi, API danh sách block,
+composer trong Studio (mục **Pages** ở sidebar) và preview trang.
 
 ## 1. Đăng ký block
 
@@ -36,7 +35,33 @@ PATCH /api/v1/collections/hero
 chúng. Đây là bảng block của composer. Field ẩn, field mã hoá và field pii/phi
 bị loại ra: dữ liệu block được lưu dạng rõ bên trong trang.
 
-## 2. Định dạng layout (v1)
+Trong Studio: **Data model → (collection) → Display → Use as a page block**.
+
+## 2. Dựng trang trong Studio
+
+**Pages** (sidebar) liệt kê các trang của site; **New page** tạo một trang với
+layout composer rỗng. Mở một trang để dựng nó:
+
+- **Blocks** (bên trái) liệt kê các page block đã đăng ký. Chọn vùng ở **Add to
+  region**, rồi bấm một block để thêm vào cuối vùng đó. **New region** thêm một
+  vùng (key viết thường như `sidebar`); vùng trống khác `main` có thể xoá.
+- **Layout** (ở giữa) hiển thị các section của từng vùng theo thứ tự. Kéo
+  section bằng tay nắm (bàn phím cũng được: focus tay nắm, Space, phím mũi
+  tên, Space), hoặc dùng nút lên/xuống. Menu vùng trên section chuyển nó sang
+  vùng khác. Section có thể nhân bản hoặc xoá.
+- **Section settings** (bên phải) sửa field của section đang chọn bằng cùng
+  các trình soạn của form item, nên field `blocks` trong block lồng được thêm
+  block. **Visible in** giới hạn section ở một số locale (không chọn gì: mọi
+  locale). **Data source** gắn section với các item đã xuất bản mới nhất của
+  một collection (`data.items` trong delivery).
+- **Save** lưu layout. Server kiểm tra nó, và mỗi lỗi được hiển thị trên đúng
+  section kèm field liên quan.
+- **Preview** mở trang cạnh composer (xem §5). Trang tải lại sau mỗi lần lưu.
+
+Trang được tạo không qua composer sẽ mở với các section được nạp nguyên trạng.
+Khi lưu, chúng được lưu thành layout của composer và được kiểm tra.
+
+## 3. Định dạng layout (v1)
 
 ```json
 {
@@ -79,7 +104,7 @@ hoặc đòi thứ khác ngoài item đã xuất bản, hoặc dữ liệu block
 hoá hay pii/phi. Mỗi lỗi có đường dẫn `field` như `sections.1.data.title`.
 Layout không có `version` vẫn được lưu nguyên như trước.
 
-## 3. Render
+## 4. Render
 
 Delivery trả `sections` theo thứ tự với `id`, `component`, `styleConfig` và
 `data` (kèm `data.items` cho section có `source`). Lấy các section của một
@@ -96,10 +121,13 @@ const sidebar = selectPageSections(page.sections, { region: 'sidebar', locale: '
 Section không có `styleConfig.region` thuộc `main`; section không có
 `styleConfig.locales` hiển thị ở mọi locale.
 
-## 4. Preview
+## 5. Preview
 
-Đặt template URL của trang (`pageUrl`, ví dụ
-`https://www.example.com/{slug}`) bằng `PUT /api/v1/preview/settings`, để
-composer mở được trang ngay cạnh trình soạn. Template theo cùng quy tắc với
+Đặt **Settings → Preview → Page URL** (`pageUrl`, ví dụ
+`https://www.example.com/{slug}`, hoặc `PUT /api/v1/preview/settings`) để
+composer mở được trang ngay cạnh trình soạn. Trang là công khai nên không cần
+preview token. Vì delivery có cache trang, hãy để frontend gọi
+`/api/v1/deliver/page/...?preview=true` khi nó render bên trong frame của
+Studio, để layout vừa lưu hiện ra ngay. Template theo cùng quy tắc với
 [Preview URL](./visual-editing.md) của collection: `http(s)` tuyệt đối, chỉ
 placeholder đã biết.
