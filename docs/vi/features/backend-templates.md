@@ -1,14 +1,14 @@
 ---
-version: 4
-lastUpdated: 2026-11-19T07:17:00.031Z
+version: 5
+lastUpdated: 2026-11-19T07:29:31.816Z
 sourceLang: en
 translatedFrom: en
-sourceHash: fdc741104b73ea16
+sourceHash: 965aceee71d6ce51
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T07:17:00.031Z
-codeVerifiedHash: fdc741104b73ea16
-codeVerifiedClaims: 22
+codeVerified: 2026-11-19T07:29:31.816Z
+codeVerifiedHash: 965aceee71d6ce51
+codeVerifiedClaims: 24
 ---
 
 # Backend templates
@@ -23,8 +23,8 @@ cùng model đó vào một site khác. Epic #900; đặc tả
 > `@lumibase/contracts/backend-templates` (#901), và **catalog** riêng của mỗi
 > site (#902): draft, revision đã publish và capture, và **plan** (#903), dùng
 > để xem trước một lần cài mà không thay đổi gì, và **cài schema** từ một plan
-> (#904). Seed pack, MCP tool và màn hình Studio do #905–#909 đảm nhận; cho tới
-> khi #905 xong, plan chọn seed pack sẽ bị từ chối.
+> (#904), kể cả seed pack tuỳ chọn (#905). MCP tool và màn hình Studio do
+> #906–#909 đảm nhận.
 
 Code: `packages/contracts/src/backend-templates/` (`envelope.ts`, `validate.ts`, `ingest.ts`, `canonical.ts`, `limits.ts`). Test: `packages/contracts/src/backend-templates/__tests__/backend-template-contract.test.ts`.
 
@@ -240,8 +240,10 @@ nhất được ghi là dòng plan (`lumibase_backend_template_plans`, gắn v�
   (`compatibility.cmsVersionRange`) và runtime có transaction được kiểm tra
   trước khi phát hành plan. Không đạt thì trả `422 INCOMPATIBLE_RUNTIME`. Khi
   phiên bản CMS không được gắn, plan kèm một cảnh báo thay vào đó.
-- **Seed.** `seedPack` mặc định là không có, và pack không tồn tại là
-  `422 INVALID_TEMPLATE`.
+- **Seed.** `seedMode` là `none` (mặc định) hoặc `pack`, với `seedPack` nêu
+  tên pack. Một `seedPack` không kèm `seedMode` nghĩa là `pack`. `none` kèm
+  pack, hoặc `pack` không kèm pack, bị từ chối với `400`, và pack không tồn tại
+  là `422 INVALID_TEMPLATE`.
 
 Response (`201`) có `id` của plan, `expiresAt`, `targetFingerprint` của schema
 đích và một `report`. Report liệt kê các collection, relation và số lượng, lựa
@@ -284,3 +286,29 @@ làm thay đổi nó.
   backend đã cài.
 
 `GET /api/v1/backend-templates/installations/:id` đọc một bản cài của site.
+
+## Seed pack khi cài
+
+Mặc định một lần cài chỉ tạo schema, với không item content nào, kể cả khi
+template có kèm pack. Plan lập với `seedMode: "pack"` và một `seedPack` sẽ cài
+các record của pack đó bên trong transaction cài đặt. Code:
+`apps/cms/src/services/backend-templates/seed-writer.ts`.
+
+- **Với tư cách người gọi.** Mỗi record được tạo qua chính item service của
+  người gọi, gắn với transaction, nên quyền item và validation field của họ
+  được áp dụng. Một record người gọi không được tạo sẽ làm cả lần cài thất bại,
+  và không schema hay content nào còn lại.
+- **Id mới.** Khoá logic của record trở thành id mới. Cùng một pack cài vào hai
+  site sẽ có id khác nhau, và các reference của nó được giải quyết trong từng
+  site. Bản cài giữ bảng ánh xạ khoá sang id trong `resources.seedKeys`.
+- **Reference.** Record được tạo theo thứ tự mà mọi reference bắt buộc đều đã
+  tồn tại. Reference tuỳ chọn tới một record được tạo sau sẽ được gán ở lượt
+  thứ hai, nên vòng tuỳ chọn như hai bài viết trỏ lẫn nhau vẫn hoạt động. Vòng
+  bắt buộc bị validator từ chối trước khi ghi bất cứ thứ gì.
+- **Không gì ngoài dữ liệu.** Việc seed không tạo user, credential hay file, và
+  không tải gì về. Flow, webhook, search index và extension hook không chạy
+  trên content seed, vì item service gắn với transaction không có queue,
+  search, cache hay hook.
+- **Một lần.** Thử lại một lần cài đã hoàn tất trả về chính nó mà không seed
+  lại. Content người dùng đã sửa sau đó giữ nguyên như đã sửa. Thêm content sau
+  này qua item API hoặc MCP thông thường.
