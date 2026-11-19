@@ -73,6 +73,9 @@ const UploadsSettingsPage = lazy(() => import('./modules/settings/uploads-page')
 const AiDecisionsSettingsPage = lazy(() => import('./modules/settings/ai-decisions-settings').then((m) => ({ default: m.AiDecisionsSettingsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
 const UpdatesPage = lazy(() => import('./modules/settings/updates-page').then((m) => ({ default: m.UpdatesPage })));
+const ReleaseFlagsPage = lazy(() =>
+  import('./modules/settings/release-flags-page').then((m) => ({ default: m.ReleaseFlagsPage })),
+);
 const AgentHarnessPage = lazy(() => import('./modules/settings/agent-harness-page').then((m) => ({ default: m.AgentHarnessPage })));
 const MissionControlPage = lazy(() => import('./modules/mission-control/index-page').then((m) => ({ default: m.MissionControlPage })));
 const MissionControlInboxPage = lazy(() => import('./modules/mission-control/inbox-page').then((m) => ({ default: m.InboxPage })));
@@ -806,6 +809,12 @@ const updatesRoute = createRoute({
   component: withSuspense(UpdatesPage),
 });
 
+const releaseFlagsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'release-flags',
+  component: withSuspense(ReleaseFlagsPage),
+});
+
 const agentHarnessRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'agent-harness',
@@ -987,6 +996,12 @@ const adminPathUpdatesRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'updates',
   component: withSuspense(UpdatesPage),
+});
+
+const adminPathReleaseFlagsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'release-flags',
+  component: withSuspense(ReleaseFlagsPage),
 });
 
 const adminPathAgentHarnessRoute = createRoute({
@@ -1455,6 +1470,7 @@ const routeTree = rootRoute.addChildren([
       aiDecisionsSettingsRoute,
       marketplaceRoute,
       updatesRoute,
+      releaseFlagsRoute,
       agentHarnessRoute,
     ]),
     automationFlowsRoute,
@@ -1539,6 +1555,7 @@ const routeTree = rootRoute.addChildren([
       adminPathAiDecisionsSettingsRoute,
       adminPathMarketplaceRoute,
       adminPathUpdatesRoute,
+      adminPathReleaseFlagsRoute,
       adminPathAgentHarnessRoute,
     ]),
     adminPathAutomationFlowsRoute,

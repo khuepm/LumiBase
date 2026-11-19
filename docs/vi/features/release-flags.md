@@ -1,14 +1,14 @@
 ---
-version: 3
-lastUpdated: 2026-11-17T14:46:37.198Z
+version: 4
+lastUpdated: 2026-11-19T04:31:58.266Z
 sourceLang: en
 translatedFrom: en
-sourceHash: c9ed73e7edd52284
+sourceHash: 2c357c3aff9d32ed
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T14:46:37.198Z
-codeVerifiedHash: c9ed73e7edd52284
-codeVerifiedClaims: 26
+codeVerified: 2026-11-19T04:32:04.952Z
+codeVerifiedHash: 2c357c3aff9d32ed
+codeVerifiedClaims: 28
 ---
 
 # Release Flags
@@ -123,6 +123,28 @@ Các endpoint manifest từ chối API key. Manifest bị từ chối trả về
 `MANIFEST_REJECTED` kèm `reason`: `422` khi chữ ký sai, key lạ, hết hạn, chưa
 tới hiệu lực, sai audience hoặc payload sai dạng; `409` khi `STALE` (cũ hơn bản
 đã chấp nhận) hoặc khi chưa cấu hình khoá tin cậy nào.
+
+## Studio
+
+**Settings → System → Release flags** liệt kê các flag của site đang chọn.
+
+- Admin của site thấy mọi flag đã khai báo: mô tả, giai đoạn, deployment này
+  đã phát hành flag hay chưa và vì sao (do operator, theo manifest của LumiBase
+  hoặc theo mặc định của giai đoạn), flag có đang bật cho site này không và vì
+  sao (theo trạng thái phát hành, đã chọn cho site, hoặc mặc định của site),
+  người phụ trách và ngày gỡ.
+- Flag đã phát hành và khai báo `siteToggle` có công tắc cho site, và nút
+  **Dùng mặc định** xoá lựa chọn của site (`null`). Công tắc bị khoá kèm lời giải
+  thích khi deployment chưa phát hành flag.
+- Thành viên chỉ thấy các flag đã phát hành và trạng thái bật/tắt, chỉ đọc.
+- Quản lý manifest có chữ ký vẫn là API dành cho bootstrap admin; Studio không
+  có trang cho việc này.
+
+Các màn hình khác của Studio ẩn giao diện của tính năng có flag đang tắt bằng
+`useReleaseFlag(key)` hoặc `<ReleaseFlagGate flag="…">` trong
+`apps/studio/src/lib/release-flags.tsx`. Danh sách được đọc một lần mỗi phiên
+và mỗi site; nếu đọc lỗi thì tính năng vẫn bị ẩn. Việc ẩn chỉ để tiện — server
+vẫn trả `404` cho route có gắn cờ.
 
 ## Gắn cờ vào code (cho developer)
 
