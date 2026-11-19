@@ -1,13 +1,13 @@
 ---
-version: 7
-lastUpdated: 2026-11-19T08:15:58.367Z
+version: 8
+lastUpdated: 2026-11-19T08:44:53.651Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ba35fbc188f2fbe9
+sourceHash: b87d4567c9d1098d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T08:15:58.367Z
-codeVerifiedHash: ba35fbc188f2fbe9
+codeVerified: 2026-11-19T08:44:53.651Z
+codeVerifiedHash: b87d4567c9d1098d
 codeVerifiedClaims: 30
 ---
 
@@ -360,6 +360,38 @@ quảng bá đúng các schema này.
   tra một draft đã lưu được làm khi publish.
 - **Không có trong Copilot chat.** Chat không có ngữ cảnh template, nên các
   tool này bị loại khỏi danh sách tool của nó.
+
+## Studio
+
+**Data model → Backend templates** (`/data-model/templates`,
+`apps/studio/src/modules/data-model/templates/`) dùng cùng các route REST như
+mọi client khác.
+
+- **Catalog.** Các template chính thức và catalog riêng của site đang hoạt
+  động. Từ đây bạn có thể nhập một document JSON (dán vào hoặc dưới dạng file
+  `.json`) thành draft, capture các collection của site đang hoạt động thành
+  draft, publish một draft và export một revision đã publish. Một lần nhập bị
+  từ chối sẽ liệt kê mã lỗi và đường dẫn JSON của server.
+- **Xem lại trước khi cài.** Chọn một template và một revision cụ thể, rồi một
+  **site đích**. Không có đích mặc định. Danh sách gồm site đang hoạt động cùng
+  các site trong tổ chức của bạn. Bạn cũng có thể đặt tiền tố cho tên
+  collection, và chọn dùng một seed pack, vốn **tắt** theo mặc định.
+  *Preview* gửi plan tới site đích và hiển thị version, digest, số collection,
+  field, relation và seed record, các collection và relation, và mọi xung đột
+  tên.
+- **Một preview ứng với một bộ lựa chọn.** Đổi template, revision, site đích,
+  tiền tố hoặc lựa chọn seed làm nó cũ. Khi đó *Install* bị tắt cho tới khi
+  bạn preview lại, và plan cũ không bao giờ được gửi.
+- **Mỗi plan cài một lần.** Yêu cầu cài dùng idempotency key
+  `studio:<planId>`. Bấm đúp, tải lại trang hoặc thử lại sau lỗi mạng đều trả
+  về cùng installation thay vì tạo cái thứ hai.
+- **Lỗi có hướng xử lý.** Xung đột tên, plan hết hạn hoặc đã cũ, thiếu quyền
+  admin và runtime không hỗ trợ đều nói rõ bước tiếp theo, kèm mã của server.
+  Không gì được hiển thị là đã cài nếu server chưa commit.
+- **Kết quả.** Installation liệt kê các collection đã tạo. *Open* chuyển sang
+  site đích trước khi mở một collection.
+- **Approval.** Cài từ Studio chạy với quyền site admin của chính bạn. Một yêu
+  cầu cài từ agent qua MCP sẽ chờ ở Mission Control → Inbox (xem ở trên).
 
 ## Template chính thức: `wordpress-alike` 1.0.0
 

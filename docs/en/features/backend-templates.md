@@ -1,10 +1,10 @@
 ---
-version: 7
-lastUpdated: 2026-11-19T08:15:58.367Z
+version: 8
+lastUpdated: 2026-11-19T08:44:53.651Z
 sourceLang: en
-contentHash: ba35fbc188f2fbe9
-codeVerified: 2026-11-19T08:15:58.367Z
-codeVerifiedHash: ba35fbc188f2fbe9
+contentHash: b87d4567c9d1098d
+codeVerified: 2026-11-19T08:44:53.651Z
+codeVerifiedHash: b87d4567c9d1098d
 codeVerifiedClaims: 30
 ---
 
@@ -367,6 +367,40 @@ schemas are in `packages/contracts/src/backend-templates/tools.ts`.
   draft is done on publish.
 - **Not in the Copilot chat.** The chat has no template context, so these
   tools are left out of its tool list.
+
+## Studio
+
+**Data model → Backend templates** (`/data-model/templates`,
+`apps/studio/src/modules/data-model/templates/`) uses the same REST routes as
+every other client.
+
+- **Catalog.** The official templates and the active site's private catalog.
+  From here you can import a JSON document (pasted or as a `.json` file) as a
+  draft, capture collections of the active site as a draft, publish a draft,
+  and export a published revision. A refused import lists the server's error
+  codes and JSON paths.
+- **Install review.** Choose a template and an exact revision, then a
+  **target site**. There is no default target. The list holds the active site
+  plus the sites of your organizations. You can also set a collection name
+  prefix, and opt into a seed pack, which is **off** by default. *Preview*
+  sends the plan to the target site and shows the version, digest, collection,
+  field, relation and seed record counts, the collections and relations, and
+  any name conflict.
+- **A preview is for one set of choices.** Changing the template, revision,
+  target site, prefix or seed choice makes it stale. *Install* is then
+  disabled until you preview again, and the old plan is never sent.
+- **One install per plan.** The install request uses the idempotency key
+  `studio:<planId>`. A double click, a reload or a retry after a network error
+  returns the same installation rather than a second one.
+- **Errors are actionable.** Name conflicts, an expired or stale plan, a
+  missing admin right and an unsupported runtime each say what to do next,
+  with the server's code. Nothing is shown as installed unless the server
+  committed it.
+- **Result.** The installation lists the created collections. *Open*
+  switches to the target site before opening a collection.
+- **Approvals.** A Studio install runs with your own site-admin rights. An
+  install requested by an agent over MCP waits in Mission Control → Inbox (see
+  above).
 
 ## Official template: `wordpress-alike` 1.0.0
 
