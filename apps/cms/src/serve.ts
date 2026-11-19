@@ -195,6 +195,7 @@ async function main() {
   let schedulerTask: ScheduledTask | undefined;
   let retentionTask: ScheduledTask | undefined;
   let revisionRetentionTask: ScheduledTask | undefined;
+  let videoSweepTask: ScheduledTask | undefined;
   let deploymentPollTask: ScheduledTask | undefined;
   let flowScheduleTask: ScheduledTask | undefined;
   let goalDispatchTask: ScheduledTask | undefined;
@@ -603,6 +604,25 @@ async function main() {
     ),
   );
 
+  // Video pipeline backstop (#871): submits queued videos (after a scan, a
+  // retryable provider error or a lost background task), polls processing
+  // ones whose webhook never came, and times out the stuck. Idle when no
+  // VIDEO_PROVIDER is configured.
+  const { sweepVideos } = await import('./modules/video/sweeper');
+  videoSweepTask = cron.schedule(
+    '*/5 * * * *',
+    leaderLockedCallback(
+      'video-sweep',
+      270_000,
+      async () => {
+        await sweepVideos({ db: rotatorDb, env: process.env as Record<string, unknown> }).catch((err) => {
+          console.error('[video-sweep] failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
+
   // ── Reconciler goal dispatch (#455) ─────────────────────────────────────
   //
   // The reconciler creates goals; this tick is what turns them into runs. Before
@@ -780,6 +800,7 @@ async function main() {
     schedulerTask?.stop();
     retentionTask?.stop();
     revisionRetentionTask?.stop();
+    videoSweepTask?.stop();
     deploymentPollTask?.stop();
     flowScheduleTask?.stop();
     goalDispatchTask?.stop();

@@ -1,11 +1,11 @@
 ---
-version: 61
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 63
+lastUpdated: 2026-11-19T05:03:08.131Z
 sourceLang: en
-contentHash: 1d86bff615c2ba39
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
-codeVerifiedClaims: 652
+contentHash: f85f47c0e3930e3c
+codeVerified: 2026-11-19T05:03:08.131Z
+codeVerifiedHash: f85f47c0e3930e3c
+codeVerifiedClaims: 664
 ---
 
 # Hono API Specification — LumiBase
@@ -1009,6 +1009,14 @@ identical body. Responses: `Cache-Control: private, no-store`,
 | `GET/PUT` | `/api/v1/files/settings` | DAM settings (`files.dam`); `PUT` site admin |
 | `GET` | `/api/v1/files/folders` · `/folders/tree` | Folders (flat / nested with `path`) |
 | `POST/PATCH/DELETE` | `/api/v1/files/folders[/:id]` | Create / rename+move (`409 FOLDER_CYCLE`) / delete empty (`409 FOLDER_NOT_EMPTY`); site admin |
+| `GET` | `/api/v1/files/:id/captions` | Caption/subtitle tracks of a video as `<track>` data (`kind`, `locale`, `label`, `isDefault`, version-pinned `src`) (#871) |
+| `POST` | `/api/v1/files/:id/captions` | Attach a WebVTT file: `{ captionFileId, locale, kind?, label?, isDefault? }`; `409 CAPTION_EXISTS`, `415 CAPTION_NOT_VTT`, `422 LOCALE_NOT_ENABLED` |
+| `PATCH/DELETE` | `/api/v1/files/:id/captions/:captionId` | Edit a track (one default per kind) / detach it (the WebVTT file stays) |
+| `GET` | `/api/v1/files/:id/video` | Video processing state (`uploaded`/`processing`/`ready`/`failed`); `meta.enabled`, `meta.providerConfigured` (#871) |
+| `POST` | `/api/v1/files/:id/video/retry` | Re-submit a failed or queued video (files `update`); `409 VIDEO_NOT_RETRYABLE`, `503 VIDEO_PROVIDER_NOT_CONFIGURED` |
+| `GET` | `/api/v1/files/:id/video/playback` | `{ hls, poster, expiresAt }`, provider-signed and expiring with `video.signedPlayback`; `409 VIDEO_NOT_READY` |
+| `POST` | `/api/v1/video/webhook/:provider` | **Public**, signature-verified provider callback (`cloudflare-stream`, `mux`); `401` on a bad signature |
+| `GET` | `/api/v1/video/source/:token` | **Public**, short-lived signed URL the provider pulls the original from; one `404` for every failure |
 | `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
 | `POST` | `/api/v1/media/:key` | Upload raw media bytes (RBAC `media:create`; upload guard applies) |
 | `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`); with transform params → 302 to derivative |

@@ -9,7 +9,20 @@ import type { AppEnv } from '../../env';
 import { isSiteAdmin } from '../../middleware/site-admin';
 import { AuditLogger } from '../../modules/audit/logger';
 import { scannerFromEnv, type MalwareScanner, type ScanAuditEntry } from '../../modules/malware-scan';
+import {
+  DrizzleVideoAssetRepository,
+  publicOriginFromEnv,
+  sourceSecretFromEnv,
+  sourceUrlBuilder,
+  videoProviderFromEnv,
+  type VideoAssetRepository,
+  type VideoAuditEntry,
+  type VideoProvider,
+} from '../../modules/video';
 import { buildRequestPermissionContext, permissionServiceForRequest } from '../item-service-factory';
+import { and, eq } from 'drizzle-orm';
+import { scopeSite, settings as settingsTable, type Database } from '@lumibase/database';
+import { DrizzleCaptionRepository, type CaptionRepository } from './captions';
 import { loadDamSettings, type DamSettings } from './dam-settings';
 import type { FilesAccess, FilesAction } from './file-access';
 import { DrizzleFileRepository, type FileRepository } from './file-repository';
@@ -22,19 +35,40 @@ export interface FilesContext {
   storage: StorageProvider;
   settings: DamSettings;
   scanner: MalwareScanner | null;
-  audit: (entry: ScanAuditEntry) => Promise<void>;
+  audit: (entry: ScanAuditEntry | VideoAuditEntry) => Promise<void>;
+  /** Video pipeline (#871); absent in contexts that do not process video. */
+  video?: {
+    assets: VideoAssetRepository;
+    provider: VideoProvider | null;
+    sourceUrl: (fileId: string, version: number) => Promise<string | null>;
+  };  /** Caption/subtitle tracks of videos (#871). */
+  captions?: CaptionRepository;
+  /** The site's locales (`settings.locales.supported`). */
+  locales?: () => Promise<string[]>;
 }
 
 export async function filesContext(c: Context<AppEnv>): Promise<FilesContext> {
   const db = c.get('db');
   const siteId = c.get('siteId');
+  const env = c.env as unknown as Record<string, unknown> | undefined;
   return {
     siteId,
     repo: new DrizzleFileRepository(db, siteId),
     usage: new DrizzleFileUsageSource(db, siteId),
     storage: c.get('runtime').storage,
     settings: await loadDamSettings(db, siteId),
-    scanner: scannerFromEnv(c.env as unknown as Record<string, unknown> | undefined),
+    scanner: scannerFromEnv(env),
+    captions: new DrizzleCaptionRepository(db, siteId),
+    locales: () => siteLocales(db, siteId),
+    video: {
+      assets: new DrizzleVideoAssetRepository(db, siteId),
+      provider: videoProviderFromEnv(env),
+      sourceUrl: sourceUrlBuilder({
+        secret: sourceSecretFromEnv(env),
+        origin: publicOriginFromEnv(env) ?? new URL(c.req.url).origin,
+        siteId,
+      }),
+    },
     audit: async (entry) => {
       await new AuditLogger({ db, siteId }).write({
         event: entry.event,
@@ -42,6 +76,17 @@ export async function filesContext(c: Context<AppEnv>): Promise<FilesContext> {
       });
     },
   };
+}
+
+/** Site locales from the `locales` setting (`value.supported`), as Studio reads them. */
+export async function siteLocales(db: Database, siteId: string): Promise<string[]> {
+  const [row] = await db
+    .select({ value: settingsTable.value })
+    .from(settingsTable)
+    .where(and(eq(settingsTable.key, 'locales'), scopeSite(settingsTable.siteId, siteId)))
+    .limit(1);
+  const supported = (row?.value as { supported?: unknown } | undefined)?.supported;
+  return Array.isArray(supported) ? supported.filter((l): l is string => typeof l === 'string') : ['en', 'vi'];
 }
 
 function requestHeaders(c: Context<AppEnv>): Record<string, string> {
