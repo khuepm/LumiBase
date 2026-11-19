@@ -108,14 +108,22 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/**
+ * A diff pane whose whole text is `text`. Text values are diffed word by word
+ * (#686), so a side spans several elements and `getByText` cannot see it whole.
+ */
+const diffPane = (text: string) => (_: string, el: Element | null) =>
+  el?.tagName === 'PRE' && el.textContent === text;
+
 describe('StagedDiff (Req 3.2, 3.3)', () => {
   it('renders a field-level diff of the patch against the current item', async () => {
     renderWithClient(<StagedDiff veto={STAGED} />);
 
     // The changed field shows both sides; the untouched field stays hidden.
-    expect(await screen.findByText('Human title')).toBeInTheDocument();
-    expect(screen.getByText('Agent title')).toBeInTheDocument();
-    expect(screen.getByText('title')).toBeInTheDocument();
+    expect(await screen.findByText(diffPane('Human title'))).toBeInTheDocument();
+    expect(screen.getByText(diffPane('Agent title'))).toBeInTheDocument();
+    // The field name in the row header (the word "title" also appears in the panes).
+    expect(screen.getByText('title', { selector: 'header span' })).toBeInTheDocument();
     expect(screen.queryByText('body')).not.toBeInTheDocument();
   });
 
@@ -136,7 +144,7 @@ describe('InboxPage (Req 3.1, 3.4, 1.4)', () => {
     renderWithClient(<InboxPage />);
 
     // Detail pane shows the diff for the selected staged change.
-    expect(await screen.findByText('Human title')).toBeInTheDocument();
+    expect(await screen.findByText(diffPane('Human title'))).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/veto reason/i), {
       target: { value: 'wrong tone' },
