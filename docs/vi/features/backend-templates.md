@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-11-19T07:29:31.816Z
+version: 6
+lastUpdated: 2026-11-19T07:43:09.419Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 965aceee71d6ce51
+sourceHash: c801a4dd4fa38995
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T07:29:31.816Z
-codeVerifiedHash: 965aceee71d6ce51
+codeVerified: 2026-11-19T07:43:09.419Z
+codeVerifiedHash: c801a4dd4fa38995
 codeVerifiedClaims: 24
 ---
 
@@ -312,3 +312,42 @@ các record của pack đó bên trong transaction cài đặt. Code:
 - **Một lần.** Thử lại một lần cài đã hoàn tất trả về chính nó mà không seed
   lại. Content người dùng đã sửa sau đó giữ nguyên như đã sửa. Thêm content sau
   này qua item API hoặc MCP thông thường.
+
+## Template chính thức: `wordpress-alike` 1.0.0
+
+Một backend blog dựng theo các khái niệm quen thuộc của WordPress. Nó đi kèm
+CMS (`GET /api/v1/backend-templates/official`). Asset là
+`apps/cms/src/services/backend-templates/official/wordpress-alike.template.json`,
+và nó nhắm tới CMS `>=2.1.0 <3.0.0`.
+
+| Collection | Field | Relation |
+|---|---|---|
+| `authors` | `name`*, `slug`*, `email`, `bio` | — |
+| `posts` | `title`*, `slug`*, `excerpt`, `body`, `status` (draft · published · private), `published_at`, `author`, `comment_status` (open · closed), `featured` | `author` → `authors` |
+| `pages` | `title`*, `slug`*, `body`, `status`, `parent`, `author`, `menu_order` | `parent` → `pages`, `author` → `authors` |
+| `categories` | `name`*, `slug`*, `description`, `parent` | `parent` → `categories` |
+| `tags` | `name`*, `slug`* | — |
+| `post_categories` | `post`*, `category`* | junction: `post` → `posts`, `category` → `categories` |
+| `post_tags` | `post`*, `tag`* | junction: `post` → `posts`, `tag` → `tags` |
+| `comments` | `post`*, `author`, `author_name`*, `author_email`, `body`*, `status` (pending · approved · spam), `parent` | `post` → `posts`, `author` → `authors`, `parent` → `comments` |
+
+`*` đánh dấu field bắt buộc. Mọi relation đều là m2o, và alias của nó là tên
+field, nên `author.name` hoặc `parent.title` đọc được qua nó. Các junction
+taxonomy là collection tường minh.
+
+- **Author là hồ sơ nội dung, không phải tài khoản đăng nhập.** Một author
+  không thể đăng nhập, và việc cài template không tạo user, role hay
+  permission nào.
+- **Lựa chọn.** Các lựa chọn của `status` và `comment_status` được kiểm tra
+  khi ghi. Giá trị mặc định của chúng (`draft`, `open`, `pending`) được điền
+  sẵn trong form Studio; item API lưu đúng những gì nhận được và không tự điền.
+- **Tính duy nhất.** Các field `slug` được khai báo `unique`, nhưng việc ghi
+  item chưa bắt buộc tính duy nhất trên collection JSONB (backlog B240). Field
+  relation cũng chưa được kiểm tra đích có tồn tại khi ghi (B241).
+- **Demo pack.** Không có seed pack thì lần cài chỉ có schema, và cả tám
+  collection đều trống. Pack `demo` thêm record tổng hợp vào mọi collection và
+  qua mọi relation, gồm một trang con, một category con và một comment trả lời.
+  Nó không chứa người thật, tài khoản, file hay secret nào.
+- **Những gì nó không phải.** Không có PHP và không tương thích WordPress REST
+  API, và không có plugin, theme, nội dung thư viện media hay hosting. Đây là
+  một content model, không phải bản sao WordPress.

@@ -1,0 +1,799 @@
+{
+  "formatVersion": "lumibase.template@v1",
+  "slug": "wordpress-alike",
+  "displayName": "WordPress alike",
+  "templateVersion": "1.0.0",
+  "description": "A blog backend modelled on familiar WordPress concepts: author profiles, posts, hierarchical pages and categories, tags, explicit taxonomy junctions and threaded comments. Content model only: no PHP, no WordPress REST API compatibility, no plugins, no themes, no user accounts.",
+  "compatibility": {
+    "cmsVersionRange": ">=2.1.0 <3.0.0",
+    "storageModes": [
+      "jsonb"
+    ]
+  },
+  "config": {
+    "version": "lumibase.config@v1",
+    "collections": [
+      {
+        "name": "authors",
+        "label": "Authors",
+        "icon": "person",
+        "note": "Content author profiles shown on posts and pages. Not login accounts: authors cannot sign in.",
+        "displayTemplate": "{{name}}",
+        "storageMode": "jsonb",
+        "primaryKeyType": "nanoid"
+      },
+      {
+        "name": "posts",
+        "label": "Posts",
+        "icon": "article",
+        "note": "Blog posts.",
+        "displayTemplate": "{{title}}",
+        "storageMode": "jsonb",
+        "primaryKeyType": "nanoid"
+      },
+      {
+        "name": "pages",
+        "label": "Pages",
+        "icon": "description",
+        "note": "Hierarchical static pages.",
+        "displayTemplate": "{{title}}",
+        "storageMode": "jsonb",
+        "primaryKeyType": "nanoid"
+      },
+      {
+        "name": "categories",
+        "label": "Categories",
+        "icon": "folder",
+        "note": "Hierarchical post categories.",
+        "displayTemplate": "{{name}}",
+        "storageMode": "jsonb",
+        "primaryKeyType": "nanoid"
+      },
+      {
+        "name": "tags",
+        "label": "Tags",
+        "icon": "sell",
+        "note": "Flat post tags.",
+        "displayTemplate": "{{name}}",
+        "storageMode": "jsonb",
+        "primaryKeyType": "nanoid"
+      },
+      {
+        "name": "post_categories",
+        "label": "Post categories",
+        "icon": "link",
+        "hidden": true,
+        "note": "Junction: posts ↔ categories.",
+        "storageMode": "jsonb",
+        "primaryKeyType": "nanoid"
+      },
+      {
+        "name": "post_tags",
+        "label": "Post tags",
+        "icon": "link",
+        "hidden": true,
+        "note": "Junction: posts ↔ tags.",
+        "storageMode": "jsonb",
+        "primaryKeyType": "nanoid"
+      },
+      {
+        "name": "comments",
+        "label": "Comments",
+        "icon": "forum",
+        "note": "Comments on posts, threaded by parent. A comment may come from an author profile or a guest name.",
+        "displayTemplate": "{{author_name}}",
+        "storageMode": "jsonb",
+        "primaryKeyType": "nanoid"
+      }
+    ],
+    "fields": [
+      {
+        "collection": "authors",
+        "field": "name",
+        "type": "string",
+        "interface": "input",
+        "required": true,
+        "sortOrder": 1
+      },
+      {
+        "collection": "authors",
+        "field": "slug",
+        "type": "string",
+        "interface": "input",
+        "required": true,
+        "unique": true,
+        "sortOrder": 2,
+        "note": "URL-safe identifier, unique per site."
+      },
+      {
+        "collection": "authors",
+        "field": "email",
+        "type": "string",
+        "interface": "input",
+        "nullable": true,
+        "sortOrder": 3,
+        "note": "Contact address shown to editors. Not used to sign in."
+      },
+      {
+        "collection": "authors",
+        "field": "bio",
+        "type": "text",
+        "interface": "input-multiline",
+        "nullable": true,
+        "sortOrder": 4
+      },
+      {
+        "collection": "posts",
+        "field": "title",
+        "type": "string",
+        "interface": "input",
+        "required": true,
+        "sortOrder": 1
+      },
+      {
+        "collection": "posts",
+        "field": "slug",
+        "type": "string",
+        "interface": "input",
+        "required": true,
+        "unique": true,
+        "sortOrder": 2,
+        "note": "URL-safe identifier, unique per site."
+      },
+      {
+        "collection": "posts",
+        "field": "excerpt",
+        "type": "text",
+        "interface": "input-multiline",
+        "nullable": true,
+        "sortOrder": 3
+      },
+      {
+        "collection": "posts",
+        "field": "body",
+        "type": "text",
+        "interface": "input-multiline",
+        "nullable": true,
+        "sortOrder": 4
+      },
+      {
+        "collection": "posts",
+        "field": "status",
+        "type": "string",
+        "interface": "select-dropdown",
+        "sortOrder": 5,
+        "options": {
+          "choices": [
+            {
+              "text": "Draft",
+              "value": "draft"
+            },
+            {
+              "text": "Published",
+              "value": "published"
+            },
+            {
+              "text": "Private",
+              "value": "private"
+            }
+          ]
+        },
+        "validation": {
+          "rules": [
+            {
+              "rule": "choices",
+              "options": [
+                "draft",
+                "published",
+                "private"
+              ]
+            }
+          ]
+        },
+        "defaultValue": "draft",
+        "note": "Defaults to \"draft\" in new items created in Studio. The item API stores what it receives."
+      },
+      {
+        "collection": "posts",
+        "field": "published_at",
+        "type": "timestamp",
+        "interface": "datetime",
+        "nullable": true,
+        "sortOrder": 6
+      },
+      {
+        "collection": "posts",
+        "field": "author",
+        "type": "string",
+        "interface": "select-dropdown-m2o",
+        "nullable": true,
+        "sortOrder": 7
+      },
+      {
+        "collection": "posts",
+        "field": "comment_status",
+        "type": "string",
+        "interface": "select-dropdown",
+        "sortOrder": 8,
+        "options": {
+          "choices": [
+            {
+              "text": "Open",
+              "value": "open"
+            },
+            {
+              "text": "Closed",
+              "value": "closed"
+            }
+          ]
+        },
+        "validation": {
+          "rules": [
+            {
+              "rule": "choices",
+              "options": [
+                "open",
+                "closed"
+              ]
+            }
+          ]
+        },
+        "defaultValue": "open",
+        "note": "Defaults to \"open\" in new items created in Studio. The item API stores what it receives."
+      },
+      {
+        "collection": "posts",
+        "field": "featured",
+        "type": "boolean",
+        "interface": "boolean",
+        "defaultValue": false,
+        "sortOrder": 9
+      },
+      {
+        "collection": "pages",
+        "field": "title",
+        "type": "string",
+        "interface": "input",
+        "required": true,
+        "sortOrder": 1
+      },
+      {
+        "collection": "pages",
+        "field": "slug",
+        "type": "string",
+        "interface": "input",
+        "required": true,
+        "unique": true,
+        "sortOrder": 2,
+        "note": "URL-safe identifier, unique per site."
+      },
+      {
+        "collection": "pages",
+        "field": "body",
+        "type": "text",
+        "interface": "input-multiline",
+        "nullable": true,
+        "sortOrder": 3
+      },
+      {
+        "collection": "pages",
+        "field": "status",
+        "type": "string",
+        "interface": "select-dropdown",
+        "sortOrder": 4,
+        "options": {
+          "choices": [
+            {
+              "text": "Draft",
+              "value": "draft"
+            },
+            {
+              "text": "Published",
+              "value": "published"
+            },
+            {
+              "text": "Private",
+              "value": "private"
+            }
+          ]
+        },
+        "validation": {
+          "rules": [
+            {
+              "rule": "choices",
+              "options": [
+                "draft",
+                "published",
+                "private"
+              ]
+            }
+          ]
+        },
+        "defaultValue": "draft",
+        "note": "Defaults to \"draft\" in new items created in Studio. The item API stores what it receives."
+      },
+      {
+        "collection": "pages",
+        "field": "parent",
+        "type": "string",
+        "interface": "select-dropdown-m2o",
+        "nullable": true,
+        "sortOrder": 5,
+        "note": "Parent page; empty for a top-level page."
+      },
+      {
+        "collection": "pages",
+        "field": "author",
+        "type": "string",
+        "interface": "select-dropdown-m2o",
+        "nullable": true,
+        "sortOrder": 6
+      },
+      {
+        "collection": "pages",
+        "field": "menu_order",
+        "type": "integer",
+        "interface": "input",
+        "defaultValue": 0,
+        "sortOrder": 7
+      },
+      {
+        "collection": "categories",
+        "field": "name",
+        "type": "string",
+        "interface": "input",
+        "required": true,
+        "sortOrder": 1
+      },
+      {
+        "collection": "categories",
+        "field": "slug",
+        "type": "string",
+        "interface": "input",
+        "required": true,
+        "unique": true,
+        "sortOrder": 2
+      },
+      {
+        "collection": "categories",
+        "field": "description",
+        "type": "text",
+        "interface": "input-multiline",
+        "nullable": true,
+        "sortOrder": 3
+      },
+      {
+        "collection": "categories",
+        "field": "parent",
+        "type": "string",
+        "interface": "select-dropdown-m2o",
+        "nullable": true,
+        "sortOrder": 4,
+        "note": "Parent category; empty for a top-level category."
+      },
+      {
+        "collection": "tags",
+        "field": "name",
+        "type": "string",
+        "interface": "input",
+        "required": true,
+        "sortOrder": 1
+      },
+      {
+        "collection": "tags",
+        "field": "slug",
+        "type": "string",
+        "interface": "input",
+        "required": true,
+        "unique": true,
+        "sortOrder": 2
+      },
+      {
+        "collection": "post_categories",
+        "field": "post",
+        "type": "string",
+        "interface": "select-dropdown-m2o",
+        "required": true,
+        "sortOrder": 1
+      },
+      {
+        "collection": "post_categories",
+        "field": "category",
+        "type": "string",
+        "interface": "select-dropdown-m2o",
+        "required": true,
+        "sortOrder": 2
+      },
+      {
+        "collection": "post_tags",
+        "field": "post",
+        "type": "string",
+        "interface": "select-dropdown-m2o",
+        "required": true,
+        "sortOrder": 1
+      },
+      {
+        "collection": "post_tags",
+        "field": "tag",
+        "type": "string",
+        "interface": "select-dropdown-m2o",
+        "required": true,
+        "sortOrder": 2
+      },
+      {
+        "collection": "comments",
+        "field": "post",
+        "type": "string",
+        "interface": "select-dropdown-m2o",
+        "required": true,
+        "sortOrder": 1
+      },
+      {
+        "collection": "comments",
+        "field": "author",
+        "type": "string",
+        "interface": "select-dropdown-m2o",
+        "nullable": true,
+        "sortOrder": 2,
+        "note": "Author profile, when the comment is not from a guest."
+      },
+      {
+        "collection": "comments",
+        "field": "author_name",
+        "type": "string",
+        "interface": "input",
+        "required": true,
+        "sortOrder": 3
+      },
+      {
+        "collection": "comments",
+        "field": "author_email",
+        "type": "string",
+        "interface": "input",
+        "nullable": true,
+        "sortOrder": 4
+      },
+      {
+        "collection": "comments",
+        "field": "body",
+        "type": "text",
+        "interface": "input-multiline",
+        "required": true,
+        "sortOrder": 5
+      },
+      {
+        "collection": "comments",
+        "field": "status",
+        "type": "string",
+        "interface": "select-dropdown",
+        "sortOrder": 6,
+        "options": {
+          "choices": [
+            {
+              "text": "Pending",
+              "value": "pending"
+            },
+            {
+              "text": "Approved",
+              "value": "approved"
+            },
+            {
+              "text": "Spam",
+              "value": "spam"
+            }
+          ]
+        },
+        "validation": {
+          "rules": [
+            {
+              "rule": "choices",
+              "options": [
+                "pending",
+                "approved",
+                "spam"
+              ]
+            }
+          ]
+        },
+        "defaultValue": "pending",
+        "note": "Defaults to \"pending\" in new items created in Studio. The item API stores what it receives."
+      },
+      {
+        "collection": "comments",
+        "field": "parent",
+        "type": "string",
+        "interface": "select-dropdown-m2o",
+        "nullable": true,
+        "sortOrder": 7,
+        "note": "Comment this one replies to."
+      }
+    ],
+    "relations": [
+      {
+        "manyCollection": "posts",
+        "manyField": "author",
+        "oneCollection": "authors",
+        "type": "m2o",
+        "onDelete": "set null",
+        "aliasField": "author"
+      },
+      {
+        "manyCollection": "pages",
+        "manyField": "author",
+        "oneCollection": "authors",
+        "type": "m2o",
+        "onDelete": "set null",
+        "aliasField": "author"
+      },
+      {
+        "manyCollection": "pages",
+        "manyField": "parent",
+        "oneCollection": "pages",
+        "type": "m2o",
+        "onDelete": "set null",
+        "aliasField": "parent"
+      },
+      {
+        "manyCollection": "categories",
+        "manyField": "parent",
+        "oneCollection": "categories",
+        "type": "m2o",
+        "onDelete": "set null",
+        "aliasField": "parent"
+      },
+      {
+        "manyCollection": "post_categories",
+        "manyField": "post",
+        "oneCollection": "posts",
+        "type": "m2o",
+        "onDelete": "cascade",
+        "aliasField": "post"
+      },
+      {
+        "manyCollection": "post_categories",
+        "manyField": "category",
+        "oneCollection": "categories",
+        "type": "m2o",
+        "onDelete": "cascade",
+        "aliasField": "category"
+      },
+      {
+        "manyCollection": "post_tags",
+        "manyField": "post",
+        "oneCollection": "posts",
+        "type": "m2o",
+        "onDelete": "cascade",
+        "aliasField": "post"
+      },
+      {
+        "manyCollection": "post_tags",
+        "manyField": "tag",
+        "oneCollection": "tags",
+        "type": "m2o",
+        "onDelete": "cascade",
+        "aliasField": "tag"
+      },
+      {
+        "manyCollection": "comments",
+        "manyField": "post",
+        "oneCollection": "posts",
+        "type": "m2o",
+        "onDelete": "cascade",
+        "aliasField": "post"
+      },
+      {
+        "manyCollection": "comments",
+        "manyField": "author",
+        "oneCollection": "authors",
+        "type": "m2o",
+        "onDelete": "set null",
+        "aliasField": "author"
+      },
+      {
+        "manyCollection": "comments",
+        "manyField": "parent",
+        "oneCollection": "comments",
+        "type": "m2o",
+        "onDelete": "set null",
+        "aliasField": "parent"
+      }
+    ]
+  },
+  "seedPacks": {
+    "demo": {
+      "description": "Synthetic demo content covering every collection and relation. No real people, accounts, files or secrets.",
+      "records": [
+        {
+          "key": "author-ana",
+          "collection": "authors",
+          "values": {
+            "name": "Ana Example",
+            "slug": "ana-example",
+            "bio": "Synthetic demo author."
+          }
+        },
+        {
+          "key": "author-bo",
+          "collection": "authors",
+          "values": {
+            "name": "Bo Sample",
+            "slug": "bo-sample"
+          }
+        },
+        {
+          "key": "cat-news",
+          "collection": "categories",
+          "values": {
+            "name": "News",
+            "slug": "news"
+          }
+        },
+        {
+          "key": "cat-releases",
+          "collection": "categories",
+          "values": {
+            "name": "Releases",
+            "slug": "releases",
+            "description": "A child of News."
+          },
+          "references": {
+            "parent": "cat-news"
+          }
+        },
+        {
+          "key": "tag-howto",
+          "collection": "tags",
+          "values": {
+            "name": "How-to",
+            "slug": "how-to"
+          }
+        },
+        {
+          "key": "tag-tips",
+          "collection": "tags",
+          "values": {
+            "name": "Tips",
+            "slug": "tips"
+          }
+        },
+        {
+          "key": "post-hello",
+          "collection": "posts",
+          "values": {
+            "title": "Hello, world",
+            "slug": "hello-world",
+            "excerpt": "A first synthetic post.",
+            "body": "This post is demo content.",
+            "status": "published",
+            "published_at": "2026-01-01T09:00:00.000Z",
+            "comment_status": "open",
+            "featured": true
+          },
+          "references": {
+            "author": "author-ana"
+          }
+        },
+        {
+          "key": "post-draft",
+          "collection": "posts",
+          "values": {
+            "title": "A draft in progress",
+            "slug": "draft-in-progress",
+            "body": "Still being written.",
+            "status": "draft",
+            "comment_status": "closed",
+            "featured": false
+          },
+          "references": {
+            "author": "author-bo"
+          }
+        },
+        {
+          "key": "page-about",
+          "collection": "pages",
+          "values": {
+            "title": "About",
+            "slug": "about",
+            "body": "About this demo site.",
+            "status": "published",
+            "menu_order": 1
+          },
+          "references": {
+            "author": "author-ana"
+          }
+        },
+        {
+          "key": "page-team",
+          "collection": "pages",
+          "values": {
+            "title": "Team",
+            "slug": "team",
+            "body": "A child page of About.",
+            "status": "published",
+            "menu_order": 2
+          },
+          "references": {
+            "author": "author-bo",
+            "parent": "page-about"
+          }
+        },
+        {
+          "key": "pc-hello-news",
+          "collection": "post_categories",
+          "values": {},
+          "references": {
+            "post": "post-hello",
+            "category": "cat-news"
+          }
+        },
+        {
+          "key": "pc-hello-releases",
+          "collection": "post_categories",
+          "values": {},
+          "references": {
+            "post": "post-hello",
+            "category": "cat-releases"
+          }
+        },
+        {
+          "key": "pt-hello-howto",
+          "collection": "post_tags",
+          "values": {},
+          "references": {
+            "post": "post-hello",
+            "tag": "tag-howto"
+          }
+        },
+        {
+          "key": "pt-draft-tips",
+          "collection": "post_tags",
+          "values": {},
+          "references": {
+            "post": "post-draft",
+            "tag": "tag-tips"
+          }
+        },
+        {
+          "key": "comment-1",
+          "collection": "comments",
+          "values": {
+            "author_name": "Bo Sample",
+            "body": "Nice first post.",
+            "status": "approved"
+          },
+          "references": {
+            "post": "post-hello",
+            "author": "author-bo"
+          }
+        },
+        {
+          "key": "comment-2",
+          "collection": "comments",
+          "values": {
+            "author_name": "Ana Example",
+            "body": "Thanks!",
+            "status": "approved"
+          },
+          "references": {
+            "post": "post-hello",
+            "author": "author-ana",
+            "parent": "comment-1"
+          }
+        },
+        {
+          "key": "comment-3",
+          "collection": "comments",
+          "values": {
+            "author_name": "A guest",
+            "author_email": "guest@example.invalid",
+            "body": "Guest comment awaiting moderation.",
+            "status": "pending"
+          },
+          "references": {
+            "post": "post-hello"
+          }
+        }
+      ]
+    }
+  }
+}

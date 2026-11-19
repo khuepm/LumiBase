@@ -1,10 +1,10 @@
 ---
-version: 5
-lastUpdated: 2026-11-19T07:29:31.816Z
+version: 6
+lastUpdated: 2026-11-19T07:43:09.419Z
 sourceLang: en
-contentHash: 965aceee71d6ce51
-codeVerified: 2026-11-19T07:29:31.816Z
-codeVerifiedHash: 965aceee71d6ce51
+contentHash: c801a4dd4fa38995
+codeVerified: 2026-11-19T07:43:09.419Z
+codeVerifiedHash: c801a4dd4fa38995
 codeVerifiedClaims: 24
 ---
 
@@ -317,3 +317,42 @@ when the template ships packs. A plan made with `seedMode: "pack"` and a
 - **Once.** Retrying a completed install returns it without reseeding. Content
   that a user edited afterwards stays as edited. Add more content later
   through the normal item API or MCP.
+
+## Official template: `wordpress-alike` 1.0.0
+
+A blog backend modelled on familiar WordPress concepts. It ships with the CMS
+(`GET /api/v1/backend-templates/official`). The asset is
+`apps/cms/src/services/backend-templates/official/wordpress-alike.template.json`,
+and it targets CMS `>=2.1.0 <3.0.0`.
+
+| Collection | Fields | Relations |
+|---|---|---|
+| `authors` | `name`*, `slug`*, `email`, `bio` | — |
+| `posts` | `title`*, `slug`*, `excerpt`, `body`, `status` (draft · published · private), `published_at`, `author`, `comment_status` (open · closed), `featured` | `author` → `authors` |
+| `pages` | `title`*, `slug`*, `body`, `status`, `parent`, `author`, `menu_order` | `parent` → `pages`, `author` → `authors` |
+| `categories` | `name`*, `slug`*, `description`, `parent` | `parent` → `categories` |
+| `tags` | `name`*, `slug`* | — |
+| `post_categories` | `post`*, `category`* | junction: `post` → `posts`, `category` → `categories` |
+| `post_tags` | `post`*, `tag`* | junction: `post` → `posts`, `tag` → `tags` |
+| `comments` | `post`*, `author`, `author_name`*, `author_email`, `body`*, `status` (pending · approved · spam), `parent` | `post` → `posts`, `author` → `authors`, `parent` → `comments` |
+
+`*` marks a required field. Every relation is m2o, and its alias is the field
+name, so `author.name` or `parent.title` read through it. The taxonomy
+junctions are explicit collections.
+
+- **Authors are content profiles, not login accounts.** An author cannot sign
+  in, and installing the template creates no user, role or permission.
+- **Choices.** The `status` and `comment_status` choices are enforced on
+  write. Their defaults (`draft`, `open`, `pending`) are pre-filled in Studio
+  forms; the item API stores what it receives and does not fill them in.
+- **Uniqueness.** `slug` fields are declared `unique`, but item writes do not
+  enforce uniqueness on JSONB collections yet (backlog B240). Relation fields
+  are not checked for an existing target on write either (B241).
+- **Demo pack.** Without a seed pack the install is schema-only, and all eight
+  collections are empty. The `demo` pack adds synthetic records to every
+  collection and through every relation, including a child page, a child
+  category and a reply comment. It contains no real people, accounts, files or
+  secrets.
+- **What it is not.** There is no PHP and no WordPress REST API
+  compatibility, and there are no plugins, themes, media library contents or
+  hosting. It is a content model, not a WordPress clone.
