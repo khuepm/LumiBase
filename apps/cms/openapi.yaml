@@ -6356,6 +6356,39 @@ paths:
       responses:
         '200': { description: OK }
         '403': { description: Not a site admin }
+  /backend-templates/plans:
+    post:
+      tags: [Backend Templates]
+      summary: Preview installing an exact template revision into this site (#903); writes no schema or content
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '201': { description: Plan with report }
+        '400': { description: MISSING_INPUT or SITE_MISMATCH }
+        '404': { description: Template or revision not found or not readable }
+        '409': { description: AMBIGUOUS_TEMPLATE or NAME_CONFLICT }
+        '422': { description: INCOMPATIBLE_RUNTIME or INVALID_TEMPLATE }
+  /backend-templates/plans/{planId}:
+    get:
+      tags: [Backend Templates]
+      summary: Read a plan of this site
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: planId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { description: Not found }
+  /backend-templates/plans/{planId}/verify:
+    post:
+      tags: [Backend Templates]
+      summary: Re-check expiry, target schema fingerprint and runtime of a plan
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: planId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Fresh }
+        '409': { description: STALE_PLAN }
+        '422': { description: INCOMPATIBLE_RUNTIME }
   /integrations/git:
     get:
       tags: [Git Integration]

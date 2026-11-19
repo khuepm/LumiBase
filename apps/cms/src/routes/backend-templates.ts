@@ -10,6 +10,10 @@ import {
   type CaptureItemReader,
 } from '../services/backend-templates/catalog-service';
 import { resolveBuildMetadata } from './system';
+import { TemplatePlanInputSchema } from '@lumibase/contracts/backend-templates';
+import { scopedDbFor } from '../middleware/db';
+import { isSiteAdmin } from '../middleware/site-admin';
+import { BackendTemplatePlanner, PlanError } from '../services/backend-templates/planner';
 
 /**
  * `/api/v1/backend-templates` — the site's private template catalog (#902,
@@ -179,5 +183,94 @@ backendTemplatesRouter.get('/:id/revisions/:version', async (c) => {
     return c.json({ data: { ...revision, document } });
   } catch (err) {
     return fail(c, err);
+  }
+});
+
+// ── Plans (#903) ───────────────────────────────────────────────────────────
+
+/** The same request, seen as if it targeted `siteId` (for a separate source-site check). */
+function asSite(c: Context<AppEnv>, siteId: string): Context<AppEnv> {
+  return new Proxy(c, {
+    get(target, prop) {
+      if (prop === 'get') {
+        return (key: string) => (key === 'siteId' ? siteId : key === 'db' ? scopedDbFor(c, siteId) : target.get(key as never));
+      }
+      // Hono's Context keeps private fields: read them on the real object.
+      const value = Reflect.get(target, prop, target) as unknown;
+      return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+    },
+  });
+}
+
+export function plannerFor(c: Context<AppEnv>): BackendTemplatePlanner {
+  return new BackendTemplatePlanner({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+    userId: c.get('auth').userId ?? null,
+    dbForSite: (siteId) => scopedDbFor(c, siteId),
+    // The source catalog is authorized on its own: being admin of the target
+    // grants nothing on another site's private templates.
+    canReadSourceCatalog: (siteId) => isSiteAdmin(asSite(c, siteId)),
+    cmsVersion: resolveBuildMetadata(c.env).version,
+  });
+}
+
+function planFail(c: Context<AppEnv>, err: unknown): Response {
+  if (err instanceof PlanError) {
+    const errors = err.details.errors?.length
+      ? err.details.errors.map((e) => ({ code: e.code, message: e.message, path: e.path }))
+      : [{
+          code: err.code,
+          message: err.message,
+          ...(err.details.conflicts ? { conflicts: err.details.conflicts } : {}),
+          ...(err.details.candidates ? { candidates: err.details.candidates } : {}),
+        }];
+    return c.json({ errors, ...(err.details.report ? { meta: { report: err.details.report } } : {}) }, err.status);
+  }
+  throw err;
+}
+
+backendTemplatesRouter.post('/plans', async (c) => {
+  const body = await c.req.json().catch(() => null);
+  if (body && typeof body === 'object' && !('targetSiteId' in body)) {
+    return c.json({ errors: [{ code: 'MISSING_INPUT', message: 'targetSiteId is required: name the site to install into.', path: ['targetSiteId'] }] }, 400);
+  }
+  const parsed = TemplatePlanInputSchema.safeParse(body);
+  if (!parsed.success) return c.json(validation(parsed.error.issues), 400);
+  try {
+    const { plan, report } = await plannerFor(c).plan(parsed.data);
+    await audit(c, 'backend_template_planned', {
+      planId: plan.id, slug: plan.slug, templateVersion: plan.templateVersion, digest: plan.digest,
+      sourceKind: plan.sourceKind, sourceSiteId: plan.sourceSiteId, seedPack: plan.seedPack,
+    });
+    return c.json({
+      data: { id: plan.id, status: plan.status, expiresAt: plan.expiresAt, targetFingerprint: plan.targetFingerprint, report },
+    }, 201);
+  } catch (err) {
+    return planFail(c, err);
+  }
+});
+
+backendTemplatesRouter.get('/plans/:planId', async (c) => {
+  try {
+    const plan = await plannerFor(c).get(c.req.param('planId'));
+    return c.json({
+      data: {
+        id: plan.id, status: plan.status, expiresAt: plan.expiresAt, targetFingerprint: plan.targetFingerprint,
+        report: plan.inventory,
+      },
+    });
+  } catch (err) {
+    return planFail(c, err);
+  }
+});
+
+/** Re-checks expiry, target fingerprint and runtime; a stale plan is closed. */
+backendTemplatesRouter.post('/plans/:planId/verify', async (c) => {
+  try {
+    const plan = await plannerFor(c).verify(c.req.param('planId'));
+    return c.json({ data: { id: plan.id, status: plan.status, fresh: true } });
+  } catch (err) {
+    return planFail(c, err);
   }
 });

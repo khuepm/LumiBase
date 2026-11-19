@@ -62,3 +62,46 @@ export const backendTemplateRevisions = pgTable(
     digestIdx: index('backend_template_revisions_digest_idx').on(t.siteId, t.digest),
   }),
 );
+
+/**
+ * Install plans (#903, BT03). A plan pins one exact revision snapshot, the
+ * namespace mapping, the seed choice and the target schema fingerprint; it is
+ * metadata only (planning never writes schema or content) and expires.
+ * `site_id` is the TARGET site. Plan ids are not bearer authorization: every
+ * use re-checks the caller.
+ */
+export const backendTemplatePlans = pgTable(
+  'lumibase_backend_template_plans',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    /** `official` | `site`. */
+    sourceKind: text('source_kind').notNull(),
+    /** Catalog site of a private template; null for official templates. */
+    sourceSiteId: text('source_site_id'),
+    slug: text('slug').notNull(),
+    templateVersion: text('template_version').notNull(),
+    digest: text('digest').notNull(),
+    /** The resolved revision document, as published (immutable snapshot). */
+    snapshot: jsonb('snapshot').notNull(),
+    /** Template collection name → target collection name. */
+    namespaceMap: jsonb('namespace_map').notNull(),
+    /** Chosen seed pack, or null for schema only. */
+    seedPack: text('seed_pack'),
+    /** sha256 of the target's schema when the plan was made. */
+    targetFingerprint: text('target_fingerprint').notNull(),
+    /** Components, counts and prerequisites shown to the caller. */
+    inventory: jsonb('inventory').notNull(),
+    /** planned → awaiting_approval → applying → completed; invalidated | expired | denied | failed. */
+    status: text('status').default('planned').notNull(),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    siteStatusIdx: index('backend_template_plans_site_status_idx').on(t.siteId, t.status),
+  }),
+);
