@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   TemplatePlanInputSchema,
+  selectedSeedPack,
   applyNamespace,
   canonicalTemplateJson,
   namespaceMap,
@@ -119,6 +120,19 @@ describe('plan input contract', () => {
     expect(TemplatePlanInputSchema.safeParse({ ...base, template: { source: 'site', version: '1.0.0' } }).success).toBe(false);
     expect(TemplatePlanInputSchema.safeParse({ ...base, seedPack: null }).success).toBe(true);
     expect(TemplatePlanInputSchema.safeParse({ ...base, siteId: 'x' }).success).toBe(false);
+  });
+});
+
+describe('BT05-W1 — seedMode none|pack, default none', () => {
+  const base = { template: { source: 'site', slug: 'blog', version: '1.0.0' }, targetSiteId: 'site_b' };
+  it('defaults to none and refuses contradictions', () => {
+    expect(selectedSeedPack(TemplatePlanInputSchema.parse(base))).toBeNull();
+    expect(selectedSeedPack(TemplatePlanInputSchema.parse({ ...base, seedMode: 'none' }))).toBeNull();
+    expect(selectedSeedPack(TemplatePlanInputSchema.parse({ ...base, seedMode: 'pack', seedPack: 'demo' }))).toBe('demo');
+    expect(selectedSeedPack(TemplatePlanInputSchema.parse({ ...base, seedPack: 'demo' }))).toBe('demo');
+    expect(TemplatePlanInputSchema.safeParse({ ...base, seedMode: 'none', seedPack: 'demo' }).success).toBe(false);
+    expect(TemplatePlanInputSchema.safeParse({ ...base, seedMode: 'pack' }).success).toBe(false);
+    expect(TemplatePlanInputSchema.safeParse({ ...base, seedMode: 'all' }).success).toBe(false);
   });
 });
 

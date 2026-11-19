@@ -49,6 +49,24 @@ const CANDIDATES: unknown[] = [
   '2026-01-01T00:00:00.000Z',
   // Migration source (`planContentMigration.source`, #728).
   'contentful',
+  // A non-empty list of names (`captureBackendTemplate.collections`, #906).
+  ['posts'],
+  // Template source (`getBackendTemplate.source`, #906).
+  'official',
+  // Backend template reference (`planBackendTemplate.template`, #906).
+  { source: 'official', slug: 'wordpress-alike', version: '1.0.0' },
+  // Plan binding (`instantiateBackendTemplate.expect`, #906).
+  {
+    targetSiteId: 'site_a',
+    source: 'official',
+    sourceSiteId: null,
+    slug: 'wordpress-alike',
+    templateVersion: '1.0.0',
+    digest: `sha256:${'0'.repeat(64)}`,
+    seedPack: null,
+    namespaceMap: {},
+    targetFingerprint: 'sha256:x',
+  },
 ];
 
 /**
@@ -76,7 +94,7 @@ export function validArgsFor(skillName: string): Record<string, unknown> {
     const accepted = CANDIDATES.find((candidate) => {
       const probe = { ...args, [pending.path]: candidate };
       const result = validateAgentToolInput(skillName, probe);
-      return result.ok || !result.issues.some((issue) => issue.path === pending.path);
+      return result.ok || !result.issues.some((issue) => issue.path === pending.path || issue.path.startsWith(`${pending.path}.`));
     });
     if (accepted === undefined) {
       throw new Error(

@@ -1,10 +1,10 @@
 ---
 title: Tutorials
-version: 2
-lastUpdated: 2026-11-15T08:38:15.064Z
+version: 3
+lastUpdated: 2026-11-19T09:00:27.639Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5968e4800387720d
+sourceHash: 739848d92528082c
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -36,6 +36,12 @@ giả định kiến thức LumiBase trước đó và liệt kê điều kiện
   <td>Một site Cloudflare Pages đọc nội dung theo từng request, có draft preview bằng cookie có chữ ký</td>
   <td><img alt="2.0.0" src="https://img.shields.io/badge/%E2%89%A5%202.0.0-F5A623"></td>
   <td>Trung cấp</td>
+</tr>
+<tr>
+  <td><a href="./backend-template-blog.md">Tạo backend blog từ một template</a></td>
+  <td>Collection, relation và nội dung demo tuỳ chọn từ <code>wordpress-alike</code>, qua REST, MCP hoặc Studio</td>
+  <td><img alt="unreleased" src="https://img.shields.io/badge/unreleased-9E9E9E"></td>
+  <td>Cơ bản</td>
 </tr>
 </tbody>
 </table>

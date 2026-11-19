@@ -24,6 +24,7 @@
 import { USAGE_KINDS } from '@lumibase/contracts/platform';
 import { recordUsage, usageEnabled } from '../platform/usage';
 import { CORE_SKILLS } from '@lumibase/ai-skills';
+import { BACKEND_TEMPLATE_TOOL_NAMES } from '@lumibase/contracts/backend-templates';
 import type { AISkillDefinition } from '@lumibase/ai-skills';
 
 // ---------------------------------------------------------------------------
@@ -298,7 +299,14 @@ interface OpenAITool {
  * the reply without the question and the run waiting until timeout. They stay
  * in `CORE_SKILLS` for the harness, MCP and agent-run paths.
  */
-export const CHAT_EXCLUDED_SKILLS: ReadonlySet<string> = new Set(['askUser', 'getUserAnswer']);
+export const CHAT_EXCLUDED_SKILLS: ReadonlySet<string> = new Set([
+  'askUser',
+  'getUserAnswer',
+  // Backend template tools (#906) are an MCP / Agent API surface: the chat
+  // harness has no template context (they answer NOT_CONFIGURED there), and
+  // their ten schemas would only spend the chat's context budget.
+  ...BACKEND_TEMPLATE_TOOL_NAMES,
+]);
 
 /**
  * The single source of truth for the skills exposed as tools to the Copilot

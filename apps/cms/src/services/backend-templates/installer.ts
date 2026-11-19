@@ -6,15 +6,17 @@ import {
 } from '@lumibase/database';
 import {
   applyNamespace,
+  templateDigest,
   validateBackendTemplate,
   type BackendTemplate,
+  type TemplatePlanBinding,
 } from '@lumibase/contracts/backend-templates';
 import type { CacheProvider, EdgeCacheProvider, QueueProvider } from '@lumibase/runtime';
 import { SchemaService, SchemaServiceError, type CollectionInput, type FieldInput, type RelationInput } from '../schema-service';
 import { AuditLogger } from '../../modules/audit/logger';
 import { invalidateDeliverTag } from '../content-invalidation';
 import { CDC_DISPATCH_QUEUE } from '../../modules/cdc/change-feed/dispatcher';
-import { PlanError, schemaFingerprint, type PlanRow } from './planner';
+import { PlanError, bindingMismatches, schemaFingerprint, type PlanRow } from './planner';
 
 /**
  * Template installer (#904, BT04).
@@ -70,7 +72,7 @@ export type InstallationRow = typeof backendTemplateInstallations.$inferSelect;
 
 export class InstallError extends Error {
   constructor(
-    readonly code: 'VALIDATION' | 'NOT_FOUND' | 'FORBIDDEN' | 'IDEMPOTENCY_CONFLICT' | 'NAME_CONFLICT' | 'INCOMPATIBLE_RUNTIME',
+    readonly code: 'VALIDATION' | 'NOT_FOUND' | 'FORBIDDEN' | 'IDEMPOTENCY_CONFLICT' | 'NAME_CONFLICT' | 'INCOMPATIBLE_RUNTIME' | 'BINDING_MISMATCH',
     message: string,
     readonly status: 400 | 403 | 404 | 409 | 422,
   ) {
@@ -98,6 +100,17 @@ export class BackendTemplateInstaller {
 
   private now(): Date {
     return this.deps.now?.() ?? new Date();
+  }
+
+  /** The installation a plan produced (#906: an agent reads the result of an approved install by planId). */
+  async getByPlan(planId: string): Promise<InstallationRow> {
+    const [row] = await this.deps.db
+      .select()
+      .from(backendTemplateInstallations)
+      .where(and(eq(backendTemplateInstallations.siteId, this.deps.siteId), eq(backendTemplateInstallations.planId, planId)))
+      .limit(1);
+    if (!row) throw new InstallError('NOT_FOUND', 'Installation not found.', 404);
+    return row;
   }
 
   async get(installationId: string): Promise<InstallationRow> {
@@ -130,7 +143,15 @@ export class BackendTemplateInstaller {
    * Applies a plan. @returns the installation; `replayed` when the same key
    * and payload had already committed.
    */
-  async install(input: { planId: string; idempotencyKey: string }): Promise<{ installation: InstallationRow; replayed: boolean }> {
+  /**
+   * `expect` (#906): the binding an approval was granted for. When given, the
+   * plan must still match it exactly — target site, template, version, digest,
+   * seed choice, namespace and target fingerprint — and its stored snapshot
+   * must still hash to its digest, checked under the install lock. A mismatch
+   * is BINDING_MISMATCH: nothing is written and the plan is invalidated, so a
+   * new plan and a new approval are needed.
+   */
+  async install(input: { planId: string; idempotencyKey: string; expect?: TemplatePlanBinding }): Promise<{ installation: InstallationRow; replayed: boolean }> {
     if (!IDEMPOTENCY_KEY_RE.test(input.idempotencyKey)) {
       throw new InstallError('VALIDATION', 'idempotencyKey must be 1-128 characters of [A-Za-z0-9_.:-].', 400);
     }
@@ -167,6 +188,16 @@ export class BackendTemplateInstaller {
           .limit(1);
         if (!current || !['planned', 'awaiting_approval'].includes(current.status)) {
           throw new PlanError('STALE_PLAN', `The plan is ${current?.status ?? 'gone'}; plan again.`, 409);
+        }
+        if (input.expect) {
+          const mismatched = bindingMismatches(current, input.expect);
+          if (mismatched.length === 0 && (await templateDigest(current.snapshot as BackendTemplate)) !== current.digest) {
+            mismatched.push('snapshot');
+          }
+          if (mismatched.length > 0) {
+            staleMark = 'invalidated';
+            throw new InstallError('BINDING_MISMATCH', `The approved install no longer matches the plan (${mismatched.join(', ')}); plan and approve again.`, 409);
+          }
         }
         if (current.expiresAt.getTime() <= this.now().getTime()) {
           staleMark = 'expired';

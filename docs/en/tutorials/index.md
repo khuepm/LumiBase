@@ -1,9 +1,9 @@
 ---
 title: Tutorials
-version: 2
-lastUpdated: 2026-11-15T08:38:15.064Z
+version: 3
+lastUpdated: 2026-11-19T09:00:27.639Z
 sourceLang: en
-contentHash: 5968e4800387720d
+contentHash: 739848d92528082c
 ---
 
 # Tutorials
@@ -33,6 +33,12 @@ assumes no prior LumiBase knowledge and lists its prerequisites up front.
   <td>A Cloudflare Pages site that reads content per request, with signed-cookie draft preview</td>
   <td><img alt="2.0.0" src="https://img.shields.io/badge/%E2%89%A5%202.0.0-F5A623"></td>
   <td>Intermediate</td>
+</tr>
+<tr>
+  <td><a href="./backend-template-blog.md">Create a blog backend from a template</a></td>
+  <td>Collections, relations and optional demo content from <code>wordpress-alike</code>, through REST, MCP or Studio</td>
+  <td><img alt="unreleased" src="https://img.shields.io/badge/unreleased-9E9E9E"></td>
+  <td>Beginner</td>
 </tr>
 </tbody>
 </table>

@@ -1,10 +1,10 @@
 ---
-version: 64
-lastUpdated: 2026-11-19T07:17:03.229Z
+version: 65
+lastUpdated: 2026-11-19T07:29:34.934Z
 sourceLang: en
-contentHash: 83452beb535f1abf
-codeVerified: 2026-11-19T07:17:03.229Z
-codeVerifiedHash: 83452beb535f1abf
+contentHash: f913510e439e7893
+codeVerified: 2026-11-19T07:29:34.934Z
+codeVerifiedHash: f913510e439e7893
 codeVerifiedClaims: 676
 ---
 
@@ -1815,7 +1815,7 @@ scoped to the request's site. See [Backend templates](../features/backend-templa
 | `POST` | `/api/v1/backend-templates/:id/publish` | Publish an immutable revision (`{ draftRevision? }`) → `201`, or `200` for an identical retry; `409 IMMUTABLE_REVISION`; `422 INVALID_TEMPLATE` |
 | `GET` | `/api/v1/backend-templates/:id/revisions/:version` | The published canonical document (export) |
 | `POST` | `/api/v1/backend-templates/capture` | Draft from the site's own schema `{ collections, slug, displayName, templateVersion?, description?, seed? }` → `201`; `422 MISSING_DEPENDENCY` (with `missing`); `403` if seed items cannot be read |
-| `POST` | `/api/v1/backend-templates/plans` | Preview an install (#903) `{ template: { source, sourceSiteId?, slug \| displayName, version, digest? }, targetSiteId, namespace?, seedPack? }` → `201` plan with `report`; `400 MISSING_INPUT` / `SITE_MISMATCH`; `409 AMBIGUOUS_TEMPLATE` / `NAME_CONFLICT`; `422 INCOMPATIBLE_RUNTIME` / `INVALID_TEMPLATE`. Writes no schema or content |
+| `POST` | `/api/v1/backend-templates/plans` | Preview an install (#903) `{ template: { source, sourceSiteId?, slug \| displayName, version, digest? }, targetSiteId, namespace?, seedMode? (none\|pack), seedPack? }` → `201` plan with `report`; `400 MISSING_INPUT` / `SITE_MISMATCH`; `409 AMBIGUOUS_TEMPLATE` / `NAME_CONFLICT`; `422 INCOMPATIBLE_RUNTIME` / `INVALID_TEMPLATE`. Writes no schema or content |
 | `GET` | `/api/v1/backend-templates/plans/:planId` | Read a plan (target site only) |
 | `POST` | `/api/v1/backend-templates/plans/:planId/verify` | Re-check expiry, target fingerprint and runtime; `409 STALE_PLAN` closes it |
 | `POST` | `/api/v1/backend-templates/installations` | Apply a plan atomically (#904) `{ planId, idempotencyKey }` → `201`, or `200` (`meta.replayed`) for a retry; `409 STALE_PLAN` / `NAME_CONFLICT` / `IDEMPOTENCY_CONFLICT`; `403` if no longer site admin; `422 INCOMPATIBLE_RUNTIME` |
