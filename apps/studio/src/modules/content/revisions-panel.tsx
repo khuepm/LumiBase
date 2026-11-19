@@ -6,6 +6,8 @@ import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { ProvenanceBadge, ProvenancePanel } from './provenance-badge';
 import { RevisionsDiff } from './revisions-diff';
+import { RevisionCompare } from './revision-compare';
+import { usePermissions } from '@/lib/use-permissions';
 
 interface RevisionsPanelProps {
   collection: string;
@@ -25,6 +27,9 @@ export function RevisionsPanel({ collection, itemId, onRevert }: RevisionsPanelP
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<'diff' | 'raw'>('diff');
   const [showUnchanged, setShowUnchanged] = useState(false);
+  // History (one revision's own change) or Compare (any two snapshots, #686).
+  const [mode, setMode] = useState<'history' | 'compare'>('history');
+  const perms = usePermissions();
 
   const query = useQuery({
     queryKey: ['revisions', collection, itemId],
@@ -60,7 +65,32 @@ export function RevisionsPanel({ collection, itemId, onRevert }: RevisionsPanelP
 
   const active = revisions.find((r) => r.id === selected);
 
+  const modeToggle = (
+    <div className="mb-3 flex w-fit overflow-hidden rounded-md border text-xs" role="tablist">
+      <ViewToggle active={mode === 'history'} onClick={() => setMode('history')} label="History" icon={<History className="h-3 w-3" />} />
+      <ViewToggle active={mode === 'compare'} onClick={() => setMode('compare')} label="Compare" icon={<GitCompare className="h-3 w-3" />} />
+    </div>
+  );
+
+  if (mode === 'compare') {
+    return (
+      <div>
+        {modeToggle}
+        <RevisionCompare
+          collection={collection}
+          itemId={itemId}
+          revisions={revisions}
+          canUpdate={perms.can(collection, 'update')}
+          initialFrom={selected ?? undefined}
+          onRestored={onRevert}
+        />
+      </div>
+    );
+  }
+
   return (
+    <div>
+    {modeToggle}
     <div className="grid grid-cols-1 gap-4 md:grid-cols-[16rem_1fr]">
       <ul className="space-y-1 overflow-y-auto md:max-h-[60vh]">
         {revisions.map((rev) => (
@@ -155,6 +185,7 @@ export function RevisionsPanel({ collection, itemId, onRevert }: RevisionsPanelP
           </>
         )}
       </div>
+    </div>
     </div>
   );
 }

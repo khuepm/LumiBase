@@ -1,11 +1,11 @@
 ---
-version: 61
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 62
+lastUpdated: 2026-11-19T04:16:54.638Z
 sourceLang: en
-contentHash: 1d86bff615c2ba39
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
-codeVerifiedClaims: 652
+contentHash: f819700b5caafc36
+codeVerified: 2026-11-19T04:16:54.638Z
+codeVerifiedHash: f819700b5caafc36
+codeVerifiedClaims: 654
 ---
 
 # Hono API Specification — LumiBase
@@ -721,6 +721,8 @@ active `siteId`.
 | `POST` | `/api/v1/items/:collection/:id/move` | Move an item and its subtree in a tree collection; list with `?tree=children\|subtree\|ancestors` ([Hierarchical collections](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | List revisions |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Revert to revision |
+| `GET` | `/api/v1/items/:collection/:id/revisions/compare?from=&to=` | Field-level comparison of two snapshots: `from` = revision id or `empty` (default), `to` = revision id or `current` (default); read-masked ([Editorial UX](../features/editorial-ux.md#comparing-revisions)) |
+| `POST` | `/api/v1/items/:collection/:id/revisions/:revisionId/restore` | Restore `{ fields?: string[] }` (all when omitted) from a revision via PATCH; writes a new revision |
 | `GET` | `/api/v1/items/:collection/:id/versions` | List named draft versions (each has a `mainChanged` flag) |
 | `POST` | `/api/v1/items/:collection/:id/versions` | Create a version `{ key, name }` (snapshots current main) |
 | `GET` | `/api/v1/items/:collection/:id/versions/:key` | Get a version |

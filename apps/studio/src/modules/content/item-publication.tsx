@@ -142,3 +142,77 @@ export function DuplicateItemButton({
     </div>
   );
 }
+
+/** Result of duplicating several items one after another (#689). */
+export interface BulkDuplicateResult {
+  created: string[];
+  failed: Array<{ id: string; message: string }>;
+}
+
+/**
+ * Duplicate `ids` sequentially (each through `POST …/duplicate`, so every copy
+ * gets its own permission check, validation, revision and audit entry). One
+ * failure does not stop the rest.
+ */
+export async function duplicateMany(
+  duplicate: (id: string) => Promise<{ data: { id: string } }>,
+  ids: string[],
+): Promise<BulkDuplicateResult> {
+  const out: BulkDuplicateResult = { created: [], failed: [] };
+  for (const id of ids) {
+    try {
+      out.created.push((await duplicate(id)).data.id);
+    } catch (err) {
+      out.failed.push({ id, message: errorMessage(err) });
+    }
+  }
+  return out;
+}
+
+export function BulkDuplicateButton({
+  collection,
+  ids,
+  canCreate,
+  onDone,
+}: {
+  collection: string;
+  ids: string[];
+  canCreate: boolean;
+  onDone?: (result: BulkDuplicateResult) => void;
+}) {
+  const client = getApiClient();
+  const queryClient = useQueryClient();
+  const [result, setResult] = useState<BulkDuplicateResult | null>(null);
+  const run = useMutation({
+    mutationFn: () =>
+      duplicateMany(
+        (id) => client.items(collection as never).duplicate(id, { relations: 'reference' }) as Promise<{ data: { id: string } }>,
+        ids,
+      ),
+    onSuccess: (r) => {
+      setResult(r);
+      queryClient.invalidateQueries({ queryKey: ['items', collection] });
+      onDone?.(r);
+    },
+  });
+  return (
+    <span className="inline-flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => run.mutate()}
+        disabled={!canCreate || run.isPending || ids.length === 0}
+        title={canCreate ? 'Save each selected item as a draft copy' : 'You do not have create permission on this collection.'}
+        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <CopyPlus className="h-3.5 w-3.5" />
+        {run.isPending ? 'Duplicating…' : `Duplicate (${ids.length})`}
+      </button>
+      {result && (
+        <span role="status" className={cn('text-xs', result.failed.length ? 'text-destructive' : 'text-muted-foreground')}>
+          {result.created.length} copied
+          {result.failed.length > 0 ? `, ${result.failed.length} failed: ${result.failed[0]!.message}` : ''}
+        </span>
+      )}
+    </span>
+  );
+}
