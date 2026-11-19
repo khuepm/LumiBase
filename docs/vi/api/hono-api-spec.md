@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 61
-lastUpdated: 2026-11-19T05:06:57.055Z
+version: 62
+lastUpdated: 2026-11-19T08:07:39.173Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8972c2b5feabfd46
+sourceHash: ff94ae93873f0943
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T05:06:57.055Z
-codeVerifiedHash: 8972c2b5feabfd46
-codeVerifiedClaims: 656
+codeVerified: 2026-11-19T08:07:39.173Z
+codeVerifiedHash: ff94ae93873f0943
+codeVerifiedClaims: 658
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -641,6 +641,8 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 | `POST` | `/api/v1/items/:collection/:id/move` | Di chuyển một item cùng cây con của nó trong collection dạng cây; liệt kê với `?tree=children\|subtree\|ancestors` ([Collection phân cấp](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | Liệt kê các bản sửa đổi (revisions) |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Khôi phục lại một bản sửa đổi |
+| `GET` | `/api/v1/items/:collection/:id/revisions/compare?from=&to=` | So sánh theo trường giữa hai snapshot: `from` = id revision hoặc `empty` (mặc định), `to` = id revision hoặc `current` (mặc định); che theo quyền đọc ([Editorial UX](../features/editorial-ux.md#so-sánh-revision)) |
+| `POST` | `/api/v1/items/:collection/:id/revisions/:revisionId/restore` | Khôi phục `{ fields?: string[] }` (tất cả khi bỏ trống) từ một revision qua PATCH; ghi một revision mới |
 | `GET` | `/api/v1/items/:collection/:id/versions` | Liệt kê các bản nháp có tên (mỗi bản có cờ `mainChanged`) |
 | `POST` | `/api/v1/items/:collection/:id/versions` | Tạo bản nháp `{ key, name }` (chụp lại main hiện tại) |
 | `GET` | `/api/v1/items/:collection/:id/versions/:key` | Lấy chi tiết một bản nháp |

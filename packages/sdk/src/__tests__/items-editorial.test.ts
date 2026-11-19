@@ -49,4 +49,16 @@ describe("items editorial options", () => {
     expect(calls[0]!.url.pathname).toBe("/api/v1/items/posts/p1/reorder");
     expect(JSON.parse(calls[0]!.body!)).toEqual({ before: "p0" });
   });
+
+  it("compares revisions and restores fields (#686)", async () => {
+    const { client, calls } = setup();
+    await client.items("posts").compareRevisions("p1", { from: "r1" });
+    expect(calls[0]!.url.pathname).toBe("/api/v1/items/posts/p1/revisions/compare");
+    expect(calls[0]!.url.searchParams.get("from")).toBe("r1");
+    expect(calls[0]!.url.searchParams.get("to")).toBe("current");
+    await client.items("posts").restoreRevisionFields("p1", "r1", ["title"]);
+    expect(calls[1]!.method).toBe("POST");
+    expect(calls[1]!.url.pathname).toBe("/api/v1/items/posts/p1/revisions/r1/restore");
+    expect(JSON.parse(calls[1]!.body!)).toEqual({ fields: ["title"] });
+  });
 });
