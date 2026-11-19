@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { ImportJob } from '@lumibase/sdk';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ImportJob, RealtimeEvent } from '@lumibase/sdk';
 
 const create = vi.fn();
 const get = vi.fn();
@@ -13,7 +13,38 @@ vi.mock('@/lib/api', () => ({
   getApiClient: () => ({ imports: { create, get, cancel, errorsCsv } }),
 }));
 
-import { ImportDialog, formatFromName, isTerminal, progressPct } from '../import-dialog';
+// Realtime is a controllable fake: tests choose the socket status and push
+// events into whatever the dialog subscribed to.
+type Listener = (event: RealtimeEvent) => void;
+const realtime = vi.hoisted(() => ({
+  status: 'disconnected' as 'connecting' | 'connected' | 'disconnected',
+  listeners: new Map<string, Set<(event: unknown) => void>>(),
+}));
+vi.mock('@/lib/realtime', () => ({
+  subscribeCollection: (collection: string, cb: (event: unknown) => void) => {
+    const set = realtime.listeners.get(collection) ?? new Set();
+    set.add(cb);
+    realtime.listeners.set(collection, set);
+    return () => set.delete(cb);
+  },
+  onConnectionStatus: (cb: (status: string) => void) => {
+    cb(realtime.status);
+    return () => {};
+  },
+}));
+
+function emit(event: RealtimeEvent) {
+  for (const cb of realtime.listeners.get(event.collection) ?? []) (cb as Listener)(event);
+}
+
+import {
+  ImportDialog,
+  formatFromName,
+  importProgressFromEvent,
+  isNewerJob,
+  isTerminal,
+  progressPct,
+} from '../import-dialog';
 
 const job = (over: Partial<ImportJob> = {}): ImportJob => ({
   id: 'job_1',
@@ -36,11 +67,11 @@ const job = (over: Partial<ImportJob> = {}): ImportJob => ({
   ...over,
 });
 
-function renderDialog() {
+function renderDialog(livePollMs = 10) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <ImportDialog collection="products" onClose={vi.fn()} pollMs={10} />
+      <ImportDialog collection="products" onClose={vi.fn()} pollMs={10} livePollMs={livePollMs} />
     </QueryClientProvider>,
   );
 }
@@ -58,6 +89,17 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  realtime.status = 'disconnected';
+  realtime.listeners.clear();
+});
+
+const progressEvent = (j: ImportJob): RealtimeEvent => ({
+  type: 'event',
+  collection: 'products',
+  // Import progress carries no item envelope; the SDK type requires one.
+  action: 'update',
+  itemId: '',
+  payload: { kind: 'import.progress', job: j },
 });
 
 describe('import helpers', () => {
@@ -72,6 +114,27 @@ describe('import helpers', () => {
     expect(progressPct({ processedRows: 0, totalRows: 0 })).toBe(0);
     expect(isTerminal({ status: 'running' })).toBe(false);
     expect(isTerminal({ status: 'timed_out' })).toBe(true);
+  });
+
+  it('reads only this job\'s import.progress events', () => {
+    const j = job({ status: 'running', processedRows: 2 });
+    expect(importProgressFromEvent(progressEvent(j), 'job_1')).toEqual(j);
+    expect(importProgressFromEvent(progressEvent(j), 'job_2')).toBeNull();
+    expect(importProgressFromEvent({ payload: { kind: 'item.update', job: j } }, 'job_1')).toBeNull();
+    expect(importProgressFromEvent({ payload: null }, 'job_1')).toBeNull();
+    expect(importProgressFromEvent({ payload: { kind: 'import.progress', job: { id: 'job_1' } } }, 'job_1')).toBeNull();
+  });
+
+  it('never lets an older snapshot roll progress back or replace a terminal one', () => {
+    const at2 = job({ status: 'running', processedRows: 2 });
+    const at3 = job({ status: 'running', processedRows: 3 });
+    const done = job({ status: 'succeeded', processedRows: 4 });
+    expect(isNewerJob(undefined, at2)).toBe(true);
+    expect(isNewerJob(at2, at3)).toBe(true);
+    expect(isNewerJob(at3, at2)).toBe(false);
+    expect(isNewerJob(at3, done)).toBe(true);
+    expect(isNewerJob(done, at3)).toBe(false);
+    expect(isNewerJob(done, job({ status: 'failed', processedRows: 4 }))).toBe(false);
   });
 });
 
@@ -113,5 +176,27 @@ describe('ImportDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Import' }));
     expect(await screen.findByText(/not a field/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Import' })).toBeTruthy();
+  });
+
+  it('follows progress over realtime while the socket is connected', async () => {
+    realtime.status = 'connected';
+    create.mockResolvedValue({ data: job() });
+    get.mockResolvedValue({ data: job() }); // the first fetch; the live poll interval is far away
+    renderDialog(60_000);
+    pickFile();
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }));
+    expect(await screen.findByText('Queued')).toBeTruthy();
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+
+    act(() => emit(progressEvent(job({ status: 'running', processedRows: 3 }))));
+    expect(await screen.findByText('3 / 4 rows')).toBeTruthy();
+    // Another job's progress and stale snapshots are ignored.
+    act(() => emit(progressEvent(job({ id: 'job_2', status: 'succeeded', processedRows: 4 }))));
+    act(() => emit(progressEvent(job({ status: 'running', processedRows: 1 }))));
+    expect(screen.getByText('3 / 4 rows')).toBeTruthy();
+
+    act(() => emit(progressEvent(job({ status: 'succeeded', processedRows: 4, createdRows: 4 }))));
+    expect(await screen.findByText('Finished')).toBeTruthy();
+    expect(get).toHaveBeenCalledTimes(1);
   });
 });

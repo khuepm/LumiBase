@@ -83,6 +83,37 @@ export const systemState = pgTable(
 );
 
 /**
+ * The release manifest this deployment accepted (#869, release flags).
+ *
+ * A singleton (`id = 'current'`, CHECK-enforced) holding the signed envelope
+ * as received plus the verified payload. Deployment-wide by design: release
+ * gates belong to the deployment, not to a tenant (per-site choices live in
+ * `settings`, key `release.flags`), so there is no `site_id`.
+ *
+ * Its own table rather than a column on `lumibase_system_state`: Drizzle lists
+ * every declared column in an INSERT, so a new column on that table would
+ * break the startup INSERT of an image running against the previous schema
+ * (the N-1 upgrade gate in `scripts/helm-kind-smoke.sh`).
+ *
+ * Written only by the release-flags service after Ed25519 verification, with
+ * an upsert whose update applies only when `issued_at_ms` is strictly greater,
+ * so a replayed or racing older manifest can never replace a newer one.
+ */
+export const releaseManifests = pgTable(
+  'lumibase_release_manifests',
+  {
+    id: text('id').primaryKey().default('current'),
+    issuedAtMs: bigint('issued_at_ms', { mode: 'number' }).notNull(),
+    /** `{ envelope, issuedAt, issuedAtMs, flags, acceptedAt, source, acceptedBy }`. */
+    manifest: jsonb('manifest').notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    singletonCheck: check('release_manifests_singleton_chk', sql`${t.id} = 'current'`),
+  }),
+);
+
+/**
  * Append-only security audit trail.
  *
  * Writes happen synchronously on the request path (≤1s budget per

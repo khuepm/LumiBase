@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Database } from '@lumibase/database';
 import type { QueueProvider, SearchProvider } from '@lumibase/runtime';
+import { searchSnapshotHash } from '../content-indexing-worker';
 import { dispatchItemRevalidation } from '../content-invalidation';
 import { ItemService } from '../item-service';
 import { dispatchRevalidation } from '../revalidation';
@@ -31,13 +32,32 @@ function settingsDb(rows: Array<{ value: unknown }>): Database {
   return { select: () => ({ from: () => ({ where: async () => rows }) }) } as unknown as Database;
 }
 
+/** Settings read that resolves on a later macrotask, like a real network round trip. */
+function slowSettingsDb(rows: Array<{ value: unknown }>): Database {
+  const where = () => new Promise<Array<{ value: unknown }>>((resolve) => setTimeout(() => resolve(rows), 5));
+  return { select: () => ({ from: () => ({ where }) }) } as unknown as Database;
+}
+
 describe('dispatchItemRevalidation without a revalidation-dispatch binding (B131)', () => {
   it('dispatches inline instead of enqueueing', async () => {
     const queue = queueWithout('revalidation-dispatch');
-    const db = settingsDb([{ value: [{ id: 't1', status: 'active' }] }]);
+    const db = slowSettingsDb([{ value: [{ id: 't1', status: 'active' }] }]);
     await dispatchItemRevalidation({ db, queue, siteId: 'site_a', collection: 'posts' });
-    await vi.waitFor(() => expect(dispatchRevalidation).toHaveBeenCalledWith([{ id: 't1', status: 'active' }], ['posts']));
+    // Done by the time the call resolves: on Workers nothing keeps a detached
+    // promise alive after the response, so the inline path must be awaited (#863).
+    expect(dispatchRevalidation).toHaveBeenCalledWith([{ id: 't1', status: 'active' }], ['posts']);
     expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('never fails the write when the inline dispatch throws (#863)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.mocked(dispatchRevalidation).mockRejectedValueOnce(new Error('target down'));
+    const db = settingsDb([{ value: [{ id: 't1', status: 'active' }] }]);
+    await expect(
+      dispatchItemRevalidation({ db, queue: queueWithout('revalidation-dispatch'), siteId: 'site_a', collection: 'posts' }),
+    ).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith('[content-invalidation] revalidation dispatch failed', expect.objectContaining({ siteId: 'site_a' }));
+    warn.mockRestore();
   });
 
   it('still enqueues when the binding exists', async () => {
@@ -55,7 +75,7 @@ describe('ItemService search indexing without a content-indexing binding (B131)'
     };
     const svc = new ItemService({ siteId: 'site_a', queue, search } as unknown as ConstructorParameters<typeof ItemService>[0]);
     const internals = svc as unknown as {
-      indexItem(collection: string, id: string, data: Record<string, unknown>): Promise<void>;
+      indexItem(collection: string, id: string, data: Record<string, unknown>, storedData?: unknown): Promise<void>;
       deindexItem(collection: string, id: string): Promise<void>;
     };
     return { internals, search };
@@ -71,12 +91,14 @@ describe('ItemService search indexing without a content-indexing binding (B131)'
     expect(search.delete).toHaveBeenCalledWith('site_a__posts', ['p2']);
   });
 
-  it('enqueues when the binding exists', async () => {
+  it('enqueues when the binding exists, fingerprinting the stored (not decrypted) data (#857)', async () => {
     const queue = queueWithout('other-queue');
     const { internals, search } = service(queue);
-    await internals.indexItem('posts', 'p1', { title: 'Hello' });
+    const stored = { title: 'Hello', secret: { ciphertext: 'abc' } };
+    await internals.indexItem('posts', 'p1', { title: 'Hello', secret: 'plain' }, stored);
     expect(queue.enqueue).toHaveBeenCalledWith('content-indexing', 'search:index', {
-      siteId: 'site_a', collection: 'posts', id: 'p1', data: { title: 'Hello' },
+      siteId: 'site_a', collection: 'posts', id: 'p1', data: { title: 'Hello', secret: 'plain' },
+      dataHash: await searchSnapshotHash(stored),
     });
     expect(search.index).not.toHaveBeenCalled();
   });

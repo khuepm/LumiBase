@@ -69,7 +69,8 @@ describe('rich text', () => {
     expect(html).toContain('<a href="/items/authors/a1" data-ref-kind="item" data-ref-collection="authors" data-ref-id="a1">Lan</a>');
     expect(html).toContain('<img src="/assets/key/hero.jpg"');
     expect(html).toContain('<pre><code class="language-ts">a &lt; b</code></pre>');
-    expect(html).toContain('<th><p>H</p></th>');
+    // Semantic tables (#699): a header row is a <thead> of column headers.
+    expect(html).toContain('<thead><tr><th scope="col">H</th></tr></thead>');
   });
 
   it('renders Markdown and plain text', () => {
@@ -334,7 +335,8 @@ describe('richTextToMarkdown — table cells', () => {
       cell({ type: 'paragraph', content: [{ type: 'text', text: 'a|b\\' }] }),
       cell({ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }),
     ]);
-    const first = md.split('\n')[0]!;
+    // Line 0 is the empty header row a header-less table exports with (#698), line 1 the delimiter.
+    const first = md.split('\n')[2]!;
     expect(first).toBe('| a\\|b\\\\ |');
     expect(columns(first)).toBe(1);
   });
@@ -348,8 +350,8 @@ describe('richTextToMarkdown — table cells', () => {
 
   it('escapes a pipe from an unescaped code block once', () => {
     const md = table([cell({ type: 'code', text: 'a | b' })]);
-    expect(md.split('\n')[0]).toContain('a \\| b');
-    expect(columns(md.split('\n')[0]!)).toBe(1);
+    expect(md.split('\n')[2]).toContain('a \\| b');
+    expect(columns(md.split('\n')[2]!)).toBe(1);
   });
 });
 

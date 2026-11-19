@@ -1,11 +1,11 @@
 ---
-version: 56
-lastUpdated: 2026-11-15T23:40:56.423Z
+version: 61
+lastUpdated: 2026-11-19T03:55:04.105Z
 sourceLang: en
-contentHash: fb7e23a8ff3b4d56
-codeVerified: 2026-11-15T23:40:56.423Z
-codeVerifiedHash: fb7e23a8ff3b4d56
-codeVerifiedClaims: 636
+contentHash: 1d86bff615c2ba39
+codeVerified: 2026-11-19T03:55:04.105Z
+codeVerifiedHash: 1d86bff615c2ba39
+codeVerifiedClaims: 652
 ---
 
 # Hono API Specification — LumiBase
@@ -336,6 +336,22 @@ validated patch into `users.preferences` (other sections like `language` /
 `{ "saveAction": null }` to fall back to the site default
 (`sites.default_save_action`, set via `PATCH /api/v1/site`). Invalid enum → 400.
 
+### Release flags
+
+Features merged to `main` dark are released per deployment by a signed
+manifest and chosen per site. Full guide: [Release flags](../features/release-flags.md).
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/release-flags` | member | `{ key, enabled }[]` of released flags only for the active site; site admins get every flag plus stage, `releasedBy`, `enabledBy`, `siteValue`, owner and `removeBy` |
+| `PUT` | `/api/v1/release-flags/site` | site-admin | Body `{ flags: { "<key>": true \| false \| null } }`; `null` clears the choice. `400 UNKNOWN_FLAG` / `NOT_SITE_TOGGLE` |
+| `GET` | `/api/v1/release-flags/manifest` | bootstrap admin | Accepted manifest, trusted key ids, pull configuration and last pull result |
+| `PUT` | `/api/v1/release-flags/manifest` | bootstrap admin | Body `{ keyId, payload, signature }` (Ed25519 over the base64-decoded payload). `422` / `409` `MANIFEST_REJECTED` with a `reason` |
+| `POST` | `/api/v1/release-flags/manifest/pull` | bootstrap admin | Fetch from `LUMIBASE_RELEASE_MANIFEST_URL` now. `409 PULL_NOT_CONFIGURED`, `502 PULL_FAILED` |
+
+The manifest endpoints refuse API keys. A gated route answers `404 NOT_FOUND`
+while its flag is off, like an unknown route.
+
 ### Email identity policy
 
 `users` is identity-global (one row per human across sites), so the rule that
@@ -394,8 +410,31 @@ Every applied change writes an audit event (`email_identity_mode_changed` /
 - `POST /api/v1/users/invite` looks the account up case-insensitively (and by
   root mailbox under `root`) and returns public fields only. Inviting an alias
   of an existing member of a strict site answers `409 EMAIL_IDENTITY_CONFLICT`.
-- SCIM (`/scim/v2/Users`) answers `409` with `scimType: "uniqueness"` when the
-  address resolves to an existing account or collides on a strict site.
+  An existing account is bound only when its mailbox is proven (#856): a
+  password account past email verification, a pending invitation, or a
+  social-login account linked under that address. Any other match (an SSO JIT
+  or SCIM account whose email came from the IdP, or a self-registration that
+  never verified) answers `409 INVITEE_EMAIL_UNVERIFIED` and is not bound. The
+  same rule applies to `POST /api/v1/orgs/:orgId/members` invited by `email`.
+- SCIM `POST /scim/v2/Users` links an account that belongs only to other
+  sites to the token's site and answers it as a create (`201`) only when the
+  account's mailbox is proven, by the same rule as invites (#856, #912). Every
+  other match answers one generic `409` with `scimType: "uniqueness"` and binds
+  nothing: an account already in this site, a strict-site collision, or an
+  account whose mailbox is unproven (an SSO JIT or SCIM account from another
+  IdP, or an unverified self-registration). The body is the same in all these
+  cases, so it does not say that the account exists on another site.
+  `userName` is trimmed; a value that is not a single `local@domain` token
+  answers `400` with `scimType: "invalidValue"`.
+- SCIM `PUT`, `PATCH` and `DELETE /scim/v2/Users/:id` on an account that is
+  also a member of another site do not change the account itself. `userName`
+  and name changes are ignored, and the response returns the stored values.
+  `active: false` and `DELETE` remove the account's membership of the token's
+  site and leave it active on its other sites. An account that belongs only to
+  the token's site is updated and suspended as before.
+- `POST /api/v1/admin/security/unlock-user`, `/admin/security/recover` and
+  `/admin/security/forgot-path` resolve the account under the instance mode in
+  the same way as login.
 
 ### External JWT authentication
 
@@ -558,6 +597,10 @@ transaction (`CONCURRENTLY`). `timestamp` returns `ddl: null`, because
 Errors: `400 VALIDATION` (missing/invalid `path`, unknown `cast`, or no `cast`
 for a nested path), `404 NOT_FOUND` (collection or top-level field).
 
+Clients: `client.schema.indexAdvice(collection, path, cast?)` in the SDK, and
+the **Indexes** tab under **Data model → collection** in Studio, which shows the
+expression, the DDL with a copy button, and the notes.
+
 ### Fields
 
 | Method | Path | Description |
@@ -705,13 +748,17 @@ columns), a relation's `onDelete` is enforced in the application layer. On
 item, the delete is blocked with **409 `DEPENDENT_RECORDS_EXIST`** and a
 `dependents` array. (`set null`/`cascade` are **not** auto-applied on
 soft-delete — that would break soft-delete's recoverability; the editor clears
-them explicitly.) `GET …/dependents` returns
-`{ data: { blocking, dependents: [{ relation, collection, field, onDelete, count,
-sample }] } }`. `POST …/resolve-dependents` takes
+them explicitly.) Rich text that links to or embeds the item also blocks the
+delete: those groups have `kind: "richtext"`, `relation: "richtext:<collection>.<field>"`
+and `onDelete: "restrict"`, and are cleared by editing the referencing content
+(see [Rich text](../features/rich-text.md)). `GET …/dependents` returns
+`{ data: { blocking, dependents: [{ relation, kind, collection, field, onDelete,
+count, sample }] } }`. `POST …/resolve-dependents` takes
 `{ action: "set_null"|"delete"|"reassign", relation, newTargetId?, hard? }` and
 runs transactionally (delete delegates to the normal item-delete path).
 Errors: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null on a
-required field), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
+required field), `INVALID_TARGET` (422, reassign), `RICHTEXT_REFERENCE` (422, a
+rich-text group cannot be batch-resolved), `NOT_FOUND` (404).
 
 **Export.** `GET /items/:collection/export?format=csv|json&fields=&locales=&relations=id|slug|embed&filter=&sort=&status=`
 streams every matching row (keyset-paged, so any size). It uses the caller's

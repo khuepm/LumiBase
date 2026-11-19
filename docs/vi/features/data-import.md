@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-11-12T21:04:27.226Z
+version: 7
+lastUpdated: 2026-11-19T03:47:08.022Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5644257d82b75cbc
+sourceHash: a245c8da79b1fa1a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T21:04:27.226Z
-codeVerifiedHash: 5644257d82b75cbc
+codeVerified: 2026-11-19T03:47:08.022Z
+codeVerifiedHash: a245c8da79b1fa1a
 codeVerifiedClaims: 12
 ---
 
@@ -80,9 +80,17 @@ POST /api/v1/imports?collection={collection}&format=csv|json&mode=create|upsert
   từ chối với `400` trước khi ghi bất kỳ dòng nào.
 - **Mode:** `create` (mặc định) luôn tạo item mới. `upsert` cập nhật item có
   `id` khớp và tạo phần còn lại; cần thêm quyền `update`.
-- **Quyền:** được kiểm tra ngay từ đầu (`create`, cộng `update` với `upsert`) và
-  kiểm tra lại ở từng dòng, dưới danh nghĩa user hoặc API key đã upload file.
+- **Quyền:** được kiểm tra ngay từ đầu (`read` và `create`, cộng `update` với
+  `upsert`; cần `read` vì job đọc schema của collection) và kiểm tra lại ở từng
+  dòng, dưới danh nghĩa user hoặc API key đã upload file.
   Nếu principal đó mất quyền trong lúc job chạy, job dừng với trạng thái `failed`.
+- **Kích thước:** file lớn hơn `IMPORT_MAX_BYTES` nhận `413 PAYLOAD_TOO_LARGE`.
+  Giới hạn được đếm trong lúc body đang tới, nên một upload dạng chunked không có
+  `Content-Length` cũng bị cắt ở giới hạn đó.
+- **Hạn mức theo site:** mỗi site có tối đa `IMPORT_MAX_PENDING_JOBS` job và
+  `IMPORT_MAX_PENDING_BYTES` dung lượng file đã upload ở trạng thái `queued` hoặc
+  `running` cùng lúc. Vượt một trong hai, upload nhận `429 LIMIT_EXCEEDED`; hãy
+  thử lại khi có job xong.
 
 Phản hồi là job:
 
@@ -120,16 +128,29 @@ dòng (đếm từ 1) và job vẫn chạy tiếp; job chỉ `failed` khi mọi 
 dòng đã ghi trước khi huỷ hoặc timeout vẫn được giữ.
 
 Studio có cùng luồng này ở **Content → collection → Import**, với thanh tiến độ,
-nút **Cancel import** và **Download error report**. Studio cũng nhận sự kiện
-realtime `import.progress` cho người đã upload.
+nút **Cancel import** và **Download error report**. Thanh tiến độ đi theo sự kiện
+realtime `import.progress`, mà server gửi cho người đã upload sau mỗi phần và khi
+job kết thúc (chỉ có bộ đếm, không bao giờ có dữ liệu dòng). Polling vẫn bật làm
+dự phòng: mỗi giây khi kết nối realtime bị ngắt, mỗi 10 giây khi đang kết nối.
+Một snapshot cũ hơn không bao giờ kéo bộ đếm lùi lại, và không gì thay thế được
+một job đã kết thúc.
 
 **Cách job chạy.** Request upload khởi động job và xử lý nó trong khoảng
 20 giây. Sau đó một cron mỗi phút (Cron Trigger trên Workers, hoặc scheduler của
-Node trên Docker) chạy tiếp. Mỗi phần là một transaction của database: các dòng và
+Node trên Docker) chạy tiếp. File được parse một lần khi tạo job, và các dòng
+được lưu theo từng phần; mỗi bước chỉ đọc phần kế tiếp. Job và mọi phần của
+nó được commit cùng nhau, nên worker không bao giờ nhận một job mà các dòng mới
+được lưu một phần, và job kết thúc hoặc bị huỷ xoá các phần còn lại trong cùng
+commit với trạng thái cuối của nó. Mỗi phần là một
+transaction của database: các dòng và
 bộ đếm tiến độ được commit cùng nhau, nên một worker chết giữa chừng không để lại
 gì, và phần đó được chạy lại từ dòng đã commit cuối cùng, không tạo bản trùng.
 Transaction khoá job, nên worker thứ hai phải chờ thay vì ghi trùng các dòng đó,
-và tiếp quản khi lease của worker đầu hết hạn. Đo trên máy local với Postgres 16,
+và tiếp quản khi lease của worker đầu hết hạn. Cron chia thời gian giữa các job,
+mỗi lần một phần, và chọn job cũ nhất của mỗi site trước job thứ hai của bất kỳ
+site nào, nên một import lớn không chặn các job khác. `IMPORT_MAX_CONCURRENCY` là
+giới hạn cứng theo site: một job chỉ bắt đầu khi số job đang chạy của site đó còn
+dưới giới hạn. Đo trên máy local với Postgres 16,
 mỗi dòng đi qua toàn bộ pipeline item (validation, revision, change feed) với tốc
 độ khoảng 90 dòng mỗi giây cho mỗi job, nên một file 100k dòng mất khoảng 20 phút.
 Giới hạn và kích thước mỗi phần được đặt bằng [các biến `IMPORT_*`](../deployment/environment-variables.md#imports).

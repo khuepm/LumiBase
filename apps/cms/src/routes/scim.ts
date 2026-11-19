@@ -8,7 +8,9 @@
  *   POST   /scim/v2/Users          — create user
  *   PUT    /scim/v2/Users/:id      — replace user
  *   PATCH  /scim/v2/Users/:id      — partial update
- *   DELETE /scim/v2/Users/:id      — soft delete (active = false)
+ *   DELETE /scim/v2/Users/:id      — soft delete (active = false); for an
+ *                                    account shared with another site, removes
+ *                                    this site's membership only
  *   GET    /scim/v2/Groups         — list groups (mapped to LumiBase teams)
  *   POST   /scim/v2/Groups         — create group
  *   GET    /scim/v2/ServiceProviderConfig
@@ -21,13 +23,15 @@
  */
 
 import { teams, teamMembers, userSites, users, scimTokens, activity } from "@lumibase/database";
-import { and, eq, ilike, or, isNull, inArray } from "drizzle-orm";
+import { and, eq, ilike, ne, notExists, or, isNull, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { AppEnv } from "../env";
 import { emailLookup, isEmailIdentityConflict } from "../modules/email-identity/service";
+import { provisionScimUser } from "../modules/email-identity/scim-provision";
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { containsPattern } from "../services/like-pattern";
+import { bumpPermissionVersion } from "../services/permission-invalidation";
 
 export const scimRouter = new Hono<AppEnv>();
 
@@ -41,6 +45,28 @@ function scimUniqueness(c: Context<AppEnv>) {
   return c.json(
     { schemas: [SCIM_ERROR], status: "409", scimType: "uniqueness", detail: "userName is already in use" },
     409,
+  );
+}
+
+/**
+ * userName is the account email (#862). Trimmed here — the same `trim()` the
+ * lookups apply — so a padded value is never stored and then missed by every
+ * lookup; anything that is not a single `local@domain` token is rejected.
+ */
+function parseUserName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > 320 || /\s/.test(trimmed)) return null;
+  const at = trimmed.lastIndexOf("@");
+  if (at <= 0 || at === trimmed.length - 1) return null;
+  return trimmed;
+}
+
+/** RFC 7644 §3.12: `invalidValue` for a userName that is not an address. */
+function scimInvalidUserName(c: Context<AppEnv>) {
+  return c.json(
+    { schemas: [SCIM_ERROR], status: "400", scimType: "invalidValue", detail: "userName must be an email address" },
+    400,
   );
 }
 
@@ -208,6 +234,48 @@ async function getSiteUser(db: AppEnv["Variables"]["db"], siteId: string, id: st
   return row;
 }
 
+/**
+ * `users` is instance-global, so an account can be a member of several sites
+ * (#862 links a proven account instead of answering 409). A site's SCIM token
+ * must only ever own what belongs to that site. For an account that also has a
+ * membership elsewhere it may therefore:
+ *   - not rewrite the global profile (`email`, names) — changing `email` and
+ *     then running password recovery would take the account over on every
+ *     site it belongs to;
+ *   - not suspend the global account — `active: false` / DELETE remove this
+ *     site's membership instead, which is what deprovisioning means here.
+ */
+function notOnAnotherSite(siteId: string) {
+  return (db: AppEnv["Variables"]["db"]) =>
+    notExists(
+      db
+        .select({ one: sql`1` })
+        .from(userSites)
+        .where(and(eq(userSites.userId, users.id), ne(userSites.siteId, siteId))),
+    );
+}
+
+/**
+ * Applies a SCIM write to an account shared with another site: profile
+ * attributes are ignored and deactivation only drops this site's membership.
+ * Returns the resource as this site now sees it, or null when the account is
+ * not (or no longer) a member of this site.
+ */
+async function writeSharedSiteUser(
+  c: Context<AppEnv>,
+  id: string,
+  deactivate: boolean,
+): Promise<ScimUser | null> {
+  const db = c.get("db");
+  const siteId = c.get("siteId");
+  const row = await getSiteUser(db, siteId, id);
+  if (!row) return null;
+  if (!deactivate) return toScimUser(row);
+  await db.delete(userSites).where(and(eq(userSites.siteId, siteId), eq(userSites.userId, id)));
+  await bumpPermissionVersion(c, siteId);
+  return { ...toScimUser(row), active: false };
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toScimUser(u: any): ScimUser {
   return {
@@ -363,46 +431,32 @@ scimRouter.post("/Users", async (c) => {
     password?: string;
   };
 
-  if (!body.userName) {
+  if (body.userName === undefined || body.userName === null || body.userName === "") {
     return c.json(
       { schemas: [SCIM_ERROR], status: "400", detail: "userName required" },
       400,
     );
   }
+  const userName = parseUserName(body.userName);
+  if (userName === null) return scimInvalidUserName(c);
 
   const siteId = c.get("siteId");
-  const userName = body.userName;
-  // Account + membership commit together (#794): an address that is taken —
-  // exactly, as an alias under `root` mode, or as an alias of an existing
-  // member of a `strict` site — answers RFC 7644 §3.3 409 `uniqueness`
-  // instead of a 500 or an orphan account.
-  let created: (typeof users.$inferSelect) | undefined;
-  try {
-    created = await db.transaction(async (tx) => {
-      const [row] = await tx
-        .insert(users)
-        .values({
-          externalId: body.externalId ?? userName,
-          email: userName,
-          firstName: body.name?.givenName ?? null,
-          lastName: body.name?.familyName ?? null,
-          status: body.active === false ? "suspended" : "active",
-        })
-        .returning();
-      if (row) {
-        await tx
-          .insert(userSites)
-          .values({ userId: row.id, siteId })
-          .onConflictDoNothing({ target: [userSites.userId, userSites.siteId] });
-      }
-      return row;
-    });
-  } catch (err) {
-    if (isEmailIdentityConflict(err)) return scimUniqueness(c);
-    throw err;
-  }
+  // #862: an address whose account belongs only to another site is linked
+  // here instead of answering 409, so the response never reveals accounts
+  // outside this site. 409 `uniqueness` (RFC 7644 §3.3) is kept for an
+  // account that is already a member of this site, or an alias of a member
+  // of a `strict` site. Account + membership commit together (#794).
+  const result = await provisionScimUser(db, {
+    siteId,
+    userName,
+    externalId: body.externalId ?? null,
+    givenName: body.name?.givenName ?? null,
+    familyName: body.name?.familyName ?? null,
+    active: body.active,
+  });
+  if (!result.ok) return scimUniqueness(c);
 
-  return c.json(toScimUser(created), 201);
+  return c.json(toScimUser(result.user), 201);
 });
 
 scimRouter.put("/Users/:id", async (c) => {
@@ -411,18 +465,25 @@ scimRouter.put("/Users/:id", async (c) => {
   const id = c.req.param("id");
   const body = (await c.req.json()) as Partial<ScimUser>;
 
+  let email: string | undefined;
+  if (body.userName !== undefined && body.userName !== null) {
+    const parsed = parseUserName(body.userName);
+    if (parsed === null) return scimInvalidUserName(c);
+    email = parsed;
+  }
+
   let updated: Array<typeof users.$inferSelect>;
   try {
     updated = await db
       .update(users)
       .set({
-        email: body.userName ?? undefined,
+        email,
         firstName: body.name?.givenName ?? null,
         lastName: body.name?.familyName ?? null,
         status: body.active === false ? "suspended" : "active",
         updatedAt: new Date(),
       })
-      .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db))))
+      .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db)), notOnAnotherSite(siteId)(db)))
       .returning();
   } catch (err) {
     // A new userName that another account (or strict-site member) already owns.
@@ -431,6 +492,9 @@ scimRouter.put("/Users/:id", async (c) => {
   }
 
   if (updated.length === 0) {
+    // Not a member, or an account shared with another site (see notOnAnotherSite).
+    const shared = await writeSharedSiteUser(c, id, body.active === false);
+    if (shared) return c.json(shared);
     return c.json(
       { schemas: [SCIM_ERROR], status: "404", detail: "User not found" },
       404,
@@ -454,7 +518,11 @@ scimRouter.patch("/Users/:id", async (c) => {
         set["status"] = op.value ? "active" : "suspended";
       else if (op.path === "name.givenName") set["firstName"] = op.value;
       else if (op.path === "name.familyName") set["lastName"] = op.value;
-      else if (op.path === "userName") set["email"] = op.value;
+      else if (op.path === "userName") {
+        const parsed = parseUserName(op.value);
+        if (parsed === null) return scimInvalidUserName(c);
+        set["email"] = parsed;
+      }
     }
   }
 
@@ -463,13 +531,15 @@ scimRouter.patch("/Users/:id", async (c) => {
     updated = await db
       .update(users)
       .set(set)
-      .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db))))
+      .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db)), notOnAnotherSite(siteId)(db)))
       .returning();
   } catch (err) {
     if (isEmailIdentityConflict(err)) return scimUniqueness(c);
     throw err;
   }
   if (updated.length === 0) {
+    const shared = await writeSharedSiteUser(c, id, set["status"] === "suspended");
+    if (shared) return c.json(shared);
     return c.json(
       { schemas: [SCIM_ERROR], status: "404", detail: "User not found" },
       404,
@@ -485,9 +555,10 @@ scimRouter.delete("/Users/:id", async (c) => {
   const updated = await db
     .update(users)
     .set({ status: "suspended", updatedAt: new Date() })
-    .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db))))
+    .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db)), notOnAnotherSite(siteId)(db)))
     .returning({ id: users.id });
   if (updated.length === 0) {
+    if (await writeSharedSiteUser(c, id, true)) return c.body(null, 204);
     return c.json(
       { schemas: [SCIM_ERROR], status: "404", detail: "User not found" },
       404,
@@ -525,22 +596,41 @@ scimRouter.post("/Groups", async (c) => {
     displayName: string;
     members?: Array<{ value: string }>;
   };
-  const inserted = await db
-    .insert(teams)
-    .values({ siteId, name: body.displayName })
-    .returning();
-
-  if (body.members?.length) {
-    for (const m of body.members) {
-      await db
-        .insert(teamMembers)
-        .values({ teamId: inserted[0]!.id, userId: m.value })
-        .onConflictDoNothing();
-      await db
-        .insert(userSites)
-        .values({ userId: m.value, siteId })
-        .onConflictDoNothing();
-    }
+  // Team + memberships commit together (#861). The membership insert targets
+  // `(user_id, site_id)` only, so "already a member" is a no-op while an alias
+  // of an existing member of a `strict` site (`user_sites_site_identity_unique`)
+  // is answered as RFC 7644 §3.3 409 `uniqueness` instead of being dropped by a
+  // target-less ON CONFLICT DO NOTHING and reported as success.
+  let inserted: Array<typeof teams.$inferSelect>;
+  try {
+    inserted = await db.transaction(async (tx) => {
+      const rows = await tx
+        .insert(teams)
+        .values({ siteId, name: body.displayName })
+        .returning();
+      for (const m of body.members ?? []) {
+        await tx
+          .insert(teamMembers)
+          .values({ teamId: rows[0]!.id, userId: m.value })
+          .onConflictDoNothing();
+        await tx
+          .insert(userSites)
+          .values({ userId: m.value, siteId })
+          .onConflictDoNothing({ target: [userSites.userId, userSites.siteId] });
+      }
+      return rows;
+    });
+  } catch (err) {
+    if (!isEmailIdentityConflict(err)) throw err;
+    return c.json(
+      {
+        schemas: [SCIM_ERROR],
+        status: "409",
+        scimType: "uniqueness",
+        detail: "A member is already on this site under another address of the same mailbox",
+      },
+      409,
+    );
   }
 
   return c.json(

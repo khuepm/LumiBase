@@ -50,7 +50,7 @@ export function castKindForFieldType(type: string | null | undefined): CastKind 
   if (NUMERIC_TYPES.has(t)) return 'numeric';
   if (BOOLEAN_TYPES.has(t)) return 'boolean';
   if (TIMESTAMP_TYPES.has(t)) return 'timestamp';
-  if (t === 'json' || t === 'alias' || t === 'blocks') return null;
+  if (t === 'json' || t === 'alias' || t === 'blocks' || t === 'richtext') return null;
   // `{ lat, lng }` object (#746): compare via `_near` / `_within_bbox`, or a
   // nested path (`loc.lat`) which infers numeric from the value.
   if (t === 'geopoint') return null;
@@ -203,6 +203,46 @@ export interface JsonPathIndexAdvice {
   notes: string[];
 }
 
+/** Postgres truncates identifiers longer than this many bytes (NAMEDATALEN - 1). */
+const PG_MAX_IDENTIFIER = 63;
+
+/**
+ * FNV-1a 64-bit over the UTF-8 bytes of `input`, as 12 hex chars (48 bits).
+ * Synchronous and runtime-neutral (no `node:crypto`, no WebCrypto promise), so
+ * the same name comes out on Workers and Docker. Not a security hash: it only
+ * has to keep index names apart.
+ */
+function shortHash(input: string): string {
+  let h = 0xcbf29ce484222325n;
+  for (const byte of new TextEncoder().encode(input)) {
+    h ^= BigInt(byte);
+    h = (h * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return h.toString(16).padStart(16, '0').slice(0, 12);
+}
+
+/**
+ * Index name for a JSON path expression index (issue #858). Index names are
+ * global per schema while collection names are only unique per site, and the
+ * path `a_b` and `a.b` read the same once joined, so the name carries a hash of
+ * what makes the index unique: the collection id, the exact path and the cast.
+ * The readable part (`<collection>_<path>`) is only a hint and is cut so the
+ * whole name fits in 63 bytes without losing the hash.
+ */
+export function jsonPathIndexName(
+  collectionId: string,
+  collectionName: string,
+  segments: string[],
+  cast: CastKind,
+): string {
+  const hash = shortHash(`${collectionId}\u0000${segments.join('.')}\u0000${cast}`);
+  const prefix = 'items_';
+  const suffix = `_${cast}_${hash}_idx`;
+  const readable = `${collectionName}_${segments.join('_')}`.replace(/[^A-Za-z0-9_]/g, '_').toLowerCase();
+  const room = PG_MAX_IDENTIFIER - prefix.length - suffix.length;
+  return `${prefix}${readable.slice(0, room)}${suffix}`;
+}
+
 /**
  * Build `CREATE INDEX` DDL whose expression matches what `ItemService` emits
  * for `path` filtered with `cast`, partial on the collection so the index stays
@@ -220,8 +260,7 @@ export function buildJsonPathIndexAdvice(input: {
   const textExpr =
     segments.length === 1 ? `data ->> '${segments[0]}'` : `data #>> '{${segments.join(',')}}'::text[]`;
   const expression = castExpressionText(textExpr, cast);
-  const safeColl = collectionName.replace(/[^A-Za-z0-9_]/g, '_').toLowerCase();
-  const indexName = `items_${safeColl}_${segments.join('_')}_${cast}_idx`.slice(0, 63);
+  const indexName = jsonPathIndexName(collectionId, collectionName, segments, cast);
   const literalCollId = collectionId.replace(/'/g, "''");
   const notes = [
     'Run outside a transaction (CONCURRENTLY).',

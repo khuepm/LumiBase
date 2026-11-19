@@ -1,9 +1,10 @@
-import { createCloudflareRuntime, type QueueProvider } from '@lumibase/runtime';
+import type { QueueProvider } from '@lumibase/runtime';
 import { z } from 'zod';
 import { ackHealthProbes, openWorkerQueueResources } from './cloudflare-queue-common';
 import type { Bindings } from './env';
 import {
   CONTENT_INDEXING_QUEUE,
+  makeConfiguredSet,
   registerContentIndexingWorker,
   type SearchIndexJob,
   type SearchRemoveJob,
@@ -38,6 +39,7 @@ const id = z.string().min(1);
 const searchIndexData = z.object({
   siteId: id, collection: id, id,
   data: z.record(z.string(), z.unknown()),
+  dataHash: z.string().min(1).optional(),
 }) satisfies z.ZodType<SearchIndexJob>;
 const searchRemoveData = z.object({ siteId: id, collection: id, id }) satisfies z.ZodType<SearchRemoveJob>;
 const contentIndexingMessage = z.discriminatedUnion('jobName', [
@@ -47,6 +49,14 @@ const contentIndexingMessage = z.discriminatedUnion('jobName', [
 
 const revalidationData = z.object({ siteId: id, collection: id }) satisfies z.ZodType<RevalidationDispatchJob>;
 const revalidationMessage = z.object({ id, jobName: z.literal('dispatch'), data: revalidationData });
+
+/**
+ * Index names this isolate has already configured. Module scope because the
+ * consumer registers per batch; a per-batch set re-applied the index settings
+ * on every batch (#863). Index names are `{siteId}__{collection}`, so one set
+ * is tenant-safe, and an isolate restart only costs one redundant settings call.
+ */
+const configuredIndexes = makeConfiguredSet();
 
 type MessageHandlingQueue = QueueProvider & {
   handleMessage(queueName: string, body: { id: string; jobName: string; data: unknown }): Promise<void>;
@@ -91,15 +101,20 @@ export async function processCloudflareContentIndexingQueue(
     for (const message of messages) message.ack();
     return;
   }
-  // Indexing reads only the job payload and the search provider; no database.
-  const runtime = createCloudflareRuntime({ ...env });
+  // The item row is re-read before a snapshot is applied (#857), so a retried
+  // job can never resurrect a deleted item or overwrite a newer version.
+  const { db, runtime } = openWorkerQueueResources(env, 'Content indexing queue');
   const queue = runtime.queue;
   // Infra misconfiguration: throw before claiming anything so Cloudflare retries the batch.
   if (!canHandleMessages(queue)) throw new Error('Content indexing queue requires the Cloudflare queue provider.');
-  registerContentIndexingWorker({
-    search: runtime.search,
-    queue,
-  });
+  registerContentIndexingWorker(
+    {
+      db,
+      search: runtime.search,
+      queue,
+    },
+    { configured: configuredIndexes },
+  );
   await drain(batch, messages, queue, CONTENT_INDEXING_QUEUE, contentIndexingMessage, 'content-indexing-queue');
 }
 

@@ -33,6 +33,7 @@ import {
   type RealtimeProvider,
 } from '@lumibase/runtime';
 import { buildSearchDocument } from './search-document';
+import { searchSnapshotHash, type SearchIndexJob } from './content-indexing-worker';
 import {
   GEO_OPERATORS,
   GeoFilterError,
@@ -880,6 +881,19 @@ export class ItemService {
   }
 
   /**
+   * Check `read` on every collection an export will expand (#855). Relation
+   * expansion checks it lazily, only once a page has rows to expand, which is
+   * after the export's 200 and header are already sent. Calling this before
+   * streaming turns a missing grant into a 403 instead of a truncated file.
+   */
+  async assertExportRelationsReadable(relationsToExpand: ReadonlyArray<{ related: string }>): Promise<void> {
+    for (const related of new Set(relationsToExpand.map((r) => r.related))) {
+      await this.resolveCollection(related);
+      await this.perm(related, 'read');
+    }
+  }
+
+  /**
    * Per-row transform for collection export (#727): runs the extensions'
    * `items.export.before` hook. Returns `null` when no hook extension is
    * enabled, so the exporter skips the call entirely. A hook returns
@@ -1346,8 +1360,9 @@ export class ItemService {
     }).catch((err: unknown) => {
       throw itemIdConflict(err, recordId) ?? err;
     });
+    const storedData = row.data;
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
-    await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
+    await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>, storedData);
     await this.publishRealtimeEvent(collectionName, 'create', row.id);
     await this.dispatchFirebaseSync(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     await this.dispatchFlowEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
@@ -1581,8 +1596,9 @@ export class ItemService {
     });
 
     if (!row) throw new ItemServiceError('UPDATE_FAILED', 'Failed to update item.');
+    const storedData = row.data;
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
-    await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
+    await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>, storedData);
     await this.publishRealtimeEvent(collectionName, 'update', row.id);
     await this.dispatchFirebaseSync(collectionName, 'update', row.id, row.data as Record<string, unknown>);
     await this.dispatchFlowEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
@@ -2316,6 +2332,7 @@ export class ItemService {
     });
 
     for (const row of rows) {
+      const storedData = row.data;
       const decrypted = await this.processCrypto(
         collectionName,
         row.data as Record<string, unknown>,
@@ -2325,7 +2342,7 @@ export class ItemService {
         false,
       );
       row.data = decrypted;
-      await this.indexItem(collectionName, row.id, decrypted);
+      await this.indexItem(collectionName, row.id, decrypted, storedData);
       await this.publishRealtimeEvent(collectionName, 'create', row.id);
       await this.dispatchFirebaseSync(collectionName, 'create', row.id, decrypted);
       await this.dispatchFlowEvent(collectionName, 'create', row.id, decrypted);
@@ -2643,16 +2660,26 @@ export class ItemService {
    *
    * The queue payload carries `siteId` so the worker can scope the physical
    * index name (`{siteId}__{collection}`); the direct fallback scopes it here.
+   * It also carries `dataHash`, the fingerprint of the row's stored `data`
+   * (`storedData`, before decryption), so the worker can drop the snapshot when
+   * a retry arrives after the item was changed or deleted (#857).
    */
-  private async indexItem(collectionName: string, id: string, data: Record<string, unknown>): Promise<void> {
+  private async indexItem(
+    collectionName: string,
+    id: string,
+    data: Record<string, unknown>,
+    storedData: unknown,
+  ): Promise<void> {
     try {
       if (queueAccepts(this.deps.queue, 'content-indexing')) {
-        await this.deps.queue.enqueue('content-indexing', 'search:index', {
+        const job: SearchIndexJob = {
           siteId: this.deps.siteId,
           collection: collectionName,
           id,
           data,
-        });
+          dataHash: await searchSnapshotHash(storedData),
+        };
+        await this.deps.queue.enqueue('content-indexing', 'search:index', job);
       } else if (this.deps.search) {
         await this.deps.search.index(searchIndexName(this.deps.siteId, collectionName), [
           buildSearchDocument(collectionName, id, data),

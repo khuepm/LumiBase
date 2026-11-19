@@ -1,13 +1,13 @@
 ---
-version: 13
-lastUpdated: 2026-11-14T02:32:19.524Z
+version: 15
+lastUpdated: 2026-11-17T19:23:30.212Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5fc1233101995b59
+sourceHash: c4cf5c68f57e9896
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T02:32:19.524Z
-codeVerifiedHash: 5fc1233101995b59
+codeVerified: 2026-11-17T19:23:30.212Z
+codeVerifiedHash: c4cf5c68f57e9896
 codeVerifiedClaims: 122
 ---
 
@@ -111,7 +111,11 @@ với Gmail phần local còn bỏ dấu chấm và `googlemail.com` quy về `g
 Quy tắc nằm ở hai nơi, `emailRoot()`
 (`apps/cms/src/modules/email-identity/normalize.ts`) và hàm SQL
 `lumibase_email_root()` (migration `0027`); một integration test ghim cả hai
-vào cùng một danh sách fixture. Trigger database ghi `users.email_canonical` /
+vào cùng một danh sách fixture. Cả hai bắt đầu từ cùng một normaliser — trim
+các ký tự whitespace mà JS `trim()` loại bỏ, rồi chuyển chữ thường — trong
+`normalizeEmail()` và trong `lumibase_email_normalize()` (migration `0041`),
+cũng là khoá tài khoản ở mode `exact`. SCIM trim `userName` và từ chối giá trị
+không phải địa chỉ email. Trigger database ghi `users.email_canonical` /
 `users.email_root` và `user_sites.identity_key`, nên mọi writer — register,
 invite, SCIM, setup, seed — đều gán khoá giống nhau, và unique index (không
 phải kiểm-tra-rồi-chèn) bảo đảm kết quả.
@@ -143,6 +147,25 @@ công. Cả hai nhận `dryRun: true`, và mọi thay đổi được áp dụng
   `202` chung dù địa chỉ, một alias của nó, hay một alias trên site strict đã
   tồn tại; tài khoản và membership được commit trong một transaction, nên
   membership bị từ chối không bao giờ để lại tài khoản mồ côi.
+- **Membership bị từ chối là lỗi, không bao giờ là thành công âm thầm.** Mọi
+  writer của `user_sites` đặt `(user_id, site_id)` làm conflict target, nên
+  "đã là thành viên" vẫn là no-op, còn alias của một thành viên hiện có trên
+  site strict thì lộ ra thành lỗi: SCIM `POST /Groups` trả `409` với
+  `scimType: "uniqueness"` và không tạo gì, còn setup trả
+  `409 EMAIL_IDENTITY_CONFLICT`.
+- **SSO JIT không bao giờ liên kết theo email.** Một lần đăng nhập external-JWT
+  có claim email xung đột với tài khoản khác (alias dưới `root`, hoặc alias của
+  một thành viên trên site strict) bị từ chối với `403` — log server và dòng
+  audit `external_auth_denied` ghi `EMAIL_IDENTITY_CONFLICT` — thay vì lỗi 500.
+  Tài khoản hiện có không được liên kết: claim email từ IdP không chứng minh
+  quyền kiểm soát hộp thư đó. Tài khoản JIT và membership của nó được commit
+  trong một transaction.
+- **Strict áp dụng cả cho quyền kế thừa từ organization.** Owner hoặc admin
+  của organization vào được các site của organization mà không cần dòng
+  `user_sites`. Trên site strict, role kế thừa đó bị bỏ khi một alias khác của
+  cùng hộp thư gốc đang giữ chỗ của site: alias là thành viên site, hoặc, nếu
+  không có alias nào là thành viên, alias được tạo sớm nhất có role owner/admin
+  trong organization.
 
 Có thể liên kết nhiều định danh ngoài vào một tài khoản qua bảng
 `lumibase_user_identities` (mỗi cặp `(issuer, subject)` một dòng). Thành viên
