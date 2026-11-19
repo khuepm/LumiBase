@@ -44,6 +44,25 @@ components:
         captionVersion: { type: integer, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    VideoAsset:
+      type: object
+      properties:
+        fileId: { type: string }
+        fileVersion: { type: integer }
+        provider: { type: string }
+        status: { type: string, enum: [uploaded, processing, ready, failed] }
+        error: { type: string, nullable: true }
+        attempts: { type: integer }
+        durationMs: { type: integer, nullable: true }
+        width: { type: integer, nullable: true }
+        height: { type: integer, nullable: true }
+        renditions:
+          type: array
+          items: { type: object, properties: { width: { type: integer }, height: { type: integer }, bitrate: { type: integer } } }
+        signedPlayback: { type: boolean }
+        submittedAt: { type: string, format: date-time, nullable: true }
+        readyAt: { type: string, format: date-time, nullable: true }
+        updatedAt: { type: string, format: date-time }
     OpenApiConfig:
       type: object
       additionalProperties: false
@@ -2744,25 +2763,6 @@ paths:
       summary: Create an item
       requestBody:
         required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [data]
-              properties:
-                data: { type: object }
-                status: { type: string }
-                sort: { type: integer }
-      responses:
-        '201': { description: Created }
-        '409':
-          description: >-
-            `ITEM_ID_EXISTS`: a caller-chosen id (string primary key) is already
-            used in this site, in any collection. Ids are unique per site, so
-            another site may use the same id.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
   /files/tus:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'
@@ -2861,6 +2861,139 @@ paths:
       responses:
         '204': { description: Terminated }
         '404': { description: Unknown, terminated, or someone else's upload }
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data: { type: object }
+                status: { type: string }
+                sort: { type: integer }
+      responses:
+        '201': { description: Created }
+        '409':
+          description: >-
+            `ITEM_ID_EXISTS`: a caller-chosen id (string primary key) is already
+            used in this site, in any collection. Ids are unique per site, so
+            another site may use the same id.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /files/{id}/video:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Video processing state of a file (#871)
+      description: >-
+        `data` is null for a file that never entered the pipeline. States:
+        `uploaded` (queued, waits for the malware scan), `processing`,
+        `ready`, `failed`.
+      responses:
+        '200':
+          description: State plus whether the pipeline is on for the site and a provider is configured
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    nullable: true
+                    allOf: [{ $ref: '#/components/schemas/VideoAsset' }]
+                  meta:
+                    type: object
+                    properties:
+                      enabled: { type: boolean }
+                      providerConfigured: { type: boolean }
+        '404': { description: File not found or outside the caller's folder scope }
+  /files/{id}/video/retry:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Re-submit a failed or queued video (files update)
+      responses:
+        '200':
+          description: Re-queued; `meta.outcome` is the submit outcome (`submitted`, `waiting_scan`, `retry`, …)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/VideoAsset' }
+                  meta: { type: object, properties: { outcome: { type: string } } }
+        '409': { description: VIDEO_DISABLED for the site, or VIDEO_NOT_RETRYABLE while processing/ready }
+        '422': { description: NOT_A_VIDEO }
+        '503': { description: VIDEO_PROVIDER_NOT_CONFIGURED }
+  /files/{id}/video/playback:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Playback URLs (HLS manifest + poster) for a ready video
+      description: >-
+        With `files.dam.video.signedPlayback` (default) both URLs are signed by
+        the provider and expire after `video.playbackTtlSeconds`. The response
+        is `Cache-Control: private, no-store`.
+      responses:
+        '200':
+          description: Playback URLs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      hls: { type: string, format: uri }
+                      poster: { type: string, format: uri, nullable: true }
+                      expiresAt: { type: string, format: date-time, nullable: true }
+                      durationMs: { type: integer, nullable: true }
+                      width: { type: integer, nullable: true }
+                      height: { type: integer, nullable: true }
+        '409': { description: VIDEO_NOT_READY (current version not ready) or VIDEO_PROVIDER_CHANGED }
+        '503': { description: VIDEO_PROVIDER_NOT_CONFIGURED or VIDEO_PROVIDER_ERROR }
+  /video/webhook/{provider}:
+    post:
+      summary: Video provider webhook (public, signature-verified)
+      description: >-
+        Public on purpose: Cloudflare Stream signs with `Webhook-Signature`
+        (`time=…,sig1=…`), Mux with `Mux-Signature` (`t=…,v1=…`); both are
+        HMAC-SHA256 over `<timestamp>.<body>` with a five-minute replay
+        window. The site comes from the signed passthrough.
+      security: []
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [cloudflare-stream, mux] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200':
+          description: '`{ data: { outcome: applied | ignored } }`'
+        '401': { description: Invalid or stale signature }
+        '404': { description: Not the configured provider }
+        '500': { description: Could not be applied; the provider redelivers }
+  /video/source/{token}:
+    get:
+      summary: Original video bytes for the provider to pull (public, signed token)
+      description: >-
+        The token names the site, file and version and expires after six
+        hours. Every failure (bad signature, expired, other version, not
+        servable) answers the same 404.
+      security: []
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The original
+          content:
+            video/*:
+              schema: { type: string, format: binary }
+        '404': { description: Source not available }
   /files/{id}/captions:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'

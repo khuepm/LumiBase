@@ -86,7 +86,7 @@ DECLARE
   tables text[] := ARRAY[
     'lumibase_collections', 'lumibase_fields', 'lumibase_relations',
     'lumibase_items', 'lumibase_revisions', 'lumibase_activity',
-    'lumibase_files', 'lumibase_file_versions', 'lumibase_upload_sessions', 'lumibase_file_captions', 'lumibase_folders', 'lumibase_presets', 'lumibase_translations',
+    'lumibase_files', 'lumibase_file_versions', 'lumibase_upload_sessions', 'lumibase_file_captions', 'lumibase_video_assets', 'lumibase_folders', 'lumibase_presets', 'lumibase_translations',
     'lumibase_settings', 'lumibase_webhooks', 'lumibase_extensions',
     'lumibase_email_layouts', 'lumibase_email_templates', 'lumibase_push_subscriptions',
     'lumibase_roles', 'lumibase_policies', 'lumibase_user_policies',

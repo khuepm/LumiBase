@@ -196,6 +196,7 @@ async function main() {
   let retentionTask: ScheduledTask | undefined;
   let revisionRetentionTask: ScheduledTask | undefined;
   let uploadExpiryTask: ScheduledTask | undefined;
+  let videoSweepTask: ScheduledTask | undefined;
   let deploymentPollTask: ScheduledTask | undefined;
   let flowScheduleTask: ScheduledTask | undefined;
   let goalDispatchTask: ScheduledTask | undefined;
@@ -604,6 +605,25 @@ async function main() {
     ),
   );
 
+  // Video pipeline backstop (#871): submits queued videos (after a scan, a
+  // retryable provider error or a lost background task), polls processing
+  // ones whose webhook never came, and times out the stuck. Idle when no
+  // VIDEO_PROVIDER is configured.
+  const { sweepVideos } = await import('./modules/video/sweeper');
+  videoSweepTask = cron.schedule(
+    '*/5 * * * *',
+    leaderLockedCallback(
+      'video-sweep',
+      270_000,
+      async () => {
+        await sweepVideos({ db: rotatorDb, env: process.env as Record<string, unknown> }).catch((err) => {
+          console.error('[video-sweep] failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
+
   // Expired resumable uploads (#704, TUS expiration): abort sessions idle for
   // 24h and drop their multipart parts. Hourly at :41.
   const { sweepExpiredUploads } = await import('./services/files/tus/expiry');
@@ -799,6 +819,7 @@ async function main() {
     retentionTask?.stop();
     revisionRetentionTask?.stop();
     uploadExpiryTask?.stop();
+    videoSweepTask?.stop();
     deploymentPollTask?.stop();
     flowScheduleTask?.stop();
     goalDispatchTask?.stop();

@@ -122,6 +122,51 @@ export const fileVersions = pgTable(
 );
 
 /**
+ * Video processing state for a file (#871). One row per video file: the
+ * deployment's video provider (Cloudflare Stream, Mux, …) transcodes the
+ * original into renditions + an HLS manifest and a poster; the row tracks
+ * `uploaded → processing → ready | failed` for the file `version` it was
+ * submitted for, so a replace re-processes and a stale result is dropped.
+ */
+export const videoAssets = pgTable(
+  'lumibase_video_assets',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    fileId: text('file_id')
+      .notNull()
+      .references(() => files.id, { onDelete: 'cascade' }),
+    /** File version this row processes; a replace resets the row. */
+    fileVersion: integer('file_version').notNull(),
+    provider: text('provider').notNull(),
+    providerAssetId: text('provider_asset_id'),
+    /** Provider playback id (Mux) — the asset id doubles as one elsewhere. */
+    playbackId: text('playback_id'),
+    /** `uploaded` | `processing` | `ready` | `failed` */
+    status: text('status').default('uploaded').notNull(),
+    error: text('error'),
+    attempts: integer('attempts').default(0).notNull(),
+    durationMs: integer('duration_ms'),
+    width: integer('width'),
+    height: integer('height'),
+    /** `[{ width, height, bitrate? }]` reported by the provider. */
+    renditions: jsonb('renditions').default([]).notNull(),
+    signedPlayback: boolean('signed_playback').default(true).notNull(),
+    submittedAt: timestamp('submitted_at'),
+    readyAt: timestamp('ready_at'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    fileIdx: uniqueIndex('video_assets_file_idx').on(t.siteId, t.fileId),
+    providerIdx: index('video_assets_provider_idx').on(t.provider, t.providerAssetId),
+    statusIdx: index('video_assets_status_idx').on(t.status, t.updatedAt).where(sql`${t.status} in ('uploaded', 'processing')`),
+  }),
+);
+
+/**
  * Resumable (TUS 1.0) upload sessions (#704). One row per in-flight upload:
  * the declared length, how many bytes are durably stored (`offset`), and the
  * storage multipart upload behind it. Bytes land in fixed-size parts; the

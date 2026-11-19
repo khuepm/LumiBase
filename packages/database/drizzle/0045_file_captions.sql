@@ -2,9 +2,9 @@
 -- kind); see `fileCaptions` in packages/database/src/schema/platform.ts.
 -- Additive, no backfill, re-runnable.
 --
--- 0044 on this branch: first number after main's 0043_release_manifest
--- (v2.2.0). Epic order: #935 0044, #936 0045, #937 0046, #938 0047; `when`
--- is already set in that order, so later merges only rename this to 0047.
+-- 0045 on stacked branch #939 (after 0044_video_assets of #937); 0044 on #938
+-- alone. Epic order: #935 0044, #936 0045, #937 0046, #938 0047; `when` is
+-- already set in that order, so later merges only rename this to 0047.
 --
 -- Rollback: DROP TABLE IF EXISTS lumibase_file_captions;
 CREATE TABLE IF NOT EXISTS "lumibase_file_captions" (

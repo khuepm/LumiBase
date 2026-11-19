@@ -54,6 +54,7 @@ import { retentionRouter } from './routes/retention';
 import { emailPublicRouter } from './routes/email-public';
 import { deliverRouter } from './routes/deliver';
 import { deploymentsRouter, deploymentsWebhookRouter } from './routes/deployments';
+import { videoPublicRouter } from './routes/video-public';
 import { extensionsRouter } from './routes/extensions';
 import { filesRouter } from './routes/files';
 import { TUS_EXPOSE_HEADERS, TUS_REQUEST_HEADERS } from './services/files/tus/protocol';
@@ -256,6 +257,13 @@ app.route('/api/v1/deployments/webhook', deploymentsWebhookRouter);
 // win; all other `/integrations/git/*` paths fall through to the authenticated
 // `gitRouter` below.
 app.route('/api/v1/integrations/git', gitPublicRouter);
+
+// Video pipeline public surface (#871). PUBLIC on purpose: the provider signs
+// its webhooks and pulls sources with a short-lived signed token; neither can
+// carry a session. The tenant comes from the verified payload and both routes
+// scope their db with `scopedDbFor(c, siteId)` (B130).
+app.use('/api/v1/video/*', withDb());
+app.route('/api/v1/video', videoPublicRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();

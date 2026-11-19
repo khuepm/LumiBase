@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 62
-lastUpdated: 2026-11-19T07:57:07.092Z
+version: 63
+lastUpdated: 2026-11-19T08:32:19.284Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 032f2b143b5e0d7f
+sourceHash: 3596eebda557849f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T07:57:07.092Z
-codeVerifiedHash: 032f2b143b5e0d7f
-codeVerifiedClaims: 658
+codeVerified: 2026-11-19T08:32:19.284Z
+codeVerifiedHash: 3596eebda557849f
+codeVerifiedClaims: 668
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -892,6 +892,11 @@ Response: `Cache-Control: private, no-store`, `X-Robots-Tag: noindex, nofollow`,
 | `GET` | `/api/v1/files/:id/captions` | Các track phụ đề/caption của video dưới dạng dữ liệu `<track>` (`kind`, `locale`, `label`, `isDefault`, `src` ghim version) (#871) |
 | `POST` | `/api/v1/files/:id/captions` | Gắn file WebVTT: `{ captionFileId, locale, kind?, label?, isDefault? }`; `409 CAPTION_EXISTS`, `415 CAPTION_NOT_VTT`, `422 LOCALE_NOT_ENABLED` |
 | `PATCH/DELETE` | `/api/v1/files/:id/captions/:captionId` | Sửa track (một mặc định mỗi kind) / gỡ track (file WebVTT vẫn giữ) |
+| `GET` | `/api/v1/files/:id/video` | Trạng thái xử lý video (`uploaded`/`processing`/`ready`/`failed`); `meta.enabled`, `meta.providerConfigured` (#871) |
+| `POST` | `/api/v1/files/:id/video/retry` | Gửi lại video thất bại hoặc đang xếp hàng (files `update`); `409 VIDEO_NOT_RETRYABLE`, `503 VIDEO_PROVIDER_NOT_CONFIGURED` |
+| `GET` | `/api/v1/files/:id/video/playback` | `{ hls, poster, expiresAt }`, do provider ký và có hạn khi bật `video.signedPlayback`; `409 VIDEO_NOT_READY` |
+| `POST` | `/api/v1/video/webhook/:provider` | **Công khai**, callback của provider được kiểm chữ ký (`cloudflare-stream`, `mux`); `401` khi chữ ký sai |
+| `GET` | `/api/v1/video/source/:token` | **Công khai**, URL có chữ ký sống ngắn để provider kéo bản gốc; một `404` cho mọi lỗi |
 | `GET` | `/api/v1/assets/:id` | Phục vụ/biến đổi hình ảnh (tham số query bên dưới) |
 | `POST` | `/api/v1/media/:key` | Upload bytes media thô (RBAC `media:create`; bảo vệ upload áp dụng) |
 | `GET` | `/api/v1/media/:key` | Tải về media (phục vụ dạng `attachment` + `nosniff`); kèm tham số biến đổi → 302 tới file biến đổi |
