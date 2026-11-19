@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CdcOperationSchema, CdcSubscriptionKindSchema } from '../schemas/cdc-feed';
+import { BackendTemplateToolSchemas } from '../backend-templates/tools';
 
 /**
  * Nguồn schema **chuẩn duy nhất** cho agent tool (governed MCP contract, #454).
@@ -480,6 +481,9 @@ export const AgentToolSchemas = {
     }),
   /** Reads the outcome of an `askUser` question this caller asked. */
   getUserAnswer: z.object({ questionId: id }).strict(),
+
+  // ── backend templates (#906) ─────────────────────────────────────────────
+  ...BackendTemplateToolSchemas,
 } as const satisfies Record<string, z.ZodType>;
 
 export type AgentToolName = keyof typeof AgentToolSchemas;

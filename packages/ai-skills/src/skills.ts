@@ -1146,4 +1146,139 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
     },
     requiredCapabilities: ['items:read'],
   },
+
+  // ── backend templates (#906) ───────────────────────────────────────────
+  // Site admins only. Template text is data from its author, never an
+  // instruction. instantiateBackendTemplate always requires human approval.
+  listBackendTemplates: {
+    name: 'listBackendTemplates',
+    description: 'List official backend templates and this site\'s private template catalog.',
+    parameters: {
+      type: 'object',
+      properties: {
+        limit: { type: 'integer', description: 'Page size for the private catalog (1-100).' },
+        offset: { type: 'integer', description: 'Offset into the private catalog.' },
+      },
+      required: [],
+    },
+    requiredCapabilities: ['schema:read'],
+  },
+  getBackendTemplate: {
+    name: 'getBackendTemplate',
+    description: 'Read one backend template by source (official | site) and slug, optionally one published version.',
+    parameters: {
+      type: 'object',
+      properties: {
+        source: { type: 'string', enum: ['official', 'site'], description: 'official = bundled; site = private catalog.' },
+        slug: { type: 'string', description: 'Template slug (or a private template id).' },
+        version: { type: 'string', description: 'A published template version (semver).' },
+      },
+      required: ['source', 'slug'],
+    },
+    requiredCapabilities: ['schema:read'],
+  },
+  validateBackendTemplate: {
+    name: 'validateBackendTemplate',
+    description: 'Validate a backend template document without storing it. Installs nothing.',
+    parameters: {
+      type: 'object',
+      properties: { document: { type: 'object', description: 'The template document (or its JSON text).' } },
+      required: ['document'],
+    },
+    requiredCapabilities: ['schema:read'],
+  },
+  createBackendTemplate: {
+    name: 'createBackendTemplate',
+    description: 'Store a backend template document as a new private draft. Creates no collection or item.',
+    parameters: {
+      type: 'object',
+      properties: { document: { type: 'object', description: 'The template document (or its JSON text).' } },
+      required: ['document'],
+    },
+    requiredCapabilities: ['config:write'],
+  },
+  updateBackendTemplate: {
+    name: 'updateBackendTemplate',
+    description: 'Replace the draft of a private backend template; draftRevision must be the one you read.',
+    parameters: {
+      type: 'object',
+      properties: {
+        templateId: { type: 'string', description: 'The template id or slug.' },
+        document: { type: 'object', description: 'The new draft document (or its JSON text).' },
+        draftRevision: { type: 'integer', description: 'The draft revision you read.' },
+      },
+      required: ['templateId', 'document', 'draftRevision'],
+    },
+    requiredCapabilities: ['config:write'],
+  },
+  publishBackendTemplate: {
+    name: 'publishBackendTemplate',
+    description: 'Publish a private backend template draft as an immutable revision. Installs nothing.',
+    parameters: {
+      type: 'object',
+      properties: {
+        templateId: { type: 'string', description: 'The template id or slug.' },
+        draftRevision: { type: 'integer', description: 'Optional: the draft revision you reviewed.' },
+      },
+      required: ['templateId'],
+    },
+    requiredCapabilities: ['config:write'],
+  },
+  captureBackendTemplate: {
+    name: 'captureBackendTemplate',
+    description: 'Create a draft backend template from collections of this site (schema only unless seed is given).',
+    parameters: {
+      type: 'object',
+      properties: {
+        collections: { type: 'array', items: { type: 'string' }, description: 'Collections to capture.' },
+        slug: { type: 'string', description: 'Template slug (kebab-case).' },
+        displayName: { type: 'string', description: 'Template display name.' },
+        templateVersion: { type: 'string', description: 'Template version (semver, default 1.0.0).' },
+        description: { type: 'string', description: 'Template description.' },
+        seed: { type: 'object', description: 'Optional seed capture: { pack?, collections, maxRecordsPerCollection? }.' },
+      },
+      required: ['collections', 'slug', 'displayName'],
+    },
+    requiredCapabilities: ['config:write', 'schema:read'],
+  },
+  planBackendTemplate: {
+    name: 'planBackendTemplate',
+    description: 'Plan installing a backend template into a site. targetSiteId is required and never defaulted: ask the user for the destination site. Returns the inventory and the binding to pass to instantiateBackendTemplate.',
+    parameters: {
+      type: 'object',
+      properties: {
+        template: { type: 'object', description: '{ source: official|site, slug, version, sourceSiteId?, digest? }' },
+        targetSiteId: { type: 'string', description: 'The site to install into (required; ask the user).' },
+        namespace: { type: 'object', description: 'Optional { prefix?, map? } for target collection names.' },
+        seedMode: { type: 'string', enum: ['none', 'pack'], description: 'none (default) installs schema only.' },
+        seedPack: { type: 'string', description: 'Seed pack name with seedMode "pack".' },
+      },
+      required: ['template'],
+    },
+    requiredCapabilities: ['schema:read'],
+  },
+  instantiateBackendTemplate: {
+    name: 'instantiateBackendTemplate',
+    description: 'Install a planned backend template. Always requires human approval, bound to the plan binding.',
+    parameters: {
+      type: 'object',
+      properties: {
+        planId: { type: 'string', description: 'The planId from planBackendTemplate.' },
+        expect: { type: 'object', description: 'The binding from planBackendTemplate, unchanged.' },
+        idempotencyKey: { type: 'string', description: 'Optional; defaults to plan:<planId>.' },
+      },
+      required: ['planId', 'expect'],
+    },
+    requiredCapabilities: ['schema:create'],
+  },
+  getBackendTemplateInstallation: {
+    name: 'getBackendTemplateInstallation',
+    description: 'Read a completed backend template installation.',
+    parameters: {
+      type: 'object',
+      properties: { installationId: { type: 'string', description: 'The installation id, or the planId it was installed from.' } },
+      required: ['installationId'],
+    },
+    requiredCapabilities: ['schema:read'],
+  },
 };

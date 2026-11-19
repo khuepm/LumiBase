@@ -47,10 +47,30 @@ export const TemplatePlanInputSchema = z
     /** Required and explicit: must equal the site of the request. */
     targetSiteId: z.string().min(1).max(64),
     namespace: TemplateNamespaceSchema.optional(),
-    /** Seed pack to install. Omitted / null = schema only (the default). */
+    /**
+     * `none` (the default at every boundary) installs schema only, even when the
+     * template has packs; `pack` installs `seedPack`. Contradictory input —
+     * `none` with a pack, or `pack` without one — is refused.
+     */
+    seedMode: z.enum(['none', 'pack']).optional(),
+    /** Seed pack to install with `seedMode: 'pack'`. */
     seedPack: z.string().regex(SEED_PACK_NAME_RE).nullable().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.seedMode === 'none' && input.seedPack) {
+      ctx.addIssue({ code: 'custom', path: ['seedPack'], message: 'seedMode "none" installs no seed; omit seedPack or use seedMode "pack".' });
+    }
+    if (input.seedMode === 'pack' && !input.seedPack) {
+      ctx.addIssue({ code: 'custom', path: ['seedPack'], message: 'seedMode "pack" needs a seedPack name.' });
+    }
+  });
+
+/** The seed pack a plan input selects, or null (schema only). */
+export function selectedSeedPack(input: Pick<TemplatePlanInput, 'seedMode' | 'seedPack'>): string | null {
+  if (input.seedMode === 'none') return null;
+  return input.seedPack ?? null;
+}
 
 export type TemplateRef = z.infer<typeof TemplateRefSchema>;
 export type TemplateNamespace = z.infer<typeof TemplateNamespaceSchema>;

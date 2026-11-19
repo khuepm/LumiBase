@@ -121,7 +121,11 @@ export function rejectedAt(schema: Record<string, unknown>, value: unknown): str
 type Json = Record<string, unknown>;
 
 /** Strings tried, in order, against a `pattern` with no better hint. */
-const PATTERN_CANDIDATES = ['posts', 'abc', 'a', 'x1', '0 * * * *', 'en', 'abc-123', 'a:b', 'A1', 'ab'.repeat(32)];
+const PATTERN_CANDIDATES = [
+  'posts', 'abc', 'a', 'x1', '0 * * * *', 'en', 'abc-123', 'a:b', 'A1', 'ab'.repeat(32),
+  // Backend template versions and digests (#906).
+  '1.0.0', `sha256:${'0'.repeat(64)}`,
+];
 
 function stringFor(key: string, s: Json): string {
   const format = s['format'];

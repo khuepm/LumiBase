@@ -1173,10 +1173,10 @@ describe('G2 repro · the two transports are separate contracts', () => {
     }
 
     // NGỮ CẢNH, không dùng để phủ domain khác: registry CÓ 7 skill update/upsert
-    // cho các domain khác.
+    // cho các domain khác (8 kể từ `updateBackendTemplate`, #906).
     const updateish = Object.keys(CORE_SKILLS).filter((n) => /^(update|upsert)/.test(n)).sort();
     expect(updateish).toEqual([
-      'updateExtension', 'updateItem', 'updateTranslation', 'updateUser',
+      'updateBackendTemplate', 'updateExtension', 'updateItem', 'updateTranslation', 'updateUser',
       'updateVersion', 'updateWebhook', 'upsertSetting',
     ]);
 

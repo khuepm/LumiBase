@@ -15,6 +15,10 @@ import { scopedDbFor } from '../middleware/db';
 import { isSiteAdmin } from '../middleware/site-admin';
 import { BackendTemplatePlanner, PlanError } from '../services/backend-templates/planner';
 import { BackendTemplateInstaller, InstallError } from '../services/backend-templates/installer';
+import { createSeedWriter } from '../services/backend-templates/seed-writer';
+import type { BackendTemplateToolContext } from '../services/backend-templates/agent-tools';
+import { PermissionService } from '../services/permission-service';
+import type { Database } from '@lumibase/database';
 
 /**
  * `/api/v1/backend-templates` — the site's private template catalog (#902,
@@ -290,7 +294,21 @@ export function installerFor(c: Context<AppEnv>): BackendTemplateInstaller {
     // Authorization is checked again under the install lock: an admin
     // demoted between plan and apply is refused before any write.
     authorize: () => isSiteAdmin(c),
-    // Seed packs are written by #905 (BT05); until then a seeded plan is refused.
+    // Seed packs (#905): written through the CALLER's ItemService bound to the
+    // install transaction — their item permissions and validation apply —
+    // with every outward effect off until commit (no queue → no flows or
+    // webhooks, no search, realtime, cache or extension hooks).
+    seed: createSeedWriter((tx) => itemServiceForRequest(c, {
+      db: tx,
+      cache: undefined,
+      edgeCache: undefined,
+      search: undefined,
+      queue: undefined,
+      realtime: undefined,
+      realtimeNamespace: undefined,
+      extensionEnv: undefined,
+      suppressExtensionHooks: true,
+    })),
     requestId: c.get('requestId') ?? null,
   });
 }
@@ -323,3 +341,56 @@ backendTemplatesRouter.get('/installations/:installationId', async (c) => {
     return installFail(c, err);
   }
 });
+
+// ── Agent tools (#906) ─────────────────────────────────────────────────────
+
+/**
+ * The context the backend template agent tools run in, for this request: the
+ * same services, checks and outward-effect rules as the REST routes above.
+ * Used by the MCP route and by the approval decision routes, so an approved
+ * install runs with exactly what parked it.
+ */
+export function backendTemplateToolsFor(c: Context<AppEnv>): BackendTemplateToolContext {
+  let callerAdmin: Promise<boolean> | undefined;
+  const version = resolveBuildMetadata(c.env).version;
+  return {
+    catalog: (userId) => new BackendTemplateCatalogService({ db: c.get('db'), siteId: c.get('siteId'), userId: userId ?? c.get('auth').userId ?? null }),
+    planner: () => plannerFor(c),
+    installer: ({ userId, authorize, seed }) => {
+      const runtime = c.get('runtime') as Partial<AppEnv['Variables']['runtime']> | undefined;
+      return new BackendTemplateInstaller({
+        db: c.get('db'),
+        siteId: c.get('siteId'),
+        userId: userId ?? c.get('auth').userId ?? null,
+        cache: runtime?.cache,
+        edgeCache: runtime?.edgeCache,
+        queue: runtime?.queue,
+        authorize,
+        seed: createSeedWriter(seed),
+        requestId: c.get('requestId') ?? null,
+      });
+    },
+    callerIsAdmin: () => (callerAdmin ??= isSiteAdmin(c)),
+    // No cache: a requester demoted a second ago must be refused now.
+    isAdmin: async (principal) => (await new PermissionService({ db: c.get('db'), ctx: principal }).bundle()).admin === true,
+    seedItems: (tx: Database, principal) => itemServiceForRequest(c, {
+      db: tx,
+      cache: undefined,
+      edgeCache: undefined,
+      search: undefined,
+      queue: undefined,
+      realtime: undefined,
+      realtimeNamespace: undefined,
+      extensionEnv: undefined,
+      suppressExtensionHooks: true,
+    }).withPermissionContext(principal),
+    captureReader: () => ({
+      list: async (collection, limit) => {
+        const page = await itemServiceForRequest(c).list(collection, { limit, withTotal: false });
+        return page.data as Array<Record<string, unknown>>;
+      },
+    }),
+    captureVersionRange: /^\d+\.\d+\.\d+/.test(version) ? `>=${version.match(/^\d+\.\d+\.\d+/)![0]}` : '*',
+    audit: (event, metadata) => audit(c, event, metadata),
+  };
+}

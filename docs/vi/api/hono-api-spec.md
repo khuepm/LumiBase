@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 63
-lastUpdated: 2026-11-19T07:17:03.229Z
+version: 64
+lastUpdated: 2026-11-19T07:29:34.934Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 83452beb535f1abf
+sourceHash: f913510e439e7893
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T07:17:03.229Z
-codeVerifiedHash: 83452beb535f1abf
+codeVerified: 2026-11-19T07:29:34.934Z
+codeVerifiedHash: f913510e439e7893
 codeVerifiedClaims: 676
 ---
 
@@ -1605,7 +1605,7 @@ gắn với site của request. Xem [Backend templates](../features/backend-temp
 | `POST` | `/api/v1/backend-templates/:id/publish` | Publish một revision bất biến (`{ draftRevision? }`) → `201`, hoặc `200` khi publish lại y hệt; `409 IMMUTABLE_REVISION`; `422 INVALID_TEMPLATE` |
 | `GET` | `/api/v1/backend-templates/:id/revisions/:version` | Document canonical đã publish (export) |
 | `POST` | `/api/v1/backend-templates/capture` | Draft từ chính schema của site `{ collections, slug, displayName, templateVersion?, description?, seed? }` → `201`; `422 MISSING_DEPENDENCY` (kèm `missing`); `403` nếu không đọc được item để seed |
-| `POST` | `/api/v1/backend-templates/plans` | Xem trước một lần cài (#903) `{ template: { source, sourceSiteId?, slug \| displayName, version, digest? }, targetSiteId, namespace?, seedPack? }` → `201` plan kèm `report`; `400 MISSING_INPUT` / `SITE_MISMATCH`; `409 AMBIGUOUS_TEMPLATE` / `NAME_CONFLICT`; `422 INCOMPATIBLE_RUNTIME` / `INVALID_TEMPLATE`. Không ghi schema hay content |
+| `POST` | `/api/v1/backend-templates/plans` | Xem trước một lần cài (#903) `{ template: { source, sourceSiteId?, slug \| displayName, version, digest? }, targetSiteId, namespace?, seedMode? (none\|pack), seedPack? }` → `201` plan kèm `report`; `400 MISSING_INPUT` / `SITE_MISMATCH`; `409 AMBIGUOUS_TEMPLATE` / `NAME_CONFLICT`; `422 INCOMPATIBLE_RUNTIME` / `INVALID_TEMPLATE`. Không ghi schema hay content |
 | `GET` | `/api/v1/backend-templates/plans/:planId` | Đọc một plan (chỉ site đích) |
 | `POST` | `/api/v1/backend-templates/plans/:planId/verify` | Kiểm tra lại thời hạn, fingerprint đích và runtime; `409 STALE_PLAN` đóng plan |
 | `POST` | `/api/v1/backend-templates/installations` | Áp dụng một plan một cách nguyên tử (#904) `{ planId, idempotencyKey }` → `201`, hoặc `200` (`meta.replayed`) khi thử lại; `409 STALE_PLAN` / `NAME_CONFLICT` / `IDEMPOTENCY_CONFLICT`; `403` nếu không còn là site admin; `422 INCOMPATIBLE_RUNTIME` |
