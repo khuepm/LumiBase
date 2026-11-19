@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { getTableName } from 'drizzle-orm';
+import { getTableName, type SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 import {
   RecoveryService,
@@ -63,6 +64,8 @@ interface CapturedDelete {
 function makeFakeDb(opts: FakeDbOptions = {}) {
   const updates: CapturedUpdate[] = [];
   const deletes: CapturedDelete[] = [];
+  /** `WHERE` predicates of `users` lookups, for identity-mode assertions (#862). */
+  const userWheres: unknown[] = [];
 
   function rowsForTable(name: string): ReadonlyArray<Record<string, unknown>> {
     switch (name) {
@@ -97,7 +100,8 @@ function makeFakeDb(opts: FakeDbOptions = {}) {
             },
           };
           return {
-            where() {
+            where(predicate: unknown) {
+              if (name === 'lumibase_users') userWheres.push(predicate);
               return whereChain;
             },
           };
@@ -146,7 +150,7 @@ function makeFakeDb(opts: FakeDbOptions = {}) {
     },
   };
 
-  return { db: db as never, updates, deletes };
+  return { db: db as never, updates, deletes, userWheres };
 }
 
 // ── shared fixtures ─────────────────────────────────────────────────────
@@ -802,5 +806,61 @@ describe('NoopRecoveryEmailSender', () => {
     await expect(
       sender.sendRecoveryEmail({ to: BOOT_EMAIL, recoveryToken: 'tok' }),
     ).resolves.toBeUndefined();
+  });
+});
+
+// ── email identity mode (#862) ──────────────────────────────────────────
+
+const dialect = new PgDialect();
+function renderSql(predicate: unknown): { sql: string; params: unknown[] } {
+  const q = dialect.sqlToQuery(predicate as SQL);
+  return { sql: q.sql, params: q.params };
+}
+
+describe('RecoveryService — lookups follow the instance email identity mode (#862)', () => {
+  it('recover resolves an alias to the bootstrap account under root mode', async () => {
+    const { db, userWheres } = makeFakeDb({
+      userRows: [{ id: 'usr_boot', email: BOOT_EMAIL, isBootstrap: true }],
+      stateRows: [{ adminPath: ADMIN_PATH, mode: 'root' }],
+      codeRows: await bootstrapCodeRows(PLAINTEXT_CODE),
+    });
+    const svc = new RecoveryService({ db, sleep: instantSleep });
+
+    const result = await svc.recover('Boot+ops@Example.com', PLAINTEXT_CODE, IP);
+
+    expect(result).not.toBeNull();
+    expect(userWheres).toHaveLength(1);
+    const lookup = renderSql(userWheres[0]);
+    expect(lookup.sql).toContain('"email_canonical" = $1');
+    expect(lookup.params[0]).toBe(BOOT_EMAIL);
+  });
+
+  it('forgotPath resolves an alias under root mode and mails the stored address', async () => {
+    const { db, userWheres } = makeFakeDb({
+      userRows: [{ id: 'usr_boot', email: BOOT_EMAIL, isBootstrap: true }],
+      stateRows: [{ adminPath: ADMIN_PATH, mode: 'root' }],
+    });
+    const sender = new CapturingEmailSender();
+    const svc = new RecoveryService({ db, recoveryEmailSender: sender, sleep: instantSleep });
+
+    await svc.forgotPath('boot+ops@example.com', IP);
+
+    const lookup = renderSql(userWheres[0]);
+    expect(lookup.sql).toContain('"email_canonical" = $1');
+    expect(lookup.params[0]).toBe(BOOT_EMAIL);
+    expect(sender.calls).toHaveLength(1);
+    expect(sender.calls[0]!.to).toBe(BOOT_EMAIL);
+  });
+
+  it('keeps the case-folded exact match under exact mode', async () => {
+    const { db, userWheres } = makeFakeDb({
+      userRows: [],
+      stateRows: [{ adminPath: ADMIN_PATH, mode: 'exact' }],
+    });
+    const svc = new RecoveryService({ db, sleep: instantSleep });
+
+    await svc.forgotPath('Boot+ops@Example.com', IP);
+
+    expect(renderSql(userWheres[0]).params[0]).toBe('boot+ops@example.com');
   });
 });

@@ -1,12 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
-import type { ImportJob } from '@lumibase/sdk';
+import { useCallback, useEffect, useState } from 'react';
+import type { ImportJob, RealtimeEvent } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
+import { useConnectionStatus, useRealtimeSubscription } from '@/hooks/use-realtime';
 
 /**
  * Import dialog (#726): upload a CSV or JSON export file, then follow the
  * background job — progress, cancel, and the row-level error report. Closing
  * the dialog does not stop the job; it keeps running on the server.
+ *
+ * Progress arrives over realtime: the server publishes an `import.progress`
+ * event (counters only, targeted at the job's creator) after every chunk and
+ * on the terminal transition. Polling stays on as the fallback — fast while
+ * the realtime socket is down, slow while it is connected — so a dropped or
+ * missed event never strands the dialog.
  */
 
 export type ImportMode = 'create' | 'upsert';
@@ -14,8 +21,10 @@ export type ImportMode = 'create' | 'upsert';
 export interface ImportDialogProps {
   collection: string;
   onClose: () => void;
-  /** Poll interval while the job runs (ms). */
+  /** Poll interval while the job runs and realtime is not connected (ms). */
   pollMs?: number;
+  /** Poll interval while realtime is connected — a safety net only (ms). */
+  livePollMs?: number;
 }
 
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
@@ -35,6 +44,34 @@ export function formatFromName(name: string): 'csv' | 'json' | undefined {
 export function progressPct(job: Pick<ImportJob, 'processedRows' | 'totalRows'>): number {
   if (job.totalRows <= 0) return 0;
   return Math.min(100, Math.round((job.processedRows / job.totalRows) * 100));
+}
+
+/**
+ * The job carried by a realtime `import.progress` event for `jobId`, or `null`
+ * when the event is anything else (an item mutation, another job's progress).
+ */
+export function importProgressFromEvent(event: Pick<RealtimeEvent, 'payload'>, jobId: string): ImportJob | null {
+  const payload = event.payload;
+  if (!payload || typeof payload !== 'object') return null;
+  const { kind, job } = payload as { kind?: unknown; job?: unknown };
+  if (kind !== 'import.progress' || !job || typeof job !== 'object') return null;
+  const candidate = job as Partial<ImportJob>;
+  if (candidate.id !== jobId || typeof candidate.status !== 'string' || typeof candidate.processedRows !== 'number') {
+    return null;
+  }
+  return candidate as ImportJob;
+}
+
+/**
+ * Whether `next` should replace `current` in the cache. Realtime and polling
+ * race, so an older snapshot must never roll the counters back, and nothing
+ * replaces a terminal snapshot.
+ */
+export function isNewerJob(current: ImportJob | undefined, next: ImportJob): boolean {
+  if (!current) return true;
+  if (isTerminal(current)) return false;
+  if (isTerminal(next)) return true;
+  return next.processedRows >= current.processedRows;
 }
 
 const STATUS_LABEL: Record<ImportJob['status'], string> = {
@@ -58,7 +95,7 @@ async function downloadErrors(jobId: string) {
   URL.revokeObjectURL(url);
 }
 
-export function ImportDialog({ collection, onClose, pollMs = 1000 }: ImportDialogProps) {
+export function ImportDialog({ collection, onClose, pollMs = 1000, livePollMs = 10_000 }: ImportDialogProps) {
   const client = getApiClient();
   const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
@@ -75,12 +112,27 @@ export function ImportDialog({ collection, onClose, pollMs = 1000 }: ImportDialo
     onSuccess: (job) => setJobId(job.id),
   });
 
+  const connection = useConnectionStatus();
+  const interval = connection === 'connected' ? livePollMs : pollMs;
+
   const jobQuery = useQuery({
     queryKey: ['import-job', jobId],
     enabled: jobId !== null,
     queryFn: async () => (await client.imports.get(jobId!)).data,
-    refetchInterval: (query) => (isTerminal(query.state.data) ? false : pollMs),
+    refetchInterval: (query) => (isTerminal(query.state.data) ? false : interval),
   });
+
+  const onRealtime = useCallback(
+    (event: RealtimeEvent) => {
+      if (!jobId) return;
+      const next = importProgressFromEvent(event, jobId);
+      if (!next) return;
+      const current = queryClient.getQueryData<ImportJob>(['import-job', jobId]);
+      if (isNewerJob(current, next)) queryClient.setQueryData(['import-job', jobId], next);
+    },
+    [jobId, queryClient],
+  );
+  useRealtimeSubscription(collection, onRealtime);
   const job = jobQuery.data ?? upload.data;
   const done = isTerminal(job);
 

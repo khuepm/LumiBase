@@ -3,6 +3,8 @@ import type {
   CacheEvent,
   CacheProvider,
   CacheSetOptions,
+  MemberBatch,
+  MemberSetProvider,
 } from './interfaces/cache';
 import { classifyCacheValue, negativeCacheWireValue } from './cache-entry';
 
@@ -11,12 +13,24 @@ interface MemoryEntry {
   expiresAt: number | null;
 }
 
+interface MemorySet {
+  /**
+   * Member → write generation. Insertion order is age order (the first
+   * member is the oldest); the generation lets an ack skip a re-added member.
+   */
+  members: Map<string, number>;
+  expiresAt: number | null;
+}
+
 /**
  * In-process CacheProvider with LRU eviction, TTL, tag indexing, and
  * negative-cache support (high-load-cache-readiness Req 7.6 / 19.4).
  */
-export class MemoryCacheProvider implements CacheProvider {
+export class MemoryCacheProvider implements CacheProvider, MemberSetProvider {
   private readonly store = new Map<string, MemoryEntry>();
+  /** Member sets live apart from `store`, so `get`/`delete` never see them. */
+  private readonly sets = new Map<string, MemorySet>();
+  private setGeneration = 0;
   private readonly tagIndex = new Map<string, Set<string>>();
 
   onEvent?: (e: CacheEvent) => void;
@@ -136,5 +150,47 @@ export class MemoryCacheProvider implements CacheProvider {
     const next = (Number.isFinite(current) ? current : 0) + by;
     await this.set(key, JSON.stringify(next), raw ? undefined : opts);
     return next;
+  }
+
+  // Synchronous between the awaits, so concurrent adds cannot interleave.
+  async addMember(key: string, member: string, opts?: { ttl?: number; limit?: number }): Promise<void> {
+    const now = Date.now();
+    let set = this.sets.get(key);
+    if (!set || (set.expiresAt !== null && set.expiresAt <= now)) {
+      set = { members: new Map(), expiresAt: null };
+      this.sets.set(key, set);
+    }
+    set.members.delete(member);
+    set.members.set(member, (this.setGeneration += 1));
+    if (opts?.limit !== undefined) {
+      for (const oldest of set.members.keys()) {
+        if (set.members.size <= opts.limit) break;
+        set.members.delete(oldest);
+      }
+    }
+    if (opts?.ttl) set.expiresAt = now + opts.ttl * 1000;
+  }
+
+  async readMembers(key: string, opts?: { limit?: number }): Promise<MemberBatch> {
+    const set = this.sets.get(key);
+    if (!set || (set.expiresAt !== null && set.expiresAt <= Date.now())) {
+      this.sets.delete(key);
+      return { members: [], ack: async () => undefined };
+    }
+    let read = [...set.members];
+    if (opts?.limit !== undefined) read = opts.limit > 0 ? read.slice(-opts.limit) : [];
+    return {
+      members: read.map(([member]) => member),
+      ack: async (subset?: readonly string[]) => {
+        const current = this.sets.get(key);
+        if (!current) return;
+        const only = subset ? new Set(subset) : null;
+        for (const [member, generation] of read) {
+          if (only && !only.has(member)) continue;
+          if (current.members.get(member) === generation) current.members.delete(member);
+        }
+        if (current.members.size === 0) this.sets.delete(key);
+      },
+    };
   }
 }

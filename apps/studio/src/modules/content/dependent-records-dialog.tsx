@@ -6,6 +6,8 @@ import { getApiClient } from '@/lib/api';
 /** One group of records that reference the item being deleted. */
 export interface DependentGroup {
   relation: string;
+  /** `richtext`: rich-text links/embeds (#697) — fixed by editing that content, not via resolve-dependents. */
+  kind?: 'relation' | 'richtext';
   collection: string;
   field: string;
   onDelete: string;
@@ -27,12 +29,18 @@ export function DependentRecordsDialog(props: {
   groups: DependentGroup[];
   onClose: () => void;
   onAllResolved: () => void;
+  /** Open a referencing item (rich-text groups link to the content to edit). */
+  onOpenItem?: (collection: string, id: string) => void;
 }) {
   const client = getApiClient();
   const [resolved, setResolved] = useState<Record<string, boolean>>({});
   const [choice, setChoice] = useState<Record<string, Action>>({});
   const [reassignTo, setReassignTo] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+
+  // Rich-text references cannot be batch-resolved: the editor removes the
+  // link or embed in the referencing item, then deletes again.
+  const resolvable = props.groups.filter((g) => g.kind !== 'richtext');
 
   const resolveMutation = useMutation({
     mutationFn: async (group: DependentGroup) => {
@@ -50,7 +58,7 @@ export function DependentRecordsDialog(props: {
       const next = { ...resolved, [group.relation]: true };
       setResolved(next);
       setError(null);
-      if (props.groups.every((g) => next[g.relation])) props.onAllResolved();
+      if (resolvable.length === props.groups.length && props.groups.every((g) => next[g.relation])) props.onAllResolved();
     },
     onError: (err: unknown) => {
       setError((err as { body?: { errors?: Array<{ message?: string }> } })?.body?.errors?.[0]?.message ?? 'Failed to resolve.');
@@ -86,7 +94,37 @@ export function DependentRecordsDialog(props: {
                   <span className="text-muted-foreground">onDelete: {g.onDelete}</span>
                 )}
               </div>
-              {!resolved[g.relation] && (
+              {g.kind === 'richtext' && (
+                <div className="space-y-1" data-testid={`richtext-dependents-${g.collection}-${g.field}`}>
+                  <p className="text-muted-foreground">
+                    Rich text in these records links to or embeds this item. Remove the reference there, then delete
+                    again.
+                  </p>
+                  {g.sample.length > 0 && (
+                    <ul className="flex flex-wrap gap-2">
+                      {g.sample.map((s) => (
+                        <li key={s.id}>
+                          {props.onOpenItem ? (
+                            <button
+                              type="button"
+                              className="rounded border border-border px-2 py-0.5 font-mono hover:bg-accent"
+                              onClick={() => props.onOpenItem?.(g.collection, s.id)}
+                            >
+                              {s.id}
+                            </button>
+                          ) : (
+                            <span className="font-mono">{s.id}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {g.count > g.sample.length && (
+                    <p className="text-muted-foreground">…and {g.count - g.sample.length} more.</p>
+                  )}
+                </div>
+              )}
+              {g.kind !== 'richtext' && !resolved[g.relation] && (
                 <div className="flex flex-wrap items-center gap-2">
                   <select
                     className="rounded border border-input bg-background px-2 py-1"
