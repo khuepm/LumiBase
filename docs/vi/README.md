@@ -1,10 +1,10 @@
 ---
-version: 13
-lastUpdated: 2026-11-19T05:15:26.569Z
+version: 14
+lastUpdated: 2026-11-19T05:19:35.652Z
 sourceLang: vi
-contentHash: 98d810cab3a8cc8e
-codeVerified: 2026-11-19T05:15:26.569Z
-codeVerifiedHash: 98d810cab3a8cc8e
+contentHash: d2cc106e6be514ec
+codeVerified: 2026-11-19T05:19:35.652Z
+codeVerifiedHash: d2cc106e6be514ec
 codeVerifiedClaims: 4
 ---
 
@@ -26,16 +26,16 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 ## Bắt đầu nhanh
 
 - [getting-started.md](./getting-started.md) — Khởi tạo dự án LumiBase mới bằng `npm create lumibase@next` (CLI `create-lumibase`): template `nextjs` được chọn sẵn dựng website Next.js kèm CMS + Studio và nội dung mẫu, còn `default`/`cloudflare` dựng starter Hono + Drizzle. Trang này cũng chỉ rõ khi nào bạn **không** cần khung nào cả — chỉ cần `npm install lumibase`.
-- [cli/index.md](./cli/index.md) — CLI `lumibase`: `init` (tạo project), `types` (sinh type từ CMS đang chạy), `doctor` (kiểm tra cấu hình và kết nối).
+- [cli/](./cli/) — CLI `lumibase`: `init` (tạo project), `types` (sinh type từ CMS đang chạy), `doctor` (kiểm tra cấu hình và kết nối).
 
 ## Tutorials (hướng dẫn thực hành)
 
-- [tutorials/index.md](./tutorials/index.md) — Danh mục các tutorial end-to-end cho người mới.
+- [tutorials/](./tutorials/) — Danh mục các tutorial end-to-end cho người mới.
 - [tutorials/nextjs-quickstart.md](./tutorials/nextjs-quickstart.md) — **Hiển thị nội dung LumiBase trên app Next.js**: chạy CMS local, tạo collection `posts`, rồi fetch & render bằng package chính thức `lumibase` (`fetch` thuần được nêu sau như một lựa chọn thay thế). Đây là bản làm bằng tay của thứ mà template `nextjs` dựng sẵn cho bạn.
 
 ## Agent Setup (cho AI agent)
 
-- [agent-setup/index.md](./agent-setup/index.md) — Trang tổng hợp thiết lập AI agent cho LumiBase.
+- [agent-setup/](./agent-setup/) — Trang tổng hợp thiết lập AI agent cho LumiBase.
 - [agent-setup/prompt.md](./agent-setup/prompt.md) — Hướng dẫn máy đọc được (machine-readable), agent fetch và execute trực tiếp.
 - [agent-setup/claude-code.md](./agent-setup/claude-code.md) · [cursor.md](./agent-setup/cursor.md) · [github-copilot.md](./agent-setup/github-copilot.md) · [codex.md](./agent-setup/codex.md) · [windsurf.md](./agent-setup/windsurf.md) — Hướng dẫn từng agent.
 - [llms.txt](../llms.txt) — Index toàn bộ docs cho LLM. [en/llms.txt](../en/llms.txt) — Index English docs.
@@ -48,7 +48,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 - **Kiến trúc**
   - [architecture/overview.md](./architecture/overview.md) — Tổng thể tech stack, các lớp, module, runtime abstraction.
   - [architecture/page-hydration.md](./architecture/page-hydration.md) — Hợp đồng API hydrate trang.
-  - [architecture/decisions/index.md](./architecture/decisions/index.md) — Architecture Decision Records (ADR-001 đến ADR-008).
+  - [architecture/decisions/](./architecture/decisions/) — Architecture Decision Records (ADR-001 đến ADR-008).
 - **Mô hình dữ liệu**
   - [data-model.md](./data-model.md) — Schema lõi (sites, collections, fields, relations, permissions, presets, translations, files, revisions, activity, webhooks, extensions, **flows, ai_approvals, materialized_collections, translation_memory, glossary**).
 - **Tính năng cốt lõi** (`features/`)
@@ -99,7 +99,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - Setup: [Debezium+Kafka](./cdc/setup-debezium-kafka.md) · [Materialized Engine](./cdc/setup-materialized-engine.md) · [Airbyte](./cdc/setup-airbyte.md).
   - Deployment: [Docker Compose / managed services](./cdc/deployment-docker-compose.md) · [Cloudflare Workers (edge only)](./cdc/deployment-cloudflare-workers.md).
 - **SDK** (`sdk/`)
-  - [sdk/index.md](./sdk/index.md) — SDK overview.
+  - [sdk/](./sdk/) — SDK overview.
   - [sdk/javascript.md](./sdk/javascript.md) — JS/TS SDK đầy đủ (auth, items, files, realtime, AI Copilot, Flows).
   - [sdk/typegen.md](./sdk/typegen.md) — Sinh TypeScript types từ schema live.
 - **API**
@@ -140,7 +140,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - Theo thị trường: [EU GDPR/ePrivacy](./compliance/market-eu-gdpr.md) · [US CCPA/CPRA & CAN-SPAM](./compliance/market-us.md) · [Việt Nam PDPD & giấy phép nội dung](./compliance/market-vietnam.md) · [Chính sách store Google & Apple](./compliance/provider-google-apple.md).
   - [compliance/gap-analysis.md](./compliance/gap-analysis.md) — Ánh xạ Quyền ↔ tính năng LumiBase (✅/⚠️/❌) + [implementation-checklist.md](./compliance/implementation-checklist.md).
 - **Đóng góp** (`contributing/`)
-  - [contributing/index.md](./contributing/index.md) — Setup, branching, commit conventions, PR checklist.
+  - [contributing/](./contributing/) — Setup, branching, commit conventions, PR checklist.
   - [contributing/code-style.md](./contributing/code-style.md) — TypeScript, naming, service patterns.
   - [contributing/testing.md](./contributing/testing.md) — Vitest unit, property-based, integration tests.
   - [contributing/extension-dev.md](./contributing/extension-dev.md) — Build custom extensions (interface, display, operation, hook, endpoint).
