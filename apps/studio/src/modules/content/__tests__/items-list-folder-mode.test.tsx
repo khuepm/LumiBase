@@ -16,6 +16,9 @@ const getCollection = vi.fn();
 
 vi.mock('@tanstack/react-router', () => ({
   useParams: () => ({ collection: 'folders' }),
+  // The list mirrors its view state into the URL (#694).
+  useSearch: () => ({}),
+  useNavigate: () => vi.fn(async () => undefined),
   Link: ({ children: kids, params, search: _s, to: _to, ...rest }: { children: ReactNode; params?: { id?: string }; search?: unknown; to?: string }) => (
     <a href={`/content/folders/${params?.id ?? ''}`} {...rest}>
       {kids}

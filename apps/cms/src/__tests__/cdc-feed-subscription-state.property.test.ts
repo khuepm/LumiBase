@@ -67,7 +67,9 @@ describe('Feature: cdc-extension-integration, Property 11: Ack không lùi', () 
   it('compareKeyset is a total order: antisymmetric and transitive over samples', () => {
     fc.assert(
       fc.property(cursorArb, cursorArb, cursorArb, (a, b, c) => {
-        expect(Math.sign(compareKeyset(a, b))).toBe(-Math.sign(compareKeyset(b, a)));
+        // `+ 0` folds -0 into 0: when a and b compare equal, -Math.sign(0) is -0,
+        // which Object.is (toBe) treats as different from 0.
+        expect(Math.sign(compareKeyset(a, b)) + 0).toBe(-Math.sign(compareKeyset(b, a)) + 0);
         if (compareKeyset(a, b) <= 0 && compareKeyset(b, c) <= 0) {
           expect(compareKeyset(a, c)).toBeLessThanOrEqual(0);
         }

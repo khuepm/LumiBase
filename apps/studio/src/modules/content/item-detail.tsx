@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { Check, ChevronDown, ChevronLeft, Copy, Eye, Lock, Pin, Save, Share2, Star, Trash2, X } from 'lucide-react';
+import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { Check, ChevronDown, Copy, Eye, Lock, Pin, Save, Share2, Star, Trash2, X } from 'lucide-react';
 import type { SaveAction } from '@lumibase/contracts/schemas';
 import { useSaveAction, saveActionLabel } from './use-save-action';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -39,6 +39,8 @@ import {
 import { readEditorIntentSearch } from './editor-intent-search';
 import { ItemCreate } from './item-create';
 import { EditorialActions } from './editorial-actions';
+import { BackToList, ItemBreadcrumbs, itemTitle } from './item-breadcrumbs';
+import { lastListSearch } from './list-url-state';
 import { DuplicateItemButton, PublicationInfo } from './item-publication';
 import { useFocusFieldFromHash } from './focus-field';
 import { mergeDrafts, type MergeResult } from './stale-merge';
@@ -368,7 +370,7 @@ function ItemEditor({
       const action = pendingAction ?? saveAction.effective;
       setPendingAction(null);
       if (action === 'return') {
-        navigate({ to: '/content/$collection', params: { collection } });
+        navigate({ to: '/content/$collection', params: { collection }, search: lastListSearch(collection) as never });
       } else if (action === 'create_new') {
         navigate({ to: '/content/$collection/$id', params: { collection, id: 'new' } });
       }
@@ -435,7 +437,7 @@ function ItemEditor({
     onSuccess: () => {
       setDependentGroups(null);
       queryClient.invalidateQueries({ queryKey: ['items', collection] });
-      navigate({ to: '/content/$collection', params: { collection } });
+      navigate({ to: '/content/$collection', params: { collection }, search: lastListSearch(collection) as never });
     },
     onError: (err: unknown) => {
       // 409 DEPENDENT_RECORDS_EXIST → open the resolution dialog with the groups.
@@ -490,28 +492,12 @@ function ItemEditor({
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs uppercase text-muted-foreground">
-            <Link to="/" className="hover:underline">Content</Link>
-            <span className="mx-1">/</span>
-            <Link
-              to="/content/$collection"
-              params={{ collection }}
-              className="hover:underline"
-            >
-              {collection}
-            </Link>
-            <span className="mx-1">/</span>
-            <span className="font-mono">{id.slice(0, 8)}…</span>
-          </p>
+          <ItemBreadcrumbs
+            collection={collection}
+            current={itemTitle(id, itemQuery.data.data as Record<string, unknown> | undefined)}
+          />
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <Link
-              to="/content/$collection"
-              params={{ collection }}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Back to list"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </Link>
+            <BackToList collection={collection} />
             Edit item
             {latestRevision && <ProvenanceBadge revision={latestRevision} />}
           </h1>

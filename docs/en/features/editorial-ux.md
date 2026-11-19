@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 5
-lastUpdated: 2026-11-19T08:13:12.107Z
-contentHash: c5cedcfba93453ae
-codeVerified: 2026-11-19T08:13:12.107Z
-codeVerifiedHash: c5cedcfba93453ae
+version: 7
+lastUpdated: 2026-11-19T09:11:32.575Z
+contentHash: f4a18816aa89953f
+codeVerified: 2026-11-19T09:11:32.575Z
+codeVerifiedHash: f4a18816aa89953f
 codeVerifiedClaims: 22
 ---
 
@@ -160,6 +160,29 @@ records no revision. A collection without `manualSort` answers
 In Studio a manual-sort collection opens sorted by `sort`, and its rows can be
 dragged: dropping below the target places the item after it, dropping above
 places it before. The SDK has `client.items('menu').reorder(id, { after })`.
+
+## Navigating the Studio
+
+- **Lists keep their view.** A collection list writes its page, sort, filters
+  and the **Modified since publish** toggle into the URL (`?page=`, `?sort=`,
+  `?f=`, `?modified=`). Opening an item and pressing the browser's Back button
+  returns to the same page and filters, and the URL can be shared or
+  bookmarked. A view in the URL takes precedence over the saved default view.
+- **Breadcrumbs.** The item editor and the create form show
+  **Content › collection › item** (the item's title, name or label, else a
+  short id). The collection link and the back arrow return to the list view
+  you left, and **Save and return** and **Delete** land there too.
+- **Singletons open in the form.** A collection marked as a singleton skips its
+  list: opening it goes straight to its one item, or to the create form while
+  it has none. Add `?list=1` to the list URL to see the list anyway.
+- **Connection problems don't blank the page.** Reads retry on their own after
+  a dropped connection, a `429` or a `502`–`504` (waiting the server's
+  `Retry-After`, else 1, 2, 4 seconds). If the problem outlasts the retries, or
+  a save fails that way, a **Try again** box appears in the corner; the page
+  stays as it was, and for a save the retry re-sends the same change. Other
+  errors (validation, permissions, conflicts) are shown by the screen that made
+  the request, as before. A screen that fails to render shows **Try again** and
+  **Go to Content** instead of an empty page.
 
 ## Editing together
 

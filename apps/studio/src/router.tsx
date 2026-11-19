@@ -1,3 +1,4 @@
+import { RouteErrorScreen } from './components/route-error-screen';
 import {
   createRootRoute,
   createRoute,
@@ -1598,7 +1599,8 @@ const routeTree = rootRoute.addChildren([
   ]),
 ]);
 
-export const router = createRouter({ routeTree, rewrite: adminBaseRewrite });
+// A route that throws shows a "Try again" screen, never a blank page (#694).
+export const router = createRouter({ routeTree, rewrite: adminBaseRewrite, defaultErrorComponent: RouteErrorScreen });
 
 declare module '@tanstack/react-router' {
   interface Register {
