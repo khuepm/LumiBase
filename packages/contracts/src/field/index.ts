@@ -25,7 +25,9 @@ export type FieldType =
   /** Dynamic zone (#748): ordered `{ id, type, data }` blocks; see `options.allowedBlocks`. */
   | 'blocks'
   /** `{ lat, lng }` point (#746) — see `./geopoint`. */
-  | 'geopoint';
+  | 'geopoint'
+  /** Portable rich-text document (#695) — see `@lumibase/contracts/richtext`. */
+  | 'richtext';
 
 export type FieldWidth = 'half' | 'full' | 'fill';
 

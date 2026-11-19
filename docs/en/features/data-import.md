@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-11-12T21:04:27.226Z
+version: 7
+lastUpdated: 2026-11-19T03:47:08.022Z
 sourceLang: en
-contentHash: 5644257d82b75cbc
-codeVerified: 2026-11-12T21:04:27.226Z
-codeVerifiedHash: 5644257d82b75cbc
+contentHash: a245c8da79b1fa1a
+codeVerified: 2026-11-19T03:47:08.022Z
+codeVerifiedHash: a245c8da79b1fa1a
 codeVerifiedClaims: 12
 ---
 
@@ -78,9 +78,17 @@ POST /api/v1/imports?collection={collection}&format=csv|json&mode=create|upsert
   of the collection are rejected with `400` before any row is written.
 - **Mode:** `create` (default) always creates new items. `upsert` updates the
   item whose `id` matches and creates the rest; it needs `update` permission too.
-- **Permissions:** checked up front (`create`, plus `update` for `upsert`) and
-  again on every row, as the user or API key that uploaded the file. If that
+- **Permissions:** checked up front (`read` and `create`, plus `update` for
+  `upsert`; `read` because the job reads the collection's schema) and again on
+  every row, as the user or API key that uploaded the file. If that
   principal loses access while the job runs, the job stops as `failed`.
+- **Size:** a file over `IMPORT_MAX_BYTES` gets `413 PAYLOAD_TOO_LARGE`. The
+  limit is counted while the body arrives, so a chunked upload without a
+  `Content-Length` is cut off at the limit too.
+- **Per-site budget:** a site may have at most `IMPORT_MAX_PENDING_JOBS` jobs
+  and `IMPORT_MAX_PENDING_BYTES` of uploaded files `queued` or `running` at
+  once. Past either, the upload gets `429 LIMIT_EXCEEDED`; retry when a job
+  finishes.
 
 The response is the job:
 
@@ -118,18 +126,30 @@ every row failed. The first 1,000 row errors are kept and the rest counted in
 `errorsTruncated`. Rows written before a cancel or timeout stay.
 
 Studio has the same flow under **Content → collection → Import**, with a
-progress bar, **Cancel import** and **Download error report**. Studio also
-receives an `import.progress` realtime event for the uploader.
+progress bar, **Cancel import** and **Download error report**. The progress bar
+follows the `import.progress` realtime event, which the server sends to the
+uploader after every chunk and when the job ends (counters only, never row
+data). Polling stays on as a fallback: every second while the realtime
+connection is down, every 10 seconds while it is up. An older snapshot never
+moves the counters back, and nothing replaces a finished job.
 
 **How it runs.** The upload request starts the job and works on it for up to
 about 20 seconds. After that, a one-minute cron (Workers Cron Trigger, or the
-Node scheduler on Docker) resumes it. Each chunk is one database transaction:
+Node scheduler on Docker) resumes it. The file is parsed once, when the job is
+created, and its rows are stored in chunks; each step reads only the next
+chunk. The job and all of its chunks commit together, so a worker never picks
+up a job whose rows are only partly stored, and a job that finishes or is
+cancelled drops its remaining chunks in the same commit as its final status.
+Each chunk is one database transaction:
 the rows and the progress counter commit together, so a worker that dies
 mid-chunk leaves nothing behind and the chunk is replayed from the last
 committed row, with no duplicates. The transaction locks the job, so a second
 worker waits instead of writing the same rows, and takes over once the first
-worker's lease expires. Measured locally on Postgres 16, a
-row goes through the full item pipeline (validation, revisions, change feed) at
+worker's lease expires. The cron shares its time between jobs one chunk at a
+time and picks the oldest job of every site before a second job of any site, so
+one large import does not hold up other jobs. `IMPORT_MAX_CONCURRENCY` is a hard
+per-site limit: a job only starts while fewer jobs of its site are running.
+Measured locally on Postgres 16, a row goes through the full item pipeline (validation, revisions, change feed) at
 about 90 rows per second per job, so a 100k-row file takes about 20 minutes.
 Limits and chunk size are set with [`IMPORT_*` variables](../deployment/environment-variables.md#imports).
 

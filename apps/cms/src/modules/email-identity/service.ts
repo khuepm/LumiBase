@@ -168,8 +168,10 @@ export async function setInstanceEmailIdentityMode(
         }
         await tx.execute(sql`UPDATE lumibase_users SET email_canonical = email_root`);
       } else {
-        // Loosening: lower(email) is already unique (users_email_lower_unique).
-        await tx.execute(sql`UPDATE lumibase_users SET email_canonical = lower(email)`);
+        // Loosening: back to the exact key the trigger writes (#862:
+        // trim + lower). Unique here because under `root` every row's root
+        // mailbox — a function of this key — was already unique.
+        await tx.execute(sql`UPDATE lumibase_users SET email_canonical = lumibase_email_normalize(email)`);
       }
       await tx
         .update(systemState)

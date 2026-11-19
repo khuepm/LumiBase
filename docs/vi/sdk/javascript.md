@@ -1,13 +1,13 @@
 ---
-version: 7
-lastUpdated: 2026-11-12T10:11:46.996Z
+version: 8
+lastUpdated: 2026-11-16T02:07:12.243Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 88e0270e2e7e332c
+sourceHash: 2bc0c8e592654208
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T10:11:46.996Z
-codeVerifiedHash: 88e0270e2e7e332c
+codeVerified: 2026-11-17T19:25:58.420Z
+codeVerifiedHash: 2bc0c8e592654208
 codeVerifiedClaims: 8
 ---
 
@@ -209,6 +209,15 @@ while (!['succeeded', 'failed', 'cancelled', 'timed_out'].includes(current.statu
   current = (await client.imports.get(job.id)).data
 }
 if (current.failedRows > 0) console.table((await client.imports.errors(job.id)).data.errors)
+```
+
+### Gợi ý index cho JSON path
+
+```typescript
+// Index biểu thức cho filter có kiểu, ví dụ filter[specs.weight][_gt]=10.
+// Chỉ là gợi ý: xem lại DDL rồi tự chạy (DDL dùng CONCURRENTLY).
+const { data: advice } = await client.schema.indexAdvice('products', 'specs.weight', 'numeric')
+console.log(advice.ddl ?? advice.notes.join('\n')) // ddl là null với cast timestamp
 ```
 
 ### Revision và pin

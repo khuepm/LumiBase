@@ -613,6 +613,10 @@ function ItemEditor({
           groups={dependentGroups}
           onClose={() => setDependentGroups(null)}
           onAllResolved={() => deleteMutation.mutate()}
+          onOpenItem={(c, itemId) => {
+            setDependentGroups(null);
+            navigate({ to: '/content/$collection/$id', params: { collection: c, id: itemId } });
+          }}
         />
       )}
 

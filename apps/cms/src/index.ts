@@ -113,6 +113,7 @@ import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
 import { cdcRouter } from './modules/cdc';
+import { releaseFlagsRouter } from './modules/release-flags';
 import { cdcFeedRouter } from './modules/cdc/change-feed/routes';
 import { lumibaseFirebaseSyncRouter } from './modules/lumibase-firebase-sync';
 import { pageviewsRouter, pageviewsPublicRouter } from './modules/pageviews/routes';
@@ -421,6 +422,13 @@ api.route('/agent', agentRouter);
 // Agent API — the MCP adapter passes the token's roles to the harness, so
 // both surfaces share one decision codepath (Property 14).
 api.route('/mcp', mcpRouter);
+
+// Release flags (#869). Not control-plane as a whole: members read the
+// effective flags of their site so clients can hide dark features. Writes are
+// gated in-router — `PUT /site` by `requireSiteAdmin`, the instance manifest
+// endpoints by the bootstrap admin (never an API key) plus the Ed25519
+// signature on the manifest itself.
+api.route('/release-flags', releaseFlagsRouter);
 
 // ClickHouse CDC control-plane surface (`/api/v1/cdc/*`) — clickhouse-cdc
 // task 12.2; Req 1.1; design "CDC API Routes" §7. Mounted on the

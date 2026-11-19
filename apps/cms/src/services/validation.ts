@@ -12,7 +12,14 @@ import {
   resolveFormVisibility,
   type FormLayout,
 } from '@lumibase/contracts/form-layout';
-import { GeoPointSchema } from '@lumibase/contracts/schemas';
+import { GeoPointSchema, richTextValueSchema } from '@lumibase/contracts/schemas';
+import {
+  RICHTEXT_FIELD_TYPE,
+  RICHTEXT_INTERFACE,
+  isRichTextDocument,
+  readRichTextFieldOptions,
+  sanitizeRichTextDocument,
+} from '@lumibase/contracts/richtext';
 import type { CompiledField } from './schema-service';
 import {
   BLOCK_ID_PATTERN,
@@ -128,11 +135,62 @@ function buildZonedFieldSchema(field: CompiledField, skipRequired = false): ZodT
   return required ? core : core.optional();
 }
 
+/**
+ * `richtext` field (#695 / #700): a portable document, validated with
+ * limits, checked against the field's options (allowed blocks, marks,
+ * heading levels, references, length) and stored sanitised. `null` clears
+ * the field; a required field needs at least one block.
+ */
+function buildRichTextSchema(field: CompiledField, skipRequired = false): ZodTypeAny {
+  const required = field.required && !skipRequired;
+  const value = richTextValueSchema(readRichTextFieldOptions(field.options));
+  const core = z.unknown().transform((input, ctx) => {
+    if (input === null || input === undefined) {
+      if (required) {
+        ctx.addIssue({ code: 'custom', message: 'Required' });
+        return z.NEVER;
+      }
+      return null;
+    }
+    const parsed = value.safeParse(input);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        const params = (issue as { params?: Record<string, unknown> }).params;
+        ctx.addIssue({ code: 'custom', path: issue.path.filter((p): p is string | number => typeof p !== 'symbol'), message: issue.message, ...(params ? { params } : {}) });
+      }
+      return z.NEVER;
+    }
+    if (required && parsed.data.content.length === 0) {
+      ctx.addIssue({ code: 'custom', message: 'Required' });
+      return z.NEVER;
+    }
+    return parsed.data;
+  });
+  return required ? core : core.optional();
+}
+
+/**
+ * A `json` field using the `richtext` interface (content migrated before the
+ * field type existed, #728): values that are documents — or locale maps of
+ * documents — are stored sanitised; anything else keeps `json` semantics.
+ */
+function sanitizeLegacyRichText(value: unknown): unknown {
+  if (isRichTextDocument(value)) return sanitizeRichTextDocument(value).doc;
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length > 0 && entries.every(([, v]) => isRichTextDocument(v))) {
+      return Object.fromEntries(entries.map(([k, v]) => [k, sanitizeRichTextDocument(v as Parameters<typeof sanitizeRichTextDocument>[0]).doc]));
+    }
+  }
+  return value;
+}
+
 function buildFieldSchema(field: CompiledField, ctx: SchemaContext, skipRequired = false): ZodTypeAny {
   // A field hidden by a layout condition with skipRequiredWhenHidden (#750)
   // validates as optional; blocks (#748) and zoned datetimes (#747) honour it too.
   if (isBlocksField(field)) return buildBlocksSchema(skipRequired ? { ...field, required: false } : field, ctx);
   if (isZonedDateTimeField(field)) return buildZonedFieldSchema(field, skipRequired);
+  if (field.type === RICHTEXT_FIELD_TYPE) return buildRichTextSchema(field, skipRequired);
   let schema = (TYPE_BASE[field.type] ?? (() => z.unknown()))();
 
   const rules = (field.validation?.rules as RuleObject[] | undefined) ?? [];
@@ -142,6 +200,7 @@ function buildFieldSchema(field: CompiledField, ctx: SchemaContext, skipRequired
   }
 
   schema = applyOptionParity(schema, field);
+  if (field.type === 'json' && field.interface === RICHTEXT_INTERFACE) schema = schema.transform(sanitizeLegacyRichText);
 
   if (!field.required || skipRequired) schema = schema.nullable().optional();
   return schema;
