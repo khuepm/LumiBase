@@ -127,16 +127,29 @@ export interface PreviewPaneProps {
 type MintedPreview = { url: string; expiresAt: number };
 
 export function PreviewPane(props: PreviewPaneProps) {
-  const { collection, itemId, template, draft, savedMarker, locale, versionKey, onFocusField, onClose } = props;
+  const { collection, itemId, template, draft, savedMarker, locale, onFocusField, onClose } = props;
   const client = getApiClient();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [device, setDevice] = useState<DevicePresetId>('desktop');
   const [frameKey, setFrameKey] = useState(0);
   const [connected, setConnected] = useState(false);
   const [mintNonce, setMintNonce] = useState(0);
+  // Content version to preview (V04 #682); '' = the item's current state.
+  const [versionKey, setVersionKey] = useState(props.versionKey ?? '');
   // Last values the frame has seen, and the patch sequence number.
   const lastSent = useRef<Record<string, unknown> | null>(null);
   const seq = useRef(0);
+
+  const versionsQuery = useQuery({
+    queryKey: ['versions', collection, itemId],
+    queryFn: async () =>
+      (
+        await client.rawRequest<Array<{ key: string; name: string }>>(
+          `/api/v1/items/${encodeURIComponent(collection)}/${encodeURIComponent(itemId)}/versions`,
+        )
+      ).data,
+    retry: false,
+  });
 
   const settingsQuery = useQuery({
     queryKey: ['preview-settings'],
@@ -234,7 +247,9 @@ export function PreviewPane(props: PreviewPaneProps) {
 
   // Field edits → debounced, chunked field-level patches.
   useEffect(() => {
-    if (!connected) return;
+    // A version preview shows the version's data; the form edits the item
+    // itself, so its unsaved values must not be streamed over the version.
+    if (!connected || versionKey) return;
     const timer = window.setTimeout(() => {
       const changed = changedFields(lastSent.current, draft);
       lastSent.current = { ...draft };
@@ -254,7 +269,7 @@ export function PreviewPane(props: PreviewPaneProps) {
       }
     }, PATCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [draft, connected, collection, itemId, post]);
+  }, [draft, connected, collection, itemId, post, versionKey]);
 
   // Save → debounced reload (message when connected, else reload the frame).
   const firstSave = useRef(savedMarker);
@@ -298,6 +313,27 @@ export function PreviewPane(props: PreviewPaneProps) {
           </span>
         </div>
         <div className="flex items-center gap-1">
+          {(versionsQuery.data?.length ?? 0) > 0 && (
+            <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              Version
+              <select
+                aria-label="Preview version"
+                value={versionKey}
+                onChange={(e) => {
+                  setVersionKey(e.target.value);
+                  lastSent.current = null;
+                }}
+                className="rounded border bg-background px-1 py-0.5 text-[10px]"
+              >
+                <option value="">Current</option>
+                {versionsQuery.data?.map((v) => (
+                  <option key={v.key} value={v.key}>
+                    {v.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <button
             type="button"
             title="Reload preview"
