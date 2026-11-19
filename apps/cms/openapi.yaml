@@ -2936,7 +2936,8 @@ paths:
         '400': { description: VALIDATION (bad file, unknown column, no rows, no format) }
         '403': { description: Missing create (or update for upsert) permission }
         '404': { description: Collection not found }
-        '413': { description: File larger than IMPORT_MAX_BYTES }
+        '413': { description: 'File larger than IMPORT_MAX_BYTES (counted while streaming; Content-Length not required)' }
+        '429': { description: 'LIMIT_EXCEEDED: the site already has IMPORT_MAX_PENDING_JOBS jobs or IMPORT_MAX_PENDING_BYTES of files queued or running' }
     get:
       summary: List recent import jobs (own jobs; site admins see all)
       parameters:
@@ -6685,3 +6686,116 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /release-flags:
+    get:
+      tags: [Release Flags]
+      summary: Effective release flags for the active site (#869)
+      description: |
+        Members get `{ key, enabled }` for released flags only (unreleased keys
+        stay hidden). Site admins get every flag, with the stage,
+        the source of the release decision (`env` | `manifest` | `stage`), the
+        site choice and the flag's owner and removal date.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [key, enabled]
+                      properties:
+                        key: { type: string }
+                        enabled: { type: boolean }
+                        stage: { type: string, enum: [dark, beta, ga] }
+                        released: { type: boolean }
+                        releasedBy: { type: string, enum: [env, manifest, stage] }
+                        enabledBy: { type: string, enum: [release, site, site-default] }
+                        siteValue: { type: boolean, nullable: true }
+                        siteToggle: { type: boolean }
+                        siteDefault: { type: boolean }
+                        description: { type: string }
+                        owner: { type: string }
+                        removeBy: { type: string, format: date }
+  /release-flags/site:
+    put:
+      tags: [Release Flags]
+      summary: Set or clear the active site's choices for released flags (site admin)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [flags]
+              properties:
+                flags:
+                  type: object
+                  minProperties: 1
+                  maxProperties: 100
+                  description: '`true` / `false` sets the choice, `null` clears it.'
+                  additionalProperties: { type: boolean, nullable: true }
+      responses:
+        '200': { description: Stored choices and the resulting state of each changed flag }
+        '400':
+          description: Validation error, `UNKNOWN_FLAG` or `NOT_SITE_TOGGLE`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403': { description: Not a site admin }
+  /release-flags/manifest:
+    get:
+      tags: [Release Flags]
+      summary: Accepted release manifest, trusted key ids and last pull result (bootstrap admin)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '200': { description: OK }
+        '403': { description: Not the bootstrap admin, or an API key }
+    put:
+      tags: [Release Flags]
+      summary: Submit a signed release manifest (bootstrap admin)
+      description: |
+        The envelope carries a base64 payload and a detached Ed25519 signature
+        over the payload bytes. Accepted only when the key id is trusted
+        (`LUMIBASE_RELEASE_PUBLIC_KEYS`), the signature verifies, the audience
+        matches and `issuedAt` is later than the accepted manifest. Sending the
+        accepted manifest again is a no-op (`unchanged: true`).
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [keyId, payload, signature]
+              properties:
+                keyId: { type: string, maxLength: 100 }
+                payload: { type: string, maxLength: 65536, description: Base64 of the UTF-8 JSON payload }
+                signature: { type: string, maxLength: 512, description: Base64 Ed25519 signature }
+      responses:
+        '200': { description: Accepted (or unchanged) }
+        '400': { description: '`MANIFEST_REJECTED` with reason `MALFORMED_ENVELOPE`' }
+        '403': { description: Not the bootstrap admin, or an API key }
+        '409': { description: '`MANIFEST_REJECTED` with reason `STALE` or `KEYS_NOT_CONFIGURED`' }
+        '422': { description: '`MANIFEST_REJECTED` with reason `BAD_SIGNATURE`, `UNKNOWN_KEY`, `EXPIRED`, `NOT_YET_VALID`, `WRONG_AUDIENCE` or `MALFORMED_PAYLOAD`' }
+  /release-flags/manifest/pull:
+    post:
+      tags: [Release Flags]
+      summary: Fetch the manifest from LUMIBASE_RELEASE_MANIFEST_URL now (bootstrap admin)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '200': { description: Pulled and accepted (or unchanged) }
+        '403': { description: Not the bootstrap admin, or an API key }
+        '409': { description: '`PULL_NOT_CONFIGURED`' }
+        '502': { description: '`PULL_FAILED` with the reason; the accepted manifest stays in force' }

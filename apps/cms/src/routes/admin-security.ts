@@ -55,12 +55,13 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
-import { and, eq, gte, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { loginAttempts, users } from '@lumibase/database';
 
 import type { AppEnv } from '../env';
 import { parseIpToBytes, canonicalLoopback } from '../modules/login-guard/ip-extract';
 import { normalizeEmail } from '../modules/login-guard/email-normalize';
+import { emailLookup } from '../modules/email-identity/service';
 import { loadLockoutPolicyFromSettings } from '../modules/login-guard/middleware';
 import { STANDARD_LOCKOUT_POLICY } from '../modules/setup/policy-codec';
 import { maskAdminPath } from '../modules/audit/path-mask';
@@ -228,13 +229,16 @@ adminSecurityRouter.post('/unlock-user', async (c) => {
     );
   }
 
-  // 1. Confirm the user exists. The lookup is case-insensitive so a
-  //    `Foo@Bar` row matches a `foo@bar` request body — same shape as
-  //    the LoginGuard precheck (`middleware.ts`).
+  // 1. Confirm the user exists. Resolved under the instance email
+  //    identity mode (#794/#862) — the same lookup the LoginGuard
+  //    precheck (`middleware.ts`) and login use — so under `root` an
+  //    alias (`foo+x@bar`) unlocks the account it signs in to, and under
+  //    `exact` this is the case-insensitive `lower(email)` match.
+  const { where: emailMatch } = await emailLookup(db, emailLower);
   const [existing] = await db
     .select({ id: users.id, email: users.email })
     .from(users)
-    .where(sql`lower(${users.email}) = ${emailLower}`)
+    .where(emailMatch)
     .limit(1);
 
   if (!existing) {
@@ -273,7 +277,9 @@ adminSecurityRouter.post('/unlock-user', async (c) => {
     .delete(loginAttempts)
     .where(
       and(
-        eq(loginAttempts.emailLower, emailLower),
+        // The counter is keyed by the typed address, so drain both the
+        // address the admin supplied and the account's own address.
+        inArray(loginAttempts.emailLower, [...new Set([emailLower, normalizeEmail(existing.email)])]),
         eq(loginAttempts.result, 'fail'),
         gte(
           loginAttempts.createdAt,

@@ -1,10 +1,10 @@
 ---
-version: 25
-lastUpdated: 2026-11-18T05:19:32.680Z
+version: 27
+lastUpdated: 2026-11-19T04:41:29.971Z
 sourceLang: en
-contentHash: 35ab6c6c1e4faf24
-codeVerified: 2026-11-18T05:19:32.680Z
-codeVerifiedHash: 35ab6c6c1e4faf24
+contentHash: 09d254590fe07446
+codeVerified: 2026-11-19T04:41:29.971Z
+codeVerifiedHash: 09d254590fe07446
 codeVerifiedClaims: 22
 ---
 
@@ -78,6 +78,8 @@ Unique indexes: `users_external_id_unique`, `users_is_bootstrap_unique` (partial
 - `identityKey` text (migration `0027`) — `users.email_root` when the site is strict, otherwise null. Unique index `user_sites_site_identity_unique` on `(site_id, identity_key)` allows one membership per root mailbox on a strict site (nulls never collide). Set by a trigger on insert and re-keyed when the member's email changes.
 
 **Email identity policy (migration `0027`).** The instance tier lives in `system_state.email_identity_mode` (`exact` | `root`, default `exact`; existing instances are backfilled to `exact`, so nothing changes on upgrade). Every writer — routes, SCIM, setup, seeds, an older app version — gets the same derived columns because triggers compute them: `lumibase_users_email_identity()` on `users` (reads the singleton `FOR SHARE`), `lumibase_user_sites_identity_key()` on `user_sites` (reads the site `FOR SHARE`) and `lumibase_users_rekey_memberships()` after an email change. The guarded change endpoint holds `FOR UPDATE` on the same rows, so a row is never keyed under a stale policy. See [User management](./security/user-management.md) and `/api/v1/admin/email-identity` in the API spec.
+
+**Release manifest (migration `0041`).** `release_manifests` is a singleton table (`id = 'current'`, CHECK-enforced) with `issued_at_ms` (bigint) and `manifest` (jsonb: the envelope as received, the verified `flags`, `issuedAt`, `acceptedAt`, `source` `push` | `pull`, `acceptedBy`). It holds the last signed release manifest the deployment accepted, written only after Ed25519 verification by an upsert that applies only when `issued_at_ms` is strictly greater. It has no `site_id`: release gates belong to the deployment. It is a separate table rather than a `system_state` column because Drizzle lists every declared column in an INSERT, so a new `system_state` column would break the startup INSERT of an image running on the previous schema. Per-site choices live in `settings` under key `release.flags`. See [Release flags](./features/release-flags.md).
 
 ### `teams` / `team_members`
 - `teams`: `id`, `siteId`, `name`, `description`.
@@ -297,7 +299,7 @@ When seeding local/staging/prod, seed system collection permissions explicitly. 
 
 ### `video_assets`
 - `id`, `siteId`, `fileId` (FK cascade, unique per site), `fileVersion`, `provider`, `providerAssetId`, `playbackId`, `status` (`uploaded`/`processing`/`ready`/`failed`), `error`, `attempts`, `durationMs`, `width`, `height`, `renditions jsonb`, `signedPlayback`, `submittedAt`, `readyAt`, `createdAt`, `updatedAt`.
-- Video processing state for one file (#871), tied to the `fileVersion` it was submitted for; a replace re-queues the row. Every write is a compare-and-set on status + version. Partial index on `(status, updatedAt)` for queued/processing rows (sweep). Migration `0041_video_assets`. See [Digital Asset Management](./features/digital-asset-management.md).
+- Video processing state for one file (#871), tied to the `fileVersion` it was submitted for; a replace re-queues the row. Every write is a compare-and-set on status + version. Partial index on `(status, updatedAt)` for queued/processing rows (sweep). Migration `0044_video_assets`. See [Digital Asset Management](./features/digital-asset-management.md).
 
 ## 5. UX state (`platform.ts`)
 
