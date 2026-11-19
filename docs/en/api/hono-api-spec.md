@@ -1,11 +1,11 @@
 ---
-version: 61
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 62
+lastUpdated: 2026-11-19T05:02:42.624Z
 sourceLang: en
-contentHash: 1d86bff615c2ba39
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
-codeVerifiedClaims: 652
+contentHash: ba0bf046ea67dead
+codeVerified: 2026-11-19T05:02:42.624Z
+codeVerifiedHash: ba0bf046ea67dead
+codeVerifiedClaims: 656
 ---
 
 # Hono API Specification — LumiBase
@@ -351,6 +351,18 @@ manifest and chosen per site. Full guide: [Release flags](../features/release-fl
 
 The manifest endpoints refuse API keys. A gated route answers `404 NOT_FOUND`
 while its flag is off, like an unknown route.
+
+
+### In-app upgrade
+
+A running instance cannot replace itself: these endpoints check that an upgrade is safe and ask the
+operator's deploy hook to roll the deployment. Full guide: [Upgrade operations](../operations/upgrades.md#in-app-upgrade-button).
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/system/upgrade/preflight` | bootstrap admin (no API key) | In-app upgrade preflight (#898): current and target version, `minimumSafeUpgradeVersion`, pending migrations, `migrationWarning`, who runs migrations, provider configuration, `checks[]`, `canUpgrade`, latest request |
+| `POST` | `/api/v1/system/upgrade` | bootstrap admin (no API key) | Body `{ targetVersion, backupAcknowledged: true, retry? }`. Calls the configured upgrade hook once per target version; `202` new request, `200` + `meta.idempotent` for one already recorded. `422 BACKUP_NOT_ACKNOWLEDGED`, `409 TARGET_MISMATCH` / `PREFLIGHT_FAILED` / `PREVIOUS_ATTEMPT_FAILED`, `502 UPGRADE_HOOK_FAILED`; audited at instance scope |
+| `GET` | `/api/v1/system/upgrade` | bootstrap admin (no API key) | Latest upgrade request; `completed` once the deployment reports the target version, `overdue` after 30 minutes |
 
 ### Email identity policy
 

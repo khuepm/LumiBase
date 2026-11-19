@@ -1,14 +1,14 @@
 ---
-version: 6
-lastUpdated: 2026-11-08T01:49:06.315Z
+version: 7
+lastUpdated: 2026-11-19T05:02:45.072Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ed15a6714963d33b
+sourceHash: a4c30b1685cd00ee
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-08T01:49:06.315Z
-codeVerifiedHash: ed15a6714963d33b
-codeVerifiedClaims: 6
+codeVerified: 2026-11-19T05:02:45.072Z
+codeVerifiedHash: a4c30b1685cd00ee
+codeVerifiedClaims: 22
 ---
 
 # Vận hành nâng cấp
@@ -87,6 +87,84 @@ Các release channel được hỗ trợ:
 
 8. Smoke test authentication, truy cập Studio, đọc/ghi collection, thao tác file, flows/webhooks và realtime nếu bật.
 9. Giữ image tag hoặc digest trước đó trong local cho đến khi hết rollback window.
+
+## Nút Upgrade trong ứng dụng
+
+**Settings → Updates → Upgrade this deployment** trong Studio chạy các luồng ở
+trên bằng một nút. Một instance đang chạy không tự thay thế chính nó được, nên
+nút này nhờ một thứ bên ngoài process làm việc đó — một deploy hook do
+operator cấu hình — rồi theo dõi `GET /api/v1/system/version` cho tới khi phiên
+bản mới trả lời ([#898](https://github.com/khuepm/LumiBase/issues/898)).
+
+Chỉ bootstrap admin thấy và dùng được nút này, và phải đăng nhập với tư cách
+một người: API key bị từ chối. Mọi yêu cầu đều được ghi vào audit log ở cấp
+instance (`system.upgrade_requested`, `system.upgrade_request_failed`).
+
+**Luồng.**
+
+1. **Preflight** (`GET /api/v1/system/upgrade/preflight`): phiên bản đang chạy,
+   bản phát hành mới nhất trên kênh đã cấu hình (đọc từ `releases.json` công
+   khai), phiên bản tối thiểu được nâng thẳng lên bản đó, các migration của
+   phiên bản đang chạy chưa được áp dụng, cảnh báo migration của bản phát hành,
+   ai chạy migration, và đã cấu hình hook hay chưa. Mọi kiểm tra phải đạt.
+2. **Xác nhận**: admin xác nhận đã có bản backup database mới nhất
+   (bắt buộc `backupAcknowledged: true`).
+3. **Gửi yêu cầu** (`POST /api/v1/system/upgrade`): hook được gọi một lần cho
+   mỗi phiên bản đích. Gửi lại cho cùng phiên bản thì nhận lại yêu cầu đã ghi
+   mà không gọi hook lần nữa; yêu cầu bị lỗi — hoặc sau 30 phút vẫn chưa có
+   phản hồi — chỉ được thử lại khi gửi `retry: true`.
+4. **Tiến độ**: Studio liên tục hỏi endpoint version. Yêu cầu chuyển sang
+   `completed` khi deployment báo đúng phiên bản đích. Sau 30 phút mà chưa có,
+   Studio hiển thị hướng dẫn rollback: deploy lại phiên bản trước, và khôi phục
+   backup nếu migration đã chạy (xem [Rollback app](#rollback-app)).
+
+**Cấu hình** (chỉ qua biến môi trường; không sửa được từ Studio):
+
+| Biến | Mục đích |
+|---|---|
+| `LUMIBASE_UPGRADE_PROVIDER` | `webhook` để bật nút; mặc định `none` (Studio hiển thị các kiểm tra và hướng dẫn này). |
+| `LUMIBASE_UPGRADE_WEBHOOK_URL` | Nơi nhận yêu cầu: một relay CI, một dịch vụ cập nhật chạy cạnh container, hoặc control plane của LumiBase với instance do LumiBase vận hành. |
+| `LUMIBASE_UPGRADE_WEBHOOK_SECRET` | Khoá HMAC để bên nhận kiểm tra yêu cầu. |
+| `LUMIBASE_RELEASES_URL` | Manifest phát hành; mặc định `https://docs.lumibase.dev/releases.json`. |
+| `LUMIBASE_UPGRADE_CHANNEL` | `stable` (mặc định) hoặc `edge`. |
+| `LUMIBASE_MIGRATIONS_RUNNER` | `startup` hoặc `pipeline`; xem bên dưới. |
+
+**Hợp đồng webhook.** Một `POST` với body JSON như sau:
+
+```json
+{
+  "event": "lumibase.upgrade.requested",
+  "requestId": "…",
+  "fromVersion": "2.2.0",
+  "targetVersion": "2.3.0",
+  "channel": "stable",
+  "instanceId": "lumibase-production",
+  "runtime": "docker",
+  "migrationsRunner": "startup",
+  "requestedAt": "2026-12-02T10:00:00.000Z"
+}
+```
+
+Yêu cầu mang các header `X-LumiBase-Event`, `X-LumiBase-Timestamp` (giây Unix)
+và `X-LumiBase-Signature: sha256=<hex>`, là HMAC-SHA256 của
+`<timestamp>.<raw body>` với khoá `LUMIBASE_UPGRADE_WEBHOOK_SECRET`. Bên nhận
+phải kiểm tra chữ ký và từ chối timestamp cũ hơn vài phút. Mọi mã `2xx` đều
+nghĩa là đã nhận; body có thể chứa `{ "reference": "<run id>" }`, Studio sẽ
+hiển thị giá trị này. Redirect bị từ chối.
+
+**Ai chạy migration.** Nút đi theo chế độ triển khai:
+
+- **Docker / tự host** (`startup`, mặc định): image mới áp dụng migration khi
+  khởi động (entrypoint của container chạy migration runner trước server). Bên
+  nhận chỉ cần kéo image mới và khởi động lại — ví dụ một dịch vụ cập nhật chạy
+  cạnh container. Không bao giờ đưa Docker socket cho container CMS.
+- **Cloudflare Workers** (`pipeline`, mặc định ở đây): bên nhận là CI của
+  operator, chạy `pnpm db:migrate` rồi `wrangler deploy`, như trong
+  [Luồng nâng cấp Cloudflare-hosted](#luồng-nâng-cấp-cloudflare-hosted). CMS
+  không giữ token deploy của Cloudflare: secret của webhook chỉ yêu cầu nâng
+  cấp được, không thay được code đang chạy.
+- **Do LumiBase vận hành**: hook là control plane, nơi triển khai phiên bản
+  theo cùng cách đó.
 
 ## Backup checklist
 

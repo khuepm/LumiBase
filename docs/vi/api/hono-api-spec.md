@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 60
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 61
+lastUpdated: 2026-11-19T05:02:42.624Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1d86bff615c2ba39
+sourceHash: ba0bf046ea67dead
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
-codeVerifiedClaims: 652
+codeVerified: 2026-11-19T05:02:42.624Z
+codeVerifiedHash: ba0bf046ea67dead
+codeVerifiedClaims: 656
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -315,6 +315,18 @@ bằng một manifest có chữ ký, và được chọn bật theo từng site.
 
 Các endpoint manifest từ chối API key. Route có gắn cờ trả `404 NOT_FOUND` khi
 cờ đang tắt, giống một route không tồn tại.
+
+
+### Nâng cấp trong ứng dụng
+
+Một instance đang chạy không tự thay thế chính nó được: các endpoint này kiểm tra việc nâng cấp có an toàn
+không và nhờ deploy hook của operator triển khai bản mới. Hướng dẫn đầy đủ: [Vận hành nâng cấp](../operations/upgrades.md#nút-upgrade-trong-ứng-dụng).
+
+| Method | Path | Auth | Mô tả |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/system/upgrade/preflight` | bootstrap admin (không API key) | Preflight cho nâng cấp trong ứng dụng (#898): phiên bản hiện tại và đích, `minimumSafeUpgradeVersion`, migration chưa áp dụng, `migrationWarning`, ai chạy migration, cấu hình provider, `checks[]`, `canUpgrade`, yêu cầu gần nhất |
+| `POST` | `/api/v1/system/upgrade` | bootstrap admin (không API key) | Body `{ targetVersion, backupAcknowledged: true, retry? }`. Gọi upgrade hook đã cấu hình một lần cho mỗi phiên bản đích; `202` khi tạo yêu cầu mới, `200` + `meta.idempotent` khi yêu cầu đã được ghi. `422 BACKUP_NOT_ACKNOWLEDGED`, `409 TARGET_MISMATCH` / `PREFLIGHT_FAILED` / `PREVIOUS_ATTEMPT_FAILED`, `502 UPGRADE_HOOK_FAILED`; ghi audit ở cấp instance |
+| `GET` | `/api/v1/system/upgrade` | bootstrap admin (không API key) | Yêu cầu nâng cấp gần nhất; `completed` khi deployment báo đúng phiên bản đích, `overdue` sau 30 phút |
 
 ### Chính sách định danh email
 

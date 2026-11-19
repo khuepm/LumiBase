@@ -1,6 +1,7 @@
 import { RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ReleaseUpdateNotice } from '@/components/release-update-notice';
+import { UpgradePanel } from './upgrade-panel';
 import {
   RELEASE_MANIFEST_URL,
   checkReleaseManifest,
@@ -117,11 +118,17 @@ export function UpdatesPage() {
         </section>
       )}
 
+      <UpgradePanel />
+
       <section className="rounded-xl border bg-muted/20 p-5 text-sm text-muted-foreground">
-        <h2 className="font-semibold text-foreground">Phase-one safety guardrails</h2>
+        <h2 className="font-semibold text-foreground">Safety guardrails</h2>
         <ul className="mt-2 list-disc space-y-1 ps-5">
-          <li>Studio only displays “new version available” notices with upgrade-guide and changelog links.</li>
-          <li>The UI cannot restart services, apply migrations, or trigger an upgrade workflow.</li>
+          <li>Studio never restarts services or applies migrations itself.</li>
+          <li>
+            The Upgrade button only asks the deploy hook your operator configured (CI, an updater service or the LumiBase
+            control plane) to roll out the new version, after preflight checks and a backup confirmation. Only the
+            bootstrap admin can use it, and every request is audited.
+          </li>
           <li>Telemetry requires a separate opt-in and is intentionally not sent by this manifest check.</li>
         </ul>
       </section>
