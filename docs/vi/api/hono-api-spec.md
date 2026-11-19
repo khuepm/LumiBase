@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
 version: 58
-lastUpdated: 2026-11-17T19:23:58.425Z
+lastUpdated: 2026-11-18T04:14:44.447Z
 sourceLang: en
 translatedFrom: en
-sourceHash: de2fb63aac3d98eb
+sourceHash: 4aabe6c3f4a73b8e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T19:23:58.425Z
-codeVerifiedHash: de2fb63aac3d98eb
-codeVerifiedClaims: 640
+codeVerified: 2026-11-18T04:14:44.447Z
+codeVerifiedHash: 4aabe6c3f4a73b8e
+codeVerifiedClaims: 646
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -298,6 +298,23 @@ Mỗi thay đổi sẽ ghi lại một sự kiện audit `consent_granted` / `co
 Token hủy đăng ký là một HS256 JWT không lưu trạng thái (`{ siteId, email }`, không hết hạn) được ký bằng `JWT_SECRET`. Việc gửi email Marketing (`EmailModuleService.send({ category: 'marketing' })`) sẽ lọc người nhận đối chiếu với `email_suppressions` trước khi gửi. Việc hủy đăng ký / chặn gửi ghi nhận audit `email_unsubscribed` / `email_suppressed` / `email_unsuppressed`.
 
 **Tùy chọn & hành động lưu.** `PATCH /api/v1/me/preferences` gộp nông bản vá đã xác thực vào `users.preferences` (các phần khác như `language` / `keybindings` được giữ nguyên). Gửi `{ "saveAction": "stay" | "return" | "create_new" }` để đặt điều hướng sau khi lưu của trình chỉnh sửa Studio; gửi `{ "saveAction": null }` để quay về mặc định của site (`sites.default_save_action`, đặt qua `PATCH /api/v1/site`). Enum không hợp lệ → 400.
+
+### Release flags
+
+Tính năng merge vào `main` ở trạng thái dark được phát hành cho từng deployment
+bằng một manifest có chữ ký, và được chọn bật theo từng site. Hướng dẫn đầy đủ:
+[Release flags](../features/release-flags.md).
+
+| Method | Path | Auth | Mô tả |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/release-flags` | member | `{ key, enabled }[]` chỉ gồm flag đã phát hành của site đang chọn; admin của site nhận mọi flag cùng stage, `releasedBy`, `enabledBy`, `siteValue`, owner và `removeBy` |
+| `PUT` | `/api/v1/release-flags/site` | site-admin | Body `{ flags: { "<key>": true \| false \| null } }`; `null` xoá lựa chọn. `400 UNKNOWN_FLAG` / `NOT_SITE_TOGGLE` |
+| `GET` | `/api/v1/release-flags/manifest` | bootstrap admin | Manifest đã chấp nhận, các key id được tin cậy, cấu hình pull và kết quả lần pull gần nhất |
+| `PUT` | `/api/v1/release-flags/manifest` | bootstrap admin | Body `{ keyId, payload, signature }` (Ed25519 trên payload sau khi giải base64). `422` / `409` `MANIFEST_REJECTED` kèm `reason` |
+| `POST` | `/api/v1/release-flags/manifest/pull` | bootstrap admin | Tải ngay từ `LUMIBASE_RELEASE_MANIFEST_URL`. `409 PULL_NOT_CONFIGURED`, `502 PULL_FAILED` |
+
+Các endpoint manifest từ chối API key. Route có gắn cờ trả `404 NOT_FOUND` khi
+cờ đang tắt, giống một route không tồn tại.
 
 ### Chính sách định danh email
 

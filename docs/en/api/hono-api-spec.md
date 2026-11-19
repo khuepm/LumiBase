@@ -1,11 +1,11 @@
 ---
 version: 59
-lastUpdated: 2026-11-17T19:23:58.425Z
+lastUpdated: 2026-11-18T04:14:44.447Z
 sourceLang: en
-contentHash: de2fb63aac3d98eb
-codeVerified: 2026-11-17T19:23:58.425Z
-codeVerifiedHash: de2fb63aac3d98eb
-codeVerifiedClaims: 640
+contentHash: 4aabe6c3f4a73b8e
+codeVerified: 2026-11-18T04:14:44.447Z
+codeVerifiedHash: 4aabe6c3f4a73b8e
+codeVerifiedClaims: 646
 ---
 
 # Hono API Specification — LumiBase
@@ -335,6 +335,22 @@ validated patch into `users.preferences` (other sections like `language` /
 "create_new" }` to set the Studio editor's post-save navigation; send
 `{ "saveAction": null }` to fall back to the site default
 (`sites.default_save_action`, set via `PATCH /api/v1/site`). Invalid enum → 400.
+
+### Release flags
+
+Features merged to `main` dark are released per deployment by a signed
+manifest and chosen per site. Full guide: [Release flags](../features/release-flags.md).
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/release-flags` | member | `{ key, enabled }[]` of released flags only for the active site; site admins get every flag plus stage, `releasedBy`, `enabledBy`, `siteValue`, owner and `removeBy` |
+| `PUT` | `/api/v1/release-flags/site` | site-admin | Body `{ flags: { "<key>": true \| false \| null } }`; `null` clears the choice. `400 UNKNOWN_FLAG` / `NOT_SITE_TOGGLE` |
+| `GET` | `/api/v1/release-flags/manifest` | bootstrap admin | Accepted manifest, trusted key ids, pull configuration and last pull result |
+| `PUT` | `/api/v1/release-flags/manifest` | bootstrap admin | Body `{ keyId, payload, signature }` (Ed25519 over the base64-decoded payload). `422` / `409` `MANIFEST_REJECTED` with a `reason` |
+| `POST` | `/api/v1/release-flags/manifest/pull` | bootstrap admin | Fetch from `LUMIBASE_RELEASE_MANIFEST_URL` now. `409 PULL_NOT_CONFIGURED`, `502 PULL_FAILED` |
+
+The manifest endpoints refuse API keys. A gated route answers `404 NOT_FOUND`
+while its flag is off, like an unknown route.
 
 ### Email identity policy
 
