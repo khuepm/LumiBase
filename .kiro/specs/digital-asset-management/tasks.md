@@ -40,6 +40,9 @@ Nguồn: `.kiro/research/competitor-features-2026-07.md` (D01–D08). Doc ngư�
   sweeper quét lại file `pending` > 10 phút (Docker cron + Workers cron),
   partial index `files_pending_scan_idx` (migration 0041).
 - [ ] D04 #704 — upload resumable (TUS / R2 multipart). **Chưa làm** — backlog B220.
+- [ ] #871 video pipeline. Phần 2 (PR này): track phụ đề/caption WebVTT gắn
+  locale (`lumibase_file_captions`, `/files/:id/captions`, loại upload `text/vtt`).
+  Phần 1 (transcode, PR #937) và phần 3 (Studio) là PR riêng.
 
 ## Theo dõi sau
 

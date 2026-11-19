@@ -128,6 +128,42 @@ export const fileVersions = pgTable(
   }),
 );
 
+/**
+ * Caption and subtitle tracks of a video (#871). A track is itself a file (a
+ * WebVTT asset in the library), linked to the video for one locale and kind.
+ * Deleting either file removes the link; the caption file is otherwise an
+ * ordinary asset (permissions, versions, replace in place).
+ */
+export const fileCaptions = pgTable(
+  'lumibase_file_captions',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    /** The video. */
+    fileId: text('file_id')
+      .notNull()
+      .references(() => files.id, { onDelete: 'cascade' }),
+    /** The WebVTT file. */
+    captionFileId: text('caption_file_id')
+      .notNull()
+      .references(() => files.id, { onDelete: 'cascade' }),
+    locale: text('locale').notNull(),
+    /** HTML `<track kind>`: `subtitles` | `captions` | `descriptions` | `chapters`. */
+    kind: text('kind').default('subtitles').notNull(),
+    label: text('label'),
+    isDefault: boolean('is_default').default(false).notNull(),
+    createdBy: text('created_by'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    trackIdx: uniqueIndex('file_captions_track_idx').on(t.siteId, t.fileId, t.locale, t.kind),
+    captionFileIdx: index('file_captions_caption_file_idx').on(t.siteId, t.captionFileId),
+  }),
+);
+
 export const presets = pgTable(
   'lumibase_presets',
   {
