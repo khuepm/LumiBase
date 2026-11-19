@@ -71,6 +71,7 @@
           "features/agent-receipts",
           "features/locale-generator",
           "features/visual-editing",
+          "features/page-composer",
           "features/external-action-tools",
           "features/draft-review",
           "features/studio-rtl-layout",

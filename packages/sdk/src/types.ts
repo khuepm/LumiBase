@@ -1151,6 +1151,8 @@ export interface PreviewTokenSecretResult extends PreviewTokenResource {
 export interface PreviewSettingsResource {
   allowedOrigins: string[];
   ttlSeconds: number;
+  /** Frontend URL template of a page (`{slug}`), for the page composer preview. */
+  pageUrl?: string | null;
 }
 
 export interface PresetResource {

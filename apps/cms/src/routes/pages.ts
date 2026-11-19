@@ -46,7 +46,12 @@ function toError(err: unknown) {
   if (err instanceof PageServiceError) {
     return {
       status: err.status,
-      body: { errors: [{ code: err.code, message: err.message }] },
+      body: {
+        errors:
+          err.issues.length > 0
+            ? err.issues.map((i) => ({ code: i.code, message: i.message, field: i.field }))
+            : [{ code: err.code, message: err.message }],
+      },
     };
   }
   console.error('[pages] unexpected error', formatSafeError(err));
@@ -59,6 +64,12 @@ function toError(err: unknown) {
 pagesRouter.get('/', async (c) => {
   const data = await buildService(c).list();
   return c.json({ data });
+});
+
+/** The composer palette: registered page blocks (V06 #684). Before `/:id`. */
+pagesRouter.get('/blocks', async (c) => {
+  const data = await buildService(c).listBlocks();
+  return c.json({ data, meta: { total: data.length } });
 });
 
 pagesRouter.get('/:id', async (c) => {
