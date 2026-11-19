@@ -1,14 +1,14 @@
 ---
-version: 8
-lastUpdated: 2026-11-07T22:02:15.899Z
+version: 9
+lastUpdated: 2026-11-19T17:22:21.230Z
 sourceLang: vi
 contentHash: ecc8983d3122446b
-codeVerified: 2026-11-07T22:02:15.899Z
-codeVerifiedHash: 80e544c4c41dcb0c
+codeVerified: 2026-11-19T17:22:21.230Z
+codeVerifiedHash: c3f2a89a328715e2
 codeVerifiedClaims: 30
 
 translatedFrom: vi
-sourceHash: 80e544c4c41dcb0c
+sourceHash: c3f2a89a328715e2
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -203,7 +203,9 @@ invalid window makes each model call return `LLM_CONTEXT_LIMIT` before any netwo
 call; routes that never call a model (for example MCP `tools/list`) keep working. Before a
 network call, the provider counts serialized UTF-8 bytes as a conservative text
 token bound, reserves output (normally 1,024 tokens) and accounts for tool and
-message framing. Older history is removed first. System policy, tool definitions
+message framing. The code-defined tool catalogue alone counts at 3 bytes per
+token (measured at about 4.7), so the default window keeps more than half for
+the conversation. Older history is removed first. System policy, tool definitions
 and the newest user request are preserved. An oversized request returns HTTP 413
 with `LLM_CONTEXT_LIMIT`. Rate limits, invalid responses and unavailable upstreams
 have actionable error codes and do not trigger a tool write or automatic repair.
