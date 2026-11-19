@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 60
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 61
+lastUpdated: 2026-11-19T04:12:31.125Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1d86bff615c2ba39
+sourceHash: e0869bcda0afd103
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
-codeVerifiedClaims: 652
+codeVerified: 2026-11-19T04:12:31.125Z
+codeVerifiedHash: e0869bcda0afd103
+codeVerifiedClaims: 684
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -1438,6 +1438,55 @@ Phạm vi site-admin (`requireSiteAdmin`). Được hỗ trợ bởi EmailServic
 | `POST` | `/api/v1/email/test` | Gửi một email thử nghiệm đơn lẻ |
 
 Body `POST /api/v1/email/send`: `{ to[], cc?, replyTo?, variables?, ` và chính xác một trong `templateKey` hoặc `inline: { subject, html?, text? }` `}`. Trả về `502 DELIVERY_FAILED`, `404 NOT_FOUND` (template), hoặc `503 EMAIL_NOT_CONFIGURED` (chế độ suy giảm).
+
+### Memberships & newsletters (epic #672)
+
+Hướng dẫn: [features/memberships.md](../features/memberships.md). Route admin chỉ dành cho site-admin (`requireSiteAdmin`) và nằm trên Studio plane; route Portal là công khai hoặc cần session member `frontend`.
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `GET/PATCH` | `/api/v1/members/settings` | Công tắc Portal, `allowSelfSignup`, `redirectUris` (landing của magic link, khớp chính xác), `defaultNewsletterIds`, `signupCopy` theo locale, `senderName` |
+| `GET/POST` | `/api/v1/members` | Liệt kê (`?limit&offset&search&segmentId&filter&sort`, `{ data, meta: { total, limit, offset } }`) / tạo `{ email, name?, status, tierId?, tierExpiresAt?, labels?, note?, newsletterIds? }`. `409 MEMBER_EXISTS`, `400 TIER_REQUIRED` / `TIER_STATUS_MISMATCH` |
+| `GET/PATCH/DELETE` | `/api/v1/members/:id` | Một member; đổi status/tier sẽ đồng bộ lại policy của tier trên tài khoản member và tăng permission version |
+| `PUT` | `/api/v1/members/:id/newsletters/:newsletterId` | Bật tắt `{ subscribed }` |
+| `GET/POST` | `/api/v1/members/tiers` | Tier (`memberCount`) / tạo `{ key, name, kind, prices?, currency?, benefits?, externalIds? }`; mỗi tier có một policy `member-tier:<key>` |
+| `PATCH/DELETE` | `/api/v1/members/tiers/:id` | Cập nhật (key và kind không đổi được); chỉ xoá khi không còn member (`409 TIER_IN_USE`) |
+| `GET/PUT` | `/api/v1/members/tiers/:id/access` | Các grant đọc của policy tier / cấp `{ collection, publishedOnly?, fields? }` (chỉ read) |
+| `DELETE` | `/api/v1/members/tiers/:id/access/:collection` | Thu hồi |
+| `GET/POST` | `/api/v1/members/segments` | Segment đã lưu với `count` trực tiếp / tạo `{ name, description?, filter }` |
+| `POST` | `/api/v1/members/segments/preview` | `{ filter, limit? }` → `{ count, sample }` mà không lưu |
+| `GET/PATCH/DELETE` | `/api/v1/members/segments/:id` | Một segment |
+| `GET/POST` | `/api/v1/members/newsletters` | Newsletter (`subscriberCount`) / tạo `{ key, name, senderEmail?, audience, subscribeOnSignup, trackOpens, trackClicks, layoutKey? }` |
+| `PATCH/DELETE` | `/api/v1/members/newsletters/:id` | Cập nhật; xoá sẽ archive một newsletter đã có lần gửi |
+| `GET` | `/api/v1/members/newsletters/:id/audience` | `?segmentId` → `{ count }` |
+| `GET/POST` | `/api/v1/members/newsletters/:id/sends` | Các issue / gửi một item `{ collection, itemId, segmentId?, publish?, compose? }` → `202`. `409 ALREADY_SENT` / `SENDER_DOMAIN_UNVERIFIED` / `NEWSLETTER_ARCHIVED`, `503 EMAIL_NOT_CONFIGURED` |
+| `GET` | `/api/v1/members/sends/:id` | Trạng thái và bộ đếm (`recipients, sent, failed, skipped, opened, clicked`) |
+| `POST` | `/api/v1/members/sends/:id/cancel` | Huỷ một issue đang chờ hoặc đang gửi |
+| `GET` | `/api/v1/members/sequences/templates` | `welcome`, `onboarding`, `win-back` |
+| `POST` | `/api/v1/members/sequences/from-template` | `{ template, key?, segmentId?, fromEmail?, fromName? }` → một sequence draft |
+| `GET/POST` | `/api/v1/members/sequences` | Sequence kèm số ghi danh / tạo `{ key, name, trigger, triggerOptions, steps[], status }` |
+| `GET/PATCH/DELETE` | `/api/v1/members/sequences/:id` | Một sequence |
+| `GET` | `/api/v1/members/sequences/:id/enrollments` | Ghi danh (`stepIndex`, `status`, `nextRunAt`, `stoppedReason`) |
+| `POST` | `/api/v1/members/sequences/:id/enroll` | `{ memberId }`; `409 SEQUENCE_NOT_ACTIVE` |
+| `POST` | `/api/v1/members/signup-card/install` | Cài block template `signup_card` (idempotent) |
+| `GET/POST` | `/api/v1/email/sending-domains` | Domain kèm record DNS + trạng thái / thêm `{ domain }` (DKIM 2048-bit) |
+| `GET/DELETE` | `/api/v1/email/sending-domains/:id` | Một domain |
+| `POST` | `/api/v1/email/sending-domains/:id/check` | Tra SPF / DKIM / DMARC (alignment) ngay |
+| `POST` | `/api/v1/email/sending-domains/:id/rotate` | Bắt đầu xoay DKIM; `409 ROTATION_IN_PROGRESS` |
+
+Member Portal (`404 PORTAL_DISABLED` cho tới khi bật):
+
+| Phương thức | Đường dẫn | Auth | Mô tả |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/portal/config?locale=` | public | Newsletter, tier đang hoạt động, copy signup đã giải |
+| `GET` | `/api/v1/portal/signup-card?locale=` | public | Copy signup card đã giải |
+| `POST` | `/api/v1/portal/magic-link` | public | `{ email, name?, newsletters?, redirectUri?, intent, locale? }` → `202` (chống dò tài khoản); `400 REDIRECT_NOT_ALLOWED`, `429 RATE_LIMITED` |
+| `POST` | `/api/v1/portal/magic-link/verify` | public | `{ token }` → session `frontend` (cùng hình dạng với `/auth/login`); `400 MAGIC_LINK_INVALID`, `409 PASSWORD_LOGIN_REQUIRED` với tài khoản staff |
+| `GET/PATCH/DELETE` | `/api/v1/portal/me` | member | Hồ sơ; `{ name?, newsletters?: { [id]: boolean }, unsubscribeAll? }`; rời đi |
+| `POST` | `/api/v1/portal/me/tier` | member | `{ tier, interval?, returnUrl? }` → `{ status: 'switched' }` (free tier) hoặc `{ status: 'checkout', checkoutUrl }`; `402 PAYMENT_PROVIDER_NOT_CONFIGURED` |
+| `GET/POST` | `/api/v1/portal/email/unsubscribe?token=` | public | Huỷ đăng ký của member. `GET` chỉ hiển thị form xác nhận và không thay đổi gì (trình quét email tải trước link); `POST` là thao tác thay đổi duy nhất: one-click RFC 8058 (`List-Unsubscribe=One-Click` → `200`, rỗng) hoặc form (→ trang xác nhận) |
+| `GET` | `/api/v1/portal/email/o?t=` | public | Pixel mở thư (theo dõi phải bật) |
+| `GET` | `/api/v1/portal/email/c?t=` | public | Redirect click chỉ tới URL đã ký |
 
 ---
 

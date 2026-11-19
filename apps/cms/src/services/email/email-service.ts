@@ -25,6 +25,7 @@ import type { DeliveryResult } from '../../modules/notifications/types';
 import {
   MailchannelsTransport,
   NodemailerTransport,
+  type DkimSigningKey,
   type EmailMessage,
   type EmailTransport,
 } from './transport';
@@ -44,6 +45,10 @@ export interface OutboundEmail {
   readonly subject: string;
   readonly html?: string;
   readonly text?: string;
+  /** Extra headers, e.g. RFC 8058 `List-Unsubscribe` + `List-Unsubscribe-Post`. */
+  readonly headers?: Readonly<Record<string, string>>;
+  /** DKIM key of a verified custom sending domain. */
+  readonly dkim?: DkimSigningKey;
 }
 
 export class EmailService {
@@ -71,6 +76,8 @@ export class EmailService {
       subject: email.subject,
       html: email.html,
       text: email.text,
+      ...(email.headers ? { headers: email.headers } : {}),
+      ...(email.dkim ? { dkim: email.dkim } : {}),
     };
     const result = await this.transport.send(message);
     if (result.ok) {

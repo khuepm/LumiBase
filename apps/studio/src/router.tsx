@@ -64,6 +64,7 @@ const KeyboardSettingsPage = lazy(() => import('./modules/settings/keyboard-page
 const DateTimeSettingsPage = lazy(() => import('./modules/settings/date-time-page').then((m) => ({ default: m.DateTimeSettingsPage })));
 const MaterializePage = lazy(() => import('./modules/settings/materialize-page').then((m) => ({ default: m.MaterializePage })));
 const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page').then((m) => ({ default: m.TranslationMemoryPage })));
+const AudiencePage = lazy(() => import('./modules/audience/audience-page').then((m) => ({ default: m.AudiencePage })));
 const LocaleGeneratorPage = lazy(() => import('./modules/translations/locale-generator-page').then((m) => ({ default: m.LocaleGeneratorPage })));
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
 const EncryptionSettingsPage = lazy(() => import('./modules/settings/encryption-page').then((m) => ({ default: m.EncryptionSettingsPage })));
@@ -759,6 +760,13 @@ const localeGeneratorRoute = createRoute({
   component: withSuspense(LocaleGeneratorPage),
 });
 
+// Memberships & newsletters (epic #672).
+const audienceRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'audience',
+  component: withSuspense(AudiencePage),
+});
+
 const activityRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'activity',
@@ -937,6 +945,12 @@ const adminPathLocaleGeneratorRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'locale-generator',
   component: withSuspense(LocaleGeneratorPage),
+});
+
+const adminPathAudienceRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'audience',
+  component: withSuspense(AudiencePage),
 });
 
 const adminPathActivityRoute = createRoute({
@@ -1447,6 +1461,7 @@ const routeTree = rootRoute.addChildren([
       materializeSettingsRoute,
       translationMemoryRoute,
       localeGeneratorRoute,
+      audienceRoute,
       activityRoute,
       encryptionSettingsRoute,
       securitySettingsRoute,
@@ -1531,6 +1546,7 @@ const routeTree = rootRoute.addChildren([
       adminPathMaterializeSettingsRoute,
       adminPathTranslationMemoryRoute,
       adminPathLocaleGeneratorRoute,
+      adminPathAudienceRoute,
       adminPathActivityRoute,
       adminPathEncryptionSettingsRoute,
       adminPathSecuritySettingsRoute,

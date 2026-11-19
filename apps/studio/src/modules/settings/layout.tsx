@@ -40,6 +40,11 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    id: 'audience',
+    label: 'Audience',
+    items: [{ id: 'audience', label: 'Members & newsletters', to: '/settings/audience' }],
+  },
+  {
     id: 'integrations',
     label: 'Integrations',
     items: [

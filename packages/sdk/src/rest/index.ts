@@ -47,6 +47,7 @@ export * from "./legacy";
 export * from "./gaps";
 export * from "./decisions";
 export * from "./reviews";
+export * from "./members";
 
 /**
  * Full-text search via `GET /api/v1/search`. Omit `params.collection` for a

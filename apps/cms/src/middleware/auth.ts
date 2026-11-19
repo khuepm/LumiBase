@@ -23,6 +23,7 @@ import {
 import { mergeRequestContext } from './request-context';
 import { mcpResourceContext } from './mcp-oauth';
 import { isSocialAuthPublicPath } from '../modules/social-auth/paths';
+import { isPortalPublicPath } from '../modules/members/portal-paths';
 import { scopesFromClaims } from '../services/mcp-oauth';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
@@ -163,6 +164,10 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     // Social login (#736): start / provider callback / one-time code exchange.
     // Self-authenticating via server-side state + PKCE; see modules/social-auth.
     isSocialAuthPublicPath(path) ||
+    // Member Portal (epic #672): catalog, signup-card copy, magic-link request
+    // and redeem. Exact paths; each handler is safe with `auth === undefined`
+    // (portal switch, per-IP brake, single-use hashed token).
+    isPortalPublicPath(path) ||
     path === '/api/v1/realtime' ||
     path.startsWith('/api/v1/files/upload/') ||
     // Flow webhook trigger authenticates with a per-flow token inside the

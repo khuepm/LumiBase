@@ -138,6 +138,15 @@ export default Sentry.withSentry(
           )
           .catch(() => console.error('[locale-generation] tick failed')),
       );
+      // Members (epic #672): newsletter batches, sequence steps, DKIM
+      // rotation — every unit claimed with a row lease, so overlap is safe.
+      ctx.waitUntil(
+        import('./modules/members/tick')
+          .then(({ runMembersTick, membersTickDeps }) =>
+            runMembersTick(membersTickDeps(db, env, runtime.keys), { budgetMs: 25_000 }),
+          )
+          .catch(() => console.error('[members] tick failed')),
+      );
       return;
     }
 

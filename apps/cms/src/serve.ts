@@ -200,6 +200,7 @@ async function main() {
   let goalDispatchTask: ScheduledTask | undefined;
   let importTask: ScheduledTask | undefined;
   let localeJobTask: ScheduledTask | undefined;
+  let membersTask: ScheduledTask | undefined;
   let loadGuardTimer: ReturnType<typeof setInterval> | undefined;
 
   if (runWorkers) {
@@ -670,6 +671,26 @@ async function main() {
     ),
   );
 
+  // ── Members (epic #672) ─────────────────────────────────────────────────
+  // Newsletter batches (resume after the creating request), segment-triggered
+  // sequence enrolment, due sequence steps and DKIM rotation. Leader-locked:
+  // every unit of work is also claimed with a row lease, so a second process
+  // could not double-send, but one runner keeps the per-minute budget honest.
+  const { runMembersTick, membersTickDeps } = await import('./modules/members/tick');
+  membersTask = cron.schedule(
+    '* * * * *',
+    leaderLockedCallback(
+      'members-tick',
+      55_000,
+      async () => {
+        await runMembersTick(membersTickDeps(rotatorDb, process.env as unknown as Bindings, runtime.keys), { budgetMs: 50_000 }).catch((err) => {
+          console.error('[members] tick failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
+
   const { runGoalDispatchTick } = await import('./services/goal-dispatch-service');
   const goalDispatchDeps = { db: rotatorDb, queue: runtime.queue };
   goalDispatchTask = cron.schedule(
@@ -785,6 +806,7 @@ async function main() {
     goalDispatchTask?.stop();
     importTask?.stop();
     localeJobTask?.stop();
+    membersTask?.stop();
     extensionDevClient?.stop();
     if (runHttp) {
       pressureLimiter.stop();

@@ -1,13 +1,13 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 27
+lastUpdated: 2026-11-19T04:12:34.474Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 52465604769f9c24
+sourceHash: cf32d06eb369aef7
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+codeVerified: 2026-11-19T04:12:34.474Z
+codeVerifiedHash: cf32d06eb369aef7
 codeVerifiedClaims: 22
 ---
 
@@ -41,6 +41,7 @@ Các file schema được chia theo domain:
 | `social-auth.ts` | `lumibase_user_identities`, `lumibase_social_auth_providers` |
 | `imports.ts` | `lumibase_import_jobs` |
 | `locale-generation.ts` | `lumibase_locale_generation_jobs`, `lumibase_translation_suggestions` |
+| `members.ts` | `lumibase_member_settings`, `lumibase_member_tiers`, `lumibase_members`, `lumibase_member_newsletters`, `lumibase_member_login_tokens`, `lumibase_member_segments`, `lumibase_newsletters`, `lumibase_newsletter_sends`, `lumibase_newsletter_deliveries`, `lumibase_email_sequences`, `lumibase_sequence_enrollments`, `lumibase_sending_domains` |
 | `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
 
 Migration nằm ở `packages/database/migrations/` và `packages/database/drizzle/`.
@@ -593,6 +594,25 @@ môi trường preview tạm thời và provenance commit↔content. Mọi bản
 
 Token + webhook secret được mã hoá at rest qua `CryptoService` (AES-GCM, AAD ràng
 buộc vào `{ siteId, integrationId, field }`); plaintext không bao giờ được lưu.
+
+## 11e. Memberships & newsletters (`members.ts`, epic #672)
+
+Migration `0044_members`, chỉ thêm mới. Mọi bảng có `site_id` và nằm trong danh sách RLS. Hướng dẫn: [features/memberships.md](./features/memberships.md).
+
+| Bảng | Mục đích |
+|---|---|
+| `lumibase_member_settings` | Một dòng mỗi site: công tắc Portal, tự đăng ký, `redirect_uris` của magic link, newsletter mặc định, `signup_copy` theo locale |
+| `lumibase_member_tiers` | Tier (`kind` `free`/`paid`, giá, `external_ids` cho nhà cung cấp thanh toán); `policy_id` → policy `member-tier:<key>` của tier |
+| `lumibase_members` | Hồ sơ member: `email_lower` duy nhất theo site, `status` `free`/`paid`/`comped`, `tier_id`, `tier_expires_at`, `labels`, `user_id` (tài khoản subscriber, đặt ở lần đăng nhập Portal đầu tiên), bộ đếm email |
+| `lumibase_member_newsletters` | Bật tắt newsletter theo từng member, PK `(member_id, newsletter_id)` |
+| `lumibase_member_login_tokens` | Magic link: chỉ lưu `token_hash` SHA-256, `expires_at`, `consumed_at` dùng một lần |
+| `lumibase_member_segments` | Bộ lọc segment đã lưu (tính trực tiếp, không bao giờ materialize) |
+| `lumibase_newsletters` | Newsletter: người gửi, `audience`, theo dõi phải bật, layout |
+| `lumibase_newsletter_sends` | Một issue mỗi (newsletter, collection, item): `segment_filter` đóng băng, body đã render, `link_base`, keyset `cursor`, lease, `counters` |
+| `lumibase_newsletter_deliveries` | Một dòng mỗi người nhận, PK `(send_id, member_id)`: claim đúng một lần, `opened_at` / `clicked_at` |
+| `lumibase_email_sequences` | Định nghĩa sequence: `trigger`, `trigger_options`, `steps` |
+| `lumibase_sequence_enrollments` | Vị trí theo từng member: `step_index`, `next_run_at`, lease, `status` / `stopped_reason`; duy nhất `(sequence_id, member_id)` |
+| `lumibase_sending_domains` | Domain, DKIM selector + public key + private key đã niêm phong, khoá next/previous cho việc xoay, `checks`, `status` |
 
 ## 12. Indexing & RLS
 
