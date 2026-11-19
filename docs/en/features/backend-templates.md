@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-11-19T06:06:09.106Z
+version: 2
+lastUpdated: 2026-11-19T06:25:17.557Z
 sourceLang: en
-contentHash: 6bda70c8176b1e84
-codeVerified: 2026-11-19T06:06:09.106Z
-codeVerifiedHash: 6bda70c8176b1e84
-codeVerifiedClaims: 2
+contentHash: 2319a08fd162980b
+codeVerified: 2026-11-19T06:25:17.557Z
+codeVerifiedHash: 2319a08fd162980b
+codeVerifiedClaims: 8
 ---
 
 # Backend templates
@@ -16,11 +16,11 @@ storage choices and relations, plus optional demo data. You can install the
 same model into another site from it. Epic #900; specification
 `.kiro/specs/backend-templates/`.
 
-> **Status.** This page documents the template **format** and its validator,
-> which are available now in `@lumibase/contracts/backend-templates` (#901).
-> The template catalog, preview/plan, governed installation, MCP tools and
-> Studio screens are delivered by #902–#909. Until those land, nothing in the
-> CMS reads or installs a template.
+> **Status.** Available now: the template **format** and its validator in
+> `@lumibase/contracts/backend-templates` (#901), and each site's private
+> **catalog** (#902): drafts, published revisions and capture. Preview/plan,
+> governed installation, MCP tools and Studio screens are delivered by
+> #903–#909. Until those land, a template cannot be installed.
 
 Code: `packages/contracts/src/backend-templates/` (`envelope.ts`, `validate.ts`, `ingest.ts`, `canonical.ts`, `limits.ts`). Tests: `packages/contracts/src/backend-templates/__tests__/backend-template-contract.test.ts`.
 
@@ -158,3 +158,42 @@ array keeps its order. `config.exportedAt` is dropped.
 documents that differ only in key or list order therefore have the same digest,
 and any change to a field or a seed value changes it.
 `exportBackendTemplate` returns the canonical object.
+
+## Catalog
+
+Each site keeps a private catalog under `/api/v1/backend-templates`. It is
+open to **site admins** only, and it is scoped to the request's site: another
+site's templates are not found, whatever id or slug is guessed. The tables are
+`lumibase_backend_templates` and `lumibase_backend_template_revisions`, and
+both are in the RLS `site_isolation` list. Official templates ship read-only
+with the CMS (`GET /api/v1/backend-templates/official`) and are never copied
+into a site. Code: `apps/cms/src/services/backend-templates/catalog-service.ts`.
+
+- **Drafts.** `POST /` with `{ document }` creates a draft. The document is a
+  JSON object, or raw JSON text, which is checked for duplicate keys. A draft
+  may be incomplete: its `validation` lists what is missing. `PATCH /:id`
+  takes `{ document, draftRevision }` and succeeds only if the draft is still
+  at that revision. Of two edits made from the same revision, one wins and the
+  other gets `409 DRAFT_CONFLICT`. The `slug` cannot change.
+- **Publish.** `POST /:id/publish` validates the whole draft and stores an
+  immutable revision of its `templateVersion`, as canonical JSON with its
+  `sha256` digest. Publishing identical content again returns the existing
+  revision (`200`, `meta.created: false`). Different content under a version
+  that is already published is refused with `409 IMMUTABLE_REVISION`; publish
+  a new `templateVersion` instead. An invalid draft gives
+  `422 INVALID_TEMPLATE` with every error and its JSON path.
+- **Export.** `GET /:id/revisions/:version` returns the published document.
+- **Capture.** `POST /capture` with
+  `{ collections, slug, displayName, templateVersion?, description?, seed? }`
+  turns collections of the current site into a new draft. Only the named
+  collections are captured. If they relate to a collection that was not named,
+  the capture fails with `422 MISSING_DEPENDENCY` and the full `missing` list,
+  rather than silently capturing more. Capture is schema-only and reads no
+  item unless `seed: { collections, maxRecordsPerCollection?, pack? }` is
+  given. Seed capture then reads items with the caller's own item permissions,
+  drops `hash` and encrypted fields, and replaces ids with logical keys. If any
+  read is denied, nothing is stored.
+
+Creating, capturing and publishing are written to the audit log
+(`backend_template_created`, `backend_template_captured`,
+`backend_template_published`).
