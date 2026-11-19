@@ -147,7 +147,7 @@ export const aiEmbeddings = pgTable(
   },
   (t) => ({
     siteCollectionIdx: index('ai_embeddings_site_collection_idx').on(t.siteId, t.collection),
-    /** Same-site item (migration 0041); erasure of the item removes this row. */
+    /** Same-site item (migration 0044); erasure of the item removes this row. */
     itemFk: foreignKey({
       name: 'lumibase_ai_embeddings_item_fk',
       columns: [t.siteId, t.itemId],
@@ -617,7 +617,7 @@ export const reviewRuns = pgTable(
     profileVersion: integer('profile_version').notNull(),
     collection: text('collection').notNull(),
     /**
-     * Same-site item. Migration 0041 declares the composite FK with
+     * Same-site item. Migration 0044 declares the composite FK with
      * `ON DELETE SET NULL (item_id)`, which keeps `site_id`; Drizzle has no
      * column-list form, so that FK lives in SQL only.
      */
@@ -703,7 +703,7 @@ export const reviewSessions = pgTable(
       .references(() => sites.id, { onDelete: 'cascade' }),
     collection: text('collection').notNull(),
     /**
-     * Same-site item. Migration 0041 declares the composite FK with
+     * Same-site item. Migration 0044 declares the composite FK with
      * `ON DELETE SET NULL (item_id)`, which keeps `site_id`; Drizzle has no
      * column-list form, so that FK lives in SQL only.
      */
@@ -720,7 +720,7 @@ export const reviewSessions = pgTable(
   },
   (t) => ({
     siteCreatedIdx: index('review_sessions_site_created_idx').on(t.siteId, t.createdAt),
-    /** Lookup for the item FK's ON DELETE (migration 0041). */
+    /** Lookup for the item FK's ON DELETE (migration 0044). */
     siteItemIdx: index('review_sessions_site_item_idx').on(t.siteId, t.itemId),
     siteRunIdx: index('review_sessions_site_run_idx').on(t.siteId, t.runId),
   }),
@@ -792,7 +792,7 @@ export const aiAutomationActions = pgTable(
       t.itemId,
     ),
     siteCreatedIdx: index('ai_automation_actions_site_created_idx').on(t.siteId, t.createdAt),
-    /** Same-site item (migration 0041); erasure of the item removes this row. */
+    /** Same-site item (migration 0044); erasure of the item removes this row. */
     itemFk: foreignKey({
       name: 'lumibase_ai_automation_actions_item_fk',
       columns: [t.siteId, t.itemId],

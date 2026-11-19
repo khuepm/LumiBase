@@ -1,5 +1,6 @@
 import type { TypegenCollection, TypegenField, TypegenManifest, TypegenRelation } from './types';
 import { fieldShape } from './shared';
+import { RICHTEXT_TS_DECLARATIONS } from './richtext';
 export type { TypegenManifest, TypegenCollection, TypegenField, TypegenRelation } from './types';
 export {
   FILE_INTERFACE,
@@ -58,6 +59,8 @@ function generateSingleFile(manifest: TypegenManifest, branded: boolean, importS
     .join('\n\n');
 
   const blockTypes = generateBlockTypes(manifest, branded, known);
+  // Rich-text document model (#695), emitted once when any field uses it.
+  const richText = manifest.collections.some((c) => c.fields.some((f) => f.type === 'richtext')) ? RICHTEXT_TS_DECLARATIONS : '';
 
   const collectionsMap = `export interface LumibaseCollections {
 ${manifest.collections.map((c) => `  ${c.name}: ${capitalize(c.name)};`).join('\n')}
@@ -65,7 +68,7 @@ ${manifest.collections.map((c) => `  ${c.name}: ${capitalize(c.name)};`).join('\
 
   const schemaType = 'export type LumibaseSchema = LumibaseCollections;';
 
-  const body = [collectionInterfaces, blockTypes, collectionsMap, schemaType].filter(Boolean).join('\n\n');
+  const body = [richText, collectionInterfaces, blockTypes, collectionsMap, schemaType].filter(Boolean).join('\n\n');
   return `${imports}\n\n${body}`;
 }
 
@@ -240,6 +243,7 @@ function mapScalarFieldType(field: TypegenField, branded: boolean): string {
     timestamp: 'string',
     geometry: 'GeoJSON.Geometry',
     geopoint: '{ lat: number; lng: number }',
+    richtext: 'RichTextDocument',
   };
 
   return typeMap[field.type] || 'unknown';

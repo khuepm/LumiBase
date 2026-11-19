@@ -4,7 +4,7 @@ import { and, eq } from 'drizzle-orm';
 /**
  * Insert items with fixed ids into `siteId` (creating `collection` when it is
  * missing), so DB fixtures can reference them by `item_id`. Since migration
- * 0041 every table that references an item carries a same-site foreign key
+ * 0044 every table that references an item carries a same-site foreign key
  * `(site_id, item_id) → lumibase_items (site_id, id)` (#868); a fixture row
  * naming an item that does not exist in its site is refused.
  */

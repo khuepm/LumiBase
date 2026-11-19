@@ -1,4 +1,4 @@
--- 0041_item_reference_fks — same-site foreign keys for soft item references (#868).
+-- 0044_item_reference_fks — same-site foreign keys for soft item references (#868).
 --
 -- Item ids are unique per site (0035: lumibase_items is keyed (site_id, id)),
 -- and an environment fork (#853) keeps item ids, so one id exists in several
@@ -70,7 +70,7 @@ BEGIN
     BEGIN
       EXECUTE format('ALTER TABLE %I VALIDATE CONSTRAINT %I', ref.tbl, ref.tbl || '_item_fk');
     EXCEPTION WHEN foreign_key_violation THEN
-      RAISE WARNING '%: rows reference a missing or other-site item; % left NOT VALID (see 0041 header)',
+      RAISE WARNING '%: rows reference a missing or other-site item; % left NOT VALID (see 0044 header)',
         ref.tbl, ref.tbl || '_item_fk';
     END;
   END LOOP;

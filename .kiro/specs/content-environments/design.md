@@ -143,7 +143,7 @@ Bản trước của mục này viết "`lumibase_items.id` là primary key toà
 **Trạng thái sau audit (#853, `main` `010c1944`):** không còn chỗ nào khớp chỉ theo id. 44 chỗ lọc `items.id` và 23 chỗ lọc `<bảng>.itemId` trong `apps/cms/src` đều có điều kiện site; `scheduler-worker.ts` không còn khớp chỉ theo id. Hai lớp chặn hồi quy (#868):
 
 - **Tripwire tĩnh** `apps/cms/src/__tests__/item-reference-scope.wiring.test.ts`: mọi `eq`/`ne`/`inArray`/`notInArray` trên `items.id` hoặc `<bảng>.itemId` phải nằm trong câu lệnh có điều kiện site, hoặc ghép với biến/method đã mang điều kiện site; ngoại lệ phải ghi lý do trong allow-list, và list chỉ được thu nhỏ.
-- **FK composite cùng site** (migration `0041_item_reference_fks`) cho mười bảng tham chiếu mềm. `CASCADE`: `shares`, `ai_embeddings`, `content_versions`, `preview_secrets`, `content_drifts`, `translation_suggestions`, `ai_automation_actions`. `SET NULL (item_id)`: `review_runs`, `review_sessions`, `git_provenance`. Cộng ba FK của #811, mọi cột `item_id` trỏ vào item đều bị DB ép cùng site, trừ ba bảng cố ý không có FK:
+- **FK composite cùng site** (migration `0044_item_reference_fks`) cho mười bảng tham chiếu mềm. `CASCADE`: `shares`, `ai_embeddings`, `content_versions`, `preview_secrets`, `content_drifts`, `translation_suggestions`, `ai_automation_actions`. `SET NULL (item_id)`: `review_runs`, `review_sessions`, `git_provenance`. Cộng ba FK của #811, mọi cột `item_id` trỏ vào item đều bị DB ép cùng site, trừ ba bảng cố ý không có FK:
   - `activity`: `item_id` đa hình (scim, agent, kill switch… ghi id của bản ghi không phải item).
   - `cdc_change_events`: outbox chỉ-ghi-thêm; sự kiện xoá phải sống lâu hơn item.
   - `firebase_sync_log`: log đồng bộ, phải sống lâu hơn item.

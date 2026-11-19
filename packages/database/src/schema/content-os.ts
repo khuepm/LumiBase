@@ -170,7 +170,7 @@ export const contentDrifts = pgTable(
       t.intentId,
       t.status,
     ),
-    /** Same-site item (migration 0041); erasure of the item removes this row. */
+    /** Same-site item (migration 0044); erasure of the item removes this row. */
     itemFk: foreignKey({
       name: 'lumibase_content_drifts_item_fk',
       columns: [t.siteId, t.itemId],

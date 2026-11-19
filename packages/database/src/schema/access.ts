@@ -276,7 +276,7 @@ export const shares = pgTable(
   },
   (t) => ({
     tokenHashUnique: uniqueIndex('shares_token_hash_unique').on(t.tokenHash),
-    /** Same-site item (migration 0041); erasure of the item removes this row. */
+    /** Same-site item (migration 0044); erasure of the item removes this row. */
     itemFk: foreignKey({
       name: 'lumibase_shares_item_fk',
       columns: [t.siteId, t.itemId],

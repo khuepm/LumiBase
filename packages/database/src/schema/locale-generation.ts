@@ -91,7 +91,7 @@ export const translationSuggestions = pgTable(
   (t) => ({
     siteTargetUnique: uniqueIndex('translation_suggestions_site_target_locale_unique').on(t.siteId, t.targetKey, t.locale),
     siteStatusIdx: index('translation_suggestions_site_status_idx').on(t.siteId, t.locale, t.status),
-    /** Same-site item (migration 0041); erasure of the item removes this row. */
+    /** Same-site item (migration 0044); erasure of the item removes this row. */
     itemFk: foreignKey({
       name: 'lumibase_translation_suggestions_item_fk',
       columns: [t.siteId, t.itemId],

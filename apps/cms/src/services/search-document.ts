@@ -1,4 +1,5 @@
 import { SEARCH_META_ATTRS } from '@lumibase/runtime';
+import { isRichTextDocument, richTextToPlainText } from '@lumibase/contracts/richtext';
 
 /**
  * Normalized search document shape. The reserved `_collection` / `_title` /
@@ -42,8 +43,12 @@ export function buildSearchDocument(
   data: Record<string, unknown>,
 ): SearchDocument {
   const updatedAt = data.updated_at ?? data.updatedAt;
+  // Rich-text documents (#695) are indexed as their plain text, not as the
+  // JSON tree (node types and marks are not searchable content).
+  const indexed: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data)) indexed[k] = isRichTextDocument(v) ? richTextToPlainText(v) : v;
   return {
-    ...data,
+    ...indexed,
     id,
     [SEARCH_META_ATTRS.collection]: collection,
     [SEARCH_META_ATTRS.title]: deriveTitle(id, data),

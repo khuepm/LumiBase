@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_IMPORT_CONFIG, errorReportCsv, resolveImportConfig } from '../import-service';
+import { DEFAULT_IMPORT_CONFIG, chunkRecords, errorReportCsv, importJobColumns, resolveImportConfig } from '../import-service';
 import { parseCsv } from '../export-service';
 
 /** Unit tests for the import helpers that need no database (#726). */
@@ -24,6 +24,38 @@ describe('resolveImportConfig', () => {
     expect(cfg.timeoutMs).toBe(DEFAULT_IMPORT_CONFIG.timeoutMs);
     expect(cfg.maxConcurrency).toBe(DEFAULT_IMPORT_CONFIG.maxConcurrency);
     expect(cfg.chunkSize).toBe(5000);
+  });
+});
+
+describe('per-site pending limits (#859)', () => {
+  it('reads IMPORT_MAX_PENDING_BYTES / IMPORT_MAX_PENDING_JOBS', () => {
+    const cfg = resolveImportConfig({ IMPORT_MAX_PENDING_BYTES: '300000000', IMPORT_MAX_PENDING_JOBS: '5' });
+    expect(cfg).toMatchObject({ maxPendingBytes: 300_000_000, maxPendingJobs: 5 });
+  });
+
+  it('never lets the pending byte budget fall below one upload', () => {
+    const cfg = resolveImportConfig({ IMPORT_MAX_BYTES: '100000000', IMPORT_MAX_PENDING_BYTES: '1000' });
+    expect(cfg.maxPendingBytes).toBe(100_000_000);
+  });
+});
+
+describe('staging (#859)', () => {
+  it('splits parsed rows into numbered chunks', () => {
+    const rows = Array.from({ length: 7 }, (_, i) => ({ data: { n: i } }));
+    const chunks = chunkRecords(rows, 3);
+    expect(chunks.map((c) => [c.startRow, c.records.length])).toEqual([
+      [0, 3],
+      [3, 3],
+      [6, 1],
+    ]);
+    expect(chunks.flatMap((c) => c.records)).toEqual(rows);
+    expect(chunkRecords(rows.slice(4), 2, 4).map((c) => c.startRow)).toEqual([4, 6]);
+    expect(chunkRecords([], 3)).toEqual([]);
+  });
+
+  it('job reads never project the stored source', () => {
+    expect(Object.keys(importJobColumns)).not.toContain('source');
+    expect(Object.keys(importJobColumns)).toEqual(expect.arrayContaining(['id', 'siteId', 'cursor', 'totalRows', 'sourceBytes']));
   });
 });
 
