@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-11-15T19:28:29.361Z
+version: 5
+lastUpdated: 2026-11-17T19:31:10.191Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 70cc0629da389101
+sourceHash: f0d97d0f1fa5f2e0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T19:28:29.361Z
-codeVerifiedHash: 70cc0629da389101
+codeVerified: 2026-11-17T19:31:10.191Z
+codeVerifiedHash: f0d97d0f1fa5f2e0
 codeVerifiedClaims: 6
 ---
 
@@ -297,6 +297,8 @@ const appendNote = defineTool({ name: 'appendNote', capability: 'items:write', r
 export default (ctx) => ({ mcp: defineMcp({ tools: [appendNote] }) });
 // mcpManifest({ tools: [appendNote] }) generates the manifest's `mcp` block at build time.
 ```
+
+The `inputSchema` must be an object schema the harness can enforce: every property has a JSON `type` (or none), `required` names declared properties, `enum` is an array and numeric bounds are numbers (#716). Anything else is refused at install.
 
 **Grants.** Each block is offered only when the installed extension row was granted the matching capability: `mcp:tools`, `mcp:prompts`, `mcp:resources`. A malformed `mcp` block is refused at install time (`400`); an older malformed row is skipped at request time and does not take the site's MCP endpoint down.
 

@@ -22,6 +22,17 @@
       "collection"
     ]
   },
+  "aiSuggestField": {
+    "properties": [
+      "collection",
+      "description",
+      "maxSuggestions"
+    ],
+    "required": [
+      "collection",
+      "description"
+    ]
+  },
   "applyContentMigrationSchema": {
     "properties": [
       "collectionPrefix",
@@ -45,6 +56,18 @@
     ],
     "required": [
       "question"
+    ]
+  },
+  "compareVersion": {
+    "properties": [
+      "collection",
+      "itemId",
+      "key"
+    ],
+    "required": [
+      "collection",
+      "itemId",
+      "key"
     ]
   },
   "createApiKey": {
@@ -364,6 +387,44 @@
       "id"
     ]
   },
+  "generateApiDocs": {
+    "properties": [
+      "collections"
+    ],
+    "required": []
+  },
+  "generateAppSpec": {
+    "properties": [
+      "collections",
+      "targetApp"
+    ],
+    "required": []
+  },
+  "generateSeedData": {
+    "properties": [
+      "collection",
+      "count"
+    ],
+    "required": [
+      "collection"
+    ]
+  },
+  "getCdcSubscriptionStatus": {
+    "properties": [
+      "subscriptionId"
+    ],
+    "required": [
+      "subscriptionId"
+    ]
+  },
+  "getDeploymentStatus": {
+    "properties": [
+      "deploymentId"
+    ],
+    "required": [
+      "deploymentId"
+    ]
+  },
   "getUserAnswer": {
     "properties": [
       "questionId"
@@ -398,6 +459,98 @@
     "required": [
       "email"
     ]
+  },
+  "listApiKeys": {
+    "properties": [],
+    "required": []
+  },
+  "listCdcSubscriptions": {
+    "properties": [],
+    "required": []
+  },
+  "listCollections": {
+    "properties": [],
+    "required": []
+  },
+  "listDeploymentTargets": {
+    "properties": [],
+    "required": []
+  },
+  "listDeployments": {
+    "properties": [
+      "status",
+      "targetId"
+    ],
+    "required": []
+  },
+  "listExtensions": {
+    "properties": [],
+    "required": []
+  },
+  "listFlows": {
+    "properties": [],
+    "required": []
+  },
+  "listIntents": {
+    "properties": [],
+    "required": []
+  },
+  "listItems": {
+    "properties": [
+      "collection",
+      "limit",
+      "offset"
+    ],
+    "required": [
+      "collection"
+    ]
+  },
+  "listPolicies": {
+    "properties": [],
+    "required": []
+  },
+  "listRelations": {
+    "properties": [],
+    "required": []
+  },
+  "listRoles": {
+    "properties": [],
+    "required": []
+  },
+  "listSettings": {
+    "properties": [
+      "scope"
+    ],
+    "required": []
+  },
+  "listTeams": {
+    "properties": [],
+    "required": []
+  },
+  "listTranslations": {
+    "properties": [
+      "language",
+      "namespace"
+    ],
+    "required": []
+  },
+  "listUsers": {
+    "properties": [],
+    "required": []
+  },
+  "listVersions": {
+    "properties": [
+      "collection",
+      "itemId"
+    ],
+    "required": [
+      "collection",
+      "itemId"
+    ]
+  },
+  "listWebhooks": {
+    "properties": [],
+    "required": []
   },
   "planContentMigration": {
     "properties": [

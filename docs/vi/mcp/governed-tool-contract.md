@@ -1,10 +1,10 @@
 ---
-version: 10
-lastUpdated: 2026-11-11T02:57:07.772Z
+version: 11
+lastUpdated: 2026-11-17T19:30:56.399Z
 sourceLang: vi
-contentHash: 329b9de7859ec6a0
-codeVerified: 2026-11-11T02:57:07.772Z
-codeVerifiedHash: 329b9de7859ec6a0
+contentHash: 0cd978f63dcb62ff
+codeVerified: 2026-11-17T19:30:56.399Z
+codeVerifiedHash: 0cd978f63dcb62ff
 codeVerifiedClaims: 38
 translatedFrom: en
 sourceHash: 8431450c18c2e01f
@@ -40,7 +40,9 @@ Ba nguyên tắc khi thêm schema:
 2. **`.strict()`** — field lạ bị **từ chối**, không rụng im lặng. Đây chính là lớp lỗi của `update_item` cũ: REST strip key ngoài envelope `data`, trả `200 OK` với patch rỗng.
 3. **Giữ đúng tên key mà handler đọc.** Cần đổi tên thì làm ở tầng alias mapping, không phải ở schema.
 
-Skill chưa có schema thì harness **bỏ qua** validation — fail-open **có chủ ý**, để không phá hành vi read đang chạy. Tập skill đã có schema lấy bằng `agentToolNamesWithSchema()`.
+Mọi core skill đều có schema canonical, kể cả skill đọc (B204, #716): `listItems`, `listCollections`, `getDeploymentStatus` và các skill còn lại không còn quảng bá `{type:"object"}`, và lời gọi có key lạ hoặc thiếu key bắt buộc bị từ chối với `VALIDATION`. Chỉ một tên hoàn toàn chưa có schema (skill thêm sau mà chưa khai) mới được bỏ qua validation — fail-open **có chủ ý**. Tập skill đã có schema lấy bằng `agentToolNamesWithSchema()`.
+
+Một dòng `agent_tools` của site có thể thu hẹp schema của một core tool. Override chỉ được quảng bá trên `tools/list` của site đó khi nó hợp lệ (object schema, property có `type` JSON, `required` chỉ nêu property đã khai) và thu hẹp schema canonical; khi đó harness cũng **thực thi** nó, chồng lên contract canonical. Override không hợp lệ hoặc nới rộng bị bỏ qua và schema canonical được giữ (B205).
 
 Skill tự khai `inputSchema` thì bản tự khai **thắng**: chúng được viết theo handler và có bản mô tả rộng hơn tập canonical hiện tại.
 
