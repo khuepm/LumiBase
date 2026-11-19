@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-11-19T06:06:09.106Z
+version: 2
+lastUpdated: 2026-11-19T06:25:17.557Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6bda70c8176b1e84
+sourceHash: 2319a08fd162980b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T06:06:09.106Z
-codeVerifiedHash: 6bda70c8176b1e84
-codeVerifiedClaims: 2
+codeVerified: 2026-11-19T06:25:17.557Z
+codeVerifiedHash: 2319a08fd162980b
+codeVerifiedClaims: 8
 ---
 
 # Backend templates
@@ -19,11 +19,11 @@ lựa chọn lưu trữ và relation, cộng dữ liệu demo tuỳ chọn. Từ
 cùng model đó vào một site khác. Epic #900; đặc tả
 `.kiro/specs/backend-templates/`.
 
-> **Trạng thái.** Trang này mô tả **định dạng** template và bộ validator của
-> nó, hiện đã có trong `@lumibase/contracts/backend-templates` (#901). Catalog
-> template, preview/plan, cài đặt có governance, MCP tool và màn hình Studio do
-> #902–#909 đảm nhận. Cho tới khi chúng xong, chưa có gì trong CMS đọc hay cài
-> một template.
+> **Trạng thái.** Hiện đã có: **định dạng** template và bộ validator trong
+> `@lumibase/contracts/backend-templates` (#901), và **catalog** riêng của mỗi
+> site (#902): draft, revision đã publish và capture. Preview/plan, cài đặt có
+> governance, MCP tool và màn hình Studio do #903–#909 đảm nhận. Cho tới khi
+> chúng xong, chưa thể cài một template.
 
 Code: `packages/contracts/src/backend-templates/` (`envelope.ts`, `validate.ts`, `ingest.ts`, `canonical.ts`, `limits.ts`). Test: `packages/contracts/src/backend-templates/__tests__/backend-template-contract.test.ts`.
 
@@ -160,3 +160,41 @@ Mọi mảng khác giữ nguyên thứ tự. `config.exportedAt` bị bỏ đi.
 hai tài liệu chỉ khác nhau về thứ tự key hay danh sách có cùng digest, và mọi
 thay đổi ở một field hay một giá trị seed đều làm digest đổi.
 `exportBackendTemplate` trả object canonical.
+
+## Catalog
+
+Mỗi site giữ một catalog riêng dưới `/api/v1/backend-templates`. Nó chỉ mở cho
+**site admin**, và gắn với site của request: template của site khác không được
+tìm thấy, dù đoán id hay slug nào. Các bảng là `lumibase_backend_templates` và
+`lumibase_backend_template_revisions`, và cả hai nằm trong danh sách RLS
+`site_isolation`. Template chính thức đi kèm CMS ở dạng chỉ đọc
+(`GET /api/v1/backend-templates/official`) và không bao giờ được copy vào một
+site. Code: `apps/cms/src/services/backend-templates/catalog-service.ts`.
+
+- **Draft.** `POST /` với `{ document }` tạo một draft. Document là một object
+  JSON, hoặc văn bản JSON thô, được kiểm tra key trùng. Draft có thể chưa hoàn
+  chỉnh: `validation` của nó liệt kê những gì còn thiếu. `PATCH /:id` nhận
+  `{ document, draftRevision }` và chỉ thành công nếu draft vẫn ở revision đó.
+  Trong hai lần sửa từ cùng một revision, một lần thắng và lần kia nhận
+  `409 DRAFT_CONFLICT`. `slug` không thể đổi.
+- **Publish.** `POST /:id/publish` validate toàn bộ draft và lưu một revision
+  bất biến của `templateVersion` của nó, dưới dạng JSON canonical kèm digest
+  `sha256`. Publish lại đúng nội dung đó trả revision đã có (`200`,
+  `meta.created: false`). Nội dung khác dưới một version đã publish bị từ chối
+  với `409 IMMUTABLE_REVISION`; hãy publish một `templateVersion` mới. Một draft
+  không hợp lệ trả `422 INVALID_TEMPLATE` kèm mọi lỗi và JSON path của chúng.
+- **Export.** `GET /:id/revisions/:version` trả document đã publish.
+- **Capture.** `POST /capture` với
+  `{ collections, slug, displayName, templateVersion?, description?, seed? }`
+  biến các collection của site hiện tại thành một draft mới. Chỉ những
+  collection được nêu tên mới được capture. Nếu chúng liên quan tới một
+  collection không được nêu, capture fail với `422 MISSING_DEPENDENCY` kèm danh
+  sách `missing` đầy đủ, thay vì lặng lẽ capture thêm. Capture chỉ lấy schema
+  và không đọc item nào, trừ khi có `seed: { collections, maxRecordsPerCollection?, pack? }`.
+  Khi đó seed capture đọc item bằng chính quyền item của người gọi, bỏ các
+  field `hash` và field mã hoá, và thay id bằng khoá logic. Nếu có lần đọc nào
+  bị từ chối, không gì được lưu.
+
+Việc tạo, capture và publish được ghi vào audit log
+(`backend_template_created`, `backend_template_captured`,
+`backend_template_published`).

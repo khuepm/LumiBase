@@ -1,11 +1,11 @@
 ---
-version: 61
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 62
+lastUpdated: 2026-11-19T06:25:17.748Z
 sourceLang: en
-contentHash: 1d86bff615c2ba39
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
-codeVerifiedClaims: 652
+contentHash: 45985e8972bb42c6
+codeVerified: 2026-11-19T06:25:17.748Z
+codeVerifiedHash: 45985e8972bb42c6
+codeVerifiedClaims: 666
 ---
 
 # Hono API Specification — LumiBase
@@ -1796,6 +1796,25 @@ on PR open/sync LumiBase seeds an ephemeral site (`${siteId}__pr-${number}`)
 served at `/api/v1/deliver/page/${ephemeralSiteId}/...`; on close/merge it is
 torn down. CI failure records an `agent_incident` (role `git-sync`) + a
 `git_ci_failed` audit entry.
+
+---
+
+## 12d. Backend templates (catalog)
+
+Each site's private template catalog (#902, epic #900). Site admins only;
+scoped to the request's site. See [Backend templates](../features/backend-templates.md#catalog).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/backend-templates` | Site templates (`?limit=&offset=`), with `meta.total` |
+| `GET` | `/api/v1/backend-templates/official` | Read-only official templates bundled with the CMS |
+| `POST` | `/api/v1/backend-templates` | Create a draft `{ document }` (object or raw JSON text) → `201`; `409 CONFLICT` on a duplicate slug |
+| `GET` | `/api/v1/backend-templates/:id` | One template by id or slug: draft, `draftRevision`, `validation`, revisions |
+| `PATCH` | `/api/v1/backend-templates/:id` | Replace the draft `{ document, draftRevision }`; `409 DRAFT_CONFLICT` if it moved on |
+| `POST` | `/api/v1/backend-templates/:id/validate` | `{ valid, digest }` or `{ valid: false, errors }` |
+| `POST` | `/api/v1/backend-templates/:id/publish` | Publish an immutable revision (`{ draftRevision? }`) → `201`, or `200` for an identical retry; `409 IMMUTABLE_REVISION`; `422 INVALID_TEMPLATE` |
+| `GET` | `/api/v1/backend-templates/:id/revisions/:version` | The published canonical document (export) |
+| `POST` | `/api/v1/backend-templates/capture` | Draft from the site's own schema `{ collections, slug, displayName, templateVersion?, description?, seed? }` → `201`; `422 MISSING_DEPENDENCY` (with `missing`); `403` if seed items cannot be read |
 
 ---
 

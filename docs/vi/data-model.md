@@ -1,13 +1,13 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 27
+lastUpdated: 2026-11-19T06:25:19.665Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 52465604769f9c24
+sourceHash: 58bc3cc627363bc2
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+codeVerified: 2026-11-19T06:25:19.665Z
+codeVerifiedHash: 58bc3cc627363bc2
 codeVerifiedClaims: 22
 ---
 
@@ -593,6 +593,16 @@ môi trường preview tạm thời và provenance commit↔content. Mọi bản
 
 Token + webhook secret được mã hoá at rest qua `CryptoService` (AES-GCM, AAD ràng
 buộc vào `{ siteId, integrationId, field }`); plaintext không bao giờ được lưu.
+
+## 11e. Backend templates (`backend-templates.ts`)
+
+Catalog template riêng của mỗi site (#902, epic #900). Cả hai bảng đều có
+`site_id` (cascade) và được đăng ký cho RLS. Migration `0044_backend_templates`.
+
+| Bảng (vật lý) | Mục đích | Cột chính |
+|-------|---------|-------------|
+| `lumibase_backend_templates` | Mỗi `(site, slug)` một draft có thể sửa | `slug`, `display_name`, `draft` (jsonb), `draft_revision` (bộ đếm optimistic), `created_by` |
+| `lumibase_backend_template_revisions` | Revision đã publish, bất biến | unique `(site_id, template_id, template_version)`; `digest` (`sha256:`), `document` (jsonb canonical), `published_by` |
 
 ## 12. Indexing & RLS
 

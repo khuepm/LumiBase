@@ -1,10 +1,10 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 27
+lastUpdated: 2026-11-19T06:25:19.665Z
 sourceLang: en
-contentHash: 52465604769f9c24
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+contentHash: 58bc3cc627363bc2
+codeVerified: 2026-11-19T06:25:19.665Z
+codeVerifiedHash: 58bc3cc627363bc2
 codeVerifiedClaims: 22
 ---
 
@@ -590,6 +590,16 @@ ephemeral preview environments, and commit↔content provenance. All tables carr
 
 Tokens + webhook secrets are encrypted at rest via `CryptoService` (AES-GCM,
 AAD-bound to `{ siteId, integrationId, field }`); plaintext is never stored.
+
+## 11e. Backend templates (`backend-templates.ts`)
+
+Each site's private template catalog (#902, epic #900). Both tables carry
+`site_id` (cascade) and are registered for RLS. Migration `0044_backend_templates`.
+
+| Table (physical) | Purpose | Key columns |
+|-------|---------|-------------|
+| `lumibase_backend_templates` | One editable draft per `(site, slug)` | `slug`, `display_name`, `draft` (jsonb), `draft_revision` (optimistic counter), `created_by` |
+| `lumibase_backend_template_revisions` | Immutable published revisions | unique `(site_id, template_id, template_version)`; `digest` (`sha256:`), `document` (canonical jsonb), `published_by` |
 
 ## 12. Indexing & RLS
 
