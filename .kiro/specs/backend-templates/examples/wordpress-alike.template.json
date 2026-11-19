@@ -1,0 +1,315 @@
+{
+  "formatVersion": "lumibase.template@v1",
+  "slug": "wordpress-alike",
+  "displayName": "WordPress alike",
+  "templateVersion": "1.0.0",
+  "description": "Illustrative planning artifact; compatibility range is a placeholder. Not installed or executable yet.",
+  "compatibility": {
+    "cmsVersionRange": "TBD_AT_IMPLEMENTATION",
+    "storageModes": [
+      "jsonb"
+    ]
+  },
+  "config": {
+    "version": "lumibase.config@v1",
+    "collections": [
+      {
+        "name": "authors",
+        "storageMode": "jsonb",
+        "primaryKeyType": "nanoid"
+      },
+      {
+        "name": "posts",
+        "storageMode": "jsonb",
+        "primaryKeyType": "nanoid"
+      },
+      {
+        "name": "pages",
+        "storageMode": "jsonb",
+        "primaryKeyType": "nanoid"
+      },
+      {
+        "name": "categories",
+        "storageMode": "jsonb",
+        "primaryKeyType": "nanoid"
+      },
+      {
+        "name": "tags",
+        "storageMode": "jsonb",
+        "primaryKeyType": "nanoid"
+      },
+      {
+        "name": "post_categories",
+        "storageMode": "jsonb",
+        "primaryKeyType": "nanoid"
+      },
+      {
+        "name": "post_tags",
+        "storageMode": "jsonb",
+        "primaryKeyType": "nanoid"
+      },
+      {
+        "name": "comments",
+        "storageMode": "jsonb",
+        "primaryKeyType": "nanoid"
+      }
+    ],
+    "fields": [
+      {
+        "collection": "authors",
+        "field": "name",
+        "type": "string",
+        "interface": "input",
+        "required": true
+      },
+      {
+        "collection": "categories",
+        "field": "name",
+        "type": "string",
+        "interface": "input",
+        "required": true
+      },
+      {
+        "collection": "tags",
+        "field": "name",
+        "type": "string",
+        "interface": "input",
+        "required": true
+      },
+      {
+        "collection": "posts",
+        "field": "title",
+        "type": "string",
+        "interface": "input",
+        "required": true
+      },
+      {
+        "collection": "posts",
+        "field": "slug",
+        "type": "string",
+        "interface": "input",
+        "required": true,
+        "unique": true
+      },
+      {
+        "collection": "posts",
+        "field": "body",
+        "type": "text",
+        "interface": "textarea"
+      },
+      {
+        "collection": "posts",
+        "field": "status",
+        "type": "string",
+        "interface": "input",
+        "defaultValue": "draft"
+      },
+      {
+        "collection": "pages",
+        "field": "title",
+        "type": "string",
+        "interface": "input",
+        "required": true
+      },
+      {
+        "collection": "pages",
+        "field": "slug",
+        "type": "string",
+        "interface": "input",
+        "required": true,
+        "unique": true
+      },
+      {
+        "collection": "pages",
+        "field": "body",
+        "type": "text",
+        "interface": "textarea"
+      },
+      {
+        "collection": "pages",
+        "field": "status",
+        "type": "string",
+        "interface": "input",
+        "defaultValue": "draft"
+      },
+      {
+        "collection": "comments",
+        "field": "body",
+        "type": "text",
+        "interface": "textarea",
+        "required": true
+      },
+      {
+        "collection": "posts",
+        "field": "author",
+        "type": "string",
+        "interface": "input",
+        "nullable": true
+      },
+      {
+        "collection": "pages",
+        "field": "author",
+        "type": "string",
+        "interface": "input",
+        "nullable": true
+      },
+      {
+        "collection": "pages",
+        "field": "parent",
+        "type": "string",
+        "interface": "input",
+        "nullable": true
+      },
+      {
+        "collection": "post_categories",
+        "field": "post",
+        "type": "string",
+        "interface": "input",
+        "nullable": true
+      },
+      {
+        "collection": "post_categories",
+        "field": "category",
+        "type": "string",
+        "interface": "input",
+        "nullable": true
+      },
+      {
+        "collection": "post_tags",
+        "field": "post",
+        "type": "string",
+        "interface": "input",
+        "nullable": true
+      },
+      {
+        "collection": "post_tags",
+        "field": "tag",
+        "type": "string",
+        "interface": "input",
+        "nullable": true
+      },
+      {
+        "collection": "comments",
+        "field": "post",
+        "type": "string",
+        "interface": "input",
+        "nullable": true
+      },
+      {
+        "collection": "comments",
+        "field": "author",
+        "type": "string",
+        "interface": "input",
+        "nullable": true
+      },
+      {
+        "collection": "comments",
+        "field": "parent",
+        "type": "string",
+        "interface": "input",
+        "nullable": true
+      }
+    ],
+    "relations": [
+      {
+        "manyCollection": "posts",
+        "manyField": "author",
+        "oneCollection": "authors",
+        "type": "m2o",
+        "onDelete": "no action"
+      },
+      {
+        "manyCollection": "pages",
+        "manyField": "author",
+        "oneCollection": "authors",
+        "type": "m2o",
+        "onDelete": "no action"
+      },
+      {
+        "manyCollection": "pages",
+        "manyField": "parent",
+        "oneCollection": "pages",
+        "type": "m2o",
+        "onDelete": "no action"
+      },
+      {
+        "manyCollection": "post_categories",
+        "manyField": "post",
+        "oneCollection": "posts",
+        "type": "m2o",
+        "onDelete": "no action"
+      },
+      {
+        "manyCollection": "post_categories",
+        "manyField": "category",
+        "oneCollection": "categories",
+        "type": "m2o",
+        "onDelete": "no action"
+      },
+      {
+        "manyCollection": "post_tags",
+        "manyField": "post",
+        "oneCollection": "posts",
+        "type": "m2o",
+        "onDelete": "no action"
+      },
+      {
+        "manyCollection": "post_tags",
+        "manyField": "tag",
+        "oneCollection": "tags",
+        "type": "m2o",
+        "onDelete": "no action"
+      },
+      {
+        "manyCollection": "comments",
+        "manyField": "post",
+        "oneCollection": "posts",
+        "type": "m2o",
+        "onDelete": "no action"
+      },
+      {
+        "manyCollection": "comments",
+        "manyField": "author",
+        "oneCollection": "authors",
+        "type": "m2o",
+        "onDelete": "no action"
+      },
+      {
+        "manyCollection": "comments",
+        "manyField": "parent",
+        "oneCollection": "comments",
+        "type": "m2o",
+        "onDelete": "no action"
+      }
+    ],
+    "settings": [],
+    "webhooks": []
+  },
+  "seedPacks": {
+    "demo": {
+      "records": [
+        {
+          "key": "author-demo",
+          "collection": "authors",
+          "values": {
+            "name": "Demo author"
+          },
+          "references": {}
+        },
+        {
+          "key": "post-demo",
+          "collection": "posts",
+          "values": {
+            "title": "Hello LumiBase",
+            "slug": "hello-lumibase",
+            "body": "Synthetic example",
+            "status": "draft"
+          },
+          "references": {
+            "author": "author-demo"
+          }
+        }
+      ]
+    }
+  }
+}
