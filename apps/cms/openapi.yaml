@@ -6674,3 +6674,53 @@ paths:
         '403': { description: Not the bootstrap admin, or an API key }
         '409': { description: '`PULL_NOT_CONFIGURED`' }
         '502': { description: '`PULL_FAILED` with the reason; the accepted manifest stays in force' }
+  /system/upgrade/preflight:
+    get:
+      tags: [System]
+      summary: In-app upgrade preflight (bootstrap admin, never an API key)
+      description: >-
+        Current and target version, `minimumSafeUpgradeVersion`, migrations of the running version that
+        are not applied, `migrationWarning`, who runs migrations (`startup` | `pipeline`), provider
+        configuration, `checks[]`, `canUpgrade` and the latest request (#898).
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '200': { description: Preflight report }
+        '403': { description: Not the bootstrap admin, or an API key }
+  /system/upgrade:
+    get:
+      tags: [System]
+      summary: Latest in-app upgrade request (bootstrap admin)
+      description: '`completed` once the deployment reports the target version; `overdue` after 30 minutes.'
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '200': { description: 'The latest request, or `null`' }
+        '403': { description: Not the bootstrap admin, or an API key }
+    post:
+      tags: [System]
+      summary: Ask the configured upgrade hook to roll the deployment (bootstrap admin)
+      description: >-
+        Idempotent per target version: a request already recorded for it is returned without calling the
+        hook again; a failed or overdue one is retried only with `retry: true`. Audited at instance scope.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetVersion, backupAcknowledged]
+              properties:
+                targetVersion: { type: string, maxLength: 64 }
+                backupAcknowledged: { type: boolean, description: Must be true }
+                retry: { type: boolean, default: false }
+      responses:
+        '200': { description: 'Already requested for this version (`meta.idempotent: true`)' }
+        '202': { description: Hook accepted the request }
+        '400': { description: Validation error }
+        '403': { description: Not the bootstrap admin, or an API key }
+        '409': { description: '`TARGET_MISMATCH`, `PREFLIGHT_FAILED` (with `meta.checks`) or `PREVIOUS_ATTEMPT_FAILED`' }
+        '422': { description: '`BACKUP_NOT_ACKNOWLEDGED`' }
+        '502': { description: '`UPGRADE_HOOK_FAILED`; the request is recorded as failed and nothing changed' }

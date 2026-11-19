@@ -114,6 +114,7 @@ import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
 import { cdcRouter } from './modules/cdc';
 import { releaseFlagsRouter } from './modules/release-flags';
+import { upgradeRouter } from './modules/upgrade';
 import { cdcFeedRouter } from './modules/cdc/change-feed/routes';
 import { lumibaseFirebaseSyncRouter } from './modules/lumibase-firebase-sync';
 import { pageviewsRouter, pageviewsPublicRouter } from './modules/pageviews/routes';
@@ -429,6 +430,11 @@ api.route('/mcp', mcpRouter);
 // endpoints by the bootstrap admin (never an API key) plus the Ed25519
 // signature on the manifest itself.
 api.route('/release-flags', releaseFlagsRouter);
+
+// In-app upgrade (#898). Control-plane, and every route is further limited to
+// the bootstrap admin as a person (never an API key): the request asks the
+// operator's deploy hook to replace the code for every site.
+api.route('/system/upgrade', upgradeRouter);
 
 // ClickHouse CDC control-plane surface (`/api/v1/cdc/*`) — clickhouse-cdc
 // task 12.2; Req 1.1; design "CDC API Routes" §7. Mounted on the

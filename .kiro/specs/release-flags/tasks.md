@@ -25,8 +25,8 @@
 
 ## Part 2 — Nút Upgrade (Req 5)
 
-- [ ] 16. Preflight endpoint (phiên bản, migration chờ, cảnh báo)
-- [ ] 17. Mô hình deploy hook theo kiểu triển khai (hosted control plane / CI webhook / updater riêng), tái dùng provider của deployment-integrations
-- [ ] 18. `POST /system/upgrade` + audit + theo dõi tiến độ
-- [ ] 19. Studio: preflight → xác nhận → tiến độ trên trang Updates
-- [ ] 20. Quyết định ai chạy migration ở từng chế độ triển khai
+- [x] 16. Preflight endpoint (phiên bản, migration chờ, cảnh báo) — #898
+- [x] 17. Mô hình deploy hook theo kiểu triển khai (hosted control plane / CI webhook / updater riêng), tái dùng provider của deployment-integrations — #898
+- [x] 18. `POST /system/upgrade` + audit + theo dõi tiến độ — #898
+- [x] 19. Studio: preflight → xác nhận → tiến độ trên trang Updates — #898
+- [x] 20. Quyết định ai chạy migration ở từng chế độ triển khai — #898

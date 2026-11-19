@@ -32,6 +32,8 @@ const CONTROL_PLANE_PATHS = [
   '/api/v1/policies',
   '/api/v1/roles',
   '/api/v1/settings',
+  // In-app upgrade (#898); the router also requires the bootstrap admin.
+  '/api/v1/system/upgrade',
   '/api/v1/teams',
   '/api/v1/users',
   '/api/v1/utils/cache',
