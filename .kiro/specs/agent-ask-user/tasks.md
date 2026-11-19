@@ -48,3 +48,8 @@
 - [x] 7.5 Tool call `waiting_user` ghi trong transaction đỗ, trước notify.
 - [x] 7.6 Worker chỉ phát `approval` / `question`; `waitUntil` (Workers) hoặc await (Docker); body câu hỏi được che.
 - [x] 7.7 Comment + docs: nhánh requester chưa chạm tới được cho tới B207; không API key nào trả lời.
+
+## Hoàn thiện (#710, epic #671)
+- [x] 8.1 B208: binding stdio `ask_user` / `get_user_answer` trong `GOVERNED_TOOLS` (`packages/mcp-server`), chỉ chạy qua harness — không có REST fallback; test `governed-canonical-routing.test.ts`.
+- [x] 8.2 B209: `GET /agent/approvals?status=` (mặc định `pending`, `all`, `400` giá trị lạ); test `agent-approvals-list.db.integration.test.ts`; API spec en+vi + OpenAPI.
+- [ ] 8.3 B207: requester không phải admin tự trả lời — vẫn mở: cần quyết định về control-plane guard (DoD §2c xếp route đổi trạng thái agent vào control plane).

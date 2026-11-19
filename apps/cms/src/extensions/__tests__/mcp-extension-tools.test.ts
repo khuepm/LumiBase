@@ -33,6 +33,9 @@ describe('extension MCP manifest contract (#715)', () => {
     ['bad capability', tool({ capability: 'admin' })],
     ['unknown risk', tool({ riskClass: 'none' })],
     ['non-object schema', tool({ inputSchema: { type: 'string' } })],
+    // #716: the advertised schema must be one the harness enforces.
+    ['property with an unknown JSON type', tool({ inputSchema: { type: 'object', properties: { a: { type: 'text' } } } })],
+    ['required naming an undeclared property', tool({ inputSchema: { type: 'object', properties: {}, required: ['a'] } })],
     ['empty description', tool({ description: '  ' })],
   ])('refuses a tool with %s', (_label, entry) => {
     expect(extensionMcpManifestSchema.safeParse({ tools: [entry] }).success).toBe(false);

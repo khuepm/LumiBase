@@ -25,6 +25,7 @@ const WRITE_SKILLS: Array<[string, Record<string, unknown>]> = [
   ['deleteItem', { collection: 'posts', id: 'i1' }],
   ['createRelation', { collection: 'posts', field: 'author', type: 'm2o' }],
   ['deleteRelation', { id: 'rel_1' }],
+  ['proposeSiteSkill', { slug: 'house-style', name: 'House style', body: '# x', rationale: 'r' }],
 ];
 
 describe('G1 — missing service fails explicitly instead of stubbing success', () => {

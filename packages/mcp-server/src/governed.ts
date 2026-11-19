@@ -76,6 +76,11 @@ export const GOVERNED_TOOLS: Readonly<Record<string, GovernedBinding>> = {
   create_flow: { skill: 'createFlow' },
   delete_flow: { skill: 'deleteFlow' },
   run_flow: { skill: 'runFlow' },
+  // Clarification questions (#710, B208). Harness-only skills: there is no
+  // REST route behind them, so the registered handler refuses instead of
+  // falling back (see `tools/agent.ts`).
+  ask_user: { skill: 'askUser' },
+  get_user_answer: { skill: 'getUserAnswer' },
   create_intent: { skill: 'createIntent' },
   delete_intent: { skill: 'deleteIntent' },
 
@@ -204,6 +209,8 @@ const MUTATION_VERB =
 
 /** Mutations whose name does not start with a mutation verb. */
 const MUTATION_EXCEPTIONS = new Set([
+  // Parks the run in `waiting_user` and opens a question (#710).
+  'ask_user',
   'cdc_subscription_replay',
   // POSTs that change state behind a non-mutation verb. Without these entries
   // `LUMIBASE_READ_ONLY` exposed them and mode `on` let them reach REST.

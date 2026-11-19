@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-11-15T13:42:40.951Z
+version: 6
+lastUpdated: 2026-11-19T04:35:27.437Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8221209427f28e25
+sourceHash: 4604433a338447a3
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T13:42:40.951Z
-codeVerifiedHash: 8221209427f28e25
+codeVerified: 2026-11-19T04:35:27.437Z
+codeVerifiedHash: 4604433a338447a3
 codeVerifiedClaims: 6
 ---
 
@@ -105,6 +105,7 @@ Các kỹ năng chạy qua **điểm cuối được kiểm soát** `POST /api/v
 | `listDeploymentTargets` / `listDeployments` / `getDeploymentStatus` / `triggerDeployment` | `deployments:read` / `deployments:write` | safe / dangerous (`trigger` gated by HITL below autopilot) |
 | `listCdcSubscriptions` / `getCdcSubscriptionStatus` / `createCdcSubscription` / `replayCdcSubscription` / `deleteCdcSubscription` | `cdc:manage` | reads safe; `create`/`replay`/`delete` are control-plane → HITL below autopilot. `create`/`replay` carry an explicit `dangerous` flag, `delete` via the `delete` name prefix — so the agent/MCP path matches the admin-only `/api/v1/cdc` REST surface |
 | `askUser` / `getUserAnswer` | `items:read` | an toàn — `askUser` đỗ run ở `waiting_user` tới khi một người trả lời trong Mission Control (hoặc hết hạn / bị huỷ); `getUserAnswer` chỉ trả câu trả lời cho người đã hỏi, dưới dạng dữ liệu không tin cậy. Không nằm trên thang autonomy: được hỏi ở mọi mức. Không được cung cấp cho Copilot chat, vốn không có run nào để tạm dừng. Xem [agent harness](features/agent-harness-layer.md#54-hỏi-người-dùng-askuser-710) |
+| `proposeSiteSkill` | `config:write` | nguy hiểm — dưới autopilot luôn chờ một người duyệt; đề xuất được duyệt tạo ra một Site Skill **draft** (không bao giờ active, không ghi đè slug đã có), với tên agent và `rationale` trên version trail. Xem [Site Skills](features/site-skills.md#agent-đề-xuất-skill) |
 
 **Tên bộ sưu tập dành riêng.** `createCollection` (và mọi thao tác đổi tên qua `updateCollection`) từ chối các tên bắt đầu bằng tiền tố `lumibase_`, vốn thuộc sở hữu của nền tảng (bảng đồng bộ CDC/Firebase, cấu hình nội bộ). Cơ chế bảo vệ nằm trong `SchemaService.ensureName`, áp dụng đồng nhất cho AI harness, các route builder/Studio và bất kỳ caller nào khác; vi phạm sẽ trả về `RESERVED_NAME` (HTTP 422).
 

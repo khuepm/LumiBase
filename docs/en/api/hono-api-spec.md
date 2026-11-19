@@ -1,10 +1,10 @@
 ---
-version: 62
-lastUpdated: 2026-11-19T05:28:33.145Z
+version: 63
+lastUpdated: 2026-11-19T09:36:31.018Z
 sourceLang: en
-contentHash: 4d12978a7a681d10
-codeVerified: 2026-11-19T05:28:33.145Z
-codeVerifiedHash: 4d12978a7a681d10
+contentHash: 0c06929b6477adee
+codeVerified: 2026-11-19T09:36:31.018Z
+codeVerifiedHash: 0c06929b6477adee
 codeVerifiedClaims: 674
 ---
 
@@ -1400,7 +1400,7 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `POST` | `/api/v1/locale-generation/suggestions/:id/decide` | `{ decision: 'approve', text? }` \| `{ decision: 'reject' }`. Approval writes through the reviewer's item service (RBAC, validation, revision); `{ status: 'stale' }` when the source changed or the locale was already written; `409 ALREADY_DECIDED`; `422` when the write is refused (the suggestion stays pending) |
 | `POST` | `/api/v1/locale-generation/suggestions/decide-bulk` | `{ decision, locale, ids?, jobId?, collection?, limit? ≤ 200 }` → `{ approved, rejected, stale, failed, processed, failures }` |
 | `GET/POST` | `/api/v1/agent/staged[...]` | Veto window: pending stagings enriched with `approvalId/collection/itemId/patch/agentRole` from the staging revision (null fields when the staging is gone); `POST :id/veto` discards a staging |
-| `GET` | `/api/v1/agent/approvals` | Approval inbox (`status` filter; defaults to `pending`) |
+| `GET` | `/api/v1/agent/approvals` | Approval inbox, newest first, at most 100 rows. `?status=pending` (default) \| `deciding` \| `approved` \| `rejected` \| `expired` \| `failed` \| `all`; any other value → `400 VALIDATION`. `askUser` questions are never listed (see `/questions`) |
 | `POST` | `/api/v1/agent/approvals/:id/decide` | Human decision on a parked action. Body `{ decision: 'approved' \| 'rejected', reason? }`; needs `approvals:decide` (403 otherwise), `404` for an unknown or other-tenant id, `409` when the approval already left `pending`. On `approved` the harness owns the state transition, so execution and the status write happen once. Execution re-resolves **the requester's** current rights and runs with `requester ∩ decider`: an approval whose requester was since revoked, demoted or removed is denied, and one with no recorded requester (parked before provenance existed) is denied with `APPROVAL_PROVENANCE_MISSING`. An approval stored with `approvalPolicy: human_required` (every [external-action tool](../features/external-action-tools.md)) is released only by a signed-in user: an API key, a connector token or an agent gets `409 EXECUTION_FAILED` carrying `HUMAN_APPROVAL_REQUIRED`, and the approval stays `pending` |
 | `POST` | `/api/v1/agent/approvals/:id/reopen` | Return a `failed` approval to `pending` so it can be decided again. Body `{ reason }` is **required** and audited; needs `approvals:decide`. A skill that reached a service and then failed is parked rather than re-offered, because retrying could repeat a non-idempotent write — this is the deliberate way back. A `veto` approval whose staged patch is already live (a commit that died after applying it) answers `409 VETO_ALREADY_APPLIED` instead, since reopening would apply it twice |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Agent-as-reviewer decision (needs `review:<domain>`; self-review forbidden) |

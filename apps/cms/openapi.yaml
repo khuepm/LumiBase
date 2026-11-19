@@ -4987,8 +4987,15 @@ paths:
   /agent/approvals:
     get:
       summary: List generalized agent approvals
-      description: askUser questions (kind = question) are excluded; see /agent/questions.
-      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      description: >-
+        Newest first, at most 100 rows, filtered by status (default pending).
+        askUser questions (kind = question) are excluded; see /agent/questions.
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [pending, deciding, approved, rejected, expired, failed, all], default: pending }
       responses:
         '200':
           description: OK
@@ -5000,6 +5007,7 @@ paths:
                   data:
                     type: array
                     items: { $ref: '#/components/schemas/AgentApproval' }
+        '400': { description: VALIDATION (unknown status) }
 
   /agent/approvals/{id}/decide:
     parameters:

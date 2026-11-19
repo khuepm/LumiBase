@@ -364,7 +364,8 @@ describe('G2 regression · governed tools route through the harness', () => {
     // Measured counts, so a change in either direction is visible in review.
     // 27 → 37: six tools gained canonical contracts; P2 repairs the shared
     // REST gates and CDC payload mode for the remaining four candidates.
-    expect(Object.keys(GOVERNED_TOOLS)).toHaveLength(37);
+    // 37 → 39: `ask_user` / `get_user_answer` (#710, B208), harness-only.
+    expect(Object.keys(GOVERNED_TOOLS)).toHaveLength(39);
     expect(mutations.length).toBeGreaterThan(70);
 
     const byReason: Record<string, number> = {};
@@ -382,7 +383,12 @@ describe('G2 regression · governed tools route through the harness', () => {
     // run_panel and compile_intent are read-only query/preview tools.
     // The two tables partition the mutation inventory: nothing counted twice.
     expect(Object.keys(GOVERNED_TOOLS).filter((n) => UNGOVERNED_MUTATIONS[n] !== undefined)).toEqual([]);
-    expect(Object.keys(GOVERNED_TOOLS).length + Object.keys(UNGOVERNED_MUTATIONS).length).toBe(mutations.length);
+    // `get_user_answer` (#710) is the one governed tool that only reads.
+    const governedReads = Object.keys(GOVERNED_TOOLS).filter((n) => !isMutationTool(n));
+    expect(governedReads).toEqual(['get_user_answer']);
+    expect(Object.keys(GOVERNED_TOOLS).length - governedReads.length + Object.keys(UNGOVERNED_MUTATIONS).length).toBe(
+      mutations.length,
+    );
   });
 });
 
@@ -1037,6 +1043,11 @@ describe('G2 repro · soát ngữ nghĩa: compile_intent bị xếp sai nhóm', 
     ];
     const PROVIDER_2 = ['translate_text', 'compile_intent'];
     /** 7 tool dùng POST nhưng ngữ nghĩa đọc/preview — REST target khoá ở `S7`. */
+    /**
+     * 2 tool chỉ chạy qua harness (#710, B208): không có route REST tương
+     * đương, nên handler từ chối thay vì fallback.
+     */
+    const HARNESS_ONLY_2 = ['ask_user', 'get_user_answer'];
     const READ_VIA_POST_7 = [
       'check_permission', 'check_access_conflicts', 'dry_run_access_import',
       'diff_schema', 'lookup_tm', 'query_insights', 'run_panel',
@@ -1072,6 +1083,7 @@ describe('G2 repro · soát ngữ nghĩa: compile_intent bị xếp sai nhóm', 
       ['PROVIDER_2', PROVIDER_2],
       ['READ_VIA_POST_7', READ_VIA_POST_7],
       ['READ_GET_63', READ_GET_63],
+      ['HARNESS_ONLY_2', HARNESS_ONLY_2],
     ];
 
     // 1) Kích thước khai báo
@@ -1080,6 +1092,7 @@ describe('G2 repro · soát ngữ nghĩa: compile_intent bị xếp sai nhóm', 
     expect(PROVIDER_2).toHaveLength(2);
     expect(READ_VIA_POST_7).toHaveLength(7);
     expect(READ_GET_63).toHaveLength(63);
+    expect(HARNESS_ONLY_2).toHaveLength(2);
 
     // 2) Uniqueness trong từng tập + membership trong registry THẬT
     for (const [label, list] of sets) {
@@ -1104,7 +1117,7 @@ describe('G2 repro · soát ngữ nghĩa: compile_intent bị xếp sai nhóm', 
     //    Trước đây nhóm 63 được lấy TỪ registry nên không khoá danh tính; giờ nó
     //    là tập khai báo, nên cả 161 tên đều có tập sở hữu.
     const classified = new Set(seen.keys());
-    expect(classified.size).toBe(41 + 48 + 2 + 7 + 63);
+    expect(classified.size).toBe(41 + 48 + 2 + 7 + 63 + 2);
 
     // 4a) registry ⊆ các tập: không tool nào của registry bị bỏ rơi.
     const unclassified = registry.filter((n) => !classified.has(n));
@@ -1116,7 +1129,7 @@ describe('G2 repro · soát ngữ nghĩa: compile_intent bị xếp sai nhóm', 
     expect(ghosts, 'không tên khai báo nào được vắng mặt trong registry').toEqual([]);
 
     expect(classified.size).toBe(registry.length);
-    expect(registry).toHaveLength(161);
+    expect(registry).toHaveLength(163);
 
     // 5) Nhóm read-GET không được chứa động từ ghi — chốt nó thật là nhóm read.
     const writeVerb = /^(create|update|delete|upsert|remove|revoke|rotate|attach|detach|assign|install|uninstall|publish|apply|restore|approve|reject|submit|register|drop|refresh|pause|resume|scan|replay|run)_/;
@@ -1130,7 +1143,8 @@ describe('G2 repro · soát ngữ nghĩa: compile_intent bị xếp sai nhóm', 
      * bằng chứng nằm ở S7 (REST target), R16 (không có alias), R17 (hai ca
      * trông-như-map-được thực chất không tương đương).
      */
-    const TOTAL = 161;
+    const TOTAL = 163;
+    const HARNESS_ONLY_N = 2; // ask_user + get_user_answer (#710, B208)
     const READ_GET = 63;
     const READ_VIA_POST_N = 7;
     const PROVIDER_ACTION_N = 2; // translate_text + compile_intent
@@ -1138,8 +1152,8 @@ describe('G2 repro · soát ngữ nghĩa: compile_intent bị xếp sai nhóm', 
     const MUTATION_MAPPED = 41; // 40 theo tên + 1 alias
     const MUTATION_UNMAPPED = 48;
 
-    // Tổng phải khớp: read(GET) + read(POST) + provider + mutation = 161
-    expect(READ_GET + READ_VIA_POST_N + PROVIDER_ACTION_N + MUTATIONS).toBe(TOTAL);
+    // Tổng phải khớp: read(GET) + read(POST) + provider + mutation + harness-only = 163
+    expect(READ_GET + READ_VIA_POST_N + PROVIDER_ACTION_N + MUTATIONS + HARNESS_ONLY_N).toBe(TOTAL);
     // Mutation phải chia hết thành mapped + unmapped
     expect(MUTATION_MAPPED + MUTATION_UNMAPPED).toBe(MUTATIONS);
     // Và 48 unmapped chia thành hai nhóm rủi ro (xem §5d của PR)

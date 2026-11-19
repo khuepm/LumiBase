@@ -80,7 +80,13 @@ describe('generation skills with llm: null (no provider configured)', () => {
   it.each(['aiContentAssist', 'generateAppSpec', 'generateSeedData'])(
     '%s fails with LLM_NOT_CONFIGURED instead of stubbing',
     async (skillName) => {
-      const result = await harness.runSkill(skillName, { collection: 'products' });
+      // Arguments each canonical contract accepts (B204).
+      const args: Record<string, Record<string, unknown>> = {
+        aiContentAssist: { collection: 'products' },
+        generateAppSpec: { collections: ['products'] },
+        generateSeedData: { collection: 'products' },
+      };
+      const result = await harness.runSkill(skillName, args[skillName]!);
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toContain('LLM_NOT_CONFIGURED');

@@ -27,6 +27,7 @@ import { redactSettingRow } from './settings-redaction';
 import {
   EMPTY_RESOLVED_SKILLS,
   SiteSkillService,
+  siteSkillInputSchema,
   withSiteSkills,
   type AppliedSiteSkill,
 } from './site-skill-service';
@@ -908,11 +909,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       description: 'List the named version branches of an item (with a mainChanged flag per branch).',
       requiredCapabilities: ['items:read'],
       service: 'items',
-      inputSchema: {
-        type: 'object',
-        properties: { collection: { type: 'string' }, itemId: { type: 'string' } },
-        required: ['collection', 'itemId'],
-      },
+      // Advertised schema: the canonical one in `@lumibase/contracts` (B204).
       handler: async (args) => {
         const svc = contentVersionService();
         if (!svc) return { versions: [] };
@@ -926,15 +923,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       description: 'Compare a version branch against the item’s current main data (returns field-level changes).',
       requiredCapabilities: ['items:read'],
       service: 'items',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          collection: { type: 'string' },
-          itemId: { type: 'string' },
-          key: { type: 'string' },
-        },
-        required: ['collection', 'itemId', 'key'],
-      },
+      // Advertised schema: the canonical one in `@lumibase/contracts` (B204).
       handler: async (args) => {
         const svc = contentVersionService();
         if (!svc) return { main: {}, version: {}, changes: [] };
@@ -1303,13 +1292,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       description: 'Generate page and component specs from selected collections',
       requiredCapabilities: ['schema:read', 'items:read'],
       service: 'ai',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          collections: { type: 'array', items: { type: 'string' } },
-          targetApp: { type: 'string' },
-        },
-      },
+      // Advertised schema: the canonical one in `@lumibase/contracts` (B204).
       handler: async (args) => {
         const collections = Array.isArray(args['collections'])
           ? (args['collections'] as unknown[]).filter((entry): entry is string => typeof entry === 'string')
@@ -1953,6 +1936,39 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         // Copilot clients and, over governed MCP, an external model's context.
         const rows = await configService.listSettings(args['scope'] as string | undefined);
         return { settings: rows.map(redactSettingRow) };
+      },
+    },
+
+    // ── Site Skills proposed by an agent (#712, B201) ─────────────────────
+    // An agent writing instructions for agents is an escalation unless a
+    // person reviews it: `dangerous` parks every call for approval below
+    // autopilot (and the MCP backstop requires an admin principal), and an
+    // approved proposal only ever creates a DRAFT. Activating it stays a
+    // separate admin action in Studio / the skills API.
+    proposeSiteSkill: {
+      name: 'proposeSiteSkill',
+      description:
+        'Propose a new site playbook (Site Skill) for a human to review. On approval it is created as a draft; an admin activates it.',
+      requiredCapabilities: ['config:write'],
+      service: 'agent',
+      dangerous: true,
+      handler: async (args) => {
+        if (!db || !siteId) throw new Error('SITE_SKILLS_NOT_CONFIGURED: no tenant context');
+        const rationale = String(args['rationale'] ?? '');
+        const skill = await new SiteSkillService({ db, siteId, actor: { label: 'agent:proposeSiteSkill' } }).create(
+          siteSkillInputSchema.parse({
+            slug: args['slug'],
+            name: args['name'],
+            description: args['description'] ?? '',
+            body: args['body'],
+            triggers: args['triggers'] ?? [],
+            surfaces: args['surfaces'] ?? [],
+            tools: args['tools'] ?? [],
+            collections: args['collections'] ?? [],
+          }),
+          { source: 'api', changeNote: `Proposed by an agent: ${rationale}`.slice(0, 1000) },
+        );
+        return { proposed: true, status: skill.status, skill: { id: skill.id, slug: skill.slug, version: skill.version } };
       },
     },
 
@@ -2788,9 +2804,8 @@ export class AISecureHarness {
    * tool-result message. `deleteItem {}` parked an approval row that could never
    * execute. Both are input defects that must be refused at the boundary.
    *
-   * Fail-open for unlisted skills is deliberate: only write-capable skills have
-   * schemas today (see `AgentToolSchemas`), so reads keep their current
-   * behaviour instead of breaking on a contract that has not been written yet.
+   * Every core skill has a canonical schema (B204); fail-open remains only for
+   * a name with none (a skill added later without one), by design.
    *
    * @returns `null` when the input is acceptable, otherwise a human-readable
    * message naming the offending field(s).
@@ -2963,6 +2978,23 @@ export class AISecureHarness {
         siteId: this.siteId,
       }).effectiveCapabilities(envelope.agentRole, userCapabilities);
     }
+    // A site's narrowing `agent_tools` override is what `tools/list` advertises
+    // for this site, so it is enforced too (B205), on top of the canonical
+    // contract already checked above. Refused before anything has run.
+    if (tool.enforcedOverrideSchema) {
+      const issue = validateExternalActionInput(tool.enforcedOverrideSchema, args);
+      if (issue) {
+        const message = `Input validation error for "${skillName}": ${issue}`;
+        await this.runService.finishToolCall(toolCallId, {
+          status: 'denied',
+          error: message,
+          latencyMs: Date.now() - startedAt,
+        });
+        await this.runService.failRun(run.runId, message, { stopReason: 'invalid_input' });
+        return { status: 'denied', code: 'VALIDATION', message, ...run, toolCallId };
+      }
+    }
+
     if (!this.checkCapabilities(tool, effectiveCapabilities)) {
       const message = 'Insufficient capabilities';
       await this.runService.finishToolCall(toolCallId, {
