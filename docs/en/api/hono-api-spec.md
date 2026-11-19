@@ -1,10 +1,10 @@
 ---
-version: 62
-lastUpdated: 2026-11-19T04:44:28.402Z
+version: 63
+lastUpdated: 2026-11-19T08:17:26.848Z
 sourceLang: en
-contentHash: 50dc7ed7d7fd5114
-codeVerified: 2026-11-19T04:44:28.402Z
-codeVerifiedHash: 50dc7ed7d7fd5114
+contentHash: eb5009a9d3819b3b
+codeVerified: 2026-11-19T08:17:26.848Z
+codeVerifiedHash: eb5009a9d3819b3b
 codeVerifiedClaims: 652
 ---
 
@@ -344,7 +344,7 @@ manifest and chosen per site. Full guide: [Release flags](../features/release-fl
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/api/v1/release-flags` | member | `{ key, enabled }[]` of released flags only for the active site; site admins get every flag plus stage, `releasedBy`, `enabledBy`, `siteValue`, owner and `removeBy` |
-| `PUT` | `/api/v1/release-flags/site` | site-admin | Body `{ flags: { "<key>": true \| false \| null } }`; `null` clears the choice. `400 UNKNOWN_FLAG` / `NOT_SITE_TOGGLE` |
+| `PUT` | `/api/v1/release-flags/site` | site-admin | Body `{ flags: { "<key>": true \| false \| null } }`; `null` clears the choice. Switches that predate the registry (`content-os.*`, `ai-decisions.flows`/`drift`) are written to their original settings object (`contentOs`, `aiDecisions`). `400 UNKNOWN_FLAG` / `NOT_SITE_TOGGLE` |
 | `GET` | `/api/v1/release-flags/manifest` | bootstrap admin | Accepted manifest, trusted key ids, pull configuration, last pull result in this process (`lastPull`) and the deployment-wide pull history (`pullHistory`) |
 | `PUT` | `/api/v1/release-flags/manifest` | bootstrap admin | Body `{ keyId, payload, signature }` (Ed25519 over the base64-decoded payload). `422` / `409` `MANIFEST_REJECTED` with a `reason` |
 | `POST` | `/api/v1/release-flags/manifest/pull` | bootstrap admin | Fetch from `LUMIBASE_RELEASE_MANIFEST_URL` now. `409 PULL_NOT_CONFIGURED`, `502 PULL_FAILED` |

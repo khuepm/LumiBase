@@ -1,11 +1,11 @@
 ---
-version: 5
-lastUpdated: 2026-11-19T08:07:58.988Z
+version: 6
+lastUpdated: 2026-11-19T08:17:22.428Z
 sourceLang: en
-contentHash: 5a037c6c803734f1
-codeVerified: 2026-11-19T08:07:58.988Z
-codeVerifiedHash: 5a037c6c803734f1
-codeVerifiedClaims: 44
+contentHash: f879fd38950937f2
+codeVerified: 2026-11-19T08:17:22.428Z
+codeVerifiedHash: f879fd38950937f2
+codeVerifiedClaims: 46
 ---
 
 # Release Flags
@@ -235,6 +235,57 @@ Rules for a new flag:
    feature is off.
 3. When the feature is generally available, delete the flag and its checks.
 
+## Existing switches
+
+Before the registry, several features had their own per-site switch in
+`lumibase_settings`. Each one is either a **release gate** (it decides whether
+a rolled-out feature runs at all) or a **configuration value** (it tunes how a
+feature that is already available behaves). Only release gates belong in the
+registry ([#896](https://github.com/khuepm/LumiBase/issues/896)).
+
+Release gates are declared in the registry with `stage: 'ga'`, `siteToggle`
+and `siteDefault: false`, and keep their original storage through
+`siteSetting`. No stored value moved:
+
+| Flag | Stored in | Reader |
+|---|---|---|
+| `content-os.reconciler` | `contentOs.reconciler` | `getContentOsFlags` |
+| `content-os.veto-window` | `contentOs.vetoWindow` | `getContentOsFlags` |
+| `content-os.agent-review` | `contentOs.agentReview` | `getContentOsFlags` |
+| `content-os.mcp` | `contentOs.mcp` | `getContentOsFlags` |
+| `ai-decisions.flows` | `aiDecisions.flows` | `readDecisionSettings` |
+| `ai-decisions.drift` | `aiDecisions.drift` | `readDecisionSettings` |
+
+What this changes, and what it does not:
+
+- With no manifest and no `LUMIBASE_RELEASE_FLAGS`, every site behaves as
+  before: `ga` is released, so the stored value decides.
+- A manifest or `LUMIBASE_RELEASE_FLAGS` can now **withdraw** one of these
+  features on a whole deployment, e.g. `content-os.mcp=off`. It can never turn
+  a feature on for a site that has not chosen it.
+- `PUT /api/v1/release-flags/site` writes the choice to the original object
+  (`contentOs`, `aiDecisions`), so the feature's reader and the existing
+  settings screens see the same value.
+- `ai-decisions.flows` and `ai-decisions.drift` also need the site's AI
+  decisions opt-in (`aiDecisions.enabled`); the flag alone does not send
+  content to a provider.
+- Code that runs outside a request (reconciler cycles, queue consumers) reads
+  the release gate with `resolveStoredSiteFlags` from
+  `modules/release-flags/gate.ts`. If the manifest cannot be read, the last
+  manifest the process read still applies, so a read error never switches a
+  withdrawn feature back on.
+
+Configuration values stay where they are, read by their own endpoints:
+
+| Settings key | Why it is configuration |
+|---|---|
+| `aiDecisions` (`enabled`, limits, `review`) | `enabled` is the site's consent to send content to a provider and its kill switch; `review` is a per-collection pilot. |
+| `files.dam` | Delete policy, version retention, metadata and malware scanning options. |
+| `openapi` | Whether the live OpenAPI document is exposed and to which callers. |
+| `encryption.envelope` | Security mode with a background migration, changed with step-up auth. |
+| `deployment.environments` | Mapping of deploy targets to environments and approval gates. |
+| `cdc_feed`, `erasureDualControl`, `media.signedTransform`, `upload_policy`, `password_policy`, `login_security_policy`, `preview`, `locales`, `revalidation.targets`, `retention.policies` | Operational settings, not feature switches. |
+
 ## Limits
 
 - **Not a security or licensing boundary on self-hosted instances.** The code
@@ -245,8 +296,10 @@ Rules for a new flag:
   `LUMIBASE_RELEASE_MANIFEST_URL` is set.
 - **Propagation is not instant across replicas.** The replica that accepts a
   manifest uses it immediately; other replicas read it within 30 seconds. A site
-  choice made through the API is visible on the next request; one written
-  through the generic settings endpoint can take up to 60 seconds.
+  choice made through the API is visible on the next request. A write through
+  the generic settings endpoint to `release.flags`, `contentOs` or
+  `aiDecisions` drops the cached copy, so it is visible on the next request
+  too; a change made directly in the database can take up to 60 seconds.
 
 ## Multi-tenancy
 
@@ -254,9 +307,10 @@ Rules for a new flag:
 |---|---|---|
 | Accepted manifest (`lumibase_release_manifests`, one row) | Deployment-wide | It records what the deployment released. It holds no tenant data. |
 | `LUMIBASE_RELEASE_FLAGS`, trusted keys, pull URL | Deployment-wide | Operator configuration. |
-| Site choices (`lumibase_settings`, key `release.flags`) | Per site | Under the existing `site_isolation` RLS policy. |
-| Cache entry `release-flags:site:{siteId}` | Per site | The key contains the site id. |
+| Site choices (`lumibase_settings`, key `release.flags`, and `contentOs` / `aiDecisions` for existing switches) | Per site | Under the existing `site_isolation` RLS policy. |
+| Cache entry `release-flags:site:v2:{siteId}` | Per site | The key contains the site id. |
 
 Verified by `apps/cms/src/modules/release-flags/__tests__/release-flags.db.integration.test.ts`
-and `routes.db.integration.test.ts` in the same folder: a choice on one site does
+, `legacy-switches.db.integration.test.ts` and `routes.db.integration.test.ts`
+in the same folder: a choice on one site does
 not change another site, and a gated route opens only on the site that chose it.

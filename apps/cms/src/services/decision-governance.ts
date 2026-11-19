@@ -24,6 +24,7 @@ import { and, eq } from 'drizzle-orm';
 import type { UnofficialStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { AuditLogger } from '../modules/audit/logger';
+import { resolveStoredSiteFlags } from '../modules/release-flags/gate';
 import {
   recordDecisionRefusal,
   type DecisionRefusalStore,
@@ -164,13 +165,31 @@ export function reviewRolloutMode(
   return review.mode;
 }
 
+/**
+ * The site's decision settings. `flows` and `drift` are also release flags
+ * (#896: `ai-decisions.flows`, `ai-decisions.drift`): the stored value is the
+ * site's choice, and the release gate can withdraw either on a whole
+ * deployment. With no override and no manifest the gate is open, so the
+ * stored value decides exactly as before.
+ */
 export async function readDecisionSettings(db: Database, siteId: string): Promise<DecisionSiteSettings> {
   const [row] = await db
     .select()
     .from(settings)
     .where(and(eq(settings.siteId, siteId), eq(settings.key, DECISION_SETTINGS_KEY)))
     .limit(1);
-  return row ? parseDecisionSettings(row.value) : DISABLED;
+  const parsed = row ? parseDecisionSettings(row.value) : DISABLED;
+  // Both default OFF: nothing to narrow when neither is on.
+  if (parsed.flows !== true && parsed.drift !== true) return parsed;
+  const states = await resolveStoredSiteFlags(db, {
+    'ai-decisions.flows': parsed.flows === true,
+    'ai-decisions.drift': parsed.drift === true,
+  });
+  return {
+    ...parsed,
+    flows: parsed.flows === true && states.get('ai-decisions.flows')?.enabled === true,
+    drift: parsed.drift === true && states.get('ai-decisions.drift')?.enabled === true,
+  };
 }
 
 /** `null` when allowed; otherwise the offending top-level keys (or `[]` for a non-object state). */
