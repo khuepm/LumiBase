@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 6
-lastUpdated: 2026-11-19T09:08:02.560Z
-contentHash: 341d6bc4931ac165
-codeVerified: 2026-11-19T09:08:02.560Z
-codeVerifiedHash: 341d6bc4931ac165
+version: 7
+lastUpdated: 2026-11-19T09:11:32.575Z
+contentHash: f4a18816aa89953f
+codeVerified: 2026-11-19T09:11:32.575Z
+codeVerifiedHash: f4a18816aa89953f
 codeVerifiedClaims: 22
 ---
 
@@ -183,6 +183,7 @@ places it before. The SDK has `client.items('menu').reorder(id, { after })`.
   errors (validation, permissions, conflicts) are shown by the screen that made
   the request, as before. A screen that fails to render shows **Try again** and
   **Go to Content** instead of an empty page.
+
 ## Editing together
 
 When several people have the same item open, Studio shows it at three levels:

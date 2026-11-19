@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 6
-lastUpdated: 2026-11-19T09:08:02.560Z
+version: 7
+lastUpdated: 2026-11-19T09:11:32.575Z
 translatedFrom: en
-sourceHash: 341d6bc4931ac165
+sourceHash: f4a18816aa89953f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T09:08:02.560Z
-codeVerifiedHash: 341d6bc4931ac165
+codeVerified: 2026-11-19T09:11:32.575Z
+codeVerifiedHash: f4a18816aa89953f
 codeVerifiedClaims: 22
 ---
 
@@ -185,6 +185,7 @@ SDK có `client.items('menu').reorder(id, { after })`.
   lỗi khác (validation, quyền, xung đột) vẫn do màn hình gửi request hiển thị
   như trước. Màn hình bị lỗi khi render sẽ hiện **Try again** và
   **Go to Content** thay vì một trang trống.
+
 ## Cùng biên tập
 
 Khi nhiều người cùng mở một item, Studio thể hiện điều đó ở ba mức:
