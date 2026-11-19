@@ -68,6 +68,7 @@
           "features/websockets-realtime",
           "features/reconciler-repair-loop",
           "features/site-skills",
+          "features/backend-templates",
           "features/agent-receipts",
           "features/locale-generator",
           "features/visual-editing",
