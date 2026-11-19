@@ -21,6 +21,7 @@ import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { PermanentUploadError, UploadQueue, sha256OfFile, type DuplicateHit, type UploadTask } from './upload-queue';
 import { UploadQueuePanel } from './upload-queue-panel';
+import { RESUMABLE_THRESHOLD, tusUpload } from './tus-client';
 import { FileDetailsDrawer } from './file-details';
 
 /**
@@ -140,6 +141,19 @@ export function FilesPage() {
         return (await client.files.duplicates(hash)).data.map((f) => ({ id: f.id, filenameDownload: f.filenameDownload, folder: f.folder }));
       },
       upload: async (task, onProgress, signal) => {
+        // Large files go through the resumable (TUS) endpoint: a dropped
+        // connection or a page reload resumes from the last stored byte (#704).
+        if (task.file.size >= RESUMABLE_THRESHOLD) {
+          const { fileId } = await tusUpload({
+            file: task.file,
+            transport: (path, init) => client.rawFetch(path, init),
+            scope: client.siteId,
+            metadata: task.folder ? { folder: task.folder } : {},
+            onProgress,
+            signal,
+          });
+          return (await client.files.get(fileId)).data;
+        }
         const { data: presigned } = await client.files.getPresignedUrl(task.file.name);
         await putWithProgress(presigned.url, task.file, onProgress, signal);
         const { data } = await client.files.create({

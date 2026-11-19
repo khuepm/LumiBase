@@ -486,3 +486,69 @@ describe("CloudflareCacheProvider.drainSite", () => {
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({ key: "rl:site_1:user_1", by: 1 });
   });
 });
+
+describe('CloudflareStorageProvider multipart (#704)', () => {
+  function bucketWithMultipart() {
+    const uploads = new Map<string, { key: string; parts: Map<number, Uint8Array>; done?: Uint8Array; aborted?: boolean }>();
+    let seq = 0;
+    const handle = (key: string, uploadId: string) => {
+      const u = uploads.get(uploadId)!;
+      return {
+        key,
+        uploadId,
+        uploadPart: async (n: number, value: ArrayBuffer) => {
+          u.parts.set(n, new Uint8Array(value));
+          return { partNumber: n, etag: `etag-${n}` };
+        },
+        complete: async (parts: Array<{ partNumber: number }>) => {
+          const chunks = parts.map((p) => u.parts.get(p.partNumber)!);
+          u.done = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+          let o = 0;
+          for (const c of chunks) {
+            u.done.set(c, o);
+            o += c.length;
+          }
+        },
+        abort: async () => {
+          u.aborted = true;
+        },
+      };
+    };
+    const bucket = {
+      ...createMockR2Bucket(),
+      createMultipartUpload: vi.fn(async (key: string) => {
+        const uploadId = `u${++seq}`;
+        uploads.set(uploadId, { key, parts: new Map() });
+        return handle(key, uploadId);
+      }),
+      resumeMultipartUpload: vi.fn((key: string, uploadId: string) => handle(key, uploadId)),
+    } as unknown as R2Bucket;
+    return { bucket, uploads };
+  }
+
+  it('resumes the upload by id for each part (stateless across requests) and completes in order', async () => {
+    const { bucket, uploads } = bucketWithMultipart();
+    const storage = new CloudflareStorageProvider(bucket);
+    const { uploadId } = await storage.createMultipart('v.mp4', { contentType: 'video/mp4' });
+    expect(bucket.createMultipartUpload).toHaveBeenCalledWith('v.mp4', {
+      customMetadata: { contentType: 'video/mp4' },
+      httpMetadata: { contentType: 'video/mp4' },
+    });
+    const pool = new Uint8Array([0, 4, 5, 6, 0]);
+    await storage.uploadPart('v.mp4', uploadId, 2, pool.subarray(1, 4));
+    await storage.uploadPart('v.mp4', uploadId, 1, new Uint8Array([1, 2, 3]));
+    await storage.completeMultipart('v.mp4', uploadId, [{ partNumber: 2, etag: 'etag-2' }, { partNumber: 1, etag: 'etag-1' }]);
+    expect([...uploads.get(uploadId)!.done!]).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(bucket.resumeMultipartUpload).toHaveBeenCalledTimes(3);
+  });
+
+  it('aborts, and refuses cleanly on a binding without multipart', async () => {
+    const { bucket, uploads } = bucketWithMultipart();
+    const storage = new CloudflareStorageProvider(bucket);
+    const { uploadId } = await storage.createMultipart('x');
+    await storage.abortMultipart('x', uploadId);
+    expect(uploads.get(uploadId)!.aborted).toBe(true);
+    const plain = new CloudflareStorageProvider(createMockR2Bucket());
+    await expect(plain.createMultipart('x')).rejects.toThrow(/multipart/);
+  });
+});

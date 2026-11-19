@@ -2763,6 +2763,104 @@ paths:
       summary: Create an item
       requestBody:
         required: true
+  /files/tus:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    options:
+      summary: TUS capability discovery (resumable uploads)
+      description: >-
+        TUS 1.0 resumable uploads (#704). Answers with `Tus-Version`,
+        `Tus-Extension` (`creation,termination,expiration`) and `Tus-Max-Size`
+        (the site's upload policy cap).
+      responses:
+        '204': { description: Capabilities in the response headers }
+    post:
+      summary: Create a resumable upload (TUS creation)
+      description: >-
+        Declares a new upload. `Upload-Metadata` must carry `filename` and
+        `filetype` (base64 values); `folder` and `alt` are optional. The
+        upload guard checks the declared size, MIME allowlist, filename
+        hygiene and extension ↔ MIME before the route runs; `files:create`
+        and folder placement are checked here and again at completion.
+        `Upload-Defer-Length` is not supported. The upload expires 24 h
+        after its last committed chunk.
+      parameters:
+        - { name: Tus-Resumable, in: header, schema: { type: string, enum: ['1.0.0'] } }
+        - { name: Upload-Length, in: header, required: true, schema: { type: integer, minimum: 0 } }
+        - { name: Upload-Metadata, in: header, required: true, schema: { type: string }, description: 'TUS metadata, e.g. `filename cGhvdG8uanBn,filetype aW1hZ2UvanBlZw==`' }
+      responses:
+        '201':
+          description: Upload created; `Location` is the upload URL, `Upload-Expires` its deadline
+          headers:
+            Location: { schema: { type: string } }
+            Upload-Expires: { schema: { type: string } }
+        '400': { description: Missing/invalid Upload-Length or Upload-Metadata, or unsafe filename }
+        '403': { description: Missing files:create or folder placement denied }
+        '412': { description: Unsupported Tus-Resumable version (answers with Tus-Version) }
+        '413': { description: Upload-Length above the site's upload policy }
+        '415': { description: MIME type not allowed, or extension does not match the MIME type }
+        '501': { description: Upload-Defer-Length is not supported }
+  /files/tus/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    head:
+      summary: Upload progress (TUS offset probe)
+      description: >-
+        Returns the committed `Upload-Offset` and `Upload-Length`. Once the
+        upload completed, `X-Lumi-File-Id` names the created file. Only the
+        creator (or a site admin) can see an upload; others get 404.
+      responses:
+        '200':
+          description: 'Progress in the response headers (`Cache-Control: no-store`)'
+          headers:
+            Upload-Offset: { schema: { type: integer } }
+            Upload-Length: { schema: { type: integer } }
+            Upload-Expires: { schema: { type: string } }
+            X-Lumi-File-Id: { schema: { type: string } }
+        '404': { description: Unknown, terminated, or someone else's upload }
+        '410': { description: Upload expired }
+    patch:
+      summary: Append a chunk (TUS core)
+      description: >-
+        Appends the body at `Upload-Offset`. A chunk is committed all or
+        nothing: on a storage failure the answer is 503 and the offset does
+        not move, so the client HEADs and re-sends from the committed offset.
+        The first chunk is sniffed against the declared type. The final chunk
+        completes the upload: permission and placement are re-checked, the
+        assembled file is scanned, the file row is created and its id is
+        returned in `X-Lumi-File-Id`.
+      parameters:
+        - { name: Tus-Resumable, in: header, schema: { type: string, enum: ['1.0.0'] } }
+        - { name: Upload-Offset, in: header, required: true, schema: { type: integer, minimum: 0 } }
+      requestBody:
+        required: true
+        content:
+          application/offset+octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '204':
+          description: Chunk committed
+          headers:
+            Upload-Offset: { schema: { type: integer } }
+            X-Lumi-File-Id: { schema: { type: string }, description: Present on the completing chunk }
+        '403': { description: Permission or placement revoked before completion (the upload is discarded) }
+        '404': { description: Unknown, terminated, or someone else's upload }
+        '409':
+          description: OFFSET_MISMATCH (details.offset is the committed offset) or another writer holds the upload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '410': { description: Upload expired }
+        '413': { description: Chunk would exceed Upload-Length or the per-request cap }
+        '415': { description: Wrong Content-Type, content does not match the declared type, or the assembled file failed the polyglot scan }
+        '503': { description: Storage failure; nothing was committed }
+    delete:
+      summary: Terminate an upload (TUS termination)
+      description: Aborts the multipart upload and deletes stored parts.
+      responses:
+        '204': { description: Terminated }
+        '404': { description: Unknown, terminated, or someone else's upload }
         content:
           application/json:
             schema:

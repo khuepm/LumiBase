@@ -1,11 +1,11 @@
 ---
-version: 63
-lastUpdated: 2026-11-19T05:03:08.131Z
+version: 64
+lastUpdated: 2026-11-19T08:32:19.284Z
 sourceLang: en
-contentHash: f85f47c0e3930e3c
-codeVerified: 2026-11-19T05:03:08.131Z
-codeVerifiedHash: f85f47c0e3930e3c
-codeVerifiedClaims: 664
+contentHash: 3596eebda557849f
+codeVerified: 2026-11-19T08:32:19.284Z
+codeVerifiedHash: 3596eebda557849f
+codeVerifiedClaims: 668
 ---
 
 # Hono API Specification — LumiBase
@@ -1009,6 +1009,11 @@ identical body. Responses: `Cache-Control: private, no-store`,
 | `GET/PUT` | `/api/v1/files/settings` | DAM settings (`files.dam`); `PUT` site admin |
 | `GET` | `/api/v1/files/folders` · `/folders/tree` | Folders (flat / nested with `path`) |
 | `POST/PATCH/DELETE` | `/api/v1/files/folders[/:id]` | Create / rename+move (`409 FOLDER_CYCLE`) / delete empty (`409 FOLDER_NOT_EMPTY`); site admin |
+| `OPTIONS` | `/api/v1/files/tus` | TUS 1.0 discovery: `Tus-Version`, `Tus-Extension: creation,termination,expiration`, `Tus-Max-Size` |
+| `POST` | `/api/v1/files/tus` | Create a resumable upload: `Upload-Length` + `Upload-Metadata` (`filename`, `filetype`, optional `folder`, `alt`) → `201` with `Location`, `Upload-Expires` |
+| `HEAD` | `/api/v1/files/tus/:id` | Committed `Upload-Offset` / `Upload-Length`; `X-Lumi-File-Id` once complete; `410` when expired |
+| `PATCH` | `/api/v1/files/tus/:id` | Append a chunk at `Upload-Offset` (`application/offset+octet-stream`), all-or-nothing; `409 OFFSET_MISMATCH`; the final chunk creates the file (`X-Lumi-File-Id`) |
+| `DELETE` | `/api/v1/files/tus/:id` | Terminate: abort the multipart upload and drop stored parts |
 | `GET` | `/api/v1/files/:id/captions` | Caption/subtitle tracks of a video as `<track>` data (`kind`, `locale`, `label`, `isDefault`, version-pinned `src`) (#871) |
 | `POST` | `/api/v1/files/:id/captions` | Attach a WebVTT file: `{ captionFileId, locale, kind?, label?, isDefault? }`; `409 CAPTION_EXISTS`, `415 CAPTION_NOT_VTT`, `422 LOCALE_NOT_ENABLED` |
 | `PATCH/DELETE` | `/api/v1/files/:id/captions/:captionId` | Edit a track (one default per kind) / detach it (the WebVTT file stays) |
@@ -1046,7 +1051,8 @@ image URL (CF Image Resizing / Imgproxy). No params → the original bytes.
 
 **Upload policy (`/api/v1/uploads/config`).** Enforced by the `file-upload-policy`
 guard on every upload surface (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`,
-`PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`): a public role cannot upload; the body is size-capped on
+`PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`, and the TUS creation
+declaration `POST /api/v1/files/tus`): a public role cannot upload; the body is size-capped on
 its true byte length; the declared MIME must be in the allowlist and match the
 filename extension; raw bytes are content-sniffed (magic bytes) and executables /
 active-content SVGs are rejected; raster images are scanned for an embedded

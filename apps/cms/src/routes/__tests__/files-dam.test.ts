@@ -14,7 +14,7 @@ import type { FilesAccess } from '../../services/files/file-access';
 import type { FileReference } from '../../services/files/file-usage';
 import type { FilesContext } from '../../services/files/files-context';
 import { hasGpsMetadata } from '../../services/files/media-metadata';
-import { MemoryFileRepository, MemoryStorage } from '../../services/files/__tests__/memory-repo';
+import { MemoryFileRepository, MemoryStorage, MemoryUploadSessionRepository } from '../../services/files/__tests__/memory-repo';
 import { XMP_WITH_GPS, buildJpeg } from '../../services/files/__tests__/fixtures';
 
 interface SiteState {
@@ -22,6 +22,7 @@ interface SiteState {
   storage: MemoryStorage;
   settings: DamSettings;
   refs: FileReference[];
+  uploads: MemoryUploadSessionRepository;
 }
 
 const state = vi.hoisted(() => ({
@@ -43,6 +44,7 @@ vi.mock('../../services/files/files-context', () => ({
       storage: s.storage,
       settings: s.settings,
       usage: { find: async () => s.refs },
+      uploads: s.uploads,
       scanner: { name: 'fake', scan: async () => ({ verdict: 'clean' }) },
       audit: async () => undefined,
     };
@@ -75,6 +77,7 @@ function site(siteId: string): SiteState {
     storage: new MemoryStorage(),
     settings: { ...DEFAULT_DAM_SETTINGS },
     refs: [],
+    uploads: new MemoryUploadSessionRepository(siteId),
   };
   state.sites.set(siteId, s);
   return s;

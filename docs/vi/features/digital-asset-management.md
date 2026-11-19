@@ -1,14 +1,14 @@
 ---
-version: 7
+version: 8
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-11-19T08:20:43.389Z
-sourceHash: 5ae1337db5a0fac0
-codeVerified: 2026-11-19T08:20:43.389Z
-codeVerifiedHash: 5ae1337db5a0fac0
-codeVerifiedClaims: 52
+lastUpdated: 2026-11-19T09:24:30.545Z
+sourceHash: 03d4a7aca3ee7947
+codeVerified: 2026-11-19T09:24:30.545Z
+codeVerifiedHash: 03d4a7aca3ee7947
+codeVerifiedClaims: 58
 ---
 
 # Quản lý tài sản số (Digital Asset Management)
@@ -225,6 +225,50 @@ thì được để nguyên: các file pending của nó vẫn không được p
 admin quét lại hoặc bật lại quét. Phép tra cứu dùng partial index
 `files_pending_scan_idx`.
 
+## Upload tiếp tục được (TUS, D04)
+
+File lớn có thể được upload bằng giao thức [TUS 1.0](https://tus.io/protocols/resumable-upload)
+(core, `creation`, `termination`, `expiration`) tại `/api/v1/files/tus`.
+Mất kết nối hay tải lại trang không còn bắt upload chạy lại từ đầu: client
+hỏi server đang giữ bao nhiêu byte (`HEAD`) rồi tiếp tục từ đó. Mọi client
+TUS đều dùng được; thư viện media trong Studio tự chuyển sang cách này cho
+file từ 32 MiB trở lên (`apps/studio/src/modules/files/tus-client.ts`, chunk
+16 MiB, URL upload được giữ trong `localStorage` để tải lại trang vẫn tiếp
+tục được).
+
+1. `POST /api/v1/files/tus` với `Upload-Length` và `Upload-Metadata`
+   (`filename`, `filetype`, tuỳ chọn `folder`, `alt`). Bộ bảo vệ upload kiểm
+   tra phần khai báo giống hệt upload trực tiếp: role public bị từ chối,
+   giới hạn dung lượng, danh sách MIME cho phép, vệ sinh tên file và đuôi ↔
+   MIME đều áp dụng. `files:create` và rule đặt vào thư mục cũng được kiểm
+   tra. Kết quả là `201` kèm `Location` và `Upload-Expires`.
+2. `PATCH <Location>` với `Upload-Offset` và body
+   `application/offset+octet-stream`. Mỗi chunk được ghi **tất cả hoặc
+   không**: nếu storage lỗi thì trả `503` và offset không đổi. Offset sai
+   trả `409 OFFSET_MISMATCH` kèm offset đang lưu. Chunk đầu tiên được kiểm
+   tra nội dung so với kiểu đã khai báo.
+3. Chunk chạm tới `Upload-Length` hoàn tất upload. Quyền và vị trí thư mục
+   được **kiểm tra lại** (upload của người đã bị thu hồi quyền bị huỷ), file
+   đã ghép được quét polyglot, dòng file được tạo, metadata được trích xuất
+   và lượt quét mã độc được lên lịch y như upload trực tiếp. Response mang
+   `X-Lumi-File-Id`.
+4. `DELETE <Location>` huỷ upload và xoá các phần đã lưu.
+
+**Chạy trên cả hai runtime như thế nào.** Byte đi thẳng vào một multipart
+upload trên R2 (Workers) hoặc S3/MinIO (Docker) qua port `MultipartStorage`
+của runtime (`packages/runtime/src/interfaces/storage.ts`), nên không runtime
+nào giữ cả file trong bộ nhớ. Các phần multipart phải cùng kích thước, nên
+server cắt luồng thành phần 8 MiB và giữ phần dư trong một object đuôi nhỏ
+cho tới khi chunk tiếp theo tới. Tiến độ nằm trong bảng
+`lumibase_upload_sessions`. Mỗi `PATCH` giữ một lease ngắn bằng update có
+điều kiện, nên hai writer đồng thời không thể cùng nối; lease bị bỏ lại bởi
+một request sập sẽ hết hạn sau năm phút.
+
+**Quyền sở hữu và hết hạn.** Chỉ người tạo (hoặc site admin) xem hoặc ghi
+được một upload; người khác nhận `404`. Upload hết hạn 24 giờ sau chunk cuối
+cùng được ghi (sau đó trả `410`). Một lượt quét mỗi giờ, `upload-expiry`,
+abort các multipart upload đã hết hạn và xoá object đuôi của chúng (cron
+Docker có leader lock và cron giờ của Workers).
 ## Pipeline video (#871)
 
 Video không transcode được trong Worker, nên CMS giao chúng cho một **video
@@ -362,7 +406,9 @@ Chúng được lưu trong `settings` dưới key `files.dam`:
 ## Multi-tenancy
 
 - **Cô lập theo site:** `lumibase_files`, `lumibase_folders`,
-  `lumibase_file_versions`, `lumibase_file_captions` và `lumibase_video_assets` đều mang `site_id` và nằm trong danh sách RLS
+  `lumibase_file_versions`, `lumibase_upload_sessions`,
+  `lumibase_file_captions` và `lumibase_video_assets` đều mang `site_id` và
+  nằm trong danh sách RLS
   `site_isolation`. Mọi query của repository được lọc theo `site_id`
   (`DrizzleFileRepository`). Binary lưu trữ nằm dưới `sites/<site>/…`. Cache
   tag (`file:<site>:<id>`) và thiết lập `files.dam` là theo site. Tra cứu
@@ -380,7 +426,7 @@ Chúng được lưu trong `settings` dưới key `files.dam`:
 
 ## Chưa làm
 
-- Upload resumable (TUS, D04 #704) chưa được hiện thực. File lớn vẫn dùng
-  một lần `PUT` có chữ ký.
+- `Upload-Defer-Length` của TUS (chưa biết dung lượng lúc tạo) trả `501`, và
+  extension `concatenation` không được cung cấp.
 - Rich text chưa nhúng ảnh qua picker (R03). API picker ở trên là điểm tích
   hợp.
