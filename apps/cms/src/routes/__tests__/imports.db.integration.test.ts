@@ -7,12 +7,16 @@ import {
   fields,
   importJobs,
   items,
+  permissions,
+  policies,
+  rolePolicies,
   roles,
   sites,
   userSites,
   users,
   type Database,
 } from '@lumibase/database';
+import type { RealtimeProvider } from '@lumibase/runtime';
 import type { AppEnv } from '../../env';
 import { ItemService } from '../../services/item-service';
 import {
@@ -34,6 +38,7 @@ import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpe
  */
 
 const SITE = 'site_import_it';
+const SITE_B = 'site_import_it_b';
 const ADMIN = 'usr_import_admin';
 const EDITOR = 'usr_import_editor';
 
@@ -68,7 +73,7 @@ describe.skipIf(!hasDbIntegrationUrl)('background imports — DB integration', (
 
   afterAll(async () => {
     if (!db) return;
-    await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
+    await db.delete(sites).where(inArray(sites.id, [SITE, SITE_B])).catch(() => undefined);
     for (const u of [ADMIN, EDITOR]) await db.delete(users).where(eq(users.id, u)).catch(() => undefined);
   });
 
@@ -81,12 +86,12 @@ describe.skipIf(!hasDbIntegrationUrl)('background imports — DB integration', (
     await db
       .update(importJobs)
       .set({ status: 'cancelled', leaseOwner: null, leaseUntil: null, message: 'test teardown' })
-      .where(and(eq(importJobs.siteId, SITE), inArray(importJobs.status, ['queued', 'running'])));
+      .where(and(inArray(importJobs.siteId, [SITE, SITE_B]), inArray(importJobs.status, ['queued', 'running'])));
   });
 
   beforeEach(async () => {
     principal = ADMIN;
-    await db.delete(sites).where(eq(sites.id, SITE));
+    await db.delete(sites).where(inArray(sites.id, [SITE, SITE_B]));
     await db.insert(sites).values({
       organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`,
       id: SITE,
@@ -333,6 +338,84 @@ describe.skipIf(!hasDbIntegrationUrl)('background imports — DB integration', (
     expect((await reload(b.id)).status).toBe('succeeded');
   });
 
+  it('concurrent claims never push a site past IMPORT_MAX_CONCURRENCY (#860)', async () => {
+    const queued = await Promise.all(Array.from({ length: 6 }, () => job(csv(Array.from({ length: 120 }, (_, i) => ({ price: i }))))));
+    const one = config({ maxConcurrency: 1 });
+    // Every step reads the running count at the same time, before anyone claims.
+    const outcomes = await Promise.all(queued.map((q) => runImportStep({ db, config: one }, q.id)));
+    expect(outcomes.filter((o) => o === 'progressed')).toHaveLength(1);
+    expect(outcomes.filter((o) => o === 'waiting')).toHaveLength(5);
+    const running = await db
+      .select({ id: importJobs.id })
+      .from(importJobs)
+      .where(and(eq(importJobs.siteId, SITE), eq(importJobs.status, 'running')));
+    expect(running).toHaveLength(1);
+  });
+
+  /** A second site with the same `products` collection, administered by ADMIN. */
+  async function setupSiteB() {
+    await db.insert(sites).values({
+      organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`,
+      id: SITE_B,
+      name: 'Import IT B',
+    });
+    const role = (await db.insert(roles).values({ siteId: SITE_B, name: 'Admin', adminAccess: true, appAccess: true }).returning({ id: roles.id }))[0]!.id;
+    await db.insert(userSites).values({ userId: ADMIN, siteId: SITE_B, roleId: role });
+    const collId = (await db.insert(collections).values({ siteId: SITE_B, name: 'products', label: 'products' }).returning({ id: collections.id }))[0]!.id;
+    await db.insert(fields).values([
+      { siteId: SITE_B, collectionId: collId, name: 'title', type: 'json', interface: 'translatable-text' },
+      { siteId: SITE_B, collectionId: collId, name: 'price', type: 'decimal', interface: 'input', required: true },
+    ]);
+  }
+
+  const jobInB = (body: string) =>
+    createImportJob({
+      db,
+      siteId: SITE_B,
+      collection: 'products',
+      format: 'csv',
+      mode: 'create',
+      body,
+      schemaFields: fieldsMeta,
+      principal: { type: 'user', siteId: SITE_B, userId: ADMIN },
+      createdBy: ADMIN,
+      config: config(),
+    });
+
+  it('the tick round-robins: site B progresses while site A runs a large import (#860)', async () => {
+    await setupSiteB();
+    const big = await job(csv(Array.from({ length: 300 }, (_, i) => ({ price: i }))));
+    const small = await jobInB(csv([{ price: 1 }, { price: 2 }]));
+    // Progress events reveal the order in which the tick stepped the jobs.
+    const events: Array<{ jobId: string; status: string }> = [];
+    const realtime = {
+      isAvailable: () => true,
+      publish: async (_siteId: string, event: { payload?: { job?: { id: string; status: string } } }) => {
+        const j = event.payload?.job;
+        if (j) events.push({ jobId: j.id, status: j.status });
+      },
+    } as unknown as RealtimeProvider;
+
+    expect(await runImportTick({ db, config: config(), realtime }, { budgetMs: 60_000 })).toBe(2);
+    expect(await reload(big.id)).toMatchObject({ status: 'succeeded', createdRows: 300 });
+    expect(await reload(small.id)).toMatchObject({ status: 'succeeded', createdRows: 2 });
+    // B finished after A's first chunk, not after all six of them.
+    const smallDone = events.findIndex((e) => e.jobId === small.id && e.status === 'succeeded');
+    expect(smallDone).toBe(1);
+    expect(events.filter((e) => e.jobId === big.id)).toHaveLength(6);
+  });
+
+  it('the tick picks due jobs fairly per site, not just the oldest overall (#860)', async () => {
+    await setupSiteB();
+    const older = await Promise.all(Array.from({ length: 3 }, () => job(csv([{ price: 1 }]))));
+    const fromB = await jobInB(csv([{ price: 1 }]));
+    expect(await runImportTick({ db, config: config() }, { limit: 2, budgetMs: 60_000 })).toBe(2);
+    expect((await reload(fromB.id)).status).toBe('succeeded');
+    // Exactly one of site A's jobs got the other slot.
+    const statuses = await Promise.all(older.map(async (o) => (await reload(o.id)).status));
+    expect(statuses.filter((s) => s === 'succeeded')).toHaveLength(1);
+  });
+
   it('fails the job when the principal loses access mid-way', async () => {
     const j = await job(csv(Array.from({ length: 120 }, (_, i) => ({ price: i }))));
     await runImportStep({ db, config: config() }, j.id);
@@ -426,6 +509,31 @@ describe.skipIf(!hasDbIntegrationUrl)('background imports — DB integration', (
 
       principal = ADMIN;
       expect(((await (await app.request('/api/v1/imports')).json()) as { data: unknown[] }).data).toHaveLength(1);
+    });
+
+    it('403s up front when the principal can write but not read the collection (#860)', async () => {
+      // EDITOR gets create + update on products, but no read.
+      const viewerRole = (await db.select({ roleId: userSites.roleId }).from(userSites).where(and(eq(userSites.userId, EDITOR), eq(userSites.siteId, SITE))))[0]!.roleId!;
+      const policyId = (await db.insert(policies).values({ siteId: SITE, name: 'Write only', appAccess: true }).returning({ id: policies.id }))[0]!.id;
+      await db.insert(permissions).values([
+        { siteId: SITE, policyId, collection: 'products', action: 'create', fields: ['*'] },
+        { siteId: SITE, policyId, collection: 'products', action: 'update', fields: ['*'] },
+      ]);
+      await db.insert(rolePolicies).values({ roleId: viewerRole, policyId, priority: 0 });
+
+      principal = EDITOR;
+      for (const mode of ['create', 'upsert']) {
+        const res = await app.request(`/api/v1/imports?collection=products&mode=${mode}`, {
+          method: 'POST',
+          headers: { 'content-type': 'text/csv' },
+          body: csv([{ price: 1 }]),
+        });
+        expect(res.status).toBe(403);
+        const body = (await res.json()) as { errors: Array<{ code: string; message: string }> };
+        expect(body.errors[0]).toMatchObject({ code: 'FORBIDDEN' });
+        expect(body.errors[0]!.message).toMatch(/"read"/);
+      }
+      expect(await db.select().from(importJobs).where(eq(importJobs.siteId, SITE))).toHaveLength(0);
     });
   });
 });

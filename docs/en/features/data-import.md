@@ -1,10 +1,10 @@
 ---
 version: 5
-lastUpdated: 2026-11-16T02:07:11.997Z
+lastUpdated: 2026-11-16T15:45:42.765Z
 sourceLang: en
-contentHash: 8c28b0e47b163455
-codeVerified: 2026-11-17T19:25:56.154Z
-codeVerifiedHash: 8c28b0e47b163455
+contentHash: efc39789582f82ad
+codeVerified: 2026-11-16T15:45:42.765Z
+codeVerifiedHash: efc39789582f82ad
 codeVerifiedClaims: 12
 ---
 
@@ -78,8 +78,9 @@ POST /api/v1/imports?collection={collection}&format=csv|json&mode=create|upsert
   of the collection are rejected with `400` before any row is written.
 - **Mode:** `create` (default) always creates new items. `upsert` updates the
   item whose `id` matches and creates the rest; it needs `update` permission too.
-- **Permissions:** checked up front (`create`, plus `update` for `upsert`) and
-  again on every row, as the user or API key that uploaded the file. If that
+- **Permissions:** checked up front (`read` and `create`, plus `update` for
+  `upsert`; `read` because the job reads the collection's schema) and again on
+  every row, as the user or API key that uploaded the file. If that
   principal loses access while the job runs, the job stops as `failed`.
 
 The response is the job:
@@ -132,8 +133,11 @@ the rows and the progress counter commit together, so a worker that dies
 mid-chunk leaves nothing behind and the chunk is replayed from the last
 committed row, with no duplicates. The transaction locks the job, so a second
 worker waits instead of writing the same rows, and takes over once the first
-worker's lease expires. Measured locally on Postgres 16, a
-row goes through the full item pipeline (validation, revisions, change feed) at
+worker's lease expires. The cron shares its time between jobs one chunk at a
+time and picks the oldest job of every site before a second job of any site, so
+one large import does not hold up other jobs. `IMPORT_MAX_CONCURRENCY` is a hard
+per-site limit: a job only starts while fewer jobs of its site are running.
+Measured locally on Postgres 16, a row goes through the full item pipeline (validation, revisions, change feed) at
 about 90 rows per second per job, so a 100k-row file takes about 20 minutes.
 Limits and chunk size are set with [`IMPORT_*` variables](../deployment/environment-variables.md#imports).
 

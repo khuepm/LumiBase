@@ -8,8 +8,8 @@
  *   runImportStep     claim → check cancel/timeout → re-resolve principal →
  *                     write the next chunk → record counters/errors → release
  *   driveImportJob    loop steps within a time budget (request `waitUntil`)
- *   runImportTick     cron: resume jobs whose lease expired, honouring the
- *                     per-site concurrency limit
+ *   runImportTick     cron: resume jobs whose lease expired, round-robin and
+ *                     fair per site, honouring the per-site concurrency limit
  *
  * Every row goes through `ItemService` bound to the job's principal, so
  * validation, permissions, hooks, revisions and CDC behave exactly as for a
@@ -231,6 +231,11 @@ async function defaultItemServiceFor(
     );
 }
 
+/** Transaction-scoped advisory lock serialising job starts within one site. */
+function importSiteLock(siteId: string) {
+  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`lumibase_import:${siteId}`}, 0))`;
+}
+
 /** Thrown inside the chunk transaction when another worker owns the job. */
 class LeaseLostError extends Error {}
 
@@ -298,32 +303,50 @@ export async function runImportStep(deps: ImportStepDeps, jobId: string): Promis
   if (!current) return 'done';
   if (TERMINAL_STATUSES.includes(current.status as ImportStatus)) return 'done';
 
-  if (current.status === 'queued') {
-    const [{ running }] = (await deps.db
-      .select({ running: sql<number>`count(*)::int` })
-      .from(importJobs)
-      .where(and(eq(importJobs.siteId, current.siteId), eq(importJobs.status, 'running')))) as [{ running: number }];
-    if (running >= deps.config.maxConcurrency && current.cancelRequestedAt === null) return 'waiting';
-  }
-
   // Claim: only when nobody holds a live lease.
-  const [job] = await deps.db
-    .update(importJobs)
-    .set({
-      leaseOwner: owner,
-      leaseUntil,
-      status: sql`case when ${importJobs.status} = 'queued' then 'running' else ${importJobs.status} end`,
-      startedAt: sql`coalesce(${importJobs.startedAt}, ${now.toISOString()}::timestamp)`,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(importJobs.id, jobId),
-        inArray(importJobs.status, ['queued', 'running']),
-        or(isNull(importJobs.leaseUntil), lt(importJobs.leaseUntil, now)),
-      ),
-    )
-    .returning();
+  const claim = async (db: Database): Promise<ImportJobRow | undefined> => {
+    const [row] = await db
+      .update(importJobs)
+      .set({
+        leaseOwner: owner,
+        leaseUntil,
+        status: sql`case when ${importJobs.status} = 'queued' then 'running' else ${importJobs.status} end`,
+        startedAt: sql`coalesce(${importJobs.startedAt}, ${now.toISOString()}::timestamp)`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(importJobs.id, jobId),
+          inArray(importJobs.status, ['queued', 'running']),
+          or(isNull(importJobs.leaseUntil), lt(importJobs.leaseUntil, now)),
+        ),
+      )
+      .returning();
+    return row;
+  };
+
+  let job: ImportJobRow | undefined;
+  if (current.status === 'queued' && current.cancelRequestedAt === null) {
+    // Starting a job counts against the per-site limit. The count and the
+    // claim must be one atomic decision, or parallel steps for different
+    // queued jobs all read a count below the limit and all claim (#860). A
+    // per-site transaction-scoped advisory lock serialises those decisions;
+    // under READ COMMITTED each statement after the lock sees every claim the
+    // previous holder committed.
+    const decision = await deps.db.transaction(async (tx) => {
+      await tx.execute(importSiteLock(current.siteId));
+      const [{ running }] = (await tx
+        .select({ running: sql<number>`count(*)::int` })
+        .from(importJobs)
+        .where(and(eq(importJobs.siteId, current.siteId), eq(importJobs.status, 'running')))) as [{ running: number }];
+      if (running >= deps.config.maxConcurrency) return 'waiting' as const;
+      return claim(tx as unknown as Database);
+    });
+    if (decision === 'waiting') return 'waiting';
+    job = decision;
+  } else {
+    job = await claim(deps.db);
+  }
   if (!job) return 'busy';
 
   if (job.cancelRequestedAt) {
@@ -468,13 +491,27 @@ export async function driveImportJob(deps: ImportStepDeps, jobId: string, budget
 }
 
 /**
- * Cron entry: resume unfinished jobs whose lease is free, oldest first. Uses
- * the system connection (crosses sites). Returns how many jobs it touched.
+ * Cron entry: resume unfinished jobs whose lease is free. Uses the system
+ * connection (crosses sites). Returns how many jobs it stepped.
+ *
+ * Fair across sites and jobs (#860):
+ *  - selection ranks due jobs within their site (oldest first) and takes the
+ *    first job of every site before the second of any, so one site's backlog
+ *    cannot fill the whole `limit`;
+ *  - the budget is shared round-robin, one chunk per job per round, so a large
+ *    import cannot hold the tick until it finishes while other jobs wait (and
+ *    run into their own timeout).
  */
 export async function runImportTick(deps: ImportStepDeps, opts: { budgetMs?: number; limit?: number } = {}): Promise<number> {
   const now = deps.now?.() ?? new Date();
-  const due = await deps.db
-    .select({ id: importJobs.id })
+  const ranked = deps.db
+    .select({
+      id: importJobs.id,
+      createdAt: importJobs.createdAt,
+      siteRank: sql<number>`row_number() over (partition by ${importJobs.siteId} order by ${importJobs.createdAt}, ${importJobs.id})`.as(
+        'site_rank',
+      ),
+    })
     .from(importJobs)
     .where(
       and(
@@ -482,22 +519,32 @@ export async function runImportTick(deps: ImportStepDeps, opts: { budgetMs?: num
         or(isNull(importJobs.leaseUntil), lt(importJobs.leaseUntil, now)),
       ),
     )
-    .orderBy(asc(importJobs.createdAt))
+    .as('ranked');
+  const due = await deps.db
+    .select({ id: ranked.id })
+    .from(ranked)
+    .orderBy(asc(ranked.siteRank), asc(ranked.createdAt), asc(ranked.id))
     .limit(opts.limit ?? 10);
+
   const budget = opts.budgetMs ?? 45_000;
   const started = Date.now();
-  let touched = 0;
-  for (const { id } of due) {
-    const left = budget - (Date.now() - started);
-    if (left <= 0) break;
-    try {
-      await driveImportJob(deps, id, left);
-      touched++;
-    } catch (err) {
-      console.error('[import] tick step failed', { jobId: id, err: err instanceof Error ? err.message : String(err) });
+  const stepped = new Set<string>();
+  let active = due.map((d) => d.id);
+  while (active.length > 0) {
+    const next: string[] = [];
+    for (const id of active) {
+      if (Date.now() - started >= budget) return stepped.size;
+      try {
+        const outcome = await runImportStep(deps, id);
+        stepped.add(id);
+        if (outcome === 'progressed') next.push(id);
+      } catch (err) {
+        console.error('[import] tick step failed', { jobId: id, err: err instanceof Error ? err.message : String(err) });
+      }
     }
+    active = next;
   }
-  return touched;
+  return stepped.size;
 }
 
 // ── Cancel / read ─────────────────────────────────────────────────────────────
