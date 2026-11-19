@@ -1,13 +1,13 @@
 ---
-version: 6
+version: 7
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-11-19T05:03:13.784Z
-sourceHash: a94a85385fafc977
-codeVerified: 2026-11-19T05:03:13.784Z
-codeVerifiedHash: a94a85385fafc977
+lastUpdated: 2026-11-19T08:20:43.389Z
+sourceHash: 5ae1337db5a0fac0
+codeVerified: 2026-11-19T08:20:43.389Z
+codeVerifiedHash: 5ae1337db5a0fac0
 codeVerifiedClaims: 52
 ---
 
@@ -189,15 +189,41 @@ Scanner là thiết lập của **deployment**, không bao giờ là của tenan
 
 | Biến | Ý nghĩa |
 |---|---|
+| `CLAMD_HOST` | host clamd cho adapter native (chỉ Docker) |
+| `CLAMD_PORT` | port clamd (mặc định `3310`) |
 | `MALWARE_SCAN_URL` | HTTP endpoint nhận upload multipart |
 | `MALWARE_SCAN_TOKEN` | bearer token, tuỳ chọn |
 | `MALWARE_SCAN_FIELD` | tên field multipart (mặc định `file`) |
 
+Có hai adapter. Khi cả hai được cấu hình, clamd được ưu tiên.
+
+- **clamd (Docker).** Daemon ClamAV native được gọi qua TCP bằng
+  `zINSTREAM`. Runtime Docker cung cấp socket client (`runtime.clamd`) khi
+  đặt `CLAMD_HOST`, nên business logic không bao giờ import `node:net`.
+  `stream: OK` là sạch, `stream: <signature> FOUND` là nhiễm, còn reply
+  `ERROR` hoặc daemon không kết nối được thì theo `scan.onError`.
+- **HTTP (cả hai runtime).** Bất kỳ scanner REST nào. Adapter đọc được các
+  dạng response ClamAV REST phổ biến cũng như dạng chung
+  `{ infected, viruses }`. Đây là adapter trên Cloudflare, nơi không có clamd
+  TCP: trỏ nó tới bất kỳ dịch vụ quét HTTPS nào.
+
 Docker: `docker compose -f docker/docker-compose.yml --profile malware-scan up -d`
-khởi động một sidecar ClamAV REST. Đặt `MALWARE_SCAN_URL=http://clamav-rest:3000/api/v1/scan`
-và `MALWARE_SCAN_FIELD=FILES`. Trên Cloudflare, trỏ nó tới bất kỳ dịch vụ
-quét HTTPS nào. Adapter đọc được các dạng response ClamAV REST phổ biến cũng
-như dạng chung `{ infected, viruses }`.
+khởi động clamd (`clamav`) và một REST front (`clamav-rest`). Đặt hoặc
+`CLAMD_HOST=clamav` (native, khuyến nghị) hoặc
+`MALWARE_SCAN_URL=http://clamav-rest:3000/api/v1/scan` cùng
+`MALWARE_SCAN_FIELD=FILES`.
+
+**Sweeper quét lại file pending.** Một lần quét không hoàn tất để file ở
+`pending`, và file ở trạng thái đó không bao giờ được phục vụ. Điều này xảy ra khi
+process chết giữa chừng, hoặc khi lần quét thấy file đã bị thay và bỏ kết
+luận cũ. Cứ năm phút, một sweep quét lại các file đã `pending` quá mười phút,
+tối đa 50 file mỗi lượt, cũ nhất trước. Nó chạy dưới dạng cron có leader lock
+trên Docker và từ Cron Trigger năm phút trên Workers. Mỗi kết luận được ghi
+theo version của file, nên các lượt chạy chồng nhau chỉ chốt một file một lần.
+Kết luận được audit trên site của file với `sweep: true`. Site đã tắt quét
+thì được để nguyên: các file pending của nó vẫn không được phục vụ cho tới khi
+admin quét lại hoặc bật lại quét. Phép tra cứu dùng partial index
+`files_pending_scan_idx`.
 
 ## Pipeline video (#871)
 

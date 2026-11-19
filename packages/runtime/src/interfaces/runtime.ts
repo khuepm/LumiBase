@@ -8,6 +8,7 @@ import type { MediaProcessor } from './media';
 import type { KeyProvider } from './keys';
 import type { RealtimeProvider } from './realtime';
 import type { RateLimiterProvider } from './rate-limiter';
+import type { ClamdClient } from './clamd';
 
 export interface RuntimeContext {
   cache: CacheProvider;
@@ -21,5 +22,7 @@ export interface RuntimeContext {
   media: MediaProcessor;
   keys: KeyProvider;
   realtime: RealtimeProvider;
+  /** Native ClamAV client; Docker only, when `CLAMD_HOST` is configured (#707). */
+  clamd?: ClamdClient;
   runtime: 'cloudflare' | 'docker';
 }

@@ -1,10 +1,10 @@
 ---
-version: 28
-lastUpdated: 2026-11-19T05:03:11.947Z
+version: 29
+lastUpdated: 2026-11-19T08:20:41.555Z
 sourceLang: en
-contentHash: c6ffaa02d8304cca
-codeVerified: 2026-11-19T05:03:11.947Z
-codeVerifiedHash: c6ffaa02d8304cca
+contentHash: 3272f03b9b0c256c
+codeVerified: 2026-11-19T08:20:41.555Z
+codeVerifiedHash: 3272f03b9b0c256c
 codeVerifiedClaims: 22
 ---
 
@@ -288,7 +288,7 @@ When seeding local/staging/prod, seed system collection permissions explicitly. 
 
 ### `files`
 - `id`, `siteId`, `storage` (`r2`/`s3`/external), `filenameDisk`, `filenameDownload`, `mime`, `filesize`, `width`, `height`, `duration`, `folder`, `metadata jsonb`, `uploadedBy`, `contentHash`, `version`, `scanStatus`, `createdAt`, `updatedAt`.
-- `contentHash` — full SHA-256 (hex) of the current binary, used for duplicate detection; index `(siteId, contentHash)`. `version` — bumped by every in-place replace (same id and `filenameDisk`). `scanStatus` — `skipped` (default) / `pending` / `clean` / `infected` / `error`; only `skipped` and `clean` are delivered. `metadata.embedded` holds extracted EXIF/IPTC/XMP and `metadata.searchText` the searchable summary. Migration `0038_dam_assets`.
+- `contentHash` — full SHA-256 (hex) of the current binary, used for duplicate detection; index `(siteId, contentHash)`. `version` — bumped by every in-place replace (same id and `filenameDisk`). `scanStatus` — `skipped` (default) / `pending` / `clean` / `infected` / `error`; only `skipped` and `clean` are delivered. `metadata.embedded` holds extracted EXIF/IPTC/XMP and `metadata.searchText` the searchable summary. Migration `0038_dam_assets`. Partial index `files_pending_scan_idx` on `updatedAt` where `scanStatus = 'pending'` serves the malware-scan sweeper (migration `0046_malware_scan_pending_idx`).
 
 ### `file_versions`
 - `id`, `siteId`, `fileId` (FK cascade), `version`, `filenameDisk` (archive key `sites/<site>/file-versions/<id>/v<n>`), `filenameDownload`, `mime`, `filesize`, `width`, `height`, `contentHash`, `metadata jsonb`, `replacedBy`, `createdAt`, `expiresAt`.

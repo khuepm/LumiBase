@@ -57,7 +57,7 @@ export async function filesContext(c: Context<AppEnv>): Promise<FilesContext> {
     usage: new DrizzleFileUsageSource(db, siteId),
     storage: c.get('runtime').storage,
     settings: await loadDamSettings(db, siteId),
-    scanner: scannerFromEnv(env),
+    scanner: scannerFromEnv(env, c.get('runtime').clamd),
     captions: new DrizzleCaptionRepository(db, siteId),
     locales: () => siteLocales(db, siteId),
     video: {

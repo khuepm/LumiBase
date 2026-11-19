@@ -1,13 +1,13 @@
 ---
-version: 28
-lastUpdated: 2026-11-19T05:03:11.947Z
+version: 29
+lastUpdated: 2026-11-19T08:20:41.555Z
 sourceLang: en
 translatedFrom: en
-sourceHash: c6ffaa02d8304cca
+sourceHash: 3272f03b9b0c256c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T05:03:11.947Z
-codeVerifiedHash: c6ffaa02d8304cca
+codeVerified: 2026-11-19T08:20:41.555Z
+codeVerifiedHash: 3272f03b9b0c256c
 codeVerifiedClaims: 22
 ---
 
@@ -292,7 +292,7 @@ Khi seed local/staging/prod, phải seed permission cho system collection một 
 
 ### `files`
 - `id`, `siteId`, `storage` (`r2`/`s3`/external), `filenameDisk`, `filenameDownload`, `mime`, `filesize`, `width`, `height`, `duration`, `folder`, `metadata jsonb`, `uploadedBy`, `contentHash`, `version`, `scanStatus`, `createdAt`, `updatedAt`.
-- `contentHash` — SHA-256 đầy đủ (hex) của binary hiện tại, dùng để phát hiện trùng lặp; index `(siteId, contentHash)`. `version` — tăng sau mỗi lần thay tại chỗ (cùng id và `filenameDisk`). `scanStatus` — `skipped` (mặc định) / `pending` / `clean` / `infected` / `error`; chỉ `skipped` và `clean` được phân phối. `metadata.embedded` chứa EXIF/IPTC/XMP đã trích và `metadata.searchText` là bản tóm tắt để tìm kiếm. Migration `0038_dam_assets`.
+- `contentHash` — SHA-256 đầy đủ (hex) của binary hiện tại, dùng để phát hiện trùng lặp; index `(siteId, contentHash)`. `version` — tăng sau mỗi lần thay tại chỗ (cùng id và `filenameDisk`). `scanStatus` — `skipped` (mặc định) / `pending` / `clean` / `infected` / `error`; chỉ `skipped` và `clean` được phân phối. `metadata.embedded` chứa EXIF/IPTC/XMP đã trích và `metadata.searchText` là bản tóm tắt để tìm kiếm. Migration `0038_dam_assets`. Partial index `files_pending_scan_idx` trên `updatedAt` với `scanStatus = 'pending'` phục vụ sweeper quét mã độc (migration `0046_malware_scan_pending_idx`).
 
 ### `file_versions`
 - `id`, `siteId`, `fileId` (FK cascade), `version`, `filenameDisk` (archive key `sites/<site>/file-versions/<id>/v<n>`), `filenameDownload`, `mime`, `filesize`, `width`, `height`, `contentHash`, `metadata jsonb`, `replacedBy`, `createdAt`, `expiresAt`.

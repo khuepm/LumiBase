@@ -9,6 +9,7 @@ import { sweepDueVetoCommits } from '../services/veto-commit-worker';
 import { sweepRevisionRetention } from '../services/revision-retention';
 import { runCdcDispatchSweep } from '../modules/cdc/change-feed/dispatcher';
 import { sweepVideos } from '../modules/video/sweeper';
+import { sweepPendingScans } from '../modules/malware-scan/sweeper';
 
 /**
  * Workers counterparts of the Docker node-cron sweeps (B131). Each sweep gets
@@ -27,6 +28,7 @@ vi.mock('../services/goal-dispatch-service', () => ({
 vi.mock('../services/deployment/status-poller', () => ({ sweepAllSites: vi.fn(async () => ({ checked: 0, errors: 0 })) }));
 vi.mock('../services/veto-commit-worker', () => ({ sweepDueVetoCommits: vi.fn(async () => 0) }));
 vi.mock('../modules/video/sweeper', () => ({ sweepVideos: vi.fn(async () => ({ submitted: 0, polled: 0, requeued: 0, timedOut: 0, errors: 0 })) }));
+vi.mock('../modules/malware-scan/sweeper', () => ({ sweepPendingScans: vi.fn(async () => ({ checked: 0 })) }));
 vi.mock('../modules/cdc/change-feed/dispatcher', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../modules/cdc/change-feed/dispatcher')>();
   return { ...actual, runCdcDispatchSweep: vi.fn(async () => {}) };
@@ -46,7 +48,7 @@ beforeEach(() => vi.clearAllMocks());
 describe('sweep schedule (B131)', () => {
   it('splits the sweeps by the cadence Docker runs them at', () => {
     expect(Object.keys(MINUTE_SWEEPS).sort()).toEqual(['cdc-dispatch', 'content-scheduler', 'deployment-poll', 'goal-dispatch']);
-    expect(Object.keys(FIVE_MINUTE_SWEEPS)).toEqual(['veto-sweep', 'video-sweep']);
+    expect(Object.keys(FIVE_MINUTE_SWEEPS)).toEqual(['veto-sweep', 'video-sweep', 'malware-scan-sweep']);
     expect(Object.keys(HOURLY_SWEEPS)).toEqual(['retention-sweep', 'revision-retention']);
   });
 });
@@ -65,6 +67,12 @@ describe('runWorkerSweeps passes the Docker providers (B131)', () => {
     expect(sweepDueVetoCommits).toHaveBeenCalledWith({ db, cache: runtime.cache, search: runtime.search, queue: runtime.queue });
     expect(sweepRetention).toHaveBeenCalledWith({ db, queue: runtime.queue });
     expect(sweepRevisionRetention).toHaveBeenCalledWith({ db });
+  });
+
+  it('the malware-scan sweep gets the Worker bindings, which carry the scanner config (#707)', async () => {
+    const env = { MALWARE_SCAN_URL: 'https://scanner.example/scan' };
+    await runWorkerSweeps(FIVE_MINUTE_SWEEPS, { ...deps, env });
+    expect(sweepPendingScans).toHaveBeenCalledWith({ db, storage: runtime.storage, clamd: runtime.clamd, env });
   });
 
   it('the video sweep gets the Worker bindings, which carry the provider config (#871)', async () => {

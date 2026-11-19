@@ -1,10 +1,10 @@
 ---
-version: 6
+version: 7
 sourceLang: en
-lastUpdated: 2026-11-19T05:03:13.784Z
-contentHash: a94a85385fafc977
-codeVerified: 2026-11-19T05:03:13.784Z
-codeVerifiedHash: a94a85385fafc977
+lastUpdated: 2026-11-19T08:20:43.389Z
+contentHash: 5ae1337db5a0fac0
+codeVerified: 2026-11-19T08:20:43.389Z
+codeVerifiedHash: 5ae1337db5a0fac0
 codeVerifiedClaims: 52
 ---
 
@@ -190,15 +190,41 @@ The scanner is a **deployment** setting, never a tenant one:
 
 | Variable | Meaning |
 |---|---|
+| `CLAMD_HOST` | clamd host for the native adapter (Docker only) |
+| `CLAMD_PORT` | clamd port (default `3310`) |
 | `MALWARE_SCAN_URL` | HTTP endpoint that accepts a multipart upload |
 | `MALWARE_SCAN_TOKEN` | optional bearer token |
 | `MALWARE_SCAN_FIELD` | multipart field name (default `file`) |
 
+There are two adapters. When both are configured, clamd wins.
+
+- **clamd (Docker).** The native ClamAV daemon is reached over TCP with
+  `zINSTREAM`. The Docker runtime provides the socket client
+  (`runtime.clamd`) when `CLAMD_HOST` is set, so business logic never imports
+  `node:net`. `stream: OK` is clean, `stream: <signature> FOUND` is infected,
+  and an `ERROR` reply or an unreachable daemon follows `scan.onError`.
+- **HTTP (both runtimes).** Any REST scanner. The adapter parses the common
+  ClamAV REST response shapes as well as a generic `{ infected, viruses }`.
+  This is the adapter on Cloudflare, which has no clamd TCP: point it at any
+  HTTPS scanning service.
+
 Docker: `docker compose -f docker/docker-compose.yml --profile malware-scan up -d`
-starts a ClamAV REST sidecar. Set `MALWARE_SCAN_URL=http://clamav-rest:3000/api/v1/scan`
-and `MALWARE_SCAN_FIELD=FILES`. On Cloudflare, point it at any HTTPS
-scanning service. The adapter parses the common ClamAV REST response
-shapes as well as a generic `{ infected, viruses }`.
+starts clamd (`clamav`) and a REST front (`clamav-rest`). Set either
+`CLAMD_HOST=clamav` (native, preferred) or
+`MALWARE_SCAN_URL=http://clamav-rest:3000/api/v1/scan` with
+`MALWARE_SCAN_FIELD=FILES`.
+
+**Pending-scan sweeper.** A scan that never finished leaves its file
+`pending`, which is never served. This happens when the process dies
+mid-scan, or when the scan saw the file replaced and dropped its stale
+verdict. Every five minutes, a sweep re-scans files that have been `pending`
+for more than ten minutes, at most 50 per pass, oldest first. It runs as a
+leader-locked cron on Docker and from the five-minute Cron Trigger on
+Workers. Each verdict is written under the file's version, so overlapping
+passes settle a file once. Verdicts are audited on the file's site with
+`sweep: true`. A site that has since switched scanning off is left alone:
+its pending files stay unserved until an admin re-scans them or turns
+scanning back on. The lookup uses the partial index `files_pending_scan_idx`.
 
 ## Video pipeline (#871)
 
