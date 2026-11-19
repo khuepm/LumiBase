@@ -1,11 +1,11 @@
 ---
-version: 58
-lastUpdated: 2026-11-17T19:26:03.593Z
+version: 59
+lastUpdated: 2026-11-17T19:23:58.425Z
 sourceLang: en
-contentHash: 94c6ed3f2c080f93
-codeVerified: 2026-11-17T19:26:03.593Z
-codeVerifiedHash: 94c6ed3f2c080f93
-codeVerifiedClaims: 636
+contentHash: de2fb63aac3d98eb
+codeVerified: 2026-11-17T19:23:58.425Z
+codeVerifiedHash: de2fb63aac3d98eb
+codeVerifiedClaims: 640
 ---
 
 # Hono API Specification — LumiBase
@@ -400,8 +400,19 @@ Every applied change writes an audit event (`email_identity_mode_changed` /
   or SCIM account whose email came from the IdP, or a self-registration that
   never verified) answers `409 INVITEE_EMAIL_UNVERIFIED` and is not bound. The
   same rule applies to `POST /api/v1/orgs/:orgId/members` invited by `email`.
-- SCIM (`/scim/v2/Users`) answers `409` with `scimType: "uniqueness"` when the
-  address resolves to an existing account or collides on a strict site.
+- SCIM `POST /scim/v2/Users` links an account that belongs only to other
+  sites to the token's site and answers it as a create (`201`) only when the
+  account's mailbox is proven, by the same rule as invites (#856, #912). Every
+  other match answers one generic `409` with `scimType: "uniqueness"` and binds
+  nothing: an account already in this site, a strict-site collision, or an
+  account whose mailbox is unproven (an SSO JIT or SCIM account from another
+  IdP, or an unverified self-registration). The body is the same in all these
+  cases, so it does not say that the account exists on another site.
+  `userName` is trimmed; a value that is not a single `local@domain` token
+  answers `400` with `scimType: "invalidValue"`.
+- `POST /api/v1/admin/security/unlock-user`, `/admin/security/recover` and
+  `/admin/security/forgot-path` resolve the account under the instance mode in
+  the same way as login.
 
 ### External JWT authentication
 

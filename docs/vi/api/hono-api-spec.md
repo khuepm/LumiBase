@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 57
-lastUpdated: 2026-11-17T19:26:03.593Z
+version: 58
+lastUpdated: 2026-11-17T19:23:58.425Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 94c6ed3f2c080f93
+sourceHash: de2fb63aac3d98eb
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T19:26:03.593Z
-codeVerifiedHash: 94c6ed3f2c080f93
-codeVerifiedClaims: 636
+codeVerified: 2026-11-17T19:23:58.425Z
+codeVerifiedHash: de2fb63aac3d98eb
+codeVerifiedClaims: 640
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -364,8 +364,19 @@ Mỗi thay đổi được áp dụng đều ghi một audit event (`email_ident
   đăng ký chưa xác minh) trả `409 INVITEE_EMAIL_UNVERIFIED` và không được gắn.
   Quy tắc này cũng áp dụng cho `POST /api/v1/orgs/:orgId/members` khi mời bằng
   `email`.
-- SCIM (`/scim/v2/Users`) trả `409` với `scimType: "uniqueness"` khi địa chỉ
-  resolve về một tài khoản đã có hoặc xung đột trên site strict.
+- SCIM `POST /scim/v2/Users` liên kết một tài khoản chỉ thuộc các site khác
+  vào site của token và trả như một lần tạo mới (`201`) chỉ khi hộp thư của
+  tài khoản đã được chứng minh, theo cùng quy tắc với lời mời (#856, #912). Mọi
+  kết quả khớp khác trả một `409` chung với `scimType: "uniqueness"` và không
+  gắn gì: tài khoản đã ở site này, xung đột trên site strict, hoặc tài khoản
+  có hộp thư chưa được chứng minh (tài khoản SSO JIT hoặc SCIM từ IdP khác,
+  hoặc tài khoản tự đăng ký chưa xác minh). Body giống nhau trong mọi trường
+  hợp này, nên không cho biết tài khoản tồn tại trên site khác.
+  `userName` được trim; giá trị không phải một token `local@domain` duy nhất
+  trả `400` với `scimType: "invalidValue"`.
+- `POST /api/v1/admin/security/unlock-user`, `/admin/security/recover` và
+  `/admin/security/forgot-path` resolve tài khoản theo mode của instance giống
+  như login.
 
 ### Xác thực External JWT
 

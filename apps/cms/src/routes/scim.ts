@@ -26,6 +26,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type { AppEnv } from "../env";
 import { emailLookup, isEmailIdentityConflict } from "../modules/email-identity/service";
+import { provisionScimUser } from "../modules/email-identity/scim-provision";
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { containsPattern } from "../services/like-pattern";
 
@@ -41,6 +42,28 @@ function scimUniqueness(c: Context<AppEnv>) {
   return c.json(
     { schemas: [SCIM_ERROR], status: "409", scimType: "uniqueness", detail: "userName is already in use" },
     409,
+  );
+}
+
+/**
+ * userName is the account email (#862). Trimmed here — the same `trim()` the
+ * lookups apply — so a padded value is never stored and then missed by every
+ * lookup; anything that is not a single `local@domain` token is rejected.
+ */
+function parseUserName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > 320 || /\s/.test(trimmed)) return null;
+  const at = trimmed.lastIndexOf("@");
+  if (at <= 0 || at === trimmed.length - 1) return null;
+  return trimmed;
+}
+
+/** RFC 7644 §3.12: `invalidValue` for a userName that is not an address. */
+function scimInvalidUserName(c: Context<AppEnv>) {
+  return c.json(
+    { schemas: [SCIM_ERROR], status: "400", scimType: "invalidValue", detail: "userName must be an email address" },
+    400,
   );
 }
 
@@ -363,46 +386,32 @@ scimRouter.post("/Users", async (c) => {
     password?: string;
   };
 
-  if (!body.userName) {
+  if (body.userName === undefined || body.userName === null || body.userName === "") {
     return c.json(
       { schemas: [SCIM_ERROR], status: "400", detail: "userName required" },
       400,
     );
   }
+  const userName = parseUserName(body.userName);
+  if (userName === null) return scimInvalidUserName(c);
 
   const siteId = c.get("siteId");
-  const userName = body.userName;
-  // Account + membership commit together (#794): an address that is taken —
-  // exactly, as an alias under `root` mode, or as an alias of an existing
-  // member of a `strict` site — answers RFC 7644 §3.3 409 `uniqueness`
-  // instead of a 500 or an orphan account.
-  let created: (typeof users.$inferSelect) | undefined;
-  try {
-    created = await db.transaction(async (tx) => {
-      const [row] = await tx
-        .insert(users)
-        .values({
-          externalId: body.externalId ?? userName,
-          email: userName,
-          firstName: body.name?.givenName ?? null,
-          lastName: body.name?.familyName ?? null,
-          status: body.active === false ? "suspended" : "active",
-        })
-        .returning();
-      if (row) {
-        await tx
-          .insert(userSites)
-          .values({ userId: row.id, siteId })
-          .onConflictDoNothing({ target: [userSites.userId, userSites.siteId] });
-      }
-      return row;
-    });
-  } catch (err) {
-    if (isEmailIdentityConflict(err)) return scimUniqueness(c);
-    throw err;
-  }
+  // #862: an address whose account belongs only to another site is linked
+  // here instead of answering 409, so the response never reveals accounts
+  // outside this site. 409 `uniqueness` (RFC 7644 §3.3) is kept for an
+  // account that is already a member of this site, or an alias of a member
+  // of a `strict` site. Account + membership commit together (#794).
+  const result = await provisionScimUser(db, {
+    siteId,
+    userName,
+    externalId: body.externalId ?? null,
+    givenName: body.name?.givenName ?? null,
+    familyName: body.name?.familyName ?? null,
+    active: body.active,
+  });
+  if (!result.ok) return scimUniqueness(c);
 
-  return c.json(toScimUser(created), 201);
+  return c.json(toScimUser(result.user), 201);
 });
 
 scimRouter.put("/Users/:id", async (c) => {
@@ -411,12 +420,19 @@ scimRouter.put("/Users/:id", async (c) => {
   const id = c.req.param("id");
   const body = (await c.req.json()) as Partial<ScimUser>;
 
+  let email: string | undefined;
+  if (body.userName !== undefined && body.userName !== null) {
+    const parsed = parseUserName(body.userName);
+    if (parsed === null) return scimInvalidUserName(c);
+    email = parsed;
+  }
+
   let updated: Array<typeof users.$inferSelect>;
   try {
     updated = await db
       .update(users)
       .set({
-        email: body.userName ?? undefined,
+        email,
         firstName: body.name?.givenName ?? null,
         lastName: body.name?.familyName ?? null,
         status: body.active === false ? "suspended" : "active",
@@ -454,7 +470,11 @@ scimRouter.patch("/Users/:id", async (c) => {
         set["status"] = op.value ? "active" : "suspended";
       else if (op.path === "name.givenName") set["firstName"] = op.value;
       else if (op.path === "name.familyName") set["lastName"] = op.value;
-      else if (op.path === "userName") set["email"] = op.value;
+      else if (op.path === "userName") {
+        const parsed = parseUserName(op.value);
+        if (parsed === null) return scimInvalidUserName(c);
+        set["email"] = parsed;
+      }
     }
   }
 
