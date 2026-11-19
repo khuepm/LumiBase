@@ -197,13 +197,9 @@ describe.skipIf(!hasDbIntegrationUrl)('lumibase migrate contentful — end to en
     expect(stateA.target.siteId).toBe(SITE);
     cdnHits.length = 0;
 
-    // Same space id and same asset ids: exactly what used to reuse A's keys.
-    // Entry ids get a suffix only because `lumibase_items.id` is unique across
-    // the whole instance (a string id taken in site A cannot be created in site
-    // B), which is a separate ItemService/schema issue, not the state file's.
-    const fixtureB = join(cwd, 'space-b.json');
-    writeFileSync(fixtureB, readFileSync(FIXTURE, 'utf8').replace(/"(author-lan|cat-guides|cat-news|post-brew|post-old|product-beans|page-home)"/g, '"$1-b"'));
-    const runB = await migrateCommand(parseArgs(['migrate', 'contentful', '--file', fixtureB, '--locale-map', 'en-US=en', '--apply']), {
+    // Same space, same entry ids, same asset ids: exactly what used to reuse A's
+    // keys. Item ids are scoped per site (#811), so B creates the very same ids.
+    const runB = await migrateCommand(parseArgs(['migrate', 'contentful', '--file', FIXTURE, '--locale-map', 'en-US=en', '--apply']), {
       cwd,
       env: { ...env, LUMIBASE_SITE_ID: SITE_B },
       fetcher,
@@ -211,6 +207,9 @@ describe.skipIf(!hasDbIntegrationUrl)('lumibase migrate contentful — end to en
       confirm: async () => true,
     });
     expect(runB).toBe(0);
+    const idsOf = async (siteId: string) =>
+      (await db.select({ id: items.id }).from(items).where(eq(items.siteId, siteId))).map((r) => r.id).sort();
+    expect(await idsOf(SITE_B)).toEqual(await idsOf(SITE));
 
     // Site B downloaded and registered both assets itself, under new keys.
     expect(cdnHits).toHaveLength(2);
@@ -223,7 +222,7 @@ describe.skipIf(!hasDbIntegrationUrl)('lumibase migrate contentful — end to en
 
     // B's file fields point at B's own files, never at A's keys.
     const coll = (await db.select().from(collections).where(and(eq(collections.siteId, SITE_B), eq(collections.name, 'blog_post'))))[0]!;
-    const brew = (await db.select().from(items).where(and(eq(items.collectionId, coll.id), eq(items.id, 'post-brew-b'))))[0]!;
+    const brew = (await db.select().from(items).where(and(eq(items.collectionId, coll.id), eq(items.siteId, SITE_B), eq(items.id, 'post-brew'))))[0]!;
     expect((brew.data as Record<string, unknown>).hero_image).toBe(stateB.assets['asset-hero']);
 
     // Pointing site B at site A's state file explicitly is refused before any write.

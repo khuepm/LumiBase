@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 2
-lastUpdated: 2026-11-13T06:07:20.634Z
+version: 3
+lastUpdated: 2026-11-16T02:07:14.841Z
 translatedFrom: en
-sourceHash: aba9a12e52557a17
+sourceHash: 984176c07a81ebac
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T06:07:20.634Z
-codeVerifiedHash: aba9a12e52557a17
+codeVerified: 2026-11-17T19:26:08.495Z
+codeVerifiedHash: 984176c07a81ebac
 codeVerifiedClaims: 2
 ---
 
@@ -183,9 +183,6 @@ thấy schema đã sẵn sàng.
   item nhận id mới và link tới chúng không resolve được.
 - Collection có editorial workflow từ chối `published` khi tạo; hãy migrate vào
   collection không có workflow, hoặc xuất bản qua workflow sau đó.
-- Id của item là duy nhất trên mỗi instance LumiBase, không phải mỗi site:
-  migrate cùng một space vào hai site của một instance sẽ lỗi ở các entry của
-  site thứ hai. Asset và schema không bị ảnh hưởng.
 - Entry được ghi từng request một. Với space rất lớn, rate limit của API
   (`LUMIBASE_API_RATE_LIMIT`, mặc định 600 request/phút) quyết định tốc độ.
 

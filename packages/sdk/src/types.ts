@@ -554,6 +554,25 @@ export interface ExportItemsParams {
   status?: string;
 }
 
+/** Cast a JSON path filter compares under (`data.price::numeric`, #729). */
+export type JsonPathCast = 'numeric' | 'boolean' | 'timestamp' | 'text';
+
+/**
+ * Expression index advice for a JSON path filter
+ * (`GET /api/v1/collections/:name/index-advice`, #729). Advice only — the
+ * server never runs the DDL; an operator reviews and applies it.
+ */
+export interface JsonPathIndexAdvice {
+  path: string;
+  cast: JsonPathCast;
+  indexName: string;
+  /** The SQL expression the filter builder emits for this path + cast. */
+  expression: string;
+  /** `CREATE INDEX CONCURRENTLY …`, or `null` when the cast cannot be indexed (timestamp). */
+  ddl: string | null;
+  notes: string[];
+}
+
 export type ImportJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
 
 /** A background import job (`/api/v1/imports`, #726). The uploaded file is never returned. */
