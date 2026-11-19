@@ -22,6 +22,7 @@ import {
   NEGATIVE_KEY_MAXLEN,
 } from '../services/negative-cache';
 import { createNegativeCache } from '@lumibase/runtime';
+import { audiences } from '@lumibase/database';
 
 type Row = Record<string, unknown>;
 
@@ -29,10 +30,20 @@ function fakeDb(queue: Row[][]) {
   let selects = 0;
   const db = {
     select: () => {
-      const result = Promise.resolve(queue[selects] ?? []);
-      selects += 1;
+      let result: Promise<Row[]> | null = null;
       const builder = {
-        from: () => builder,
+        // Personalisation (#762): the audience list is its own (app-cached)
+        // lookup, answered outside the queue: these counts are about page
+        // lookups and tombstones.
+        from: (table: unknown) => {
+          if (table === audiences) {
+            result = Promise.resolve([]);
+          } else {
+            result = Promise.resolve(queue[selects] ?? []);
+            selects += 1;
+          }
+          return builder;
+        },
         where: () => builder,
         limit: () => builder,
         orderBy: () => builder,
@@ -40,7 +51,7 @@ function fakeDb(queue: Row[][]) {
         then: (
           onFulfilled?: (value: Row[]) => unknown,
           onRejected?: (reason: unknown) => unknown,
-        ) => result.then(onFulfilled, onRejected),
+        ) => result!.then(onFulfilled, onRejected),
       };
       return builder;
     },

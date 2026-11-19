@@ -30,6 +30,52 @@ components:
       schema: { type: string }
       description: Active tenant id. Required for every authenticated endpoint.
   schemas:
+    AudienceRules:
+      type: object
+      required: [conditions]
+      properties:
+        match: { type: string, enum: [all, any], default: all }
+        conditions:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: object
+            required: [attribute, op]
+            properties:
+              attribute: { type: string, description: 'country | locale | utm.<source|medium|campaign|term|content> | attr.<name>' }
+              op: { type: string, enum: [eq, neq, in, nin, prefix, exists] }
+              value: { description: 'string, or string[] for in/nin; omitted for exists' }
+    AudienceInput:
+      type: object
+      properties:
+        key: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,39}$' }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        rules: { $ref: '#/components/schemas/AudienceRules' }
+        priority: { type: integer, minimum: 0, maximum: 10000, default: 100 }
+        enabled: { type: boolean, default: true }
+    Audience:
+      allOf:
+        - $ref: '#/components/schemas/AudienceInput'
+        - type: object
+          properties:
+            id: { type: string }
+            needsConsent: { type: boolean }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+    ContentVariant:
+      type: object
+      properties:
+        id: { type: string }
+        subjectType: { type: string, enum: [page, item] }
+        subjectId: { type: string }
+        audienceId: { type: string }
+        overrides: { type: object }
+        status: { type: string, enum: [draft, published] }
+        createdBy: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     OpenApiConfig:
       type: object
       additionalProperties: false
@@ -2749,6 +2795,141 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /personalisation/audiences:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    get:
+      summary: List audiences (site admin, #762)
+      responses:
+        '200':
+          description: Audiences by priority, with `needsConsent` when a rule uses UTM or custom attributes
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/Audience' } } } }
+    post:
+      summary: Create an audience
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AudienceInput' }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/Audience' } } } } } }
+        '400': { description: VALIDATION (key format, rule attributes/operators) }
+        '409': { description: AUDIENCE_EXISTS }
+  /personalisation/audiences/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    patch:
+      summary: Update an audience (partial)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AudienceInput' }
+      responses:
+        '200': { description: Updated }
+        '404': { description: NOT_FOUND }
+        '409': { description: AUDIENCE_EXISTS }
+    delete:
+      summary: Delete an audience and its variants
+      responses:
+        '200': { description: '`{ data: null }`' }
+        '404': { description: NOT_FOUND }
+  /personalisation/variants:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    get:
+      summary: List content variants
+      parameters:
+        - { name: subjectType, in: query, schema: { type: string, enum: [page, item] } }
+        - { name: subjectId, in: query, schema: { type: string } }
+        - { name: audienceId, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Variants, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/ContentVariant' } } } } } } }
+    post:
+      summary: Create a variant of a page or item for one audience
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectType, subjectId, audienceId, overrides]
+              additionalProperties: false
+              properties:
+                subjectType: { type: string, enum: [page, item] }
+                subjectId: { type: string, description: Page id or item id }
+                audienceId: { type: string }
+                overrides: { type: object, description: 'Page: `{ title?, layoutConfig? }`. Item: data fields (not id/status/sort/createdAt/updatedAt).' }
+                status: { type: string, enum: [draft, published], default: draft }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/ContentVariant' } } } } } }
+        '400': { description: VALIDATION }
+        '404': { description: SUBJECT_NOT_FOUND or AUDIENCE_NOT_FOUND }
+        '409': { description: VARIANT_EXISTS }
+        '413': { description: OVERRIDES_TOO_LARGE (64 KiB) }
+  /personalisation/variants/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    patch:
+      summary: Update a variant's overrides or status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                overrides: { type: object }
+                status: { type: string, enum: [draft, published] }
+      responses:
+        '200': { description: Updated }
+        '404': { description: NOT_FOUND }
+    delete:
+      summary: Delete a variant
+      responses:
+        '200': { description: '`{ data: null }`' }
+        '404': { description: NOT_FOUND }
+  /personalisation/exposures:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    get:
+      summary: Daily exposure counts per page and audience
+      description: Counted on delivery only with analytics consent (`X-Lumi-Consent analytics`, no DNT / Sec-GPC). `audienceKey` `_` is the default content.
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date }, description: Defaults to 29 days before `to` }
+        - { name: to, in: query, schema: { type: string, format: date }, description: Defaults to today (UTC) }
+        - { name: subjectType, in: query, schema: { type: string, enum: [page, item] } }
+        - { name: subjectId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Rows plus `meta.totals` per audience key
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        day: { type: string, format: date }
+                        subjectType: { type: string }
+                        subjectId: { type: string }
+                        audienceKey: { type: string }
+                        count: { type: integer }
+                  meta:
+                    type: object
+                    properties:
+                      from: { type: string }
+                      to: { type: string }
+                      totals: { type: object, additionalProperties: { type: integer } }
+        '400': { description: VALIDATION (dates, range over 366 days) }
   /imports:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'

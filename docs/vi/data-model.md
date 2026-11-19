@@ -1,13 +1,13 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 27
+lastUpdated: 2026-11-19T06:12:12.023Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 52465604769f9c24
+sourceHash: c5183f80d77f87d0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+codeVerified: 2026-11-19T06:12:12.023Z
+codeVerifiedHash: c5183f80d77f87d0
 codeVerifiedClaims: 22
 ---
 
@@ -42,6 +42,7 @@ Các file schema được chia theo domain:
 | `imports.ts` | `lumibase_import_jobs` |
 | `locale-generation.ts` | `lumibase_locale_generation_jobs`, `lumibase_translation_suggestions` |
 | `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
+| `personalisation.ts` | `lumibase_audiences`, `lumibase_content_variants`, `lumibase_variant_exposures` |
 
 Migration nằm ở `packages/database/migrations/` và `packages/database/drizzle/`.
 
@@ -300,6 +301,17 @@ Khi seed local/staging/prod, phải seed permission cho system collection một 
 
 ### `folders`
 - `id`, `siteId`, `name`, `parent`. Path, cây con và kiểm tra vòng lặp được suy ra trong `apps/cms/src/services/files/folder-tree.ts`.
+
+## Cá nhân hoá (`personalisation.ts`, #762)
+
+### `audiences`
+- `id`, `siteId`, `key` (duy nhất theo site), `name`, `description`, `rules jsonb` (`{ match, conditions[] }`), `priority`, `enabled`, `createdAt`, `updatedAt`.
+
+### `content_variants`
+- `id`, `siteId`, `subjectType` (`page`/`item`), `subjectId` (id của page hoặc item), `audienceId` (FK cascade), `overrides jsonb`, `status` (`draft`/`published`), `createdBy`, `createdAt`, `updatedAt`. Duy nhất theo `(siteId, subjectType, subjectId, audienceId)`.
+
+### `variant_exposures`
+- `id`, `siteId`, `day`, `subjectType`, `subjectId`, `audienceKey` (`_` = nội dung mặc định), `count`, `updatedAt`. Duy nhất theo `(siteId, day, subjectType, subjectId, audienceKey)`; chỉ tăng khi có consent phân tích, không lưu dữ liệu khách. Migration `0044_personalisation`. Xem [Cá nhân hoá](./features/personalisation.md).
 
 ## 5. UX state (`platform.ts`)
 

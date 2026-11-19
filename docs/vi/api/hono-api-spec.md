@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 60
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 61
+lastUpdated: 2026-11-19T06:12:10.009Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1d86bff615c2ba39
+sourceHash: 3158d8912c4d6a37
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
-codeVerifiedClaims: 652
+codeVerified: 2026-11-19T06:12:10.009Z
+codeVerifiedHash: 3158d8912c4d6a37
+codeVerifiedClaims: 654
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -1612,6 +1612,24 @@ Không cần header `Authorization`. Quyền được áp dụng qua role `publi
 Conditional requests: gửi `If-None-Match` kèm theo `ETag` mới nhất; nếu khớp sẽ trả về `304 Not Modified` với body rỗng và bỏ qua hoàn toàn việc lấy dữ liệu các section. ETag là dấu vân tay nội dung cấp site — bất kỳ thao tác ghi item nào (hoặc việc xuất bản/hủy xuất bản theo lịch có hiệu lực) đều làm xoay vòng nó, vì vậy 304 cũ không bao giờ được phục vụ đổi lại tỷ lệ revalidation thấp hơn.
 
 Các biến có thể điều chỉnh (env): `LUMIBASE_DELIVER_SMAXAGE` (giây, mặc định `60`, `0` tắt shared cache), `LUMIBASE_DELIVER_SWR` (giây, mặc định `300`), `LUMIBASE_NEGATIVE_CACHE_TTL` (giây, mặc định `30`, `0` tắt tombstone), `LUMIBASE_DELIVER_RATE_LIMIT` (request/phút/IP, mặc định `1200`, `0` tắt). Xem [Caching — penetration](../features/caching.md).
+
+**Cá nhân hoá** (#762): khi site có audience, route page xác định một audience
+từ `CF-IPCountry` / `X-Vercel-IP-Country` / `CloudFront-Viewer-Country`,
+`?locale=`, `utm_*` và `X-Lumi-Attrs` (hai cái cuối chỉ khi có
+`X-Lumi-Consent: personalization`; `DNT` / `Sec-GPC` rút lại consent), áp dụng
+các biến thể page và item đã xuất bản của audience đó, và trả về
+`personalisation: { audience, variants }` cùng `X-Lumi-Variant: <key|_>`. Khi
+đó `Vary` liệt kê các header này, và edge key, app-cache key cùng `ETag` đều
+chứa audience. Với `X-Lumi-Consent: analytics`, mỗi ngày, slug và audience
+được tính một exposure. Xem [Personalisation](../features/personalisation.md).
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `GET/POST` | `/api/v1/personalisation/audiences` | Liệt kê / tạo audience (site admin); `409 AUDIENCE_EXISTS` |
+| `PATCH/DELETE` | `/api/v1/personalisation/audiences/:id` | Cập nhật / xoá (các biến thể của nó cũng bị xoá) |
+| `GET/POST` | `/api/v1/personalisation/variants` | Liệt kê (`?subjectType=&subjectId=&audienceId=`) / tạo `{ subjectType, subjectId, audienceId, overrides, status? }`; `404 SUBJECT_NOT_FOUND` / `AUDIENCE_NOT_FOUND`, `409 VARIANT_EXISTS`, `413 OVERRIDES_TOO_LARGE` |
+| `PATCH/DELETE` | `/api/v1/personalisation/variants/:id` | `{ overrides?, status? }` / xoá |
+| `GET` | `/api/v1/personalisation/exposures` | Số exposure theo ngày, slug và audience (`?from=&to=`, ≤ 366 ngày) kèm `meta.totals` |
 
 ---
 

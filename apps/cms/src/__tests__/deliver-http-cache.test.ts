@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { deliverRouter } from '../routes/deliver';
 import { edgeUrlIndexKey, purgeEdgeByTag, type CacheProvider, type EdgeCacheProvider } from '@lumibase/runtime';
+import { audiences } from '@lumibase/database';
 
 /**
  * Route-level tests for Delivery API HTTP caching
@@ -21,10 +22,19 @@ function fakeDb(queue: Row[][]) {
   let selects = 0;
   const db = {
     select: () => {
-      const result = Promise.resolve(queue[selects] ?? []);
-      selects += 1;
+      let result: Promise<Row[]> | null = null;
       const builder = {
-        from: () => builder,
+        // Personalisation (#762): a site with no audiences. Answered outside
+        // the queue so the counts below stay about content queries.
+        from: (table: unknown) => {
+          if (table === audiences) {
+            result = Promise.resolve([]);
+          } else {
+            result = Promise.resolve(queue[selects] ?? []);
+            selects += 1;
+          }
+          return builder;
+        },
         where: () => builder,
         limit: () => builder,
         orderBy: () => builder,
@@ -32,7 +42,7 @@ function fakeDb(queue: Row[][]) {
         then: (
           onFulfilled?: (value: Row[]) => unknown,
           onRejected?: (reason: unknown) => unknown,
-        ) => result.then(onFulfilled, onRejected),
+        ) => result!.then(onFulfilled, onRejected),
       };
       return builder;
     },

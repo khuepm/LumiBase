@@ -144,6 +144,8 @@ export async function deliveryVariantHash(
   if (params.locale) parts.push(`locale=${params.locale}`);
   if (params.lang) parts.push(`lang=${params.lang}`);
   if (params.provenance === 'true') parts.push('provenance=true');
+  // Resolved audience (#762): one cached copy per audience, never per raw attribute.
+  if (params.audience) parts.push(`audience=${params.audience}`);
   if (parts.length === 0) return '0';
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(parts.join('&')));
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
