@@ -123,7 +123,9 @@ describe('attachment notice and context budget', () => {
 
   it('counts files by estimate, not by base64 length, and never drops the current turn', () => {
     const big = 'A'.repeat(2_000_000);
-    const kept = boundLLMContext(turn([{ ...IMAGE, data: big, size: 1_500_000 }]), {});
+    // `tools: false` keeps the assertion about attachments, not about the size of the
+    // skill catalogue (which alone takes most of the default window).
+    const kept = boundLLMContext(turn([{ ...IMAGE, data: big, size: 1_500_000 }]), { tools: false });
     expect(kept.at(-1)!.attachments).toHaveLength(1);
     expect(estimateAttachmentTokens({ kind: 'image', size: 5_000_000 })).toBe(1_600);
     expect(estimateAttachmentTokens({ kind: 'pdf', size: 10 })).toBe(3_000);
