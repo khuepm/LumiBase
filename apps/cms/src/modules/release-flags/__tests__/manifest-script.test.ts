@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -64,6 +64,51 @@ describe('manifest.mjs ↔ verifyReleaseManifest', () => {
     expect(() =>
       execFileSync('node', [SCRIPT, 'sign', '--key', join(dir, 'k-test.private.pem'), '--key-id', 'k', '--flags', 'Bad=on'], {
         stdio: 'pipe',
+      }),
+    ).toThrow();
+  });
+
+  it('signs from an environment variable (no key file in CI) and verify accepts the result', () => {
+    const pem = readFileSync(join(dir, 'k-test.private.pem'), 'utf8');
+    const publicKeys = JSON.stringify({ 'k-test': readFileSync(join(dir, 'k-test.public.pem'), 'utf8') });
+    const out = join(dir, 'env-signed.json');
+    execFileSync('node', [
+      SCRIPT, 'sign', '--key-env', 'TEST_RELEASE_KEY', '--key-id', 'k-test',
+      '--flags', 'content-environments=on', '--audience', 'lumibase-staging', '--out', out,
+    ], { stdio: 'pipe', env: { ...process.env, TEST_RELEASE_KEY: pem } });
+
+    const printed = JSON.parse(
+      execFileSync('node', [SCRIPT, 'verify', '--in', out, '--public-keys', publicKeys, '--audience', 'lumibase-staging'], {
+        encoding: 'utf8',
+        stdio: 'pipe',
+      }),
+    );
+    expect(printed).toMatchObject({ keyId: 'k-test', v: 1, audience: ['lumibase-staging'], flags: { 'content-environments': true } });
+    // Never echoes the key.
+    expect(JSON.stringify(printed)).not.toContain('PRIVATE KEY');
+  });
+
+  it('verify refuses a tampered payload, an untrusted key and the wrong audience', () => {
+    const publicKeys = JSON.stringify({ 'k-test': readFileSync(join(dir, 'k-test.public.pem'), 'utf8') });
+    const signed = JSON.parse(readFileSync(join(dir, 'env-signed.json'), 'utf8')) as { payload: string };
+    const run = (file: string, extra: string[] = [], keys = publicKeys) =>
+      () => execFileSync('node', [SCRIPT, 'verify', '--in', file, '--public-keys', keys, ...extra], { stdio: 'pipe' });
+
+    const tampered = join(dir, 'tampered.json');
+    const payload = JSON.parse(Buffer.from(signed.payload, 'base64').toString('utf8'));
+    payload.flags['content-environments'] = false;
+    writeFileSync(tampered, JSON.stringify({ ...signed, payload: Buffer.from(JSON.stringify(payload)).toString('base64') }));
+    expect(run(tampered)).toThrow();
+    expect(run(join(dir, 'env-signed.json'), [], JSON.stringify({ other: 'x' }))).toThrow();
+    expect(run(join(dir, 'env-signed.json'), ['--audience', 'lumibase-production'])).toThrow();
+    expect(run(join(dir, 'env-signed.json'))).not.toThrow();
+  });
+
+  it('sign --key-env fails when the variable is missing', () => {
+    expect(() =>
+      execFileSync('node', [SCRIPT, 'sign', '--key-env', 'NOT_SET_ANYWHERE', '--key-id', 'k', '--flags', 'a=on'], {
+        stdio: 'pipe',
+        env: { PATH: process.env.PATH },
       }),
     ).toThrow();
   });

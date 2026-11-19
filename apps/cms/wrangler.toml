@@ -227,6 +227,8 @@ dead_letter_queue = "lumibase-encryption-envelope-migration-local-dlq"
 name = "lumibase-cms-staging"
 
 [env.staging.vars]
+# Release-flag audience (#897): a manifest issued for this channel names it.
+LUMIBASE_INSTANCE_ID = "lumibase-staging"
 LUMIBASE_RUNTIME = "cloudflare"
 LUMIBASE_ENV = "staging"
 LUMIBASE_VERSION = "unknown"
@@ -368,6 +370,8 @@ crons = ["0 * * * *", "*/5 * * * *"]
 name = "lumibase-cms-production"
 
 [env.production.vars]
+# Release-flag audience (#897): a manifest issued for this channel names it.
+LUMIBASE_INSTANCE_ID = "lumibase-production"
 LUMIBASE_ENV = "production"
 # Selects the Cloudflare runtime adapter (KV/R2/Hyperdrive) instead of the
 # default Docker adapter (Redis/MinIO/Postgres). Without this the Worker tries
@@ -535,6 +539,8 @@ crons = ["0 * * * *", "*/5 * * * *", "* * * * *"]
 name = "lumibase-cms-dev"
 
 [env.dev.vars]
+# Release-flag audience (#897): a manifest issued for this channel names it.
+LUMIBASE_INSTANCE_ID = "lumibase-dev"
 LUMIBASE_RUNTIME = "cloudflare"
 LUMIBASE_ENV = "staging"
 LUMIBASE_VERSION = "unknown"
@@ -658,6 +664,8 @@ crons = []
 name = "lumibase-cms-demo"
 
 [env.demo.vars]
+# Release-flag audience (#897): a manifest issued for this channel names it.
+LUMIBASE_INSTANCE_ID = "lumibase-demo"
 LUMIBASE_RUNTIME = "cloudflare"
 LUMIBASE_ENV = "staging"
 LUMIBASE_VERSION = "unknown"

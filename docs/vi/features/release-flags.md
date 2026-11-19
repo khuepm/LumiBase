@@ -1,14 +1,14 @@
 ---
-version: 5
-lastUpdated: 2026-11-19T08:06:26.707Z
+version: 6
+lastUpdated: 2026-11-19T08:17:22.428Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 05e957924d0875b4
+sourceHash: f879fd38950937f2
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T08:06:26.707Z
-codeVerifiedHash: 05e957924d0875b4
-codeVerifiedClaims: 30
+codeVerified: 2026-11-19T08:17:22.428Z
+codeVerifiedHash: f879fd38950937f2
+codeVerifiedClaims: 46
 ---
 
 # Release Flags
@@ -86,6 +86,12 @@ Có hai kênh. Cả hai đi qua cùng một bước xác minh.
   60). Bootstrap admin có thể yêu cầu tải ngay bằng
   `POST /api/v1/release-flags/manifest/pull`.
 
+  Kênh pull không chờ có traffic: instance còn tải một lần khi khởi động và
+  theo lịch mỗi phút (`node-cron` trong process worker của Docker, handler
+  Cron Trigger `scheduled` trên Workers). Lần tải theo lịch chỉ chạy khi đã qua
+  `LUMIBASE_RELEASE_MANIFEST_REFRESH_S` kể từ lần thử gần nhất của bất kỳ
+  replica nào, nên nhiều replica vẫn chỉ tải khoảng một lần mỗi chu kỳ.
+
 Nếu tải lỗi hoặc manifest bị từ chối, instance giữ manifest đã chấp nhận trước
 đó. Mất kết nối tới LumiBase không bao giờ làm tắt một tính năng đã phát hành.
 Kênh pull không đi theo redirect.
@@ -98,6 +104,69 @@ vào audit log ở cấp instance (không gắn site), với sự kiện
 trong `LUMIBASE_RELEASE_PUBLIC_KEYS` với cùng PEM. Gỡ một khoá, ví dụ sau khi
 khoá bị lộ, sẽ rút lại mọi manifest khoá đó đã ký: các flag quay về mặc định
 theo stage cho tới khi có manifest ký bằng khoá còn được tin cậy.
+
+## Vận hành kênh phát hành (phía LumiBase)
+
+Đây là cách LumiBase vận hành phía phát hành. Operator tự host chỉ cần khoá
+công khai và, nếu đã bật, URL pull.
+
+**Giữ khoá.** Khoá riêng để phát hành chỉ tồn tại ở hai nơi: secret
+`LUMIBASE_RELEASE_SIGNING_KEY` của GitHub environment `release-manifest`, và một
+bản sao lưu offline do maintainer giữ. Khoá không bao giờ được commit, không
+bao giờ được ghi vào log CI hay ra đĩa, và không bao giờ nằm trên instance —
+instance chỉ giữ khoá công khai. Environment này đòi reviewer phê duyệt và chỉ
+cho phép nhánh `main`, nên một manifest do một người phát hành và một người
+khác duyệt.
+
+**Phát hành.** Chạy workflow **Release manifest**
+(`.github/workflows/release-manifest.yml`, chạy tay) với một kênh và danh sách
+đầy đủ các flag được phát hành. Workflow hiển thị manifest đang được công bố
+trên kênh đó, ký manifest mới bằng `manifest.mjs sign --key-env` (khoá đọc từ
+biến môi trường, không phải file), xác minh bằng `manifest.mjs verify` với các
+khoá công khai đang công bố và audience của kênh, tải lên
+`<bucket>/flags/<channel>.json`, và giữ envelope làm artifact của lần chạy. Nó
+cần các thiết lập sau trên environment `release-manifest`:
+
+| Tên | Loại | Giá trị |
+|---|---|---|
+| `LUMIBASE_RELEASE_SIGNING_KEY` | secret | Khoá riêng Ed25519 (PEM) |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | secret | Quyền ghi R2 vào bucket chứa manifest |
+| `LUMIBASE_RELEASE_KEY_ID` | variable | Key id của khoá ký, ví dụ `lumibase-release-v1` |
+| `LUMIBASE_RELEASE_PUBLIC_KEYS` | variable | Đúng JSON mà các instance dùng |
+| `LUMIBASE_RELEASE_MANIFEST_BUCKET` | variable | Bucket R2 phục vụ các manifest |
+| `LUMIBASE_RELEASE_MANIFEST_BASE_URL` | variable | URL công khai `https://` của bucket đó |
+
+**Audience.** Mỗi môi trường do LumiBase vận hành có kênh và instance id riêng,
+đặt trong `apps/cms/wrangler.toml`: `lumibase-staging`, `lumibase-production`,
+`lumibase-demo`, `lumibase-dev`. Manifest phát hành cho một môi trường mang id
+đó làm `audience`, nên không thể phát lại sang môi trường khác. Trỏ
+`LUMIBASE_RELEASE_MANIFEST_URL` của mỗi môi trường tới
+`<base>/flags/<instance id>.json`. Kênh `public` được ký với audience `"*"` cho
+các instance tự host đã bật pull.
+
+**Xoay khoá.**
+
+1. Chạy `manifest.mjs keygen --key-id lumibase-release-v2` trên một máy offline.
+2. Thêm khoá công khai mới bên cạnh khoá cũ trong `LUMIBASE_RELEASE_PUBLIC_KEYS`
+   ở mọi nơi (các instance và variable của workflow) rồi deploy. Lúc này cả hai
+   khoá đều được tin cậy.
+3. Thay `LUMIBASE_RELEASE_SIGNING_KEY` và `LUMIBASE_RELEASE_KEY_ID` bằng khoá mới
+   và phát hành manifest mới trên mọi kênh.
+4. Khi mọi instance đã báo manifest mới (`acceptedIssuedAt` trong `/health`), gỡ
+   khoá công khai cũ ở mọi nơi. Từ đó các manifest do khoá cũ ký không còn hiệu
+   lực.
+5. Nếu khoá bị lộ, bỏ qua giai đoạn song song: gỡ khoá cũ trước (các flag quay
+   về mặc định theo stage) rồi phát hành bằng khoá mới.
+
+**Giám sát.** Với quyền xem observability (thông tin đăng nhập `/metrics`),
+`GET /health` thêm `releaseManifest`: `pull` (`not-configured`, `pending`, `ok`
+hoặc `failing`), `lastAttemptAt`, `lastSuccessAt`, `acceptedIssuedAt`,
+`consecutiveFailures` và `lastError`. Lịch sử này dùng chung cho mọi replica qua
+cache của runtime. Pull lỗi không bao giờ làm giảm trạng thái health, vì
+manifest đã chấp nhận vẫn có hiệu lực. `/metrics` có
+`lumibase_release_manifest_pulls_total{outcome}`,
+`lumibase_release_manifest_consecutive_failures` và
+`lumibase_release_manifest_last_success_timestamp_seconds`.
 
 ## Cấu hình
 

@@ -7,6 +7,8 @@ import {
   markCacheConnectivityProbeFailed,
   markCacheConnectivityProbeSucceeded,
 } from '../services/cache-observability';
+import { readPullHealth, type ReleasePullHealth } from '../modules/release-flags/pull-status';
+import { manifestUrlAllowed, releaseEnvFromRecord } from '../modules/release-flags/service';
 
 type ServiceStatus = 'healthy' | 'unhealthy';
 type CacheServiceStatus = 'healthy' | 'degraded' | 'unhealthy';
@@ -22,6 +24,34 @@ export interface HealthResponse {
     storage: ServiceStatus;
     queue: ServiceStatus;
   };
+  /**
+   * Release-manifest pull channel (#897). Informational: a failing pull keeps
+   * the accepted manifest in force, so it never degrades `status`.
+   */
+  releaseManifest: ReleaseManifestHealth;
+}
+
+export interface ReleaseManifestHealth extends ReleasePullHealth {
+  /**
+   * `not-configured` (no LUMIBASE_RELEASE_MANIFEST_URL), `pending` (no attempt
+   * recorded yet), `ok` (last attempt succeeded), `failing` (one or more
+   * consecutive failures).
+   */
+  pull: 'not-configured' | 'pending' | 'ok' | 'failing';
+}
+
+async function releaseManifestHealth(c: Context<AppEnv>, runtime: RuntimeContext): Promise<ReleaseManifestHealth> {
+  const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+  const env = releaseEnvFromRecord({ ...proc, ...((c.env ?? {}) as unknown as Record<string, unknown>) });
+  const history = await readPullHealth(runtime.cache);
+  const pull = !manifestUrlAllowed(env.LUMIBASE_RELEASE_MANIFEST_URL)
+    ? 'not-configured'
+    : !history.lastAttemptAt
+      ? 'pending'
+      : history.consecutiveFailures > 0
+        ? 'failing'
+        : 'ok';
+  return { pull, ...history };
 }
 
 /**
@@ -143,6 +173,7 @@ export async function collectHealth(c: Context<AppEnv>): Promise<HealthResponse>
   const response: HealthResponse = {
     status: cacheBlocksReady || otherUnhealthy ? 'degraded' : 'healthy',
     services: results,
+    releaseManifest: await releaseManifestHealth(c, runtime),
   };
 
   return response;

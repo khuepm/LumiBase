@@ -25,6 +25,7 @@ import { systemDbFor } from '../../middleware/db';
 import { isSiteAdmin, requireSiteAdmin } from '../../middleware/site-admin';
 import { AuditLogger } from '../audit/logger';
 import { parseReleasePublicKeys } from './manifest';
+import { readPullHealth, recordAcceptedManifest } from './pull-status';
 import { releaseEnvFrom, releaseFlagStates } from './middleware';
 import { RELEASE_FLAGS } from './registry';
 import {
@@ -173,6 +174,8 @@ releaseFlagsRouter.get('/manifest', async (c) => {
           }
         : null,
       lastPull: lastReleasePullStatus(),
+      // Deployment-wide pull history, shared by every replica (#897).
+      pullHistory: await readPullHealth(c.get('runtime')?.cache),
     },
   });
 });
@@ -200,6 +203,9 @@ releaseFlagsRouter.put('/manifest', async (c) => {
     actorUserId: c.get('auth')?.userId ?? null,
     audit: auditContext(c),
   });
+  if (outcome.ok && !outcome.unchanged) {
+    await recordAcceptedManifest(c.get('runtime')?.cache, outcome.manifest.issuedAt);
+  }
   if (!outcome.ok) {
     await writeReleaseAudit(systemDbFor(c), 'release_flags.manifest_rejected', { reason: outcome.reason }, auditContext(c));
     return c.json(
@@ -232,7 +238,12 @@ releaseFlagsRouter.post('/manifest/pull', async (c) => {
       409,
     );
   }
-  const outcome = await pullReleaseManifest({ systemDb: systemDbFor(c), env, audit: auditContext(c) });
+  const outcome = await pullReleaseManifest({
+    systemDb: systemDbFor(c),
+    env,
+    audit: auditContext(c),
+    cache: c.get('runtime')?.cache,
+  });
   if (!outcome.ok) {
     return c.json({ errors: [{ code: 'PULL_FAILED', reason: outcome.reason, message: `Pull failed: ${outcome.reason}.` }] }, 502);
   }
