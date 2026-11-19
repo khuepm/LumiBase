@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-11-15T19:48:28.979Z
+version: 2
+lastUpdated: 2026-11-18T06:07:15.330Z
 sourceLang: en
-contentHash: 65a41201b56dc214
-codeVerified: 2026-11-15T19:48:28.979Z
-codeVerifiedHash: 65a41201b56dc214
+contentHash: a0532da35ea57607
+codeVerified: 2026-11-18T06:07:15.330Z
+codeVerifiedHash: a0532da35ea57607
 codeVerifiedClaims: 14
 ---
 
@@ -16,10 +16,9 @@ codeVerifiedClaims: 14
 > [ADR-014](../architecture/decisions/adr-014-preview-bridge-threat-model.md).
 
 **Status:** shipped — preview tokens (V01), Studio preview pane (V02),
-`@lumibase/visual-editing` overlay (V03), version/release/locale preview (V04
-API), CSP and threat model (V05). Not yet: a "Preview release" button in the
-Studio (there is no release view yet — use the API), and the visual page
-composer (V06, post-v1).
+`@lumibase/visual-editing` overlay (V03), version/release/locale preview (V04,
+including **Preview release** in the Studio), CSP and threat model (V05). Not
+yet: the visual page composer (V06, post-v1).
 
 ## 1. How it fits together
 
@@ -55,7 +54,17 @@ Page rendered from the preview token  ◀──postMessage──▶  Studio (pat
 2. Open an item and click **Preview**. The pane opens beside the form:
    - drag the divider or focus it and use ←/→, Home/End, Enter (reset);
    - pick Desktop / Tablet (768 px) / Mobile (390 px);
-   - edits stream to the page (150 ms debounce); saving reloads it.
+   - edits stream to the page (150 ms debounce); saving reloads it;
+   - if the item has content versions, pick one under **Version**: the frame
+     shows that version (related items that have a version with the same key
+     read from it too). While a version is selected, unsaved form edits are not
+     streamed, because the form edits the item itself, not the version.
+3. **Preview a release:** Releases (`/releases`, linked from Content) → (release) → **Preview
+   release**. Optionally pick a locale, then **Create preview link**. One
+   release-scoped token is minted, and each member whose collection has a
+   Preview URL gets an **Open preview** link (`{release}` is filled in). Every
+   page you open through it shows the release's items as they will publish
+   and everything else as live.
 
 ## 3. Settings → Preview
 
