@@ -32,6 +32,20 @@ import { filesContext, resolveFilesAccess, type FilesContext } from '../services
 import { buildFolderTree, checkFolderMove, descendantIds, type FolderRow } from '../services/files/folder-tree';
 import { stripGpsMetadata } from '../services/files/media-metadata';
 import { isServable, runFileScan } from '../modules/malware-scan';
+import { isFileContentCompatibleWithBytes } from '../middleware/file-upload-policy';
+import { detectPolyglot } from '../services/upload-security/content-sniff';
+import { INGEST_READ_LIMIT } from '../services/files/file-asset-service';
+import {
+  MAX_PATCH_BYTES,
+  TUS_EXTENSIONS,
+  TUS_VERSION,
+  declarationFrom,
+  parseNonNegativeInt,
+  parseUploadMetadata,
+} from '../services/files/tus/protocol';
+import { TusService } from '../services/files/tus/tus-service';
+import type { UploadSession } from '../services/files/tus/session-repo';
+import { resolveUploadPolicy } from '../services/upload-policy-service';
 import {
   isVideoEligible,
   presentVideoAsset,
@@ -87,7 +101,7 @@ async function verifyUploadToken(token: string, secret: string): Promise<UploadT
 
 // --- helpers ---------------------------------------------------------------
 
-type ErrorStatus = 400 | 403 | 404 | 409 | 413 | 415 | 422 | 423 | 503;
+type ErrorStatus = 400 | 403 | 404 | 409 | 410 | 412 | 413 | 415 | 422 | 423 | 501 | 503;
 
 function fail(c: Context<AppEnv>, status: ErrorStatus, code: string, message: string, details?: Record<string, unknown>) {
   return c.json({ errors: [{ code, message, ...(details ? { details } : {}) }] }, status);
@@ -318,6 +332,200 @@ filesRouter.put('/upload/:key', async (c) => {
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     return c.json({ errors: [{ code: 'STORAGE_ERROR', message: `Failed to upload file to storage: ${errorMsg}` }] }, 500);
+  }
+});
+
+// --- Resumable uploads: TUS 1.0 (#704) ----------------------------------------
+//
+// Core protocol + `creation`, `termination`, `expiration`. The upload guard
+// (`file-upload-policy`) checks the declaration at creation (size cap from
+// Upload-Length, MIME allowlist, filename hygiene, extension ↔ MIME); the
+// bytes are sniffed here, where the declared MIME is known: the first chunk
+// against its magic bytes, and the assembled file (up to 64 MiB) again with
+// the polyglot scan before the file row is created. `files:create` and the
+// folder placement are checked at creation AND at completion.
+
+function tusHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return { 'Tus-Resumable': TUS_VERSION, 'Cache-Control': 'no-store', ...extra };
+}
+
+function tusVersionMismatch(c: Context<AppEnv>): Response | null {
+  const v = c.req.header('tus-resumable');
+  if (v && v !== TUS_VERSION) {
+    return new Response(null, { status: 412, headers: { 'Tus-Version': TUS_VERSION, 'Tus-Resumable': TUS_VERSION } });
+  }
+  return null;
+}
+
+function tusService(ctx: FilesContext): TusService {
+  return new TusService({ repo: ctx.uploads, storage: ctx.storage });
+}
+
+/** Only the uploader (or a site admin) may see or write an upload session. */
+async function ownSession(c: Context<AppEnv>, g: Guarded, id: string): Promise<UploadSession> {
+  const session = await tusService(g.ctx).active(id);
+  const userId = c.get('auth')?.userId ?? null;
+  if (!g.access.admin && (!userId || session.createdBy !== userId)) {
+    throw new FileAssetError('NOT_FOUND', 'Upload not found.', 404);
+  }
+  return session;
+}
+
+function uploadLocation(c: Context<AppEnv>, id: string): string {
+  return `${new URL(c.req.url).origin}/api/v1/files/tus/${encodeURIComponent(id)}`;
+}
+
+filesRouter.on('OPTIONS', '/tus', async (c) => {
+  const policy = await resolveUploadPolicy({ db: c.get('db'), cache: c.get('runtime')?.cache, siteId: c.get('siteId'), env: c.env });
+  return new Response(null, {
+    status: 204,
+    headers: tusHeaders({ 'Tus-Version': TUS_VERSION, 'Tus-Extension': TUS_EXTENSIONS, 'Tus-Max-Size': String(policy.maxBytes) }),
+  });
+});
+
+/** Creation: `Upload-Length` + `Upload-Metadata` (filename, filetype, optional folder). */
+filesRouter.post('/tus', async (c) => {
+  const mismatch = tusVersionMismatch(c);
+  if (mismatch) return mismatch;
+  const g = await guard(c, 'create');
+  if (g instanceof Response) return g;
+  try {
+    if (c.req.header('upload-defer-length')) return fail(c, 501, 'DEFER_LENGTH_UNSUPPORTED', 'Upload-Defer-Length is not supported.');
+    const length = parseNonNegativeInt(c.req.header('upload-length'));
+    if (length === null) return fail(c, 400, 'VALIDATION', 'Upload-Length is required.');
+    const meta = parseUploadMetadata(c.req.header('upload-metadata'));
+    const decl = meta ? declarationFrom(meta) : null;
+    if (!meta || !decl) return fail(c, 400, 'VALIDATION', 'Upload-Metadata must carry filename and filetype.');
+    const userId = c.get('auth')?.userId ?? null;
+    const allFolders = g.folders.length ? g.folders : await g.ctx.repo.listFolders();
+    if (decl.folder && !allFolders.some((f) => f.id === decl.folder)) return fail(c, 400, 'FOLDER_NOT_FOUND', 'Folder not found.');
+    if (!canPlaceInFolder(g.access, decl.folder, g.folders, userId)) return forbidden(c, 'create');
+    const session = await tusService(g.ctx).create({
+      length,
+      filename: decl.filename,
+      mime: decl.mime,
+      folder: decl.folder,
+      userId,
+      metadata: Object.fromEntries(Object.entries(meta).filter(([k]) => ['alt', 'caption', 'title', 'credit'].includes(k))),
+    });
+    return new Response(null, {
+      status: 201,
+      headers: tusHeaders({ Location: uploadLocation(c, session.id), 'Upload-Expires': session.expiresAt.toUTCString() }),
+    });
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+// TUS clients probe progress with HEAD. Hono answers HEAD by dispatching to
+// the GET route and dropping the body, so the probe is registered on GET.
+filesRouter.get('/tus/:id', async (c) => {
+  const g = await guard(c, 'create');
+  if (g instanceof Response) return new Response(null, { status: g.status, headers: tusHeaders() });
+  try {
+    const session = await ownSession(c, g, c.req.param('id'));
+    return new Response(null, {
+      status: 200,
+      headers: tusHeaders({
+        'Upload-Offset': String(session.offset),
+        'Upload-Length': String(session.length),
+        ...(session.status === 'active' ? { 'Upload-Expires': session.expiresAt.toUTCString() } : {}),
+        ...(session.fileId ? { 'X-Lumi-File-Id': session.fileId } : {}),
+      }),
+    });
+  } catch (err) {
+    const status = err instanceof FileAssetError ? err.status : 503;
+    return new Response(null, { status, headers: tusHeaders() });
+  }
+});
+
+/** Completion: re-authorise, re-check the assembled bytes, then create the file row. */
+async function completeUpload(c: Context<AppEnv>, g: Guarded, session: UploadSession): Promise<FileRecord> {
+  const userId = c.get('auth')?.userId ?? null;
+  const tus = tusService(g.ctx);
+  const access = await resolveFilesAccess(c, 'create');
+  const folders = access && !access.admin ? await g.ctx.repo.listFolders() : [];
+  if (!access || !canPlaceInFolder(access, session.folder, folders, userId)) {
+    await tus.terminate(session.id, { deleteObject: true });
+    throw new FileAssetError('FORBIDDEN', 'Upload permission was revoked before the upload completed.', 403);
+  }
+  if (session.length <= INGEST_READ_LIMIT) {
+    const obj = await g.ctx.storage.get(session.storageKey);
+    const bytes = obj ? new Uint8Array(await new Response(obj.body as BodyInit).arrayBuffer()) : null;
+    const refused = !bytes || !isFileContentCompatibleWithBytes(bytes, session.mime) || (await detectPolyglot(bytes, session.mime));
+    if (refused) {
+      await tus.terminate(session.id, { deleteObject: true });
+      throw new FileAssetError('UPLOAD_CONTENT_MISMATCH', 'The uploaded file failed the content checks and was discarded.', 415);
+    }
+  }
+  const svc = service(g.ctx);
+  const row = await g.ctx.repo.insert({
+    filenameDisk: session.storageKey,
+    filenameDownload: session.filename,
+    mime: session.mime,
+    filesize: session.length,
+    folder: session.folder,
+    uploadedBy: userId,
+    storage: 'r2',
+    scanStatus: svc.initialScanStatus(),
+    metadata: (session.metadata ?? {}) as Record<string, unknown>,
+  });
+  recordUsage({ kind: USAGE_KINDS.storageBytes, quantity: session.length, unit: 'bytes', attributes: { source: 'files', op: 'add' } });
+  const { file } = await svc.ingestRegistered(row);
+  await tus.markCompleted(session.id, file.id);
+  scheduleScan(c, g.ctx, file);
+  return file;
+}
+
+filesRouter.patch('/tus/:id', async (c) => {
+  const mismatch = tusVersionMismatch(c);
+  if (mismatch) return mismatch;
+  if ((c.req.header('content-type') ?? '').split(';')[0]!.trim() !== 'application/offset+octet-stream') {
+    return fail(c, 415, 'VALIDATION', 'Content-Type must be application/offset+octet-stream.');
+  }
+  const g = await guard(c, 'create');
+  if (g instanceof Response) return g;
+  try {
+    const session = await ownSession(c, g, c.req.param('id'));
+    const offset = parseNonNegativeInt(c.req.header('upload-offset'));
+    if (offset === null) return fail(c, 400, 'VALIDATION', 'Upload-Offset is required.');
+    const declared = parseNonNegativeInt(c.req.header('content-length'));
+    if (declared !== null && declared > MAX_PATCH_BYTES) {
+      return fail(c, 413, 'CHUNK_TOO_LARGE', `A PATCH may carry at most ${MAX_PATCH_BYTES} bytes.`);
+    }
+    const body = new Uint8Array(await c.req.arrayBuffer());
+    // The first bytes must look like the declared type (magic-byte sniff).
+    if (offset === 0 && body.byteLength > 0 && !isFileContentCompatibleWithBytes(body.subarray(0, Math.min(body.byteLength, 64 * 1024)), session.mime)) {
+      await tusService(g.ctx).terminate(session.id);
+      return fail(c, 415, 'UPLOAD_CONTENT_MISMATCH', `File content does not match MIME type "${session.mime}".`);
+    }
+    const result = await tusService(g.ctx).patch(session.id, offset, body);
+    const headers = tusHeaders({ 'Upload-Offset': String(result.session.offset) });
+    if (result.completed) {
+      const file = await completeUpload(c, g, result.session);
+      headers['X-Lumi-File-Id'] = file.id;
+    } else {
+      headers['Upload-Expires'] = result.session.expiresAt.toUTCString();
+    }
+    return new Response(null, { status: 204, headers });
+  } catch (err) {
+    if (err instanceof FileAssetError && err.code === 'OFFSET_MISMATCH') {
+      return c.json({ errors: [{ code: err.code, message: err.message, details: err.details }] }, 409, tusHeaders());
+    }
+    return handleError(c, err);
+  }
+});
+
+/** Termination. */
+filesRouter.delete('/tus/:id', async (c) => {
+  const g = await guard(c, 'create');
+  if (g instanceof Response) return g;
+  try {
+    const session = await ownSession(c, g, c.req.param('id'));
+    await tusService(g.ctx).terminate(session.id);
+    return new Response(null, { status: 204, headers: tusHeaders() });
+  } catch (err) {
+    return handleError(c, err);
   }
 });
 

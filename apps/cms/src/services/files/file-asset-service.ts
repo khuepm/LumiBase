@@ -27,7 +27,7 @@ export class FileAssetError extends Error {
   constructor(
     public readonly code: string,
     message: string,
-    public readonly status: 400 | 404 | 409 | 413 | 415 | 422 | 503 = 400,
+    public readonly status: 400 | 403 | 404 | 409 | 410 | 413 | 415 | 422 | 503 = 400,
     public readonly details?: Record<string, unknown>,
   ) {
     super(message);

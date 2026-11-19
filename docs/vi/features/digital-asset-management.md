@@ -1,14 +1,14 @@
 ---
-version: 7
+version: 9
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-11-19T08:44:53.892Z
-sourceHash: c1cce6c18ca74d8b
-codeVerified: 2026-11-19T08:44:53.892Z
-codeVerifiedHash: c1cce6c18ca74d8b
-codeVerifiedClaims: 52
+lastUpdated: 2026-11-19T09:51:24.735Z
+sourceHash: 12b3a27028fb9941
+codeVerified: 2026-11-19T09:51:24.735Z
+codeVerifiedHash: 12b3a27028fb9941
+codeVerifiedClaims: 58
 ---
 
 # Quản lý tài sản số (Digital Asset Management)
@@ -206,16 +206,86 @@ Scanner là thiết lập của **deployment**, không bao giờ là của tenan
 
 | Biến | Ý nghĩa |
 |---|---|
+| `CLAMD_HOST` | host clamd cho adapter native (chỉ Docker) |
+| `CLAMD_PORT` | port clamd (mặc định `3310`) |
 | `MALWARE_SCAN_URL` | HTTP endpoint nhận upload multipart |
 | `MALWARE_SCAN_TOKEN` | bearer token, tuỳ chọn |
 | `MALWARE_SCAN_FIELD` | tên field multipart (mặc định `file`) |
 
-Docker: `docker compose -f docker/docker-compose.yml --profile malware-scan up -d`
-khởi động một sidecar ClamAV REST. Đặt `MALWARE_SCAN_URL=http://clamav-rest:3000/api/v1/scan`
-và `MALWARE_SCAN_FIELD=FILES`. Trên Cloudflare, trỏ nó tới bất kỳ dịch vụ
-quét HTTPS nào. Adapter đọc được các dạng response ClamAV REST phổ biến cũng
-như dạng chung `{ infected, viruses }`.
+Có hai adapter. Khi cả hai được cấu hình, clamd được ưu tiên.
 
+- **clamd (Docker).** Daemon ClamAV native được gọi qua TCP bằng
+  `zINSTREAM`. Runtime Docker cung cấp socket client (`runtime.clamd`) khi
+  đặt `CLAMD_HOST`, nên business logic không bao giờ import `node:net`.
+  `stream: OK` là sạch, `stream: <signature> FOUND` là nhiễm, còn reply
+  `ERROR` hoặc daemon không kết nối được thì theo `scan.onError`.
+- **HTTP (cả hai runtime).** Bất kỳ scanner REST nào. Adapter đọc được các
+  dạng response ClamAV REST phổ biến cũng như dạng chung
+  `{ infected, viruses }`. Đây là adapter trên Cloudflare, nơi không có clamd
+  TCP: trỏ nó tới bất kỳ dịch vụ quét HTTPS nào.
+
+Docker: `docker compose -f docker/docker-compose.yml --profile malware-scan up -d`
+khởi động clamd (`clamav`) và một REST front (`clamav-rest`). Đặt hoặc
+`CLAMD_HOST=clamav` (native, khuyến nghị) hoặc
+`MALWARE_SCAN_URL=http://clamav-rest:3000/api/v1/scan` cùng
+`MALWARE_SCAN_FIELD=FILES`.
+
+**Sweeper quét lại file pending.** Một lần quét không hoàn tất để file ở
+`pending`, và file ở trạng thái đó không bao giờ được phục vụ. Điều này xảy ra khi
+process chết giữa chừng, hoặc khi lần quét thấy file đã bị thay và bỏ kết
+luận cũ. Cứ năm phút, một sweep quét lại các file đã `pending` quá mười phút,
+tối đa 50 file mỗi lượt, cũ nhất trước. Nó chạy dưới dạng cron có leader lock
+trên Docker và từ Cron Trigger năm phút trên Workers. Mỗi kết luận được ghi
+theo version của file, nên các lượt chạy chồng nhau chỉ chốt một file một lần.
+Kết luận được audit trên site của file với `sweep: true`. Site đã tắt quét
+thì được để nguyên: các file pending của nó vẫn không được phục vụ cho tới khi
+admin quét lại hoặc bật lại quét. Phép tra cứu dùng partial index
+`files_pending_scan_idx`.
+
+## Upload tiếp tục được (TUS, D04)
+
+File lớn có thể được upload bằng giao thức [TUS 1.0](https://tus.io/protocols/resumable-upload)
+(core, `creation`, `termination`, `expiration`) tại `/api/v1/files/tus`.
+Mất kết nối hay tải lại trang không còn bắt upload chạy lại từ đầu: client
+hỏi server đang giữ bao nhiêu byte (`HEAD`) rồi tiếp tục từ đó. Mọi client
+TUS đều dùng được; thư viện media trong Studio tự chuyển sang cách này cho
+file từ 32 MiB trở lên (`apps/studio/src/modules/files/tus-client.ts`, chunk
+16 MiB, URL upload được giữ trong `localStorage` để tải lại trang vẫn tiếp
+tục được).
+
+1. `POST /api/v1/files/tus` với `Upload-Length` và `Upload-Metadata`
+   (`filename`, `filetype`, tuỳ chọn `folder`, `alt`). Bộ bảo vệ upload kiểm
+   tra phần khai báo giống hệt upload trực tiếp: role public bị từ chối,
+   giới hạn dung lượng, danh sách MIME cho phép, vệ sinh tên file và đuôi ↔
+   MIME đều áp dụng. `files:create` và rule đặt vào thư mục cũng được kiểm
+   tra. Kết quả là `201` kèm `Location` và `Upload-Expires`.
+2. `PATCH <Location>` với `Upload-Offset` và body
+   `application/offset+octet-stream`. Mỗi chunk được ghi **tất cả hoặc
+   không**: nếu storage lỗi thì trả `503` và offset không đổi. Offset sai
+   trả `409 OFFSET_MISMATCH` kèm offset đang lưu. Chunk đầu tiên được kiểm
+   tra nội dung so với kiểu đã khai báo.
+3. Chunk chạm tới `Upload-Length` hoàn tất upload. Quyền và vị trí thư mục
+   được **kiểm tra lại** (upload của người đã bị thu hồi quyền bị huỷ), file
+   đã ghép được quét polyglot, dòng file được tạo, metadata được trích xuất
+   và lượt quét mã độc được lên lịch y như upload trực tiếp. Response mang
+   `X-Lumi-File-Id`.
+4. `DELETE <Location>` huỷ upload và xoá các phần đã lưu.
+
+**Chạy trên cả hai runtime như thế nào.** Byte đi thẳng vào một multipart
+upload trên R2 (Workers) hoặc S3/MinIO (Docker) qua port `MultipartStorage`
+của runtime (`packages/runtime/src/interfaces/storage.ts`), nên không runtime
+nào giữ cả file trong bộ nhớ. Các phần multipart phải cùng kích thước, nên
+server cắt luồng thành phần 8 MiB và giữ phần dư trong một object đuôi nhỏ
+cho tới khi chunk tiếp theo tới. Tiến độ nằm trong bảng
+`lumibase_upload_sessions`. Mỗi `PATCH` giữ một lease ngắn bằng update có
+điều kiện, nên hai writer đồng thời không thể cùng nối; lease bị bỏ lại bởi
+một request sập sẽ hết hạn sau năm phút.
+
+**Quyền sở hữu và hết hạn.** Chỉ người tạo (hoặc site admin) xem hoặc ghi
+được một upload; người khác nhận `404`. Upload hết hạn 24 giờ sau chunk cuối
+cùng được ghi (sau đó trả `410`). Một lượt quét mỗi giờ, `upload-expiry`,
+abort các multipart upload đã hết hạn và xoá object đuôi của chúng (cron
+Docker có leader lock và cron giờ của Workers).
 ## Pipeline video (#871)
 
 Video không transcode được trong Worker, nên CMS giao chúng cho một **video
@@ -353,7 +423,9 @@ Chúng được lưu trong `settings` dưới key `files.dam`:
 ## Multi-tenancy
 
 - **Cô lập theo site:** `lumibase_files`, `lumibase_folders`,
-  `lumibase_file_versions`, `lumibase_file_captions` và `lumibase_video_assets` đều mang `site_id` và nằm trong danh sách RLS
+  `lumibase_file_versions`, `lumibase_upload_sessions`,
+  `lumibase_file_captions` và `lumibase_video_assets` đều mang `site_id` và
+  nằm trong danh sách RLS
   `site_isolation`. Mọi query của repository được lọc theo `site_id`
   (`DrizzleFileRepository`). Binary lưu trữ nằm dưới `sites/<site>/…`. Cache
   tag (`file:<site>:<id>`) và thiết lập `files.dam` là theo site. Tra cứu
@@ -371,5 +443,5 @@ Chúng được lưu trong `settings` dưới key `files.dam`:
 
 ## Chưa làm
 
-- Upload resumable (TUS, D04 #704) chưa được hiện thực. File lớn vẫn dùng
-  một lần `PUT` có chữ ký.
+- `Upload-Defer-Length` của TUS (chưa biết dung lượng lúc tạo) trả `501`, và
+  extension `concatenation` không được cung cấp.

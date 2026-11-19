@@ -82,6 +82,13 @@ export const files = pgTable(
   (t) => ({
     siteIdx: index('files_site_idx').on(t.siteId, t.folder),
     hashIdx: index('files_site_hash_idx').on(t.siteId, t.contentHash),
+    /**
+     * Stale-pending lookup for the malware-scan sweeper (#707): tiny, since
+     * only files awaiting a verdict are in it.
+     */
+    pendingScanIdx: index('files_pending_scan_idx')
+      .on(t.updatedAt)
+      .where(sql`${t.scanStatus} = 'pending'`),
   }),
 );
 
@@ -163,6 +170,49 @@ export const videoAssets = pgTable(
     fileIdx: uniqueIndex('video_assets_file_idx').on(t.siteId, t.fileId),
     providerIdx: index('video_assets_provider_idx').on(t.provider, t.providerAssetId),
     statusIdx: index('video_assets_status_idx').on(t.status, t.updatedAt).where(sql`${t.status} in ('uploaded', 'processing')`),
+  }),
+);
+
+/**
+ * Resumable (TUS 1.0) upload sessions (#704). One row per in-flight upload:
+ * the declared length, how many bytes are durably stored (`offset`), and the
+ * storage multipart upload behind it. Bytes land in fixed-size parts; the
+ * sub-part remainder of the last PATCH is kept in a tail object until the
+ * next PATCH (or completion) so every non-final part has the same size, as
+ * R2 requires. On completion the parts are stitched into `storage_key`, a
+ * `lumibase_files` row is created and `file_id` points at it.
+ */
+export const uploadSessions = pgTable(
+  'lumibase_upload_sessions',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    createdBy: text('created_by'),
+    filename: text('filename').notNull(),
+    mime: text('mime').notNull(),
+    length: bigint('length', { mode: 'number' }).notNull(),
+    offset: bigint('offset', { mode: 'number' }).default(0).notNull(),
+    storageKey: text('storage_key').notNull(),
+    multipartId: text('multipart_id'),
+    parts: jsonb('parts').default([]).notNull(),
+    tailSize: integer('tail_size').default(0).notNull(),
+    folder: text('folder'),
+    metadata: jsonb('metadata').default({}).notNull(),
+    /** `active` | `completed` | `aborted` */
+    status: text('status').default('active').notNull(),
+    /** Single-writer lease for a PATCH in progress (parts must not interleave). */
+    lockToken: text('lock_token'),
+    lockedUntil: timestamp('locked_until'),
+    fileId: text('file_id'),
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteIdx: index('upload_sessions_site_idx').on(t.siteId, t.status),
+    expiryIdx: index('upload_sessions_expiry_idx').on(t.expiresAt).where(sql`${t.status} = 'active'`),
   }),
 );
 

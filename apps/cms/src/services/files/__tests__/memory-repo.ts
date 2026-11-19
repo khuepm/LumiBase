@@ -1,5 +1,6 @@
 import { nanoid } from 'nanoid';
-import type { StorageObject, StorageProvider } from '@lumibase/runtime';
+import type { MultipartPart, StorageObject, StorageProvider } from '@lumibase/runtime';
+import type { ProgressPatch, UploadSession, UploadSessionInsert, UploadSessionRepository } from '../tus/session-repo';
 import type { FolderRow } from '../folder-tree';
 import type {
   FileContentPatch,
@@ -181,6 +182,49 @@ export class MemoryFileRepository implements FileRepository {
 export class MemoryStorage implements StorageProvider {
   objects = new Map<string, { bytes: Uint8Array; metadata: Record<string, string> }>();
   failPutFor = new Set<string>();
+  /** In-flight multipart uploads: uploadId → parts. */
+  multiparts = new Map<string, { key: string; metadata: Record<string, string>; parts: Map<number, Uint8Array>; aborted?: boolean }>();
+  /** Fail the next N uploadPart calls (simulates a dropped connection). */
+  failNextParts = 0;
+  partCalls: Array<{ uploadId: string; partNumber: number; size: number }> = [];
+  private seq = 0;
+
+  async createMultipart(key: string, metadata: Record<string, string> = {}) {
+    const uploadId = `mp${++this.seq}`;
+    this.multiparts.set(uploadId, { key, metadata, parts: new Map() });
+    return { uploadId };
+  }
+
+  async uploadPart(key: string, uploadId: string, partNumber: number, data: Uint8Array): Promise<MultipartPart> {
+    const mp = this.multiparts.get(uploadId);
+    if (!mp || mp.key !== key || mp.aborted) throw new Error('NoSuchUpload');
+    if (this.failNextParts > 0) {
+      this.failNextParts--;
+      throw new Error('connection reset');
+    }
+    this.partCalls.push({ uploadId, partNumber, size: data.byteLength });
+    mp.parts.set(partNumber, new Uint8Array(data));
+    return { partNumber, etag: `e${partNumber}-${data.byteLength}` };
+  }
+
+  async completeMultipart(key: string, uploadId: string, parts: MultipartPart[]) {
+    const mp = this.multiparts.get(uploadId);
+    if (!mp || mp.aborted) throw new Error('NoSuchUpload');
+    const chunks = [...parts].sort((a, b) => a.partNumber - b.partNumber).map((p) => mp.parts.get(p.partNumber)!);
+    const out = new Uint8Array(chunks.reduce((n, c) => n + c.byteLength, 0));
+    let o = 0;
+    for (const c of chunks) {
+      out.set(c, o);
+      o += c.byteLength;
+    }
+    this.objects.set(key, { bytes: out, metadata: mp.metadata });
+    this.multiparts.delete(uploadId);
+  }
+
+  async abortMultipart(_key: string, uploadId: string) {
+    const mp = this.multiparts.get(uploadId);
+    if (mp) mp.aborted = true;
+  }
 
   async put(key: string, data: ReadableStream | Buffer, metadata: Record<string, string> = {}) {
     if (this.failPutFor.has(key)) throw new Error('disk full');
@@ -211,5 +255,63 @@ export class MemoryStorage implements StorageProvider {
   text(key: string): string | undefined {
     const o = this.objects.get(key);
     return o ? new TextDecoder().decode(o.bytes) : undefined;
+  }
+}
+
+/** In-memory UploadSessionRepository with the same conditional-update semantics. */
+export class MemoryUploadSessionRepository implements UploadSessionRepository {
+  rows = new Map<string, UploadSession>();
+
+  constructor(readonly siteId: string) {}
+
+  async create(row: UploadSessionInsert) {
+    const now = new Date();
+    const s: UploadSession = {
+      ...row,
+      siteId: this.siteId,
+      offset: 0,
+      parts: [],
+      tailSize: 0,
+      status: 'active',
+      lockToken: null,
+      lockedUntil: null,
+      fileId: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.rows.set(s.id, s);
+    return { ...s };
+  }
+
+  async get(id: string) {
+    const s = this.rows.get(id);
+    return s && s.siteId === this.siteId ? { ...s } : null;
+  }
+
+  async claim(id: string, expectedOffset: number, token: string, until: Date, now: Date) {
+    const s = this.rows.get(id);
+    if (!s || s.siteId !== this.siteId || s.status !== 'active' || s.offset !== expectedOffset) return null;
+    if (s.lockedUntil && s.lockedUntil.getTime() >= now.getTime()) return null;
+    Object.assign(s, { lockToken: token, lockedUntil: until });
+    return { ...s };
+  }
+
+  async commit(id: string, token: string, patch: ProgressPatch) {
+    const s = this.rows.get(id);
+    if (!s || s.lockToken !== token) return null;
+    Object.assign(s, patch, { lockToken: null, lockedUntil: null, updatedAt: new Date() });
+    return { ...s };
+  }
+
+  async release(id: string, token: string) {
+    const s = this.rows.get(id);
+    if (s && s.lockToken === token) Object.assign(s, { lockToken: null, lockedUntil: null });
+  }
+
+  async finish(id: string, patch: { status: 'completed' | 'aborted'; fileId?: string | null }) {
+    const s = this.rows.get(id);
+    if (!s || s.siteId !== this.siteId) return null;
+    Object.assign(s, { status: patch.status, fileId: patch.fileId ?? null, lockToken: null, lockedUntil: null });
+    return { ...s };
   }
 }

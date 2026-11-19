@@ -21,4 +21,6 @@ export {
   MeiliSearchProvider,
   BullMQProvider,
   ImgproxyMediaProcessor,
+  NodeClamdClient,
+  clamdFromEnv,
 } from './adapters/docker';
