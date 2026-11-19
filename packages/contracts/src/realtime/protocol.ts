@@ -28,6 +28,16 @@ export type RealtimeAction = z.infer<typeof realtimeActionSchema>;
 
 // ─── Client → Server ────────────────────────────────────────────────────────
 
+/** A field name (or dotted path) as presence carries it (#685). */
+export const presenceFieldSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9_.-]+$/);
+
+/** Largest `meta` a presence message may carry, serialized (#685). */
+export const PRESENCE_META_MAX_BYTES = 2048;
+
 export const clientMessageSchema = z.discriminatedUnion('type', [
   // studio plane. `filter` is an optional Directus-style condition rule
   // evaluated server-side per subscription. Studio collection broadcasts are
@@ -44,6 +54,17 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
     collection: z.string().optional(),
     itemId: z.string().optional(),
     meta: z.record(z.string(), z.unknown()).optional(),
+    /**
+     * Field the user has focused in the item editor (#685); `null` on blur.
+     * Only meaningful with `itemId`.
+     */
+    focus: presenceFieldSchema.nullable().optional(),
+    /**
+     * Field the user is editing and soft-locks (#685); `null` releases it.
+     * The server stamps when the lock was taken, so a later claim on the same
+     * field (a takeover) wins.
+     */
+    lock: presenceFieldSchema.nullable().optional(),
   }),
   // audience plane (new)
   z.object({ type: z.literal('join'), channel: z.string().min(1) }),
@@ -62,6 +83,10 @@ export const presenceEntrySchema = z.object({
   collection: z.string().optional(),
   itemId: z.string().optional(),
   meta: z.record(z.string(), z.unknown()).optional(),
+  /** Focused field in the item editor (#685). */
+  focus: z.string().optional(),
+  /** Soft-locked field and when (server time) the lock was taken (#685). */
+  lock: z.object({ field: z.string(), since: z.string() }).optional(),
   lastSeen: z.string(),
 });
 export type PresenceEntry = z.infer<typeof presenceEntrySchema>;
