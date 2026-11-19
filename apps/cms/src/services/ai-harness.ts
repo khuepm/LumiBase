@@ -1,5 +1,7 @@
 import { validateGroundedContent, type GroundingSource } from './grounded-content';
 import { applyContentMigrationSchema, planContentMigration, type ContentMigrationArgs } from './content-migration-service';
+import { backendTemplateSkills, type BackendTemplateToolContext } from './backend-templates/agent-tools';
+import { SkillError } from './skill-error';
 import {
   agentApprovals,
   agentGoals,
@@ -186,6 +188,12 @@ export interface AISecureHarnessConfig {
    * process-wide registry, so every construction site sees the same tools.
    */
   externalTools?: ExternalActionToolRegistry;
+  /**
+   * Backend template tools (#906). Built per request by the route
+   * (`backendTemplateToolsFor`), because they need the request's admin check,
+   * build version and runtime providers.
+   */
+  backendTemplates?: BackendTemplateToolContext;
 }
 
 // ---------------------------------------------------------------------------
@@ -239,6 +247,10 @@ interface SkillServices {
    * - object: real LLM execution.
    */
   llm?: ConfiguredLLM | null;
+  /** Backend template tools (#906); absent, they refuse with NOT_CONFIGURED. */
+  backendTemplates?: BackendTemplateToolContext;
+  /** The approval requester while an approval executes; null on a direct call. */
+  requester?: () => MagicContext | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -2335,6 +2347,14 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
     },
   };
 
+  // Backend templates (#906): the same catalog/planner/installer services REST
+  // uses. `instantiateBackendTemplate` needs `schema:create`, so it is a
+  // control-plane skill and always parks for human approval.
+  Object.assign(
+    skills,
+    backendTemplateSkills(services.backendTemplates, services.requester ?? (() => null), () => services.markTouched?.()),
+  );
+
   // One schema source, two consumers (#454). The canonical Zod contracts in
   // `@lumibase/contracts` are what the harness validates against; deriving the
   // advertised JSON Schema from the same definitions is what makes `tools/list`
@@ -2618,6 +2638,12 @@ export class AISecureHarness {
   private activeRunId: string | null = null;
   /** Who is deciding the approval in flight; set for the span of `executeApproved`. */
   private activeDecider: ApprovalDecider | null = null;
+  /**
+   * The requester's permission context while an approval executes (#906): a
+   * skill that must re-check the REQUESTER at execution (backend template
+   * install) reads it. Null outside `executeApproved`.
+   */
+  private activeRequester: MagicContext | null = null;
   /** Set when a skill handler reaches a service; drives retry safety (#453). */
   private readonly serviceTouch = new ServiceTouchTracker();
 
@@ -2644,6 +2670,7 @@ export class AISecureHarness {
         config.intentService ||
         config.configService ||
         config.extensionsService ||
+        config.backendTemplates ||
         config.keys,
     );
     this.agentHarnessEnabled = config.enableAgentHarnessAudit ?? hasService;
@@ -2671,6 +2698,8 @@ export class AISecureHarness {
         // cdc-feed, content-versions), which the constructor cannot proxy.
         trackTouch: (service) => this.serviceTouch.wrap(service),
         markTouched: () => this.serviceTouch.markTouched(),
+        backendTemplates: config.backendTemplates,
+        requester: () => this.activeRequester,
         // Preserve the "offline registry" mode when callers never resolved
         // an LLM; forward null/instance when they did (Req 2.1/2.2).
         ...('llm' in config ? { llm: config.llm ?? null } : {}),
@@ -3616,6 +3645,9 @@ export class AISecureHarness {
       if (err instanceof ItemPreconditionFailedError) {
         return { success: false, error: `${err.code}: ${err.message}`, code: err.code };
       }
+      if (err instanceof SkillError) {
+        return { success: false, error: `${err.code}: ${runErrorMessage(err)}`, code: err.code };
+      }
       return { success: false, error: runErrorMessage(err) };
     } finally {
       clearTimeout(timer);
@@ -3755,10 +3787,15 @@ export class AISecureHarness {
     // harness built per request is reused for anything else on that request.
     const restoreScope = this.scopeToRequester(requesterGrant);
     this.activeDecider = decider ?? null;
+    this.activeRequester =
+      requesterGrant.permissionContext && requesterGrant.permissionContext.siteId === this.siteId
+        ? requesterGrant.permissionContext
+        : null;
     try {
       return await this.executeApprovedUnderScope(record, userId);
     } finally {
       this.activeDecider = null;
+      this.activeRequester = null;
       restoreScope();
     }
   }

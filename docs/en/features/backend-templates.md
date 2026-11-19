@@ -1,11 +1,11 @@
 ---
-version: 6
-lastUpdated: 2026-11-19T07:43:09.419Z
+version: 7
+lastUpdated: 2026-11-19T08:15:58.367Z
 sourceLang: en
-contentHash: c801a4dd4fa38995
-codeVerified: 2026-11-19T07:43:09.419Z
-codeVerifiedHash: c801a4dd4fa38995
-codeVerifiedClaims: 24
+contentHash: ba35fbc188f2fbe9
+codeVerified: 2026-11-19T08:15:58.367Z
+codeVerifiedHash: ba35fbc188f2fbe9
+codeVerifiedClaims: 30
 ---
 
 # Backend templates
@@ -317,6 +317,56 @@ when the template ships packs. A plan made with `seedMode: "pack"` and a
 - **Once.** Retrying a completed install returns it without reseeding. Content
   that a user edited afterwards stays as edited. Add more content later
   through the normal item API or MCP.
+
+## MCP and agent tools
+
+The same catalog, planner and installer are offered as governed tools on
+`POST /api/v1/mcp` (and on the approval decision routes). The code is in
+`apps/cms/src/services/backend-templates/agent-tools.ts`, and the input
+schemas are in `packages/contracts/src/backend-templates/tools.ts`.
+`tools/list` advertises exactly these schemas.
+
+| Tool | Capability | What it does |
+|---|---|---|
+| `listBackendTemplates` | `schema:read` | Official templates plus the site's private catalog |
+| `getBackendTemplate` | `schema:read` | One template by `source` + `slug`, optionally one published `version` |
+| `validateBackendTemplate` | `schema:read` | Validates a document without storing it |
+| `createBackendTemplate` / `updateBackendTemplate` | `config:write` | Draft authoring (`draftRevision` as in REST) |
+| `publishBackendTemplate` | `config:write` | Immutable revision; installs nothing |
+| `captureBackendTemplate` | `config:write` + `schema:read` | Draft from the site's own collections |
+| `planBackendTemplate` | `schema:read` | Plan and inventory; returns the `binding` |
+| `instantiateBackendTemplate` | `schema:create` | Installs a plan, **always after a human approval** |
+| `getBackendTemplateInstallation` | `schema:read` | An installation, by its id or by the `planId` it came from |
+
+- **Site admins only.** Every tool is for site admins, as every REST route
+  is. Other callers do not see the tools in `tools/list`, and a call is
+  refused. On an approval, the original requester's admin access is checked
+  again when the install runs, not only the decider's.
+- **No default site.** `planBackendTemplate` without `targetSiteId` returns
+  `MISSING_INPUT` and tells the agent to ask the user for the destination.
+- **The approval is bound to the plan.** The plan returns a `binding`: target
+  site, template, version, digest, seed pack, namespace and target schema
+  fingerprint. `instantiateBackendTemplate` must send it back unchanged, and
+  the call parks for approval. When it is approved, the installer compares
+  the binding with the plan inside the install transaction. It also checks
+  that the stored template still hashes to its digest. Any difference is
+  `BINDING_MISMATCH`. Nothing is written, and the plan is invalidated, so a
+  new plan and a new approval are needed.
+- **Once.** A decided approval cannot be decided again. Instantiating the
+  same plan again uses the idempotency key `plan:<planId>` and returns the
+  same installation. A rejected, expired or revoked approval writes nothing.
+- **Reading the result.** The decision route does not return the
+  installation. Read it with `getBackendTemplateInstallation`, passing the
+  `planId`.
+- **Template text is data.** Names, descriptions, notes and seed values come
+  from the template author. They are never read as instructions, and they
+  cannot change the target, the seed choice or what the caller may do.
+- **Differences from REST.** The plan tool names a template by `slug` only.
+  REST's `displayName` lookup is not offered, because "slug or displayName" is
+  an exclusive choice that a tool schema cannot advertise. Validating a stored
+  draft is done on publish.
+- **Not in the Copilot chat.** The chat has no template context, so these
+  tools are left out of its tool list.
 
 ## Official template: `wordpress-alike` 1.0.0
 

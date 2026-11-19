@@ -1,14 +1,14 @@
 ---
-version: 6
-lastUpdated: 2026-11-19T07:43:09.419Z
+version: 7
+lastUpdated: 2026-11-19T08:15:58.367Z
 sourceLang: en
 translatedFrom: en
-sourceHash: c801a4dd4fa38995
+sourceHash: ba35fbc188f2fbe9
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T07:43:09.419Z
-codeVerifiedHash: c801a4dd4fa38995
-codeVerifiedClaims: 24
+codeVerified: 2026-11-19T08:15:58.367Z
+codeVerifiedHash: ba35fbc188f2fbe9
+codeVerifiedClaims: 30
 ---
 
 # Backend templates
@@ -312,6 +312,54 @@ các record của pack đó bên trong transaction cài đặt. Code:
 - **Một lần.** Thử lại một lần cài đã hoàn tất trả về chính nó mà không seed
   lại. Content người dùng đã sửa sau đó giữ nguyên như đã sửa. Thêm content sau
   này qua item API hoặc MCP thông thường.
+
+## MCP và agent tool
+
+Cùng catalog, planner và installer đó được cung cấp dưới dạng tool có quản
+trị trên `POST /api/v1/mcp` (và trên các route quyết định duyệt). Code nằm ở
+`apps/cms/src/services/backend-templates/agent-tools.ts`, còn schema đầu vào
+nằm ở `packages/contracts/src/backend-templates/tools.ts`. `tools/list`
+quảng bá đúng các schema này.
+
+| Tool | Capability | Việc nó làm |
+|---|---|---|
+| `listBackendTemplates` | `schema:read` | Template chính thức cùng catalog riêng của site |
+| `getBackendTemplate` | `schema:read` | Một template theo `source` + `slug`, có thể kèm một `version` đã publish |
+| `validateBackendTemplate` | `schema:read` | Kiểm tra một document mà không lưu |
+| `createBackendTemplate` / `updateBackendTemplate` | `config:write` | Soạn draft (`draftRevision` như REST) |
+| `publishBackendTemplate` | `config:write` | Revision bất biến; không cài gì |
+| `captureBackendTemplate` | `config:write` + `schema:read` | Draft từ chính các collection của site |
+| `planBackendTemplate` | `schema:read` | Plan và inventory; trả về `binding` |
+| `instantiateBackendTemplate` | `schema:create` | Cài một plan, **luôn sau khi một người duyệt** |
+| `getBackendTemplateInstallation` | `schema:read` | Một installation, theo id của nó hoặc theo `planId` mà nó được cài từ |
+
+- **Chỉ site admin.** Mọi tool đều dành cho site admin, như mọi route REST.
+  Người gọi khác không thấy các tool này trong `tools/list`, và lời gọi bị
+  từ chối. Với một approval, quyền admin của người yêu cầu ban đầu được kiểm
+  tra lại khi việc cài chạy, chứ không chỉ quyền của người duyệt.
+- **Không có site mặc định.** `planBackendTemplate` thiếu `targetSiteId` trả
+  về `MISSING_INPUT` và bảo agent hỏi người dùng về đích.
+- **Approval gắn với plan.** Plan trả về một `binding`: site đích, template,
+  version, digest, seed pack, namespace và fingerprint schema đích.
+  `instantiateBackendTemplate` phải gửi lại nó nguyên vẹn, và lời gọi chờ
+  duyệt. Khi được duyệt, installer so binding với plan bên trong transaction
+  cài. Nó cũng kiểm tra template đã lưu vẫn băm ra đúng digest. Bất kỳ khác
+  biệt nào là `BINDING_MISMATCH`. Không gì được ghi, và plan bị vô hiệu, nên
+  cần plan mới và approval mới.
+- **Một lần.** Approval đã quyết thì không quyết lại được. Instantiate lại
+  cùng plan dùng idempotency key `plan:<planId>` và trả về cùng installation.
+  Approval bị từ chối, hết hạn hoặc bị thu hồi quyền thì không ghi gì.
+- **Đọc kết quả.** Route quyết định không trả về installation. Đọc nó bằng
+  `getBackendTemplateInstallation`, truyền vào `planId`.
+- **Văn bản template là dữ liệu.** Tên, mô tả, ghi chú và giá trị seed đến từ
+  tác giả template. Chúng không bao giờ được đọc như chỉ dẫn, và không thể đổi
+  đích, lựa chọn seed hay những gì người gọi được phép làm.
+- **Khác biệt so với REST.** Tool plan chỉ gọi template theo `slug`. Cách tìm
+  theo `displayName` của REST không được cung cấp, vì "slug hoặc displayName"
+  là một lựa chọn loại trừ mà schema của tool không quảng bá được. Việc kiểm
+  tra một draft đã lưu được làm khi publish.
+- **Không có trong Copilot chat.** Chat không có ngữ cảnh template, nên các
+  tool này bị loại khỏi danh sách tool của nó.
 
 ## Template chính thức: `wordpress-alike` 1.0.0
 

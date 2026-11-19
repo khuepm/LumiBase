@@ -15,6 +15,7 @@ import {
   validateBackendTemplate,
   type BackendTemplate,
   type TemplateError,
+  type TemplatePlanBinding,
   type TemplatePlanInput,
   type TemplateRef,
 } from '@lumibase/contracts/backend-templates';
@@ -110,6 +111,32 @@ export async function schemaFingerprint(db: Database, siteId: string): Promise<{
 }
 
 export type PlanRow = typeof backendTemplatePlans.$inferSelect;
+
+/**
+ * What an install approval is bound to (#906): the plan's target, template,
+ * version, digest, seed choice, namespace and target schema. Returned by the
+ * plan tools and compared again inside the install transaction.
+ */
+export function planBinding(plan: PlanRow): TemplatePlanBinding {
+  return {
+    targetSiteId: plan.siteId,
+    source: plan.sourceKind === 'official' ? 'official' : 'site',
+    sourceSiteId: plan.sourceSiteId ?? null,
+    slug: plan.slug,
+    templateVersion: plan.templateVersion,
+    digest: plan.digest,
+    seedPack: plan.seedPack ?? null,
+    namespaceMap: { ...(plan.namespaceMap as Record<string, string>) },
+    targetFingerprint: plan.targetFingerprint,
+  };
+}
+
+/** Keys of `expected` that differ from the plan's binding (order-insensitive for the map). */
+export function bindingMismatches(plan: PlanRow, expected: TemplatePlanBinding): string[] {
+  const actual = planBinding(plan);
+  const canon = (v: unknown) => JSON.stringify(v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) : v);
+  return (Object.keys(actual) as Array<keyof TemplatePlanBinding>).filter((key) => canon(actual[key]) !== canon(expected[key]));
+}
 
 export class BackendTemplatePlanner {
   constructor(private readonly deps: PlannerDeps) {}
