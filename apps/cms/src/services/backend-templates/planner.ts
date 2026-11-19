@@ -10,6 +10,7 @@ import {
   applyNamespace,
   namespaceMap,
   satisfiesVersionRange,
+  selectedSeedPack,
   templateDigest,
   validateBackendTemplate,
   type BackendTemplate,
@@ -209,7 +210,10 @@ export class BackendTemplatePlanner {
     const revalidated = validateBackendTemplate(mapped, { supportedStorageModes: supported as never });
     if (!revalidated.ok) throw new PlanError('INVALID_TEMPLATE', 'The template is invalid after the namespace mapping.', 422, { errors: revalidated.errors });
 
-    const seedPack = input.seedPack ?? null;
+    if (input.seedMode === 'none' && input.seedPack) {
+      throw new PlanError('INVALID_TEMPLATE', 'seedMode "none" contradicts seedPack.', 422, { errors: [{ code: 'INVALID_TEMPLATE', path: '$.seedPack', message: 'seedMode "none" installs no seed; omit seedPack.' }] });
+    }
+    const seedPack = selectedSeedPack(input as TemplatePlanInput);
     if (seedPack && !mapped.seedPacks?.[seedPack]) {
       throw new PlanError('INVALID_TEMPLATE', `The template has no seed pack "${seedPack}".`, 422, {
         errors: [{ code: 'INVALID_TEMPLATE', path: '$.seedPack', message: `Available packs: ${Object.keys(mapped.seedPacks ?? {}).join(', ') || 'none'}.` }],

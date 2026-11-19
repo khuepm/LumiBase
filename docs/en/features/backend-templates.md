@@ -1,11 +1,11 @@
 ---
-version: 4
-lastUpdated: 2026-11-19T07:17:00.031Z
+version: 5
+lastUpdated: 2026-11-19T07:29:31.816Z
 sourceLang: en
-contentHash: fdc741104b73ea16
-codeVerified: 2026-11-19T07:17:00.031Z
-codeVerifiedHash: fdc741104b73ea16
-codeVerifiedClaims: 22
+contentHash: 965aceee71d6ce51
+codeVerified: 2026-11-19T07:29:31.816Z
+codeVerifiedHash: 965aceee71d6ce51
+codeVerifiedClaims: 24
 ---
 
 # Backend templates
@@ -20,9 +20,8 @@ same model into another site from it. Epic #900; specification
 > `@lumibase/contracts/backend-templates` (#901), and each site's private
 > **catalog** (#902): drafts, published revisions and capture, and **plans**
 > (#903), which preview an install without changing anything, and the
-> **schema installation** of a plan (#904). Seed packs, MCP tools and Studio
-> screens are delivered by #905–#909; until #905 lands, a plan that selects a
-> seed pack is refused.
+> **installation** of a plan (#904), including an optional seed pack (#905).
+> MCP tools and Studio screens are delivered by #906–#909.
 
 Code: `packages/contracts/src/backend-templates/` (`envelope.ts`, `validate.ts`, `ingest.ts`, `canonical.ts`, `limits.ts`). Tests: `packages/contracts/src/backend-templates/__tests__/backend-template-contract.test.ts`.
 
@@ -243,7 +242,9 @@ scoped to the target site), and it expires after 15 minutes. Code:
   (`compatibility.cmsVersionRange`) and a transactional runtime are checked
   before a plan is issued. A failure is `422 INCOMPATIBLE_RUNTIME`. When the
   CMS version is not stamped, the plan carries a warning instead.
-- **Seed.** `seedPack` defaults to none, and an unknown pack is
+- **Seed.** `seedMode` is `none` (the default) or `pack`, with `seedPack`
+  naming the pack. A `seedPack` without `seedMode` means `pack`. `none` with a
+  pack, or `pack` without one, is refused with `400`, and an unknown pack is
   `422 INVALID_TEMPLATE`.
 
 The response (`201`) has the plan `id`, `expiresAt`, the target schema
@@ -289,3 +290,30 @@ applies a plan to the site of the request. Site admins only. Code:
 
 `GET /api/v1/backend-templates/installations/:id` reads an installation of the
 site.
+
+## Seed packs at install
+
+By default an install creates the schema only, with zero content items, even
+when the template ships packs. A plan made with `seedMode: "pack"` and a
+`seedPack` installs that pack's records inside the install transaction. Code:
+`apps/cms/src/services/backend-templates/seed-writer.ts`.
+
+- **As the caller.** Each record is created through the caller's own item
+  service, bound to the transaction, so their item permissions and field
+  validation apply. A record the caller may not create fails the whole install,
+  and no schema or content remains.
+- **Fresh ids.** Logical record keys become new ids. The same pack installed
+  into two sites gets different ids, and its references resolve within each
+  site. The installation keeps the key-to-id map in `resources.seedKeys`.
+- **References.** Records are created in an order where every required
+  reference already exists. An optional reference to a record created later is
+  set by a second pass, so optional cycles such as two articles that point at
+  each other work. Required cycles are refused by the validator before
+  anything is written.
+- **Nothing outside the data.** Seeding creates no users, credentials or files,
+  and fetches nothing. Flows, webhooks, search indexing and extension hooks do
+  not run on seed content, because the transaction-bound item service has no
+  queue, search, cache or hooks.
+- **Once.** Retrying a completed install returns it without reseeding. Content
+  that a user edited afterwards stays as edited. Add more content later
+  through the normal item API or MCP.
