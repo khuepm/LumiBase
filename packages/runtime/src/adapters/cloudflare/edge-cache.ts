@@ -1,4 +1,4 @@
-import type { EdgeCacheProvider } from '../../interfaces/edge-cache';
+import type { EdgeCacheProvider, EdgePurgeOutcome } from '../../interfaces/edge-cache';
 
 /**
  * Minimal Cache Storage API surface (Cloudflare Workers `caches.default`).
@@ -85,9 +85,21 @@ export class CloudflareEdgeCacheProvider implements EdgeCacheProvider {
    * need to configure the answer.
    */
   async purge(target: { urls: string[]; tags?: string[] }): Promise<number> {
+    return (await this.purgeWithOutcome(target)).purged;
+  }
+
+  /**
+   * {@link purge}, also naming the URLs whose zone purge failed (#864).
+   *
+   * Without zone credentials only the colo-local delete exists; nothing a
+   * retry does would reach further, so no URL is reported as failed. A
+   * successful tag purge covers every URL under the tag, so it reports none
+   * either. Otherwise each URL batch the zone API refused is reported.
+   */
+  async purgeWithOutcome(target: { urls: string[]; tags?: string[] }): Promise<EdgePurgeOutcome> {
     const urls = target.urls ?? [];
     const tags = target.tags ?? [];
-    if (urls.length === 0 && tags.length === 0) return 0;
+    if (urls.length === 0 && tags.length === 0) return { purged: 0, failedUrls: [] };
 
     let localPurged = 0;
     const cache = this.cache;
@@ -101,7 +113,7 @@ export class CloudflareEdgeCacheProvider implements EdgeCacheProvider {
       }
     }
 
-    if (!this.zonePurge) return localPurged;
+    if (!this.zonePurge) return { purged: localPurged, failedUrls: [] };
 
     if (tags.length > 0) {
       let tagPurged = 0;
@@ -113,18 +125,20 @@ export class CloudflareEdgeCacheProvider implements EdgeCacheProvider {
       }
       // Only fall through to URL purge when a tag call was refused — a
       // successful tag purge already covers more than the URL index does.
-      if (!rejected) return Math.max(localPurged, tagPurged);
+      if (!rejected) return { purged: Math.max(localPurged, tagPurged), failedUrls: [] };
     }
 
     let zonePurged = 0;
+    const failedUrls: string[] = [];
     for (let i = 0; i < urls.length; i += PURGE_BATCH_SIZE) {
       const batch = urls.slice(i, i + PURGE_BATCH_SIZE);
       if (await this.zoneCall({ files: batch })) zonePurged += batch.length;
+      else failedUrls.push(...batch);
     }
 
     // The mechanisms overlap on the local colo, so report the largest rather
     // than a sum — this is an observability signal, not an accounting of
     // delete operations.
-    return Math.max(localPurged, zonePurged);
+    return { purged: Math.max(localPurged, zonePurged), failedUrls };
   }
 }

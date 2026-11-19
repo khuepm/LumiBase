@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 57
-lastUpdated: 2026-11-17T19:32:44.622Z
+version: 61
+lastUpdated: 2026-11-19T04:16:54.638Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f0bf3ecabbcdcaae
+sourceHash: f819700b5caafc36
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T19:32:44.622Z
-codeVerifiedHash: f0bf3ecabbcdcaae
-codeVerifiedClaims: 638
+codeVerified: 2026-11-19T04:16:54.638Z
+codeVerifiedHash: f819700b5caafc36
+codeVerifiedClaims: 654
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -299,6 +299,23 @@ Token hủy đăng ký là một HS256 JWT không lưu trạng thái (`{ siteId,
 
 **Tùy chọn & hành động lưu.** `PATCH /api/v1/me/preferences` gộp nông bản vá đã xác thực vào `users.preferences` (các phần khác như `language` / `keybindings` được giữ nguyên). Gửi `{ "saveAction": "stay" | "return" | "create_new" }` để đặt điều hướng sau khi lưu của trình chỉnh sửa Studio; gửi `{ "saveAction": null }` để quay về mặc định của site (`sites.default_save_action`, đặt qua `PATCH /api/v1/site`). Enum không hợp lệ → 400.
 
+### Release flags
+
+Tính năng merge vào `main` ở trạng thái dark được phát hành cho từng deployment
+bằng một manifest có chữ ký, và được chọn bật theo từng site. Hướng dẫn đầy đủ:
+[Release flags](../features/release-flags.md).
+
+| Method | Path | Auth | Mô tả |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/release-flags` | member | `{ key, enabled }[]` chỉ gồm flag đã phát hành của site đang chọn; admin của site nhận mọi flag cùng stage, `releasedBy`, `enabledBy`, `siteValue`, owner và `removeBy` |
+| `PUT` | `/api/v1/release-flags/site` | site-admin | Body `{ flags: { "<key>": true \| false \| null } }`; `null` xoá lựa chọn. `400 UNKNOWN_FLAG` / `NOT_SITE_TOGGLE` |
+| `GET` | `/api/v1/release-flags/manifest` | bootstrap admin | Manifest đã chấp nhận, các key id được tin cậy, cấu hình pull và kết quả lần pull gần nhất |
+| `PUT` | `/api/v1/release-flags/manifest` | bootstrap admin | Body `{ keyId, payload, signature }` (Ed25519 trên payload sau khi giải base64). `422` / `409` `MANIFEST_REJECTED` kèm `reason` |
+| `POST` | `/api/v1/release-flags/manifest/pull` | bootstrap admin | Tải ngay từ `LUMIBASE_RELEASE_MANIFEST_URL`. `409 PULL_NOT_CONFIGURED`, `502 PULL_FAILED` |
+
+Các endpoint manifest từ chối API key. Route có gắn cờ trả `404 NOT_FOUND` khi
+cờ đang tắt, giống một route không tồn tại.
+
 ### Chính sách định danh email
 
 `users` là bảng định danh toàn cục (một hàng cho mỗi người trên mọi site), nên
@@ -364,8 +381,25 @@ Mỗi thay đổi được áp dụng đều ghi một audit event (`email_ident
   đăng ký chưa xác minh) trả `409 INVITEE_EMAIL_UNVERIFIED` và không được gắn.
   Quy tắc này cũng áp dụng cho `POST /api/v1/orgs/:orgId/members` khi mời bằng
   `email`.
-- SCIM (`/scim/v2/Users`) trả `409` với `scimType: "uniqueness"` khi địa chỉ
-  resolve về một tài khoản đã có hoặc xung đột trên site strict.
+- SCIM `POST /scim/v2/Users` liên kết một tài khoản chỉ thuộc các site khác
+  vào site của token và trả như một lần tạo mới (`201`) chỉ khi hộp thư của
+  tài khoản đã được chứng minh, theo cùng quy tắc với lời mời (#856, #912). Mọi
+  kết quả khớp khác trả một `409` chung với `scimType: "uniqueness"` và không
+  gắn gì: tài khoản đã ở site này, xung đột trên site strict, hoặc tài khoản
+  có hộp thư chưa được chứng minh (tài khoản SSO JIT hoặc SCIM từ IdP khác,
+  hoặc tài khoản tự đăng ký chưa xác minh). Body giống nhau trong mọi trường
+  hợp này, nên không cho biết tài khoản tồn tại trên site khác.
+  `userName` được trim; giá trị không phải một token `local@domain` duy nhất
+  trả `400` với `scimType: "invalidValue"`.
+- SCIM `PUT`, `PATCH` và `DELETE /scim/v2/Users/:id` trên một tài khoản đồng
+  thời là thành viên của site khác không thay đổi chính tài khoản đó. Thay đổi
+  `userName` và tên bị bỏ qua, và response trả về giá trị đang lưu.
+  `active: false` và `DELETE` gỡ tư cách thành viên của tài khoản ở site của
+  token và giữ tài khoản hoạt động trên các site khác. Tài khoản chỉ thuộc
+  site của token vẫn được cập nhật và tạm ngưng như trước.
+- `POST /api/v1/admin/security/unlock-user`, `/admin/security/recover` và
+  `/admin/security/forgot-path` resolve tài khoản theo mode của instance giống
+  như login.
 
 ### Xác thực External JWT
 
@@ -503,6 +537,8 @@ Mã lỗi organization bổ sung gồm `400 VALIDATION`, `400 SCOPE_NOT_ALLOWED`
 
 Lỗi: `400 VALIDATION` (thiếu/sai `path`, `cast` không hợp lệ, hoặc thiếu `cast` cho đường dẫn lồng nhau), `404 NOT_FOUND` (collection hoặc trường cấp cao nhất).
 
+Client: `client.schema.indexAdvice(collection, path, cast?)` trong SDK, và tab **Indexes** ở **Data model → collection** trong Studio, hiển thị biểu thức, DDL kèm nút sao chép, và các ghi chú.
+
 ### Fields
 
 | Phương thức | Đường dẫn | Mô tả |
@@ -628,7 +664,7 @@ khác origin gửi được `If-Match` và đọc được `ETag` (cả hai đã
 allow/expose của CORS). SDK nhận tag qua
 `items(name).patch(id, input, { ifMatch: row.version })`.
 
-**Các bản ghi phụ thuộc (Dependent records).** Vì các tham chiếu item nằm trong JSONB (không phải cột FK vật lý), `onDelete` của một quan hệ được thực thi ở lớp ứng dụng. Khi `DELETE`, nếu một quan hệ khai báo `restrict` vẫn còn bản ghi trỏ tới item, lệnh xóa sẽ bị chặn với **409 `DEPENDENT_RECORDS_EXIST`** và một mảng `dependents`. (`set null`/`cascade` **không** tự động áp dụng khi xóa mềm — điều đó sẽ làm hỏng khả năng phục hồi của xóa mềm; trình biên tập phải xóa chúng một cách tường minh.) `GET …/dependents` trả về `{ data: { blocking, dependents: [{ relation, collection, field, onDelete, count, sample }] } }`. `POST …/resolve-dependents` nhận `{ action: "set_null"|"delete"|"reassign", relation, newTargetId?, hard? }` và chạy trong một transaction (lệnh delete ủy quyền cho đường dẫn xóa item thông thường). Lỗi: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null trên trường bắt buộc), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
+**Các bản ghi phụ thuộc (Dependent records).** Vì các tham chiếu item nằm trong JSONB (không phải cột FK vật lý), `onDelete` của một quan hệ được thực thi ở lớp ứng dụng. Khi `DELETE`, nếu một quan hệ khai báo `restrict` vẫn còn bản ghi trỏ tới item, lệnh xóa sẽ bị chặn với **409 `DEPENDENT_RECORDS_EXIST`** và một mảng `dependents`. (`set null`/`cascade` **không** tự động áp dụng khi xóa mềm — điều đó sẽ làm hỏng khả năng phục hồi của xóa mềm; trình biên tập phải xóa chúng một cách tường minh.) Rich text liên kết tới hoặc nhúng item cũng chặn lệnh xóa: các nhóm đó có `kind: "richtext"`, `relation: "richtext:<collection>.<field>"` và `onDelete: "restrict"`, và được gỡ bằng cách sửa nội dung đang tham chiếu (xem [Rich text](../features/rich-text.md)). `GET …/dependents` trả về `{ data: { blocking, dependents: [{ relation, kind, collection, field, onDelete, count, sample }] } }`. `POST …/resolve-dependents` nhận `{ action: "set_null"|"delete"|"reassign", relation, newTargetId?, hard? }` và chạy trong một transaction (lệnh delete ủy quyền cho đường dẫn xóa item thông thường). Lỗi: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null trên trường bắt buộc), `INVALID_TARGET` (422, reassign), `RICHTEXT_REFERENCE` (422, không thể xử lý hàng loạt nhóm rich text), `NOT_FOUND` (404).
 
 **Export.** `GET /items/:collection/export?format=csv|json&fields=&locales=&relations=id|slug|embed&filter=&sort=&status=` xuất theo luồng mọi dòng khớp (phân trang keyset, nên không giới hạn kích thước). Endpoint dùng quyền `read` của người gọi và cú pháp `filter`/`sort` của endpoint danh sách, chạy hook `items.export.before` của extension cho từng dòng, và ghi một mục audit `items_exported`. CSV ghi một cột `field.locale` cho mỗi locale của trường dịch được và vô hiệu hoá công thức bảng tính; JSON có dạng `{ collection, format: "lumibase-export@1", exportedAt, fields, locales, relations, items: [{ id, status, sort, created_at, updated_at, data }] }`. Lỗi trả về trước khi bắt đầu stream: `400 VALIDATION` / `400 UNKNOWN_FIELD` / `400 INVALID_FILTER`, `403 FORBIDDEN`, `404 NOT_FOUND`. Xem [Data export](../features/data-export.md).
 

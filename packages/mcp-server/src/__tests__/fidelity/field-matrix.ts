@@ -34,6 +34,7 @@ export const FIELD_TYPES = [
   'alias',
   'blocks',
   'geopoint',
+  'richtext',
 ] as const satisfies readonly FieldType[];
 
 // Adding a member to `FieldType` without covering it here fails `pnpm typecheck`.
@@ -66,6 +67,8 @@ const SCALAR: Record<(typeof FIELD_TYPES)[number], unknown> = {
     { id: 'Uakgb_J5m9g-0JDMbcJqL', type: 'cta', data: { label: 'Go', url: null } },
   ],
   geopoint: { lat: 21.03, lng: 105.85 },
+  // Portable rich-text document (#695).
+  richtext: { type: 'doc', version: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hi', marks: ['bold'] }] }] },
 };
 
 /** Relation and file kinds — the interfaces that store references, not scalars. */

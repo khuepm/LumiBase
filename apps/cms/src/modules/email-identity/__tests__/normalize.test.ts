@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { canonicalEmail, emailRoot, isEmailIdentityMode } from '../normalize';
-import { EMAIL_ROOT_FIXTURES } from './fixtures';
+import { normalizeEmail } from '../../login-guard/email-normalize';
+import { EMAIL_NORMALIZE_FIXTURES, EMAIL_ROOT_FIXTURES } from './fixtures';
 
 describe('emailRoot (#794)', () => {
   it.each(EMAIL_ROOT_FIXTURES)('%j → %j', (input, expected) => {
@@ -58,5 +59,12 @@ describe('isEmailIdentityMode', () => {
     expect(isEmailIdentityMode('root')).toBe(true);
     expect(isEmailIdentityMode('strict')).toBe(false);
     expect(isEmailIdentityMode(undefined)).toBe(false);
+  });
+});
+
+describe('normalizeEmail — exact key shared with SQL lumibase_email_normalize() (#862)', () => {
+  it.each(EMAIL_NORMALIZE_FIXTURES)('%j → %j', (input, expected) => {
+    expect(normalizeEmail(input)).toBe(expected);
+    expect(canonicalEmail(input, 'exact')).toBe(expected);
   });
 });

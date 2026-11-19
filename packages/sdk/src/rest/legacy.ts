@@ -107,6 +107,8 @@ import {
   DeploymentApprovalResource,
   DeploymentRequestOutcome,
   DeploymentAccessResource,
+  JsonPathCast,
+  JsonPathIndexAdvice,
 } from "../types";
 
 /**
@@ -285,6 +287,18 @@ export function legacyRest() {
           `/api/v1/collections/${name}/form-layout`,
           { method: "PUT", body: JSON.stringify({ layout }) },
         ),
+      /**
+       * Expression index advice for filtering on a JSON path (#729). `cast`
+       * defaults to the declared type of a top-level field; nested paths
+       * must name it. Read-only: the DDL is returned, never executed.
+       */
+      indexAdvice: (name: string, path: string, cast?: JsonPathCast) => {
+        const params = new URLSearchParams({ path });
+        if (cast) params.set("cast", cast);
+        return client.rawRequest<JsonPathIndexAdvice>(
+          `/api/v1/collections/${encodeURIComponent(name)}/index-advice?${params.toString()}`,
+        );
+      },
     };
 
     function items<TName extends keyof TSchema & string>(name: TName) {
