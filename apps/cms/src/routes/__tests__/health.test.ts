@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../../env';
 import { healthRouter } from '../health';
 
-function buildApp(options?: { unhealthy?: boolean; system?: 'up' | 'down' }) {
+function buildApp(options?: { unhealthy?: boolean; system?: 'up' | 'down'; cacheValues?: Record<string, string> }) {
   const app = new Hono<AppEnv>();
   app.use('*', async (c, next) => {
     c.set('runtime', {
@@ -21,7 +21,7 @@ function buildApp(options?: { unhealthy?: boolean; system?: 'up' | 'down' }) {
         close: async () => {},
       },
       cache: {
-        get: async () => (options?.unhealthy ? null : 'ok'),
+        get: async (key: string) => (options?.unhealthy ? null : (options?.cacheValues?.[key] ?? 'ok')),
         set: async () => {},
         delete: async () => {},
       },
@@ -47,7 +47,10 @@ function buildApp(options?: { unhealthy?: boolean; system?: 'up' | 'down' }) {
   return app;
 }
 
-function buildAppWithEnv(env: Record<string, string>, options?: { unhealthy?: boolean }) {
+function buildAppWithEnv(
+  env: Record<string, string>,
+  options?: { unhealthy?: boolean; cacheValues?: Record<string, string> },
+) {
   const app = buildApp(options);
   // Layer a middleware that populates c.env (Workers-style bindings). The
   // healthy-runtime middleware from buildApp runs first via app.use, so both are
@@ -98,6 +101,34 @@ describe('health routes', () => {
     const body = (await res.json()) as { status: string; services?: Record<string, string> };
     expect(body.status).toBe('healthy');
     expect(body.services).toMatchObject({ database: 'healthy' });
+  });
+
+  it('reports the release-manifest pull to trusted callers without degrading health (#897)', async () => {
+    const history = {
+      lastAttemptAt: '2026-11-19T10:05:00.000Z',
+      lastSuccessAt: '2026-11-19T10:00:00.000Z',
+      acceptedIssuedAt: '2026-11-19T09:59:59.000Z',
+      consecutiveFailures: 1,
+      lastError: 'HTTP_503',
+    };
+    const app = buildAppWithEnv(
+      { METRICS_TOKEN: 'sekret', LUMIBASE_RELEASE_MANIFEST_URL: 'https://releases.example.test/flags/x.json' },
+      { cacheValues: { 'release-flags:pull-status': JSON.stringify(history) } },
+    );
+    const res = await app.request('/health', { headers: { authorization: 'Bearer sekret' } });
+    const body = (await res.json()) as { status: string; releaseManifest?: Record<string, unknown> };
+    expect(body.status).toBe('healthy');
+    expect(body.releaseManifest).toEqual({ pull: 'failing', ...history });
+
+    const anonymous = (await (await app.request('/health')).json()) as Record<string, unknown>;
+    expect(anonymous.releaseManifest).toBeUndefined();
+  });
+
+  it('reports the pull as not configured without LUMIBASE_RELEASE_MANIFEST_URL', async () => {
+    const app = buildAppWithEnv({ METRICS_TOKEN: 'sekret' });
+    const res = await app.request('/health', { headers: { authorization: 'Bearer sekret' } });
+    const body = (await res.json()) as { releaseManifest?: { pull: string; consecutiveFailures: number } };
+    expect(body.releaseManifest).toMatchObject({ pull: 'not-configured', consecutiveFailures: 0 });
   });
 
   it('denies detail to a caller with a wrong token', async () => {

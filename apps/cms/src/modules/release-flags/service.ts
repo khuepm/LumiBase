@@ -13,6 +13,7 @@ import {
   verifyReleaseManifest,
   type ManifestRejection,
 } from './manifest';
+import { readPullHealth, recordPullAttempt } from './pull-status';
 import { RELEASE_FLAGS, type ReleaseFlagDefinition } from './registry';
 import { parseReleaseFlagOverrides, resolveReleaseFlag, type ReleaseFlagState } from './resolver';
 
@@ -282,18 +283,22 @@ export async function pullReleaseManifest(args: {
   fetchImpl?: typeof fetch;
   now?: number;
   audit?: ReleaseAuditContext;
+  /** Shared cache for the deployment-wide pull history (`/health`, #897). */
+  cache?: CacheProvider | null;
 }): Promise<PullOutcome> {
   const now = args.now ?? Date.now();
   lastPullAttemptAt = now;
-  const finish = (outcome: PullOutcome): PullOutcome => {
+  const url = manifestUrlAllowed(args.env.LUMIBASE_RELEASE_MANIFEST_URL);
+  const finish = async (outcome: PullOutcome): Promise<PullOutcome> => {
     lastPullStatus = outcome.ok
       ? { at: new Date(now).toISOString(), ok: true, issuedAt: outcome.issuedAt }
       : { at: new Date(now).toISOString(), ok: false, reason: outcome.reason };
     if (!outcome.ok) console.warn('[release-flags] manifest pull failed', { reason: outcome.reason });
+    // An unconfigured pull is not an attempt: it must not show as a failure.
+    if (url) await recordPullAttempt(args.cache, outcome, now);
     return outcome;
   };
 
-  const url = manifestUrlAllowed(args.env.LUMIBASE_RELEASE_MANIFEST_URL);
   if (!url) return finish({ ok: false, reason: 'PULL_NOT_CONFIGURED' });
 
   let body: unknown;
@@ -339,14 +344,80 @@ export function maybeStartReleasePull(args: {
   systemDb: Database;
   env: ReleaseEnv;
   now?: number;
+  cache?: CacheProvider | null;
 }): Promise<unknown> | null {
   if (!manifestUrlAllowed(args.env.LUMIBASE_RELEASE_MANIFEST_URL)) return null;
   const now = args.now ?? Date.now();
   if (now - lastPullAttemptAt < refreshIntervalMs(args.env)) return null;
   lastPullAttemptAt = now;
-  return pullReleaseManifest({ systemDb: args.systemDb, env: args.env, now }).catch((err) => {
+  return pullReleaseManifest({ systemDb: args.systemDb, env: args.env, now, cache: args.cache }).catch((err) => {
     console.warn('[release-flags] background pull crashed', formatSafeError(err));
   });
+}
+
+const RELEASE_ENV_NAMES = [
+  'LUMIBASE_RELEASE_FLAGS',
+  'LUMIBASE_RELEASE_PUBLIC_KEYS',
+  'LUMIBASE_RELEASE_MANIFEST_URL',
+  'LUMIBASE_RELEASE_MANIFEST_REFRESH_S',
+  'LUMIBASE_INSTANCE_ID',
+] as const satisfies readonly (keyof ReleaseEnv)[];
+
+/** The release variables of a bindings object or `process.env`; non-strings are ignored. */
+export function releaseEnvFromRecord(source: Readonly<Record<string, unknown>>): ReleaseEnv {
+  const out: Record<string, string | undefined> = {};
+  for (const name of RELEASE_ENV_NAMES) {
+    const value = source[name];
+    out[name] = typeof value === 'string' ? value : undefined;
+  }
+  return out as ReleaseEnv;
+}
+
+export type ScheduledPullResult =
+  | { readonly status: 'not-configured' }
+  | { readonly status: 'not-due'; readonly lastAttemptAt: string | null }
+  | { readonly status: 'pulled'; readonly outcome: PullOutcome };
+
+/**
+ * The pull that does not wait for traffic (#897): run at process start and on
+ * a schedule — `node-cron` on Docker, the Cron Trigger on Workers — so an idle
+ * instance still picks up a new manifest within one refresh interval.
+ *
+ * Due when neither this process nor any other replica (the shared pull
+ * history) attempted within `LUMIBASE_RELEASE_MANIFEST_REFRESH_S`, so N
+ * replicas on a one-minute tick still pull about once per interval. Never
+ * throws.
+ */
+export async function runScheduledReleasePull(args: {
+  systemDb: Database;
+  env: ReleaseEnv;
+  cache?: CacheProvider | null;
+  now?: number;
+  fetchImpl?: typeof fetch;
+}): Promise<ScheduledPullResult> {
+  if (!manifestUrlAllowed(args.env.LUMIBASE_RELEASE_MANIFEST_URL)) return { status: 'not-configured' };
+  const now = args.now ?? Date.now();
+  const interval = refreshIntervalMs(args.env);
+  const shared = await readPullHealth(args.cache);
+  const sharedAttempt = shared.lastAttemptAt ? Date.parse(shared.lastAttemptAt) : Number.NaN;
+  const latest = Math.max(lastPullAttemptAt, Number.isFinite(sharedAttempt) ? sharedAttempt : 0);
+  // A clock-skewed future timestamp counts as "long ago", never as "forever due later".
+  if (latest <= now && now - latest < interval) {
+    return { status: 'not-due', lastAttemptAt: latest ? new Date(latest).toISOString() : null };
+  }
+  try {
+    const outcome = await pullReleaseManifest({
+      systemDb: args.systemDb,
+      env: args.env,
+      now,
+      cache: args.cache,
+      fetchImpl: args.fetchImpl,
+    });
+    return { status: 'pulled', outcome };
+  } catch (err) {
+    console.warn('[release-flags] scheduled pull crashed', formatSafeError(err));
+    return { status: 'pulled', outcome: { ok: false, reason: 'CRASHED' } };
+  }
 }
 
 // ─── Site choices (per tenant) ───────────────────────────────────────────────

@@ -43,7 +43,7 @@ export async function releaseFlagStates(c: AppContext): Promise<ReadonlyMap<stri
   if (memo) return memo;
   const env = releaseEnvFrom(c);
   const systemDb = systemDbFor(c);
-  const pending = maybeStartReleasePull({ systemDb, env });
+  const pending = maybeStartReleasePull({ systemDb, env, cache: c.get('runtime')?.cache });
   if (pending) runDetached(c, pending);
   const states = await evaluateReleaseFlags({
     systemDb,

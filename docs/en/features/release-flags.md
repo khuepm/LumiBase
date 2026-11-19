@@ -1,11 +1,11 @@
 ---
-version: 3
-lastUpdated: 2026-11-17T14:46:37.198Z
+version: 4
+lastUpdated: 2026-11-19T04:44:24.422Z
 sourceLang: en
-contentHash: c9ed73e7edd52284
-codeVerified: 2026-11-17T14:46:37.198Z
-codeVerifiedHash: c9ed73e7edd52284
-codeVerifiedClaims: 26
+contentHash: 8f8abfae79c767a9
+codeVerified: 2026-11-19T04:44:24.422Z
+codeVerifiedHash: 8f8abfae79c767a9
+codeVerifiedClaims: 42
 ---
 
 # Release Flags
@@ -83,6 +83,12 @@ There are two channels. Both go through the same verification.
   The bootstrap admin can trigger a fetch with
   `POST /api/v1/release-flags/manifest/pull`.
 
+  The pull does not wait for traffic: the instance also pulls once at start
+  and from a one-minute schedule (`node-cron` in the Docker worker process,
+  the Cron Trigger `scheduled` handler on Workers). A scheduled pull runs only
+  when `LUMIBASE_RELEASE_MANIFEST_REFRESH_S` has passed since the last attempt
+  by any replica, so several replicas still pull about once per interval.
+
 If a fetch fails or a manifest is rejected, the instance keeps the manifest it
 already accepted. Losing contact with LumiBase never turns a released feature
 off. The pull does not follow redirects.
@@ -95,6 +101,69 @@ audit log at instance scope (no site), as `release_flags.manifest_accepted` or
 is still in `LUMIBASE_RELEASE_PUBLIC_KEYS` with the same PEM. Removing a key, for
 example after a leak, withdraws every manifest it signed: flags fall back to
 their stage default until a manifest signed by a trusted key arrives.
+
+## Operating the release channel (LumiBase side)
+
+This is how LumiBase runs the issuing side. Self-hosted operators only need the
+public key and, if they opt in, the pull URL.
+
+**Key custody.** The release private key exists in two places only: the
+`LUMIBASE_RELEASE_SIGNING_KEY` secret of the GitHub environment
+`release-manifest`, and an offline backup held by the maintainers. It is never
+committed, never written to a CI log or disk, and never stored on an instance —
+instances hold public keys only. The environment requires reviewer approval
+and only allows the `main` branch, so a manifest is issued by one person and
+approved by another.
+
+**Issuing.** Run the **Release manifest** workflow
+(`.github/workflows/release-manifest.yml`, manual dispatch) with a channel and
+the full list of released flags. It shows the manifest currently published on
+that channel, signs a new one with `manifest.mjs sign --key-env` (the key is
+read from the environment, not a file), verifies it with `manifest.mjs verify`
+against the published public keys and the channel's audience, uploads it to
+`<bucket>/flags/<channel>.json`, and keeps the envelope as a run artifact. It
+needs these settings on the `release-manifest` environment:
+
+| Name | Kind | Value |
+|---|---|---|
+| `LUMIBASE_RELEASE_SIGNING_KEY` | secret | Ed25519 private key (PEM) |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | secret | R2 write access to the manifest bucket |
+| `LUMIBASE_RELEASE_KEY_ID` | variable | Key id of the signing key, e.g. `lumibase-release-v1` |
+| `LUMIBASE_RELEASE_PUBLIC_KEYS` | variable | The same JSON instances use |
+| `LUMIBASE_RELEASE_MANIFEST_BUCKET` | variable | R2 bucket that serves the manifests |
+| `LUMIBASE_RELEASE_MANIFEST_BASE_URL` | variable | Public `https://` URL of that bucket |
+
+**Audiences.** Each LumiBase-operated environment has its own channel and
+instance id, set in `apps/cms/wrangler.toml`: `lumibase-staging`,
+`lumibase-production`, `lumibase-demo`, `lumibase-dev`. A manifest issued for
+one of them carries that id as its `audience`, so it cannot be replayed on
+another environment. Point each environment's `LUMIBASE_RELEASE_MANIFEST_URL`
+at `<base>/flags/<instance id>.json`. The `public` channel is signed with
+audience `"*"` for self-hosted instances that opted in to the pull.
+
+**Rotating the key.**
+
+1. `manifest.mjs keygen --key-id lumibase-release-v2` on an offline machine.
+2. Add the new public key next to the old one in `LUMIBASE_RELEASE_PUBLIC_KEYS`
+   everywhere (instances and the workflow variable) and deploy. Both keys are
+   now trusted.
+3. Replace `LUMIBASE_RELEASE_SIGNING_KEY` and `LUMIBASE_RELEASE_KEY_ID` with the
+   new key and issue a new manifest on every channel.
+4. After every instance reports the new manifest (`acceptedIssuedAt` in
+   `/health`), remove the old public key everywhere. Manifests it signed stop
+   counting from then on.
+5. For a leaked key, skip the overlap: remove the old key first (flags fall
+   back to their stage defaults) and issue with the new one.
+
+**Monitoring.** With observability access (`/metrics` credentials),
+`GET /health` adds `releaseManifest`: `pull` (`not-configured`, `pending`, `ok`
+or `failing`), `lastAttemptAt`, `lastSuccessAt`, `acceptedIssuedAt`,
+`consecutiveFailures` and `lastError`. The history is shared by every replica
+through the runtime cache. A failing pull never degrades the health status,
+because the accepted manifest stays in force. `/metrics` exposes
+`lumibase_release_manifest_pulls_total{outcome}`,
+`lumibase_release_manifest_consecutive_failures` and
+`lumibase_release_manifest_last_success_timestamp_seconds`.
 
 ## Configuration
 

@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 60
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 61
+lastUpdated: 2026-11-19T04:44:28.402Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1d86bff615c2ba39
+sourceHash: 50dc7ed7d7fd5114
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
+codeVerified: 2026-11-19T04:44:28.402Z
+codeVerifiedHash: 50dc7ed7d7fd5114
 codeVerifiedClaims: 652
 ---
 
@@ -309,7 +309,7 @@ bằng một manifest có chữ ký, và được chọn bật theo từng site.
 |--------|------|------|-------------|
 | `GET` | `/api/v1/release-flags` | member | `{ key, enabled }[]` chỉ gồm flag đã phát hành của site đang chọn; admin của site nhận mọi flag cùng stage, `releasedBy`, `enabledBy`, `siteValue`, owner và `removeBy` |
 | `PUT` | `/api/v1/release-flags/site` | site-admin | Body `{ flags: { "<key>": true \| false \| null } }`; `null` xoá lựa chọn. `400 UNKNOWN_FLAG` / `NOT_SITE_TOGGLE` |
-| `GET` | `/api/v1/release-flags/manifest` | bootstrap admin | Manifest đã chấp nhận, các key id được tin cậy, cấu hình pull và kết quả lần pull gần nhất |
+| `GET` | `/api/v1/release-flags/manifest` | bootstrap admin | Manifest đã chấp nhận, các key id được tin cậy, cấu hình pull, kết quả lần pull gần nhất trong process này (`lastPull`) và lịch sử pull chung của deployment (`pullHistory`) |
 | `PUT` | `/api/v1/release-flags/manifest` | bootstrap admin | Body `{ keyId, payload, signature }` (Ed25519 trên payload sau khi giải base64). `422` / `409` `MANIFEST_REJECTED` kèm `reason` |
 | `POST` | `/api/v1/release-flags/manifest/pull` | bootstrap admin | Tải ngay từ `LUMIBASE_RELEASE_MANIFEST_URL`. `409 PULL_NOT_CONFIGURED`, `502 PULL_FAILED` |
 
