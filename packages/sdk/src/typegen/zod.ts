@@ -1,3 +1,4 @@
+import { RICHTEXT_ZOD } from './richtext';
 import type { TypegenCollection, TypegenField, TypegenManifest } from './types';
 import { capitalize, fieldShape, isNullable, isOptional, propertyKey } from './shared';
 
@@ -126,6 +127,8 @@ function scalarValidator(type: string): string {
       return 'z.boolean()';
     case 'geometry':
       return 'z.record(z.string(), z.unknown())';
+    case 'richtext':
+      return RICHTEXT_ZOD;
     default:
       // `json` and anything unrecognised: the TS type is `unknown`.
       return 'z.unknown()';
