@@ -5,6 +5,7 @@ import {
   auditLog,
   collections,
   fields,
+  importChunks,
   importJobs,
   items,
   permissions,
@@ -21,6 +22,7 @@ import type { AppEnv } from '../../env';
 import { ItemService } from '../../services/item-service';
 import {
   DEFAULT_IMPORT_CONFIG,
+  ImportError,
   createImportJob,
   driveImportJob,
   runImportStep,
@@ -426,6 +428,235 @@ describe.skipIf(!hasDbIntegrationUrl)('background imports — DB integration', (
     expect(row.createdRows).toBe(50);
   });
 
+  const chunksOf = async (jobId: string) =>
+    (await db.select({ startRow: importChunks.startRow, rowCount: importChunks.rowCount }).from(importChunks).where(eq(importChunks.jobId, jobId)).orderBy(importChunks.startRow));
+
+  it('parses the file once at create: stages chunks, stores no source, and each step consumes one chunk (#859)', async () => {
+    const j = await job(csv(Array.from({ length: 120 }, (_, i) => ({ price: i }))));
+    expect((await reload(j.id)).source).toBe('');
+    expect(await chunksOf(j.id)).toEqual([
+      { startRow: 0, rowCount: 50 },
+      { startRow: 50, rowCount: 50 },
+      { startRow: 100, rowCount: 20 },
+    ]);
+
+    expect(await runImportStep({ db, config: config() }, j.id)).toBe('progressed');
+    expect((await chunksOf(j.id)).map((c) => c.startRow)).toEqual([50, 100]);
+
+    // A different chunk size at run time does not matter: the staged chunks are the job.
+    expect(await driveImportJob({ db, config: config({ chunkSize: 7 }) }, j.id, 60_000)).toBe('done');
+    expect(await reload(j.id)).toMatchObject({ status: 'succeeded', cursor: 120, createdRows: 120 });
+    expect(await chunksOf(j.id)).toEqual([]);
+    expect(await countItems()).toBe(120);
+  });
+
+  it('stages a job queued before staging existed from its stored source, once (#859)', async () => {
+    const body = csv(Array.from({ length: 120 }, (_, i) => ({ price: i })));
+    const j = await job(body);
+    // Pre-migration shape: the raw file in `source`, nothing staged.
+    await db.delete(importChunks).where(eq(importChunks.jobId, j.id));
+    await db.update(importJobs).set({ source: body }).where(eq(importJobs.id, j.id));
+
+    expect(await runImportStep({ db, config: config() }, j.id)).toBe('progressed');
+    expect((await reload(j.id)).source).toBe('');
+    expect((await chunksOf(j.id)).map((c) => c.startRow)).toEqual([50, 100]);
+    expect(await driveImportJob({ db, config: config() }, j.id, 60_000)).toBe('done');
+    expect(await reload(j.id)).toMatchObject({ status: 'succeeded', createdRows: 120 });
+  });
+
+  it('fails a job whose staged rows are gone instead of looping', async () => {
+    const j = await job(csv([{ price: 1 }]));
+    await db.delete(importChunks).where(eq(importChunks.jobId, j.id));
+    expect(await runImportStep({ db, config: config() }, j.id)).toBe('done');
+    expect(await reload(j.id)).toMatchObject({ status: 'failed', message: 'The staged rows of this import are missing.' });
+  });
+
+  it('cancelling a queued job drops its staged rows', async () => {
+    const j = await job(csv([{ price: 1 }]));
+    await app.request(`/api/v1/imports/${j.id}/cancel`, { method: 'POST' });
+    expect(await chunksOf(j.id)).toEqual([]);
+  });
+
+  it('caps queued/running jobs and stored bytes per site (#859)', async () => {
+    const body = csv([{ price: 1 }]);
+    await job(body, { cfg: config({ maxPendingJobs: 1 }) });
+    await expect(job(body, { cfg: config({ maxPendingJobs: 1 }) })).rejects.toMatchObject({ code: 'LIMIT_EXCEEDED', status: 429 });
+    const bytes = new TextEncoder().encode(body).byteLength;
+    await expect(job(body, { cfg: config({ maxPendingBytes: bytes + 1 }) })).rejects.toBeInstanceOf(ImportError);
+    expect(await job(body, { cfg: config({ maxPendingBytes: bytes * 2 }) })).toMatchObject({ status: 'queued' });
+  });
+
+  // ── #859 × #860 integration: staged chunks under the per-site claim lock ──
+
+  const rows = (n: number) => csv(Array.from({ length: n }, (_, i) => ({ price: i })));
+  const runningIn = async (siteId: string) =>
+    (await db.select({ id: importJobs.id }).from(importJobs).where(and(eq(importJobs.siteId, siteId), eq(importJobs.status, 'running')))).length;
+  /** Jobs in a terminal state that still have staged rows: must always be empty. */
+  const orphanChunks = async () =>
+    db
+      .select({ jobId: importChunks.jobId })
+      .from(importChunks)
+      .innerJoin(importJobs, eq(importJobs.id, importChunks.jobId))
+      .where(and(inArray(importJobs.siteId, [SITE, SITE_B]), inArray(importJobs.status, ['succeeded', 'failed', 'cancelled', 'timed_out'])));
+
+  it('concurrent creates and starts: the limit holds and no job is claimed without its staged rows (#859, #860)', async () => {
+    const one = config({ maxConcurrency: 1 });
+    const first = await job(rows(120));
+    // Creates (budget check + job + chunks, under the site lock) race with
+    // starts (running count + claim, under the same lock).
+    const created: Array<Promise<{ id: string }>> = [];
+    const steps: Array<Promise<string>> = [runImportStep({ db, config: one }, first.id)];
+    for (let i = 0; i < 5; i++) {
+      const p = job(rows(120));
+      created.push(p);
+      steps.push(p.then((j) => runImportStep({ db, config: one }, j.id)));
+    }
+    const outcomes = await Promise.all(steps);
+    await Promise.all(created);
+    expect(outcomes.filter((o) => o === 'progressed')).toHaveLength(1);
+    expect(outcomes.filter((o) => o === 'waiting')).toHaveLength(5);
+    expect(await runningIn(SITE)).toBe(1);
+    // No step found a job with missing chunks (that would have failed it).
+    const failed = await db.select({ id: importJobs.id }).from(importJobs).where(and(eq(importJobs.siteId, SITE), eq(importJobs.status, 'failed')));
+    expect(failed).toEqual([]);
+
+    // Drain one job at a time: every job runs from its own staged rows.
+    for (let round = 0; round < 6; round++) await runImportTick({ db, config: one }, { budgetMs: 60_000 });
+    const finished = await db.select({ status: importJobs.status, createdRows: importJobs.createdRows }).from(importJobs).where(eq(importJobs.siteId, SITE));
+    expect(finished).toHaveLength(6);
+    expect(finished.every((r) => r.status === 'succeeded' && r.createdRows === 120)).toBe(true);
+    expect(await countItems()).toBe(720);
+    expect(await db.select().from(importChunks).where(eq(importChunks.siteId, SITE))).toEqual([]);
+  });
+
+  it('cross-site: a site at its limit does not hold back another site, and the tick shares chunks across both (#859, #860)', async () => {
+    await setupSiteB();
+    const one = config({ maxConcurrency: 1 });
+    const a1 = await job(rows(150));
+    const a2 = await job(rows(10));
+    const b1 = await jobInB(rows(10));
+    expect(await runImportStep({ db, config: one }, a1.id)).toBe('progressed');
+    expect(await runImportStep({ db, config: one }, a2.id)).toBe('waiting');
+    // Site B has its own limit: A being full does not make B wait.
+    expect(await runImportStep({ db, config: one }, b1.id)).toBe('done');
+    expect(await reload(b1.id)).toMatchObject({ status: 'succeeded', createdRows: 10 });
+    expect((await chunksOf(a1.id)).map((c) => c.startRow)).toEqual([50, 100]);
+
+    // Concurrent starts in both sites at once: each site's limit is counted alone.
+    const b2 = await jobInB(rows(120));
+    const b3 = await jobInB(rows(120));
+    const outcomes = await Promise.all([a2, b2, b3].map((j) => runImportStep({ db, config: one }, j.id)));
+    expect(outcomes[0]).toBe('waiting');
+    expect(outcomes.slice(1).sort()).toEqual(['progressed', 'waiting']);
+    expect(await runningIn(SITE)).toBe(1);
+    expect(await runningIn(SITE_B)).toBe(1);
+
+    for (let round = 0; round < 4; round++) await runImportTick({ db, config: one }, { budgetMs: 60_000 });
+    for (const j of [a1, a2, b2, b3]) expect((await reload(j.id)).status).toBe('succeeded');
+    expect(await db.select().from(importChunks).where(inArray(importChunks.siteId, [SITE, SITE_B]))).toEqual([]);
+  });
+
+  it('cancel racing a start: either the job never starts or it stops at its next step; staged rows never outlive it (#859, #860)', async () => {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const j = await job(rows(120));
+      const [outcome] = await Promise.all([
+        runImportStep({ db, config: config({ maxConcurrency: 1 }) }, j.id),
+        app.request(`/api/v1/imports/${j.id}/cancel`, { method: 'POST' }),
+      ]);
+      const after = await reload(j.id);
+      if (after.status === 'cancelled') {
+        // Cancelled while queued: nothing written, nothing staged.
+        expect(after.createdRows).toBe(0);
+        expect(['busy', 'done']).toContain(outcome);
+        expect(await chunksOf(j.id)).toEqual([]);
+      } else {
+        // The start won: it wrote one chunk, and the flag stops it next step.
+        expect(outcome).toBe('progressed');
+        expect(after).toMatchObject({ status: 'running', createdRows: 50 });
+        expect(after.cancelRequestedAt).not.toBeNull();
+        expect(await runImportStep({ db, config: config() }, j.id)).toBe('done');
+        expect(await reload(j.id)).toMatchObject({ status: 'cancelled', createdRows: 50 });
+        expect(await chunksOf(j.id)).toEqual([]);
+      }
+    }
+    expect(await orphanChunks()).toEqual([]);
+  });
+
+  it('a running job cancelled or timed out mid-way drops every remaining chunk with its final status (#859)', async () => {
+    const c = await job(rows(200));
+    await runImportStep({ db, config: config() }, c.id);
+    await app.request(`/api/v1/imports/${c.id}/cancel`, { method: 'POST' });
+    expect((await chunksOf(c.id)).length).toBe(3);
+    expect(await runImportStep({ db, config: config() }, c.id)).toBe('done');
+    expect(await reload(c.id)).toMatchObject({ status: 'cancelled', createdRows: 50 });
+    expect(await chunksOf(c.id)).toEqual([]);
+
+    const t = await job(rows(200), { cfg: config({ timeoutMs: 1000 }) });
+    await runImportStep({ db, config: config() }, t.id);
+    expect(await runImportStep({ db, config: config(), now: () => new Date(Date.now() + 5000) }, t.id)).toBe('done');
+    expect((await reload(t.id)).status).toBe('timed_out');
+    expect(await chunksOf(t.id)).toEqual([]);
+    expect(await orphanChunks()).toEqual([]);
+  });
+
+  it('a legacy queued job (source, no chunks) waits for the limit, then is staged once and finishes via the fair tick (#859, #860)', async () => {
+    await setupSiteB();
+    const one = config({ maxConcurrency: 1 });
+    const body = rows(120);
+    const legacy = await job(body);
+    // Pre-migration shape, queued behind a running job of the same site.
+    await db.delete(importChunks).where(eq(importChunks.jobId, legacy.id));
+    await db.update(importJobs).set({ source: body }).where(eq(importJobs.id, legacy.id));
+    const blocker = await job(rows(60));
+    await db.update(importJobs).set({ createdAt: new Date(Date.now() - 60_000) }).where(eq(importJobs.id, blocker.id));
+    const other = await jobInB(rows(10));
+
+    expect(await runImportStep({ db, config: one }, blocker.id)).toBe('progressed');
+    expect(await runImportStep({ db, config: one }, legacy.id)).toBe('waiting');
+    // Waiting does not touch the stored file or stage anything.
+    expect(await reload(legacy.id)).toMatchObject({ status: 'queued', source: body });
+    expect(await chunksOf(legacy.id)).toEqual([]);
+
+    // Concurrent starts of the legacy job: one claims and stages it; the other
+    // either sees the live lease (busy) or, if it read the job while still
+    // queued, counts it as running under the site lock (waiting).
+    await runImportStep({ db, config: one }, blocker.id); // blocker finishes
+    expect((await reload(blocker.id)).status).toBe('succeeded');
+    const outcomes = await Promise.all([runImportStep({ db, config: one }, legacy.id), runImportStep({ db, config: one }, legacy.id)]);
+    expect(outcomes.filter((o) => o === 'progressed')).toHaveLength(1);
+    expect(outcomes.filter((o) => o === 'busy' || o === 'waiting')).toHaveLength(1);
+    expect((await reload(legacy.id)).source).toBe('');
+    expect((await chunksOf(legacy.id)).map((c) => c.startRow)).toEqual([50, 100]);
+
+    expect(await runImportTick({ db, config: one }, { budgetMs: 60_000 })).toBe(2);
+    expect(await reload(legacy.id)).toMatchObject({ status: 'succeeded', cursor: 120, createdRows: 120 });
+    expect((await reload(other.id)).status).toBe('succeeded');
+    expect(await countItems()).toBe(120 + 60);
+    expect(await orphanChunks()).toEqual([]);
+  });
+
+  it('the round-robin tick consumes exactly one staged chunk per job per round (#859, #860)', async () => {
+    await setupSiteB();
+    const a = await job(rows(150));
+    const b = await jobInB(rows(100));
+    const seen: Array<{ jobId: string; cursor: number; a: number; b: number }> = [];
+    const realtime = {
+      isAvailable: () => true,
+      publish: async (_siteId: string, event: { payload?: { job?: { id: string; processedRows: number } } }) => {
+        const j = event.payload?.job;
+        if (j) seen.push({ jobId: j.id, cursor: j.processedRows, a: (await chunksOf(a.id)).length, b: (await chunksOf(b.id)).length });
+      },
+    } as unknown as RealtimeProvider;
+    expect(await runImportTick({ db, config: config(), realtime }, { budgetMs: 60_000 })).toBe(2);
+    expect(seen.map((s) => [s.jobId === a.id ? 'a' : 'b', s.cursor, s.a, s.b])).toEqual([
+      ['a', 50, 2, 2],
+      ['b', 50, 2, 1],
+      ['a', 100, 1, 1],
+      ['b', 100, 1, 0],
+      ['a', 150, 0, 0],
+    ]);
+  });
+
   describe('HTTP', () => {
     it('accepts a raw CSV body, runs it, and reports progress and errors', async () => {
       const res = await app.request('/api/v1/imports?collection=products', {
@@ -490,6 +721,38 @@ describe.skipIf(!hasDbIntegrationUrl)('background imports — DB integration', (
       expect((await post('collection=products', 'nope', 'application/octet-stream')).status).toBe(400);
       expect((await post('collection=products', 'x'.repeat(200_001))).status).toBe(413);
       expect(await db.select().from(importJobs).where(eq(importJobs.siteId, SITE))).toHaveLength(0);
+    });
+
+    it('413s a chunked upload over IMPORT_MAX_BYTES without a Content-Length (#859)', async () => {
+      let pulled = 0;
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (pulled++ >= 400) return controller.close();
+          controller.enqueue(new TextEncoder().encode('x'.repeat(1024)));
+        },
+      });
+      const res = await app.request('/api/v1/imports?collection=products', {
+        method: 'POST',
+        headers: { 'content-type': 'text/csv' },
+        body,
+        duplex: 'half',
+      } as RequestInit);
+      expect(res.status).toBe(413);
+      expect(((await res.json()) as { errors: Array<{ code: string }> }).errors[0]!.code).toBe('PAYLOAD_TOO_LARGE');
+      expect(pulled).toBeLessThan(400);
+      expect(await db.select().from(importJobs).where(eq(importJobs.siteId, SITE))).toHaveLength(0);
+    });
+
+    it('poll and list responses never carry the stored source', async () => {
+      const res = await app.request('/api/v1/imports?collection=products', {
+        method: 'POST',
+        headers: { 'content-type': 'text/csv' },
+        body: csv([{ price: 1 }]),
+      });
+      const { data } = (await res.json()) as { data: { id: string } };
+      const poll = await (await app.request(`/api/v1/imports/${data.id}`)).text();
+      const list = await (await app.request('/api/v1/imports')).text();
+      for (const text of [poll, list]) expect(text).not.toMatch(/"source"/);
     });
 
     it('403s without create permission; jobs are visible to their creator and admins only', async () => {

@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-11-16T15:45:42.765Z
+version: 6
+lastUpdated: 2026-11-17T19:32:27.731Z
 sourceLang: en
 translatedFrom: en
-sourceHash: efc39789582f82ad
+sourceHash: aa083ee0dd2aa77e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-16T15:45:42.765Z
-codeVerifiedHash: efc39789582f82ad
+codeVerified: 2026-11-17T19:32:27.731Z
+codeVerifiedHash: aa083ee0dd2aa77e
 codeVerifiedClaims: 12
 ---
 
@@ -84,6 +84,13 @@ POST /api/v1/imports?collection={collection}&format=csv|json&mode=create|upsert
   `upsert`; cần `read` vì job đọc schema của collection) và kiểm tra lại ở từng
   dòng, dưới danh nghĩa user hoặc API key đã upload file.
   Nếu principal đó mất quyền trong lúc job chạy, job dừng với trạng thái `failed`.
+- **Kích thước:** file lớn hơn `IMPORT_MAX_BYTES` nhận `413 PAYLOAD_TOO_LARGE`.
+  Giới hạn được đếm trong lúc body đang tới, nên một upload dạng chunked không có
+  `Content-Length` cũng bị cắt ở giới hạn đó.
+- **Hạn mức theo site:** mỗi site có tối đa `IMPORT_MAX_PENDING_JOBS` job và
+  `IMPORT_MAX_PENDING_BYTES` dung lượng file đã upload ở trạng thái `queued` hoặc
+  `running` cùng lúc. Vượt một trong hai, upload nhận `429 LIMIT_EXCEEDED`; hãy
+  thử lại khi có job xong.
 
 Phản hồi là job:
 
@@ -130,7 +137,12 @@ một job đã kết thúc.
 
 **Cách job chạy.** Request upload khởi động job và xử lý nó trong khoảng
 20 giây. Sau đó một cron mỗi phút (Cron Trigger trên Workers, hoặc scheduler của
-Node trên Docker) chạy tiếp. Mỗi phần là một transaction của database: các dòng và
+Node trên Docker) chạy tiếp. File được parse một lần khi tạo job, và các dòng
+được lưu theo từng phần; mỗi bước chỉ đọc phần kế tiếp. Job và mọi phần của
+nó được commit cùng nhau, nên worker không bao giờ nhận một job mà các dòng mới
+được lưu một phần, và job kết thúc hoặc bị huỷ xoá các phần còn lại trong cùng
+commit với trạng thái cuối của nó. Mỗi phần là một
+transaction của database: các dòng và
 bộ đếm tiến độ được commit cùng nhau, nên một worker chết giữa chừng không để lại
 gì, và phần đó được chạy lại từ dòng đã commit cuối cùng, không tạo bản trùng.
 Transaction khoá job, nên worker thứ hai phải chờ thay vì ghi trùng các dòng đó,

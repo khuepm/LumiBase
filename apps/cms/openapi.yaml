@@ -2803,7 +2803,8 @@ paths:
         '400': { description: VALIDATION (bad file, unknown column, no rows, no format) }
         '403': { description: Missing create (or update for upsert) permission }
         '404': { description: Collection not found }
-        '413': { description: File larger than IMPORT_MAX_BYTES }
+        '413': { description: 'File larger than IMPORT_MAX_BYTES (counted while streaming; Content-Length not required)' }
+        '429': { description: 'LIMIT_EXCEEDED: the site already has IMPORT_MAX_PENDING_JOBS jobs or IMPORT_MAX_PENDING_BYTES of files queued or running' }
     get:
       summary: List recent import jobs (own jobs; site admins see all)
       parameters:

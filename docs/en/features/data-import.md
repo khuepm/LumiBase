@@ -1,10 +1,10 @@
 ---
-version: 5
-lastUpdated: 2026-11-16T15:45:42.765Z
+version: 6
+lastUpdated: 2026-11-17T19:32:27.731Z
 sourceLang: en
-contentHash: efc39789582f82ad
-codeVerified: 2026-11-16T15:45:42.765Z
-codeVerifiedHash: efc39789582f82ad
+contentHash: aa083ee0dd2aa77e
+codeVerified: 2026-11-17T19:32:27.731Z
+codeVerifiedHash: aa083ee0dd2aa77e
 codeVerifiedClaims: 12
 ---
 
@@ -82,6 +82,13 @@ POST /api/v1/imports?collection={collection}&format=csv|json&mode=create|upsert
   `upsert`; `read` because the job reads the collection's schema) and again on
   every row, as the user or API key that uploaded the file. If that
   principal loses access while the job runs, the job stops as `failed`.
+- **Size:** a file over `IMPORT_MAX_BYTES` gets `413 PAYLOAD_TOO_LARGE`. The
+  limit is counted while the body arrives, so a chunked upload without a
+  `Content-Length` is cut off at the limit too.
+- **Per-site budget:** a site may have at most `IMPORT_MAX_PENDING_JOBS` jobs
+  and `IMPORT_MAX_PENDING_BYTES` of uploaded files `queued` or `running` at
+  once. Past either, the upload gets `429 LIMIT_EXCEEDED`; retry when a job
+  finishes.
 
 The response is the job:
 
@@ -128,7 +135,12 @@ moves the counters back, and nothing replaces a finished job.
 
 **How it runs.** The upload request starts the job and works on it for up to
 about 20 seconds. After that, a one-minute cron (Workers Cron Trigger, or the
-Node scheduler on Docker) resumes it. Each chunk is one database transaction:
+Node scheduler on Docker) resumes it. The file is parsed once, when the job is
+created, and its rows are stored in chunks; each step reads only the next
+chunk. The job and all of its chunks commit together, so a worker never picks
+up a job whose rows are only partly stored, and a job that finishes or is
+cancelled drops its remaining chunks in the same commit as its final status.
+Each chunk is one database transaction:
 the rows and the progress counter commit together, so a worker that dies
 mid-chunk leaves nothing behind and the chunk is replayed from the last
 committed row, with no duplicates. The transaction locks the job, so a second
