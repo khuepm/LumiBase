@@ -590,6 +590,59 @@ itemsRouter.post('/:collection/:id/resolve-dependents', async (c) => {
   }
 });
 
+/**
+ * GET /items/:collection/:id/revisions/compare?from=<revisionId|empty>&to=<revisionId|current>
+ * — field-level comparison of two snapshots (#686). `from` defaults to the
+ * empty state, `to` to the live item. Values are decrypted and field-masked
+ * like a normal read.
+ */
+const compareQuerySchema = z.object({
+  from: z.string().min(1).optional(),
+  to: z.string().min(1).optional(),
+});
+
+itemsRouter.get('/:collection/:id/revisions/compare', async (c) => {
+  const parsed = compareQuerySchema.safeParse({ from: c.req.query('from'), to: c.req.query('to') });
+  if (!parsed.success) {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'from/to must be revision ids, "empty" or "current".' }] }, 400);
+  }
+  const from = !parsed.data.from || parsed.data.from === 'empty' ? null : parsed.data.from;
+  const to = !parsed.data.to || parsed.data.to === 'current' ? 'current' : parsed.data.to;
+  try {
+    const data = await buildService(c).compareRevisions(c.req.param('collection'), c.req.param('id'), from, to);
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+/**
+ * POST /items/:collection/:id/revisions/:revisionId/restore — restore some
+ * fields (`{ fields: [...] }`) or all of them (empty body) from a revision
+ * (#686). Written through PATCH, so a new revision with provenance results.
+ */
+const restoreFieldsSchema = z.object({ fields: z.array(z.string().min(1)).min(1).max(500).optional() });
+
+itemsRouter.post('/:collection/:id/revisions/:revisionId/restore', async (c) => {
+  const parsed = restoreFieldsSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'fields must be a non-empty array of field names.' }] }, 400);
+  }
+  try {
+    const data = await buildService(c).restoreRevisionFields(
+      c.req.param('collection'),
+      c.req.param('id'),
+      c.req.param('revisionId'),
+      parsed.data.fields,
+    );
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
 itemsRouter.get('/:collection/:id/revisions', async (c) => {
   try {
     const data = await buildService(c).listRevisions(

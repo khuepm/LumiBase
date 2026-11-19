@@ -227,7 +227,21 @@ export {
   type CiRunResource,
 } from './git-integration';
 
-export { diffFields, type Change, type ChangeState } from './diff';
+export {
+  diffFields,
+  diffKindOf,
+  jsonPathDiff,
+  listDiff,
+  wordDiff,
+  WORD_DIFF_MAX_TOKENS,
+  type Change,
+  type ChangeState,
+  type DiffKind,
+  type DiffToken,
+  type ListDiff,
+  type PathChange,
+  type TokenOp,
+} from './diff';
 
 export {
   feToCanonical,

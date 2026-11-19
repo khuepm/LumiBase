@@ -35,6 +35,7 @@ import {
   ListItemsParams,
   ExportItemsParams,
   DuplicateItemOptions,
+  RevisionComparison,
   ImportJob,
   ImportJobStatus,
   ImportRowError,
@@ -454,6 +455,25 @@ export function legacyRest() {
         },
         listRevisions: (id: string) =>
           client.rawRequest<RevisionRow[]>(`${base}/${id}/revisions`),
+        /**
+         * Field-level comparison of two snapshots (#686): `from` a revision id
+         * (default: the empty state), `to` a revision id or the live item
+         * (default). Values are field-masked like a normal read.
+         */
+        compareRevisions: (id: string, options: { from?: string | null; to?: string | "current" } = {}) => {
+          const qs = new URLSearchParams();
+          qs.set("from", options.from ?? "empty");
+          qs.set("to", options.to ?? "current");
+          return client.rawRequest<RevisionComparison>(
+            `${base}/${encodeURIComponent(id)}/revisions/compare?${qs.toString()}`,
+          );
+        },
+        /** Restore some fields (or all, when omitted) from a revision; writes a new revision (#686). */
+        restoreRevisionFields: (id: string, revisionId: string, fields?: string[]) =>
+          client.rawRequest<Row>(
+            `${base}/${encodeURIComponent(id)}/revisions/${encodeURIComponent(revisionId)}/restore`,
+            { method: "POST", body: JSON.stringify(fields ? { fields } : {}) },
+          ),
         revertRevision: (id: string, revisionId: string) =>
           client.rawRequest<Row>(`${base}/${id}/revert/${revisionId}`, {
             method: "POST",

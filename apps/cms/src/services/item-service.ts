@@ -53,6 +53,7 @@ import {
 import { PermissionService, type CompiledPermission, type PermissionAction } from './permission-service';
 import { applyFieldMask, evaluate, type MagicContext } from './permission-dsl';
 import type { PolicyRule } from '@lumibase/contracts';
+import { diffFields, type Change } from '@lumibase/contracts';
 import { isZonedDateTimeField, normalizeZonedDateTime, ZonedDateTimeError } from '@lumibase/contracts/field';
 import { CryptoService, DecryptionError, SingleKeyProvider, type CryptoContext } from './crypto-service';
 import {
@@ -230,6 +231,26 @@ export interface ItemWriteOptions {
 /** Out-parameter for `detail`: values the caller needs that projection may drop. */
 export interface ItemDetailMeta {
   version?: number;
+}
+
+/** A revision named in a comparison (#686). */
+export interface RevisionRef {
+  id: string;
+  createdAt: Date;
+  userId: string | null;
+  authorType: string;
+  staged: boolean;
+}
+
+/** `compareRevisions` result (#686). */
+export interface RevisionComparison {
+  /** `null` = the empty state before the item existed. */
+  from: RevisionRef | null;
+  /** `'current'` = the live item. */
+  to: RevisionRef | 'current';
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  changes: Change[];
 }
 
 export interface DeepRelationOptions {
@@ -2384,6 +2405,102 @@ export class ItemService {
 
     const snapshot = (rev.delta as { after?: Record<string, unknown> }).after ?? {};
     return this.replace(collectionName, itemId, { data: snapshot });
+  }
+
+  /**
+   * Compare two snapshots of an item (#686): a revision's `after`, the empty
+   * state (`from: null`) or the live item (`to: 'current'`). Requires `read`
+   * on the item; values are decrypted and masked with the caller's field
+   * permissions exactly like a normal read, so a diff never shows more than
+   * the item itself would.
+   */
+  async compareRevisions(
+    collectionName: string,
+    itemId: string,
+    from: string | null,
+    to: string | 'current',
+  ): Promise<RevisionComparison> {
+    const coll = await this.resolveCollection(collectionName);
+    const current = (await this.detail(collectionName, itemId)) as ItemRow;
+    const [raw] = await this.deps.db
+      .select({ dekWrapped: items.dekWrapped })
+      .from(items)
+      .where(and(scopeSite(items.siteId, this.deps.siteId), eq(items.collectionId, coll.id), eq(items.id, itemId)))
+      .limit(1);
+    const dekWrapped = raw?.dekWrapped ?? null;
+    const load = async (revisionId: string) => {
+      const [rev] = await this.deps.db
+        .select()
+        .from(revisions)
+        .where(
+          and(
+            scopeSite(revisions.siteId, this.deps.siteId),
+            eq(revisions.collectionId, coll.id),
+            eq(revisions.itemId, itemId),
+            eq(revisions.id, revisionId),
+          ),
+        )
+        .limit(1);
+      if (!rev) throw new ItemServiceError('NOT_FOUND', `Revision "${revisionId}" not found.`, 404);
+      const snapshot = (rev.delta as { after?: Record<string, unknown> } | null)?.after ?? {};
+      const decrypted = await this.processCrypto(collectionName, snapshot, 'decrypt', itemId, false, true, undefined, {
+        dekWrapped,
+      });
+      return {
+        meta: {
+          id: rev.id,
+          createdAt: rev.createdAt,
+          userId: rev.userId,
+          authorType: rev.authorType,
+          staged: rev.staged,
+        } satisfies RevisionRef,
+        data: await this.maskForRead(collectionName, decrypted),
+      };
+    };
+    const left = from === null ? { meta: null, data: {} } : await load(from);
+    const right = to === 'current' ? { meta: 'current' as const, data: current.data ?? {} } : await load(to);
+    return {
+      from: left.meta,
+      to: right.meta,
+      before: left.data,
+      after: right.data,
+      changes: diffFields(left.data, right.data),
+    };
+  }
+
+  /**
+   * Restore some fields (or, with no `fields`, every field) of an item from a
+   * revision's snapshot (#686). Goes through `patch`, so validation, pins,
+   * hooks and permissions apply and a new revision with this caller's
+   * provenance is written. A requested field absent from the snapshot is
+   * restored as `null` (it did not exist then).
+   */
+  async restoreRevisionFields(
+    collectionName: string,
+    itemId: string,
+    revisionId: string,
+    fields?: string[],
+  ): Promise<ItemRow> {
+    const comparison = await this.compareRevisions(collectionName, itemId, revisionId, 'current');
+    const snapshot = comparison.before;
+    const keys = fields && fields.length > 0 ? fields : Object.keys(snapshot);
+    const known = new Set(await this.getKnownWritableFields(collectionName));
+    const unknown = keys.filter((k) => !known.has(k));
+    if (unknown.length > 0) {
+      throw new ItemServiceError('UNKNOWN_FIELD', `Unknown field(s): ${unknown.join(', ')}.`, 400);
+    }
+    const data: Record<string, unknown> = {};
+    for (const key of keys) data[key] = key in snapshot ? snapshot[key] : null;
+    return (await this.patch(collectionName, itemId, { data })) as ItemRow;
+  }
+
+  /** Field-mask a data object with the caller's `read` permission. */
+  private async maskForRead(collectionName: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
+    if (!this.permissions) return data;
+    const perm = await this.perm(collectionName, 'read');
+    if (!perm) return data;
+    const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
+    return (this.permissions.maskItem(perm, { data }, knownFields).data ?? {}) as Record<string, unknown>;
   }
 
   // ---------- internals ----------
