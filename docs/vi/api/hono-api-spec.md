@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 60
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 61
+lastUpdated: 2026-11-19T04:21:14.327Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1d86bff615c2ba39
+sourceHash: 6f8d359cbb688a73
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
+codeVerified: 2026-11-19T04:21:14.327Z
+codeVerifiedHash: 6f8d359cbb688a73
 codeVerifiedClaims: 652
 ---
 
@@ -1255,7 +1255,7 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `POST` | `/api/v1/locale-generation/suggestions/:id/decide` | `{ decision: 'approve', text? }` \| `{ decision: 'reject' }`. Duyệt ghi qua item service của reviewer (RBAC, validation, revision); `{ status: 'stale' }` khi nguồn đã đổi hoặc locale đã được ghi; `409 ALREADY_DECIDED`; `422` khi lần ghi bị từ chối (suggestion vẫn pending) |
 | `POST` | `/api/v1/locale-generation/suggestions/decide-bulk` | `{ decision, locale, ids?, jobId?, collection?, limit? ≤ 200 }` → `{ approved, rejected, stale, failed, processed, failures }` |
 | `GET/POST` | `/api/v1/agent/staged[...]` | Cửa sổ veto: các bản staging đang chờ bổ sung `approvalId/collection/itemId/patch/agentRole` từ bản sửa đổi staging (trường null khi staging không còn); `POST :id/veto` loại bỏ một staging |
-| `GET` | `/api/v1/agent/approvals` | Hộp thư approval (bộ lọc `status`; mặc định `pending`) |
+| `GET` | `/api/v1/agent/approvals` | Hộp thư approval, mới nhất trước, tối đa 100 dòng. `?status=pending` (mặc định) \| `deciding` \| `approved` \| `rejected` \| `expired` \| `failed` \| `all`; giá trị khác → `400 VALIDATION`. Không bao giờ liệt kê câu hỏi `askUser` (xem `/questions`) |
 | `POST` | `/api/v1/agent/approvals/:id/decide` | Quyết định của con người cho một hành động đang bị giữ. Body `{ decision: 'approved' \| 'rejected', reason? }`; cần `approvals:decide` (nếu không thì 403), `404` cho id không tồn tại hoặc thuộc tenant khác, `409` khi approval đã rời `pending`. Với `approved`, harness là nơi duy nhất đổi trạng thái, nên việc thực thi và việc ghi status xảy ra đúng một lần. Lúc thực thi, quyền của **người yêu cầu** được resolve lại và hành động chạy với `requester ∩ decider`: approval mà người yêu cầu đã bị thu hồi, hạ quyền hay rời site sẽ bị từ chối, và approval không có thông tin người yêu cầu (bị giữ từ trước khi có cột provenance) bị từ chối với `APPROVAL_PROVENANCE_MISSING`. Approval lưu với `approvalPolicy: human_required` (mọi [external-action tool](../features/external-action-tools.md)) chỉ được giải phóng bởi một người dùng đã đăng nhập: API key, connector token hoặc agent nhận `409 EXECUTION_FAILED` kèm `HUMAN_APPROVAL_REQUIRED`, và approval vẫn ở `pending` |
 | `POST` | `/api/v1/agent/approvals/:id/reopen` | Đưa một approval đang ở `failed` về `pending` để quyết định lại. Body `{ reason }` là **bắt buộc** và được ghi audit; cần `approvals:decide`. Một skill đã chạm tới service rồi mới lỗi thì bị giữ lại chứ không tự mời lại, vì thử lại có thể lặp một phép ghi không idempotent — đây là đường về có chủ ý. Một approval `veto` mà patch đã staged của nó đã live (một lần commit chết sau khi áp patch) thì trả `409 VETO_ALREADY_APPLIED`, vì reopen sẽ áp patch đó lần thứ hai |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Quyết định của Agent với tư cách người đánh giá (cần `review:<domain>`; cấm tự đánh giá) |

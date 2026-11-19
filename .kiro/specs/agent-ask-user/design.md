@@ -68,4 +68,4 @@ Kiểm bằng `agent-ask-user.db.integration.test.ts` (hai site, PostgreSQL th�
 
 - Gửi câu hỏi qua Slack (#711).
 - Requester không phải admin tự trả lời qua Studio: route nằm dưới control-plane guard của `/api/v1/agent` (backlog B207).
-- Binding `askUser` cho stdio `@lumibase/mcp-server` (backlog B208).
+- ~~Binding `askUser` cho stdio `@lumibase/mcp-server` (backlog B208).~~ Đã làm: `ask_user` / `get_user_answer` (tasks 8.1).

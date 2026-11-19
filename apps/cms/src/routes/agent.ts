@@ -869,16 +869,35 @@ agentRouter.delete('/tool-secrets/:name', async (c) => {
   return c.json({ data: { name, deleted: true } });
 });
 
+/** Values `GET /approvals?status=` accepts (B209); `all` lifts the filter. */
+export const APPROVAL_LIST_STATUSES = ['pending', 'deciding', 'approved', 'rejected', 'expired', 'failed', 'all'] as const;
+
 agentRouter.get('/approvals', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
+  // The documented filter (B209): `status` defaults to `pending`. The route
+  // used to ignore it and return the latest 100 rows of every status, so a
+  // busy site could push a pending approval past the page and out of the inbox.
+  const status = c.req.query('status') ?? 'pending';
+  if (!(APPROVAL_LIST_STATUSES as readonly string[]).includes(status)) {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: `status must be one of ${APPROVAL_LIST_STATUSES.join(', ')}` }] },
+      400,
+    );
+  }
   const rows = await db
     .select()
     .from(agentApprovals)
     // `askUser` questions (#710) share the table but are not approvals: they
     // have no approve/reject, and listing them here invited a client to decide
     // one. They are listed at `GET /questions`.
-    .where(and(eq(agentApprovals.siteId, siteId), ne(agentApprovals.kind, QUESTION_KIND)))
+    .where(
+      and(
+        eq(agentApprovals.siteId, siteId),
+        ne(agentApprovals.kind, QUESTION_KIND),
+        status === 'all' ? undefined : eq(agentApprovals.status, status),
+      ),
+    )
     .orderBy(desc(agentApprovals.createdAt))
     .limit(100);
   return c.json({ data: rows });
