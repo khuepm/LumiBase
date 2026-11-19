@@ -37,7 +37,19 @@ vi.mock('@/lib/api', () => ({
   getApiClient: () => ({ files: { list }, folders: { tree: async () => ({ data: [] }) } }),
 }));
 
-import { MediaPicker, MediaPickerProvider, acceptToMimeTypes, isInitiallySelected, mimeAllowed } from '../media-picker';
+vi.mock('@/lib/api-base', () => ({ getApiBaseUrl: () => 'https://cms.example' }));
+
+import {
+  MediaPicker,
+  MediaPickerProvider,
+  acceptToMimeTypes,
+  availableKinds,
+  effectiveMimes,
+  fileContentUrl,
+  isInitiallySelected,
+  mimeAllowed,
+  toPickedAsset,
+} from '../media-picker';
 
 afterEach(() => {
   cleanup();
@@ -121,5 +133,35 @@ describe('helpers', () => {
     expect(acceptToMimeTypes('image/*, .pdf')).toEqual(['image/*']);
     expect(acceptToMimeTypes('.pdf')).toBeUndefined();
     expect(isInitiallySelected({ id: 'x', filenameDisk: 'k' }, ['k'])).toBe(true);
+  });
+});
+
+describe('type filters + embed URL (#708)', () => {
+  it('a type chip narrows the server-side mime filter, and the caller restriction always wins', async () => {
+    withClient(<MediaPicker open onCancel={() => undefined} onConfirm={() => undefined} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Documents' }));
+    await waitFor(() => expect(list.mock.calls.at(-1)![0]?.mime).toContain('application/pdf'));
+    expect(screen.queryByText('a.png')).toBeNull();
+    expect(await screen.findByText('c.pdf')).toBeTruthy();
+    // Under allowedMimeTypes=['image/png','application/pdf'], chips collapse to what is allowed.
+    expect(availableKinds(['image/png', 'application/pdf'])).toEqual(['image', 'document']);
+    expect(effectiveMimes('image', ['image/png', 'application/pdf'])).toEqual(['image/png']);
+    expect(effectiveMimes('document', ['image/*'])).toEqual([]);
+    expect(effectiveMimes(null, undefined)).toBeUndefined();
+    expect(effectiveMimes('video', undefined)).toEqual(['video/*']);
+  });
+
+  it('opens on the requested kind and search', async () => {
+    withClient(<MediaPicker open kind="image" search="logo" onCancel={() => undefined} onConfirm={() => undefined} />);
+    await waitFor(() => expect(list).toHaveBeenCalled());
+    expect(list.mock.calls[0]![0]).toMatchObject({ mime: ['image/*'], search: 'logo' });
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('logo');
+  });
+
+  it('picked assets carry a version-pinned delivery URL and alt text', () => {
+    const asset = toPickedAsset({ ...file('a', 'image/png'), version: 3, metadata: { alt: 'Logo' } });
+    expect(asset.url).toBe('https://cms.example/api/v1/files/a/content?v=3');
+    expect(asset.alt).toBe('Logo');
+    expect(fileContentUrl({ id: 'x y', version: undefined }, 'https://h/')).toBe('https://h/api/v1/files/x%20y/content?v=1');
   });
 });
