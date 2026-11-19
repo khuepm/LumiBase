@@ -166,4 +166,98 @@ describe.skipIf(!hasDbIntegrationUrl)('SCIM POST /Users — cross-site binding (
     expect(body.userName).toBe(`fresh@${DOMAIN}`);
     expect(await memberOn(SITE_B, body.id)).toBe(true);
   });
+  describe('writes to an account linked from another site', () => {
+    function scimB(method: string, id: string, body?: unknown) {
+      return app.request(`/scim/v2/Users/${id}`, {
+        method,
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN_B}` },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    }
+
+    async function linked() {
+      const id = await accountOnSiteA({
+        email: `shared@${DOMAIN}`,
+        passwordHash: 'pbkdf2$placeholder',
+        firstName: 'Vera',
+        lastName: 'Shared',
+      });
+      expect((await provisionFromSiteB(`shared@${DOMAIN}`)).status).toBe(201);
+      return id;
+    }
+
+    async function account(id: string) {
+      const [row] = await db
+        .select({ email: users.email, firstName: users.firstName, lastName: users.lastName, status: users.status })
+        .from(users)
+        .where(eq(users.id, id));
+      return row;
+    }
+
+    const untouched = { email: `shared@${DOMAIN}`, firstName: 'Vera', lastName: 'Shared', status: 'active' };
+
+    it('PATCH cannot change the email or name of the shared account', async () => {
+      const id = await linked();
+
+      const res = await scimB('PATCH', id, {
+        Operations: [
+          { op: 'replace', path: 'userName', value: `attacker@${DOMAIN}` },
+          { op: 'replace', path: 'name.givenName', value: 'Mallory' },
+        ],
+      });
+
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { userName: string }).userName).toBe(`shared@${DOMAIN}`);
+      expect(await account(id)).toEqual(untouched);
+      expect(await memberOn(SITE_B, id)).toBe(true);
+    });
+
+    it('PUT cannot change the email or name of the shared account', async () => {
+      const id = await linked();
+
+      const res = await scimB('PUT', id, { userName: `attacker@${DOMAIN}`, name: { givenName: 'Mallory' }, active: true });
+
+      expect(res.status).toBe(200);
+      expect(await account(id)).toEqual(untouched);
+    });
+
+    it('PATCH active=false removes site B membership and leaves the account active on site A', async () => {
+      const id = await linked();
+
+      const res = await scimB('PATCH', id, { Operations: [{ op: 'replace', path: 'active', value: false }] });
+
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { active: boolean }).active).toBe(false);
+      expect(await account(id)).toEqual(untouched);
+      expect(await memberOn(SITE_B, id)).toBe(false);
+      expect(await memberOn(SITE_A, id)).toBe(true);
+    });
+
+    it('DELETE removes site B membership and leaves the account active on site A', async () => {
+      const id = await linked();
+
+      const res = await scimB('DELETE', id);
+
+      expect(res.status).toBe(204);
+      expect(await account(id)).toEqual(untouched);
+      expect(await memberOn(SITE_B, id)).toBe(false);
+      expect(await memberOn(SITE_A, id)).toBe(true);
+    });
+
+    it('still updates and suspends an account that belongs to site B only', async () => {
+      const created = await provisionFromSiteB(`own@${DOMAIN}`);
+      const { id } = (await created.json()) as { id: string };
+
+      const res = await scimB('PATCH', id, {
+        Operations: [
+          { op: 'replace', path: 'name.givenName', value: 'Owen' },
+          { op: 'replace', path: 'active', value: false },
+        ],
+      });
+
+      expect(res.status).toBe(200);
+      expect(await account(id)).toEqual({ email: `own@${DOMAIN}`, firstName: 'Owen', lastName: null, status: 'suspended' });
+      expect(await memberOn(SITE_B, id)).toBe(true);
+    });
+  });
 });

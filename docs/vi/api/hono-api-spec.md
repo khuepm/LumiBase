@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 59
-lastUpdated: 2026-11-19T03:47:05.886Z
+version: 60
+lastUpdated: 2026-11-19T03:55:04.105Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f8bd622180f73c3e
+sourceHash: 1d86bff615c2ba39
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T03:47:05.886Z
-codeVerifiedHash: f8bd622180f73c3e
-codeVerifiedClaims: 650
+codeVerified: 2026-11-19T03:55:04.105Z
+codeVerifiedHash: 1d86bff615c2ba39
+codeVerifiedClaims: 652
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -391,6 +391,12 @@ Mỗi thay đổi được áp dụng đều ghi một audit event (`email_ident
   hợp này, nên không cho biết tài khoản tồn tại trên site khác.
   `userName` được trim; giá trị không phải một token `local@domain` duy nhất
   trả `400` với `scimType: "invalidValue"`.
+- SCIM `PUT`, `PATCH` và `DELETE /scim/v2/Users/:id` trên một tài khoản đồng
+  thời là thành viên của site khác không thay đổi chính tài khoản đó. Thay đổi
+  `userName` và tên bị bỏ qua, và response trả về giá trị đang lưu.
+  `active: false` và `DELETE` gỡ tư cách thành viên của tài khoản ở site của
+  token và giữ tài khoản hoạt động trên các site khác. Tài khoản chỉ thuộc
+  site của token vẫn được cập nhật và tạm ngưng như trước.
 - `POST /api/v1/admin/security/unlock-user`, `/admin/security/recover` và
   `/admin/security/forgot-path` resolve tài khoản theo mode của instance giống
   như login.

@@ -8,7 +8,9 @@
  *   POST   /scim/v2/Users          — create user
  *   PUT    /scim/v2/Users/:id      — replace user
  *   PATCH  /scim/v2/Users/:id      — partial update
- *   DELETE /scim/v2/Users/:id      — soft delete (active = false)
+ *   DELETE /scim/v2/Users/:id      — soft delete (active = false); for an
+ *                                    account shared with another site, removes
+ *                                    this site's membership only
  *   GET    /scim/v2/Groups         — list groups (mapped to LumiBase teams)
  *   POST   /scim/v2/Groups         — create group
  *   GET    /scim/v2/ServiceProviderConfig
@@ -21,7 +23,7 @@
  */
 
 import { teams, teamMembers, userSites, users, scimTokens, activity } from "@lumibase/database";
-import { and, eq, ilike, or, isNull, inArray } from "drizzle-orm";
+import { and, eq, ilike, ne, notExists, or, isNull, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { AppEnv } from "../env";
@@ -29,6 +31,7 @@ import { emailLookup, isEmailIdentityConflict } from "../modules/email-identity/
 import { provisionScimUser } from "../modules/email-identity/scim-provision";
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { containsPattern } from "../services/like-pattern";
+import { bumpPermissionVersion } from "../services/permission-invalidation";
 
 export const scimRouter = new Hono<AppEnv>();
 
@@ -229,6 +232,48 @@ async function getSiteUser(db: AppEnv["Variables"]["db"], siteId: string, id: st
     .limit(1);
 
   return row;
+}
+
+/**
+ * `users` is instance-global, so an account can be a member of several sites
+ * (#862 links a proven account instead of answering 409). A site's SCIM token
+ * must only ever own what belongs to that site. For an account that also has a
+ * membership elsewhere it may therefore:
+ *   - not rewrite the global profile (`email`, names) — changing `email` and
+ *     then running password recovery would take the account over on every
+ *     site it belongs to;
+ *   - not suspend the global account — `active: false` / DELETE remove this
+ *     site's membership instead, which is what deprovisioning means here.
+ */
+function notOnAnotherSite(siteId: string) {
+  return (db: AppEnv["Variables"]["db"]) =>
+    notExists(
+      db
+        .select({ one: sql`1` })
+        .from(userSites)
+        .where(and(eq(userSites.userId, users.id), ne(userSites.siteId, siteId))),
+    );
+}
+
+/**
+ * Applies a SCIM write to an account shared with another site: profile
+ * attributes are ignored and deactivation only drops this site's membership.
+ * Returns the resource as this site now sees it, or null when the account is
+ * not (or no longer) a member of this site.
+ */
+async function writeSharedSiteUser(
+  c: Context<AppEnv>,
+  id: string,
+  deactivate: boolean,
+): Promise<ScimUser | null> {
+  const db = c.get("db");
+  const siteId = c.get("siteId");
+  const row = await getSiteUser(db, siteId, id);
+  if (!row) return null;
+  if (!deactivate) return toScimUser(row);
+  await db.delete(userSites).where(and(eq(userSites.siteId, siteId), eq(userSites.userId, id)));
+  await bumpPermissionVersion(c, siteId);
+  return { ...toScimUser(row), active: false };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -438,7 +483,7 @@ scimRouter.put("/Users/:id", async (c) => {
         status: body.active === false ? "suspended" : "active",
         updatedAt: new Date(),
       })
-      .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db))))
+      .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db)), notOnAnotherSite(siteId)(db)))
       .returning();
   } catch (err) {
     // A new userName that another account (or strict-site member) already owns.
@@ -447,6 +492,9 @@ scimRouter.put("/Users/:id", async (c) => {
   }
 
   if (updated.length === 0) {
+    // Not a member, or an account shared with another site (see notOnAnotherSite).
+    const shared = await writeSharedSiteUser(c, id, body.active === false);
+    if (shared) return c.json(shared);
     return c.json(
       { schemas: [SCIM_ERROR], status: "404", detail: "User not found" },
       404,
@@ -483,13 +531,15 @@ scimRouter.patch("/Users/:id", async (c) => {
     updated = await db
       .update(users)
       .set(set)
-      .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db))))
+      .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db)), notOnAnotherSite(siteId)(db)))
       .returning();
   } catch (err) {
     if (isEmailIdentityConflict(err)) return scimUniqueness(c);
     throw err;
   }
   if (updated.length === 0) {
+    const shared = await writeSharedSiteUser(c, id, set["status"] === "suspended");
+    if (shared) return c.json(shared);
     return c.json(
       { schemas: [SCIM_ERROR], status: "404", detail: "User not found" },
       404,
@@ -505,9 +555,10 @@ scimRouter.delete("/Users/:id", async (c) => {
   const updated = await db
     .update(users)
     .set({ status: "suspended", updatedAt: new Date() })
-    .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db))))
+    .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db)), notOnAnotherSite(siteId)(db)))
     .returning({ id: users.id });
   if (updated.length === 0) {
+    if (await writeSharedSiteUser(c, id, true)) return c.body(null, 204);
     return c.json(
       { schemas: [SCIM_ERROR], status: "404", detail: "User not found" },
       404,

@@ -137,7 +137,7 @@ function allowedAttr(policy: HtmlSanitizePolicy, el: string, name: string): bool
   if (name.startsWith('on')) return false;
   if (name === 'style' || name === 'srcdoc' || name === 'srcset' || name === 'formaction') return false;
   return (
-    (policy.elements[el] ?? []).includes(name) ||
+    (Object.hasOwn(policy.elements, el) ? policy.elements[el]! : []).includes(name) ||
     policy.globalAttributes.includes(name) ||
     policy.globalAttributePrefixes.some((p) => name.startsWith(p) && /^[a-z0-9-]+$/.test(name))
   );
@@ -174,7 +174,7 @@ export function sanitizeHtml(html: string, policy: HtmlSanitizePolicy = DEFAULT_
         }
         continue;
       }
-      if (!(t.name in policy.elements)) continue; // unwrap: keep the children
+      if (!Object.hasOwn(policy.elements, t.name)) continue; // unwrap: keep the children
       let attrs = '';
       for (const [name, raw] of t.attrs) {
         if (!allowedAttr(policy, t.name, name)) continue;

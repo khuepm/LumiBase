@@ -354,3 +354,9 @@ describe('htmlToRichText — paste is parsed, never stored as HTML', () => {
     expect(JSON.stringify(doc)).not.toMatch(/javascript:|onerror/i);
   });
 });
+
+describe('sanitizeHtml — Object.prototype names are not allowlisted elements', () => {
+  it.each(['constructor', 'toString', 'hasOwnProperty', 'valueOf'])('unwraps <%s> and does not throw on its attributes', (name) => {
+    expect(sanitizeHtml(`<${name} a="b">text</${name}>`)).toBe('text');
+  });
+});

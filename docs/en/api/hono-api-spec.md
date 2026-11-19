@@ -1,11 +1,11 @@
 ---
-version: 60
-lastUpdated: 2026-11-19T03:47:05.886Z
+version: 61
+lastUpdated: 2026-11-19T03:55:04.105Z
 sourceLang: en
-contentHash: f8bd622180f73c3e
-codeVerified: 2026-11-19T03:47:05.886Z
-codeVerifiedHash: f8bd622180f73c3e
-codeVerifiedClaims: 650
+contentHash: 1d86bff615c2ba39
+codeVerified: 2026-11-19T03:55:04.105Z
+codeVerifiedHash: 1d86bff615c2ba39
+codeVerifiedClaims: 652
 ---
 
 # Hono API Specification — LumiBase
@@ -426,6 +426,12 @@ Every applied change writes an audit event (`email_identity_mode_changed` /
   cases, so it does not say that the account exists on another site.
   `userName` is trimmed; a value that is not a single `local@domain` token
   answers `400` with `scimType: "invalidValue"`.
+- SCIM `PUT`, `PATCH` and `DELETE /scim/v2/Users/:id` on an account that is
+  also a member of another site do not change the account itself. `userName`
+  and name changes are ignored, and the response returns the stored values.
+  `active: false` and `DELETE` remove the account's membership of the token's
+  site and leave it active on its other sites. An account that belongs only to
+  the token's site is updated and suspended as before.
 - `POST /api/v1/admin/security/unlock-user`, `/admin/security/recover` and
   `/admin/security/forgot-path` resolve the account under the instance mode in
   the same way as login.
