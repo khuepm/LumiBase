@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 23
-lastUpdated: 2026-11-16T20:34:21.726Z
+version: 24
+lastUpdated: 2026-11-19T20:13:26.698Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 58d9b567a0d582fc
+sourceHash: faf274bfe2cfb795
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-16T20:34:21.726Z
-codeVerifiedHash: 58d9b567a0d582fc
-codeVerifiedClaims: 98
+codeVerified: 2026-11-19T20:13:26.698Z
+codeVerifiedHash: faf274bfe2cfb795
+codeVerifiedClaims: 100
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -52,7 +52,8 @@ trong build artifact.
 
 | Biến | Bắt buộc | Mặc định | Mô tả |
 |------|----------|----------|-------|
-| `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ (chỉ Node/Docker) | tắt | `true`, `1` hoặc `yes` khiến `POST /api/v1/setup/complete` đòi một setup token dùng một lần. Hãy bật cho mọi instance mà người khác ngoài bạn có thể truy cập trước khi setup xong — nếu không, ai chạm tới cổng trước sẽ tạo được tài khoản admin. |
+| `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ | **bật ở production**, tắt ở nơi khác | Khiến `POST /api/v1/setup/complete` đòi một setup token dùng một lần. `true` / `1` / `yes` bật, `false` / `0` / `no` tắt có chủ đích (provisioning tự động). Khi không đặt, cổng bật nếu `LUMIBASE_ENV` hoặc `NODE_ENV` là `production` (#992) hoặc khi `LUMIBASE_SETUP_TOKEN` được đặt — nếu không, ai chạm tới cổng trước sẽ tạo được tài khoản admin. Node/Docker sinh token lúc khởi động và in một lần dạng `[lumibase-cms] SETUP_TOKEN=…`. |
+| `LUMIBASE_SETUP_TOKEN` | ✗ (secret) | — | Setup token do bạn tự đặt, tối thiểu 24 ký tự (`openssl rand -base64 32`); giá trị ngắn hơn bị bỏ qua. Bắt buộc để hoàn tất setup trên **Cloudflare Workers** ở production (`wrangler secret put LUMIBASE_SETUP_TOKEN`), vì Workers không có bước khởi động để sinh token. Trên Node/Docker nó thay cho token được sinh. Xoá nó sau khi setup xong. |
 
 Khi cờ bật, mọi tiến trình phục vụ HTTP (`LUMIBASE_PROCESS_ROLE` là `web` hoặc
 `all`) sinh token ngay lúc khởi động, trước khi nhận request, và in ra đúng một lần:

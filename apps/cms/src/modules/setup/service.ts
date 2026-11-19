@@ -71,7 +71,7 @@ import {
   normalizeAdminPath,
   validateAdminPath,
 } from './path-validator';
-import { verifySetupToken } from './setup-token';
+import { hashSetupToken, verifySetupToken } from './setup-token';
 import { canonicalEmail, type EmailIdentityMode } from '../email-identity/normalize';
 import { isEmailIdentityConflict, userEmailCondition } from '../email-identity/service';
 
@@ -289,6 +289,11 @@ export interface SetupServiceDeps {
   readonly env?: AppEnv['Bindings'];
   readonly runtime?: RuntimeContext;
   readonly requireSetupToken: boolean;
+  /**
+   * Operator-provided setup token (`LUMIBASE_SETUP_TOKEN`, #992). Accepted
+   * alongside a minted one; the only token source on Cloudflare Workers.
+   */
+  readonly operatorSetupToken?: string | null;
   readonly smtpAvailable: boolean;
   readonly encryptionAvailable: boolean;
   readonly geoipProbe?: GeoipProbe;
@@ -565,16 +570,20 @@ export class SetupService {
         if (this.deps.requireSetupToken) {
           // Checked before the caller's input: with no stored hash, no token
           // can ever verify, and saying so is the only actionable answer.
-          if (!locked.setupTokenHash) {
+          const operatorToken = this.deps.operatorSetupToken ?? null;
+          if (!locked.setupTokenHash && !operatorToken) {
             throw new SetupAbort({ code: 'SETUP_TOKEN_NOT_ISSUED' });
           }
           if (!input.setupToken) {
             throw new SetupAbort({ code: 'SETUP_TOKEN_REQUIRED' });
           }
-          const ok = await verifySetupToken(
-            input.setupToken,
-            locked.setupTokenHash,
-          );
+          // Both checks always run when both sources exist, so timing does
+          // not reveal which one a guess was closer to.
+          const mintedOk = await verifySetupToken(input.setupToken, locked.setupTokenHash);
+          const operatorOk = operatorToken
+            ? await verifySetupToken(input.setupToken, await hashSetupToken(operatorToken))
+            : false;
+          const ok = mintedOk || operatorOk;
           if (!ok) {
             throw new SetupAbort({ code: 'SETUP_TOKEN_INVALID' });
           }

@@ -1,11 +1,11 @@
 ---
-version: 23
-lastUpdated: 2026-11-16T20:34:21.726Z
+version: 24
+lastUpdated: 2026-11-19T20:13:26.698Z
 sourceLang: en
-contentHash: 58d9b567a0d582fc
-codeVerified: 2026-11-16T20:34:21.726Z
-codeVerifiedHash: 58d9b567a0d582fc
-codeVerifiedClaims: 98
+contentHash: faf274bfe2cfb795
+codeVerified: 2026-11-19T20:13:26.698Z
+codeVerifiedHash: faf274bfe2cfb795
+codeVerifiedClaims: 100
 ---
 
 # Environment Variables Reference
@@ -48,7 +48,8 @@ public/setup routes to it in production. See
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ (Node/Docker only) | off | `true`, `1` or `yes` makes `POST /api/v1/setup/complete` demand a one-time setup token. Turn it on for any instance that someone other than you can reach before setup is finished — otherwise whoever reaches the port first creates the admin account. |
+| `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ | **on in production**, off elsewhere | Makes `POST /api/v1/setup/complete` demand a one-time setup token. `true` / `1` / `yes` turns it on, `false` / `0` / `no` turns it off on purpose (automated provisioning). Unset, it is on when `LUMIBASE_ENV` or `NODE_ENV` is `production` (#992) or when `LUMIBASE_SETUP_TOKEN` is set — otherwise whoever reaches the port first creates the admin account. Node/Docker mints the token at startup and prints it once as `[lumibase-cms] SETUP_TOKEN=…`. |
+| `LUMIBASE_SETUP_TOKEN` | ✗ (secret) | — | Your own setup token, at least 24 characters (`openssl rand -base64 32`); a shorter value is ignored. Required to complete setup on **Cloudflare Workers** in production (`wrangler secret put LUMIBASE_SETUP_TOKEN`), which have no startup step to mint one. On Node/Docker it replaces the minted token. Remove it once setup is done. |
 
 With the flag on, every process that serves HTTP (`LUMIBASE_PROCESS_ROLE` `web` or
 `all`) mints the token as it starts, before it accepts requests, and prints it once:
