@@ -8,7 +8,7 @@
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "scripts": {
-    "build": "turbo run build --filter=!@lumibase/shell",
+    "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "test": "turbo run test",
@@ -63,10 +63,9 @@
     "dist-tags:fix": "node scripts/check-npm-dist-tags.mjs --fix",
     "docs:nav:check": "node scripts/check-docs-nav.mjs",
     "docs:cmd:check": "node scripts/check-docs-commands.mjs",
-    "tauri:check": "node scripts/check-tauri-versions.mjs",
     "logical-css:check": "node scripts/check-logical-css.mjs",
     "runtime:check": "node scripts/check-runtime-matrix.mjs",
-    "check:all": "pnpm version:check && pnpm registry:check && pnpm imports:check && pnpm settings:check && pnpm drift:check && pnpm docs:nav:check && pnpm docs:cmd:check && pnpm tauri:check && pnpm logical-css:check && pnpm runtime:check && pnpm scripts:test",
+    "check:all": "pnpm version:check && pnpm registry:check && pnpm imports:check && pnpm settings:check && pnpm drift:check && pnpm docs:nav:check && pnpm docs:cmd:check && pnpm logical-css:check && pnpm runtime:check && pnpm scripts:test",
     "scripts:test": "node --test \"scripts/__tests__/*.test.mjs\"",
     "db:migrate:preflight": "pnpm --filter @lumibase/database migrate:preflight",
     "db:migrate:dry-run": "pnpm --filter @lumibase/database migrate:dry-run",

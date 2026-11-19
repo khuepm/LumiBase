@@ -94,7 +94,6 @@ jobs:
       # apart: `.husky/pre-commit` runs this same `pnpm check:all`. Adding a
       # guard to the script therefore arms it in both places at once. Covers
       # version:check, registry:check, imports:check, settings:check, drift:check,
-      # tauri:check,
       # scripts:test.
       #
       # Why each one earns its place:
@@ -108,11 +107,7 @@ jobs:
       #    shipped Vite 7 builds under manifests claiming Vite 8. The parity
       #    check cannot see this — the two override copies agreed with each
       #    other, they were only both wrong relative to the manifests.
-      #  - tauri:check — Dependabot bumps @tauri-apps/* on the npm side only;
-      #    `tauri build` refuses mismatched major/minor against Cargo.lock, and
-      #    only release-apps.yml runs it, so the drift surfaced at release
-      #    time (v0.26.0 → v1.0.0-rc.3) instead of on the bump PR.
-      - name: Check repo guards (versions, registry, pnpm settings, override drift, tauri, scripts)
+      - name: Check repo guards (versions, registry, pnpm settings, override drift, scripts)
         run: pnpm check:all
 
       # `pnpm -r` runs tsc in every workspace package directly — no turbo cache
