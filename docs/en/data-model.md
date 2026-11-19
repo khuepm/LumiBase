@@ -1,10 +1,10 @@
 ---
-version: 25
-lastUpdated: 2026-11-18T04:34:17.907Z
+version: 27
+lastUpdated: 2026-11-19T04:19:16.052Z
 sourceLang: en
-contentHash: c112e2c98e39310b
-codeVerified: 2026-11-18T04:34:17.907Z
-codeVerifiedHash: c112e2c98e39310b
+contentHash: 2b01a94f38f9ca8c
+codeVerified: 2026-11-19T04:19:16.052Z
+codeVerifiedHash: 2b01a94f38f9ca8c
 codeVerifiedClaims: 22
 ---
 
@@ -78,6 +78,8 @@ Unique indexes: `users_external_id_unique`, `users_is_bootstrap_unique` (partial
 - `identityKey` text (migration `0027`) — `users.email_root` when the site is strict, otherwise null. Unique index `user_sites_site_identity_unique` on `(site_id, identity_key)` allows one membership per root mailbox on a strict site (nulls never collide). Set by a trigger on insert and re-keyed when the member's email changes.
 
 **Email identity policy (migration `0027`).** The instance tier lives in `system_state.email_identity_mode` (`exact` | `root`, default `exact`; existing instances are backfilled to `exact`, so nothing changes on upgrade). Every writer — routes, SCIM, setup, seeds, an older app version — gets the same derived columns because triggers compute them: `lumibase_users_email_identity()` on `users` (reads the singleton `FOR SHARE`), `lumibase_user_sites_identity_key()` on `user_sites` (reads the site `FOR SHARE`) and `lumibase_users_rekey_memberships()` after an email change. The guarded change endpoint holds `FOR UPDATE` on the same rows, so a row is never keyed under a stale policy. See [User management](./security/user-management.md) and `/api/v1/admin/email-identity` in the API spec.
+
+**Release manifest (migration `0041`).** `release_manifests` is a singleton table (`id = 'current'`, CHECK-enforced) with `issued_at_ms` (bigint) and `manifest` (jsonb: the envelope as received, the verified `flags`, `issuedAt`, `acceptedAt`, `source` `push` | `pull`, `acceptedBy`). It holds the last signed release manifest the deployment accepted, written only after Ed25519 verification by an upsert that applies only when `issued_at_ms` is strictly greater. It has no `site_id`: release gates belong to the deployment. It is a separate table rather than a `system_state` column because Drizzle lists every declared column in an INSERT, so a new `system_state` column would break the startup INSERT of an image running on the previous schema. Per-site choices live in `settings` under key `release.flags`. See [Release flags](./features/release-flags.md).
 
 ### `teams` / `team_members`
 - `teams`: `id`, `siteId`, `name`, `description`.
@@ -286,7 +288,7 @@ When seeding local/staging/prod, seed system collection permissions explicitly. 
 
 ### `files`
 - `id`, `siteId`, `storage` (`r2`/`s3`/external), `filenameDisk`, `filenameDownload`, `mime`, `filesize`, `width`, `height`, `duration`, `folder`, `metadata jsonb`, `uploadedBy`, `contentHash`, `version`, `scanStatus`, `createdAt`, `updatedAt`.
-- `contentHash` — full SHA-256 (hex) of the current binary, used for duplicate detection; index `(siteId, contentHash)`. `version` — bumped by every in-place replace (same id and `filenameDisk`). `scanStatus` — `skipped` (default) / `pending` / `clean` / `infected` / `error`; only `skipped` and `clean` are delivered. `metadata.embedded` holds extracted EXIF/IPTC/XMP and `metadata.searchText` the searchable summary. Migration `0038_dam_assets`. Partial index `files_pending_scan_idx` on `updatedAt` where `scanStatus = 'pending'` serves the malware-scan sweeper (migration `0041_malware_scan_pending_idx`).
+- `contentHash` — full SHA-256 (hex) of the current binary, used for duplicate detection; index `(siteId, contentHash)`. `version` — bumped by every in-place replace (same id and `filenameDisk`). `scanStatus` — `skipped` (default) / `pending` / `clean` / `infected` / `error`; only `skipped` and `clean` are delivered. `metadata.embedded` holds extracted EXIF/IPTC/XMP and `metadata.searchText` the searchable summary. Migration `0038_dam_assets`. Partial index `files_pending_scan_idx` on `updatedAt` where `scanStatus = 'pending'` serves the malware-scan sweeper (migration `0044_malware_scan_pending_idx`).
 
 ### `file_versions`
 - `id`, `siteId`, `fileId` (FK cascade), `version`, `filenameDisk` (archive key `sites/<site>/file-versions/<id>/v<n>`), `filenameDownload`, `mime`, `filesize`, `width`, `height`, `contentHash`, `metadata jsonb`, `replacedBy`, `createdAt`, `expiresAt`.
