@@ -131,13 +131,20 @@ function run(command, args, cwd) {
  */
 const INSTALL_ARGS = { npm: ['install'], pnpm: ['install'] };
 
+/** Packed in dependency order; everything but `cli` is pinned through overrides. */
+const RELEASE_CLIENT_DIRS = ['contracts', 'sdk', 'cli'];
+
 function packReleaseClients(workdir) {
   const repoRoot = resolve(pkgRoot, '../..');
   const build = run('pnpm', ['exec', 'turbo', 'run', 'build', '--filter=lumibase...'], repoRoot);
   if (build.status !== 0) throw new Error(build.output);
 
+  // Every workspace package the clients depend on has to be packed too: on a
+  // release-prep branch none of them exists on npm at the new version yet, so
+  // an unpacked one fails the install with ETARGET (`@lumibase/contracts`
+  // became a dependency of `sdk` and `cli` after 2.1.0 and did exactly that).
   const tarballs = {};
-  for (const directory of ['sdk', 'cli']) {
+  for (const directory of RELEASE_CLIENT_DIRS) {
     const packageDir = join(repoRoot, 'packages', directory);
     const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'));
     const packed = run('pnpm', ['pack', '--pack-destination', workdir], packageDir);
@@ -183,10 +190,11 @@ function smoke({ template, pm, workdir, tarballs, next, build, audit: runAudit }
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     manifest.dependencies.lumibase = tarballs.lumibase;
     if (next && template === 'nextjs') manifest.dependencies.next = `^${next}`;
-    manifest.overrides = { ...manifest.overrides, '@lumibase/sdk': tarballs['@lumibase/sdk'] };
+    const pinned = Object.fromEntries(Object.entries(tarballs).filter(([name]) => name !== 'lumibase'));
+    manifest.overrides = { ...manifest.overrides, ...pinned };
     manifest.pnpm = {
       ...manifest.pnpm,
-      overrides: { ...manifest.pnpm?.overrides, '@lumibase/sdk': tarballs['@lumibase/sdk'] },
+      overrides: { ...manifest.pnpm?.overrides, ...pinned },
     };
     writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   }
