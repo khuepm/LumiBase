@@ -22,7 +22,7 @@ import {
   NEGATIVE_KEY_MAXLEN,
 } from '../services/negative-cache';
 import { createNegativeCache } from '@lumibase/runtime';
-import { audiences } from '@lumibase/database';
+import { audiences, experiments } from '@lumibase/database';
 
 type Row = Record<string, unknown>;
 
@@ -36,7 +36,8 @@ function fakeDb(queue: Row[][]) {
         // lookup, answered outside the queue: these counts are about page
         // lookups and tombstones.
         from: (table: unknown) => {
-          if (table === audiences) {
+          // A/B experiments (#763): no running experiment, same treatment.
+          if (table === audiences || table === experiments) {
             result = Promise.resolve([]);
           } else {
             result = Promise.resolve(queue[selects] ?? []);

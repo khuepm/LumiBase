@@ -1,11 +1,11 @@
 ---
-version: 62
-lastUpdated: 2026-11-19T06:12:10.009Z
+version: 63
+lastUpdated: 2026-11-19T07:25:43.944Z
 sourceLang: en
-contentHash: 3158d8912c4d6a37
-codeVerified: 2026-11-19T06:12:10.009Z
-codeVerifiedHash: 3158d8912c4d6a37
-codeVerifiedClaims: 654
+contentHash: d4ce1615e0f67e96
+codeVerified: 2026-11-19T07:25:43.944Z
+codeVerifiedHash: d4ce1615e0f67e96
+codeVerifiedClaims: 664
 ---
 
 # Hono API Specification — LumiBase
@@ -1750,6 +1750,26 @@ identifiers.
 limit? }`. `field` is required for non-`count` aggregates. A field outside the
 collection whitelist returns `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
 
+### Experiments (A/B tests, #763)
+
+Site admins only. An experiment splits a page's or an item's traffic between
+arms; a winner is promoted only through an approval. See
+[A/B experiments](../features/experiments.md).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST` | `/api/v1/experiments` | List (`?status=`) / create `{ key, name, hypothesis?, subjectType, subjectId, goal, minSampleSize?, arms[] }`; `404 SUBJECT_NOT_FOUND`, `409 EXPERIMENT_KEY_TAKEN` |
+| `GET/PATCH/DELETE` | `/api/v1/experiments/:id` | Detail with `report` / update (`arms` only while `draft`) / delete (not while `running`) |
+| `POST` | `/api/v1/experiments/:id/start` | `draft`/`stopped` → `running`; `409 SUBJECT_BUSY`, `409 TOO_MANY_RUNNING` (5 per site) |
+| `POST` | `/api/v1/experiments/:id/stop` | `running` → `stopped` |
+| `GET` | `/api/v1/experiments/:id/report` | `{ experiment, report: { arms[], totals, sampleReached, recommendation }, daily[] }` |
+| `POST` | `/api/v1/experiments/:id/promote` | `{ arm, rationale? }` → `202` with a parked `promoteExperimentWinner` approval; never promotes directly |
+| `POST` | `/api/v1/experiment-events/:site_id` | Public beacon `{ events: [{ experiment, arm, kind, goal? }] }` (≤ 10), needs `X-Lumi-Consent: analytics`; always `204` except `400` for a malformed body |
+
+Arms: 2–4, one `control` (no overrides). Per arm the report gives exposures,
+conversions, `rate`, `uplift`, `z`, `pValue` (two-proportion z-test against
+control) and `significant` (alpha 0.05, Bonferroni-corrected).
+
 ### Activation milestones
 
 | Method | Path | Description |
@@ -1850,6 +1870,15 @@ counted per day, slug and audience. See
 | `GET/POST` | `/api/v1/personalisation/variants` | List (`?subjectType=&subjectId=&audienceId=`) / create `{ subjectType, subjectId, audienceId, overrides, status? }`; `404 SUBJECT_NOT_FOUND` / `AUDIENCE_NOT_FOUND`, `409 VARIANT_EXISTS`, `413 OVERRIDES_TOO_LARGE` |
 | `PATCH/DELETE` | `/api/v1/personalisation/variants/:id` | `{ overrides?, status? }` / delete |
 | `GET` | `/api/v1/personalisation/exposures` | Daily exposure counts per slug and audience (`?from=&to=`, ≤ 366 days) with `meta.totals` |
+
+**A/B experiments** (#763): with running experiments that touch the page, a
+visitor sending `X-Lumi-Visitor` and `X-Lumi-Consent: analytics` is assigned
+an arm deterministically and gets that arm's content, with
+`experiments: [{ key, arm }]` and `X-Lumi-Experiments: key=arm,…`. Without
+them the visitor gets `control` and is not listed. `Vary` adds
+`X-Lumi-Visitor`; the edge key (`__exp=`), app-cache key and `ETag` include
+the assigned arms, never the visitor id. See
+[A/B experiments](../features/experiments.md).
 
 ---
 

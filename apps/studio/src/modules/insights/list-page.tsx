@@ -40,13 +40,18 @@ export function InsightsListPage() {
           <h1 className="text-xl font-semibold">Insights</h1>
           <p className="text-sm text-muted-foreground">Dashboards built from your content.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setCreating((v) => !v)}
-          className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
-        >
-          New dashboard
-        </button>
+        <div className="flex items-center gap-2">
+          <Link to={`${base}/experiments` as never} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted">
+            Experiments
+          </Link>
+          <button
+            type="button"
+            onClick={() => setCreating((v) => !v)}
+            className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
+          >
+            New dashboard
+          </button>
+        </div>
       </header>
 
       {creating && (

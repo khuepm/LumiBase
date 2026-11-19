@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { deliverRouter } from '../routes/deliver';
 import { edgeUrlIndexKey, purgeEdgeByTag, type CacheProvider, type EdgeCacheProvider } from '@lumibase/runtime';
-import { audiences } from '@lumibase/database';
+import { audiences, experiments } from '@lumibase/database';
 
 /**
  * Route-level tests for Delivery API HTTP caching
@@ -27,7 +27,8 @@ function fakeDb(queue: Row[][]) {
         // Personalisation (#762): a site with no audiences. Answered outside
         // the queue so the counts below stay about content queries.
         from: (table: unknown) => {
-          if (table === audiences) {
+          // A/B experiments (#763): no running experiment, same treatment.
+          if (table === audiences || table === experiments) {
             result = Promise.resolve([]);
           } else {
             result = Promise.resolve(queue[selects] ?? []);

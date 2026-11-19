@@ -107,3 +107,57 @@ export const insightsApi = {
       body: JSON.stringify(query),
     }),
 };
+
+// --- A/B experiments (#763) --------------------------------------------------
+
+export interface ExperimentArmResult {
+  key: string;
+  exposures: number;
+  conversions: number;
+  rate: number;
+  uplift: number | null;
+  z: number | null;
+  pValue: number | null;
+  significant: boolean;
+}
+
+export interface ExperimentReport {
+  arms: ExperimentArmResult[];
+  totals: { exposures: number; conversions: number };
+  sampleReached: boolean;
+  recommendation: { arm: string; reason: string } | null;
+}
+
+export interface Experiment {
+  id: string;
+  key: string;
+  name: string;
+  hypothesis: string | null;
+  subjectType: 'page' | 'item';
+  subjectId: string;
+  goal: string;
+  status: 'draft' | 'running' | 'stopped' | 'completed';
+  minSampleSize: number;
+  startedAt: string | null;
+  endedAt: string | null;
+  winnerArm: string | null;
+}
+
+export interface ExperimentReportResponse {
+  experiment: Experiment & { arms: Array<{ key: string; name: string | null; weight: number }> };
+  report: ExperimentReport;
+  daily: Array<{ day: string; armKey: string; kind: 'exposure' | 'conversion'; count: number }>;
+}
+
+export const experimentsApi = {
+  list: () => insightsFetch<Experiment[]>('/api/v1/experiments'),
+  report: (id: string) => insightsFetch<ExperimentReportResponse>(`/api/v1/experiments/${id}/report`),
+  start: (id: string) => insightsFetch<Experiment>(`/api/v1/experiments/${id}/start`, { method: 'POST' }),
+  stop: (id: string) => insightsFetch<Experiment>(`/api/v1/experiments/${id}/stop`, { method: 'POST' }),
+  /** Parks a promotion approval (HITL); never promotes directly. */
+  requestPromotion: (id: string, arm: string, rationale?: string) =>
+    insightsFetch<{ status: string; approvalId?: string }>(`/api/v1/experiments/${id}/promote`, {
+      method: 'POST',
+      body: JSON.stringify({ arm, ...(rationale ? { rationale } : {}) }),
+    }),
+};

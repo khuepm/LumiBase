@@ -22,6 +22,14 @@
       "collection"
     ]
   },
+  "analyzeExperiment": {
+    "properties": [
+      "experimentId"
+    ],
+    "required": [
+      "experimentId"
+    ]
+  },
   "applyContentMigrationSchema": {
     "properties": [
       "collectionPrefix",
@@ -410,6 +418,17 @@
     "required": [
       "contentTypes",
       "source"
+    ]
+  },
+  "promoteExperimentWinner": {
+    "properties": [
+      "arm",
+      "experimentId",
+      "rationale"
+    ],
+    "required": [
+      "arm",
+      "experimentId"
     ]
   },
   "promoteVersion": {

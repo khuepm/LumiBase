@@ -1,10 +1,10 @@
 ---
-version: 27
-lastUpdated: 2026-11-19T06:12:12.023Z
+version: 28
+lastUpdated: 2026-11-19T07:25:45.989Z
 sourceLang: en
-contentHash: c5183f80d77f87d0
-codeVerified: 2026-11-19T06:12:12.023Z
-codeVerifiedHash: c5183f80d77f87d0
+contentHash: a2155b9f0be59292
+codeVerified: 2026-11-19T07:25:45.989Z
+codeVerifiedHash: a2155b9f0be59292
 codeVerifiedClaims: 22
 ---
 
@@ -39,6 +39,7 @@ Schema files are split by domain:
 | `locale-generation.ts` | `lumibase_locale_generation_jobs`, `lumibase_translation_suggestions` |
 | `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
 | `personalisation.ts` | `lumibase_audiences`, `lumibase_content_variants`, `lumibase_variant_exposures` |
+| `experiments.ts` | `lumibase_experiments`, `lumibase_experiment_arms`, `lumibase_experiment_events` |
 
 Migrations live in `packages/database/migrations/` and `packages/database/drizzle/`.
 
@@ -308,6 +309,17 @@ When seeding local/staging/prod, seed system collection permissions explicitly. 
 
 ### `variant_exposures`
 - `id`, `siteId`, `day`, `subjectType`, `subjectId`, `audienceKey` (`_` = default content), `count`, `updatedAt`. Unique `(siteId, day, subjectType, subjectId, audienceKey)`; incremented only with analytics consent, no visitor data. Migration `0044_personalisation`. See [Personalisation](./features/personalisation.md).
+
+## A/B experiments (`experiments.ts`, #763)
+
+### `experiments`
+- `id`, `siteId`, `key` (unique per site), `name`, `hypothesis`, `subjectType` (`page`/`item`), `subjectId`, `goal`, `status` (`draft`/`running`/`stopped`/`completed`), `minSampleSize`, `startedAt`, `endedAt`, `winnerArm`, `createdBy`, `createdAt`, `updatedAt`.
+
+### `experiment_arms`
+- `id`, `siteId`, `experimentId` (FK cascade), `key` (`control` or another key), `name`, `weight`, `overrides jsonb`, `createdAt`, `updatedAt`. Unique `(siteId, experimentId, key)`.
+
+### `experiment_events`
+- `id`, `siteId`, `experimentId` (FK cascade), `armKey`, `day`, `kind` (`exposure`/`conversion`), `count`, `updatedAt`. Unique `(siteId, experimentId, armKey, day, kind)`; written only with analytics consent, no visitor data. Migration `0045_experiments`. See [A/B experiments](./features/experiments.md).
 
 ## 5. UX state (`platform.ts`)
 

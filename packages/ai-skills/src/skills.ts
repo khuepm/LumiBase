@@ -814,6 +814,24 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
     },
     requiredCapabilities: ['config:write'],
   },
+  analyzeExperiment: {
+    name: 'analyzeExperiment',
+    description:
+      'Report an A/B experiment: exposures, conversions, rate per arm, uplift and significance against control, and the recommended winner (null when the data does not support one yet). Use before proposing a winner.',
+    parameters: { type: 'object', properties: { experimentId: { type: 'string' } }, required: ['experimentId'] },
+    requiredCapabilities: ['items:read'],
+  },
+  promoteExperimentWinner: {
+    name: 'promoteExperimentWinner',
+    description:
+      "Propose promoting an A/B experiment's winning arm: after approval its overrides become the published page / item and the experiment completes. Pass the arm analyzeExperiment recommends and a short rationale.",
+    parameters: {
+      type: 'object',
+      properties: { experimentId: { type: 'string' }, arm: { type: 'string' }, rationale: { type: 'string' } },
+      required: ['experimentId', 'arm'],
+    },
+    requiredCapabilities: ['items:write'],
+  },
   deleteSetting: {
     name: 'deleteSetting',
     description: 'Delete a site setting by key.',

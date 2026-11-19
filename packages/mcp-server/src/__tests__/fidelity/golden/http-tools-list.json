@@ -63,6 +63,23 @@
       }
     },
     {
+      "name": "analyzeExperiment",
+      "description": "Report an A/B experiment (#763): exposures, conversions, rate per arm, uplift and significance against control, and the recommended winner (null when the data does not support one yet).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "experimentId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "experimentId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "applyContentMigrationSchema",
       "description": "Create the collections, fields and relations a content migration needs. Additive only; existing fields are never changed. Entries are imported with `lumibase migrate --apply`.",
       "inputSchema": {
@@ -1477,6 +1494,32 @@
         "required": [
           "source",
           "contentTypes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "promoteExperimentWinner",
+      "description": "Promote an A/B experiment's winning arm (#763): its overrides become the published page / item and the experiment completes. Changes live content, so it always waits for approval.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "experimentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "arm": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,39}$"
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "experimentId",
+          "arm"
         ],
         "additionalProperties": false
       }

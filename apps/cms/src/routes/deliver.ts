@@ -1,6 +1,6 @@
 import { schema } from '@lumibase/database';
 import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { recordEdgeUrl } from '@lumibase/runtime';
 import type { AppEnv, Variables } from '../env';
 import { scopedDbFor } from '../middleware/db';
@@ -38,6 +38,17 @@ import {
   type DeliveryAudience,
 } from '../modules/personalisation/delivery';
 import { PersonalisationRepository } from '../modules/personalisation/repo';
+import {
+  NO_EXPERIMENTS,
+  applyItemExperiments,
+  applyPageExperiment,
+  edgeUrlWithExperiments,
+  experimentsHeaderValue,
+  resolveDeliveryExperiments,
+  EXPERIMENTS_HEADER,
+  type DeliveryExperiments,
+} from '../modules/experiments/delivery';
+import { ExperimentRepository } from '../modules/experiments/repo';
 
 /**
  * Delivery API — implements the "1-Roundtrip Rule" (Strict Rule #3).
@@ -434,6 +445,14 @@ interface PayloadPersonalisation {
   audience: DeliveryAudience;
 }
 
+type PagePayload = Awaited<ReturnType<typeof buildPagePayload>>;
+
+/** Set `X-Lumi-Experiments` from what the payload says was applied (#763). */
+function experimentsHeader(c: Context<AppEnv>, body: { experiments?: Array<{ key: string; arm: string }> } | undefined) {
+  const value = experimentsHeaderValue(body?.experiments);
+  if (value) c.header(EXPERIMENTS_HEADER, value);
+}
+
 /**
  * Hydrate every section of a page into the delivery payload. With an
  * audience, the page's published variant replaces its title / layout first,
@@ -445,12 +464,14 @@ async function buildPagePayload(
   pageRow: { id: string; title: string; slug: string; layoutConfig: unknown },
   withProvenance: boolean,
   personal?: PayloadPersonalisation,
+  experiments: DeliveryExperiments = NO_EXPERIMENTS,
 ) {
   const audienceId = personal?.audience.audience?.id;
   const pageVariant = audienceId
     ? (await personal!.repo.publishedVariants('page', [pageRow.id], audienceId))[0]
     : undefined;
-  const page = applyPageVariant(pageRow, pageVariant);
+  // An experiment arm wins over an audience variant on the same page (#763).
+  const page = applyPageExperiment(applyPageVariant(pageRow, pageVariant), experiments);
   const layout = (page.layoutConfig ?? {}) as LayoutConfig;
   const sections = layout.sections ?? [];
   const resolved = await Promise.all(
@@ -460,6 +481,7 @@ async function buildPagePayload(
     page: { title: string; slug: string };
     sections: typeof resolved;
     personalisation?: { audience: string | null; variants: string[] };
+    experiments?: Array<{ key: string; arm: string }>;
   } = {
     page: {
       title: page.title,
@@ -473,6 +495,10 @@ async function buildPagePayload(
       audience: personal.audience.audience?.key ?? null,
       variants: [...(pageVariant ? [pageVariant.id] : []), ...itemVariants],
     };
+  }
+  if (experiments.active) {
+    const applied = applyItemExperiments(payload, experiments, pageRow.id);
+    if (applied.length > 0) payload.experiments = applied;
   }
   return payload;
 }
@@ -550,11 +576,23 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
     ctx: { country: null, locale: null, utm: {}, attrs: {}, consent: { personalization: false, analytics: false } },
     token: DEFAULT_AUDIENCE_TOKEN,
   }));
-  if (personal.active) {
-    // Downstream shared caches key by URL + Vary; the audience inputs are headers.
-    c.header('Vary', [PUBLIC_DELIVERY_VARY, ...PERSONALISATION_VARY].join(', '));
-    c.header('X-Lumi-Variant', personal.token);
+  // A/B experiments (#763): assign arms before any cache tier too.
+  const experimentRepo = new ExperimentRepository(db, siteId);
+  const experiments: DeliveryExperiments = await resolveDeliveryExperiments({
+    repo: experimentRepo,
+    cache: runtime?.cache,
+    headers: c.req.raw.headers,
+    slug,
+    analyticsConsent: personal.ctx.consent.analytics,
+  }).catch(() => NO_EXPERIMENTS);
+  if (personal.active || experiments.active) {
+    // Downstream shared caches key by URL + Vary; the audience and arm inputs are headers.
+    c.header(
+      'Vary',
+      [PUBLIC_DELIVERY_VARY, ...PERSONALISATION_VARY, ...(experiments.active ? ['X-Lumi-Visitor'] : [])].join(', '),
+    );
   }
+  if (personal.active) c.header('X-Lumi-Variant', personal.token);
   /** Count one exposure (analytics consent only), after the response. */
   const recordExposure = () => {
     if (!personal.active || !personal.ctx.consent.analytics) return;
@@ -569,7 +607,8 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
 
   // One key per real variant, shared by match/put and the purge index (#622 B2).
   const canonicalEdgeUrl = canonicalDeliverEdgeUrl(c.req.url);
-  const edgeUrl = personal.active ? edgeUrlWithAudience(canonicalEdgeUrl, personal.token) : canonicalEdgeUrl;
+  const audienceEdgeUrl = personal.active ? edgeUrlWithAudience(canonicalEdgeUrl, personal.token) : canonicalEdgeUrl;
+  const edgeUrl = experiments.active ? edgeUrlWithExperiments(audienceEdgeUrl, experiments.token) : audienceEdgeUrl;
   const edgeRequest = new Request(edgeUrl, { method: 'GET' });
   const useDeliverCache = policy.cacheable && !isPreview;
   const appCache = useDeliverCache ? runtime?.cache : undefined;
@@ -578,6 +617,7 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
     lang: c.req.query('lang'),
     provenance: withProvenance ? 'true' : undefined,
     audience: personal.active ? personal.token : undefined,
+    experiments: experiments.active ? experiments.token : undefined,
   });
   const appCacheKey =
     appCache && useDeliverCache ? deliverAppCacheKey(siteId, slug, variantHash) : null;
@@ -642,6 +682,7 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
         return c.body(null, 304);
       }
       recordExposure();
+      experimentsHeader(c, cached.body as PagePayload);
       const response = c.json(cached.body);
       if (edgeCache) {
         await edgeCache.put(edgeRequest, response.clone());
@@ -689,7 +730,9 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
   if (!policy.cacheable) {
     c.header('Cache-Control', policy.cacheControl);
     recordExposure();
-    return c.json(await buildPagePayload(db, siteId, page, withProvenance, payloadPersonal));
+    const uncached = await buildPagePayload(db, siteId, page, withProvenance, payloadPersonal, experiments);
+    experimentsHeader(c, uncached);
+    return c.json(uncached);
   }
 
   const fingerprint = await contentFingerprint(db, siteId);
@@ -702,6 +745,8 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
     fingerprint.visibleCount,
     // A variant edit or a different audience must never revalidate as 304.
     ...(personal.active ? [personal.token, await personalRepo.variantsFingerprint()] : []),
+    // Likewise an arm change or a different assignment (#763).
+    ...(experiments.active ? [experiments.token, await experimentRepo.fingerprint()] : []),
   ]);
 
   c.header('ETag', etag);
@@ -714,7 +759,8 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
   }
 
   recordExposure();
-  const body = await buildPagePayload(db, siteId, page, withProvenance, payloadPersonal);
+  const body = await buildPagePayload(db, siteId, page, withProvenance, payloadPersonal, experiments);
+  experimentsHeader(c, body);
   if (appCache && appCacheKey) {
     try {
       await appCache.set(appCacheKey, JSON.stringify({ body, etag } satisfies DeliverAppCacheEntry), {

@@ -52,6 +52,8 @@ import { dataExportRouter } from './routes/data-export';
 import { restrictionRouter } from './routes/restriction';
 import { retentionRouter } from './routes/retention';
 import { personalisationRouter } from './modules/personalisation/routes';
+import { experimentsRouter } from './modules/experiments/routes';
+import { experimentEventsPublicRouter } from './modules/experiments/beacon';
 import { emailPublicRouter } from './routes/email-public';
 import { deliverRouter } from './routes/deliver';
 import { deploymentsRouter, deploymentsWebhookRouter } from './routes/deployments';
@@ -307,6 +309,8 @@ api.route('/me/automated-decisions', automatedDecisionsRouter);
 api.route('/retention', retentionRouter);
 // Audience rules + content variants (#762), site admin.
 api.route('/personalisation', personalisationRouter);
+// A/B experiments + Insights report (#763), site admin.
+api.route('/experiments', experimentsRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/pages', pagesRouter);
@@ -502,6 +506,11 @@ app.route('/api/v1/deliver', deliverRouter);
 // `/api/v1/pageviews/stats` (mounted on `api` below) doesn't run it twice.
 app.use('/api/v1/pageviews/:site_id/hit', withDb(), withRateLimit());
 app.route('/api/v1/pageviews', pageviewsPublicRouter);
+
+// Public experiment beacon (#763) — exposures / conversions, same shape and
+// guards as the pageview beacon (site in the URL, unauthenticated).
+app.use('/api/v1/experiment-events/:site_id', withDb(), withRateLimit());
+app.route('/api/v1/experiment-events', experimentEventsPublicRouter);
 
 // RFC 9728 Protected Resource Metadata for the MCP endpoint (#346). Public
 // (discovery precedes the token) but tenant-resolved: the issuer list is per site.

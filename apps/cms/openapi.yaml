@@ -30,6 +30,47 @@ components:
       schema: { type: string }
       description: Active tenant id. Required for every authenticated endpoint.
   schemas:
+    ExperimentArmInput:
+      type: object
+      required: [key]
+      additionalProperties: false
+      properties:
+        key: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,39}$', description: 'One arm must be `control`' }
+        name: { type: string }
+        weight: { type: integer, minimum: 0, maximum: 100, default: 50 }
+        overrides: { type: object, description: 'Page: `{ title?, layoutConfig? }`; item: partial `data`. Empty for `control`.' }
+    ExperimentInput:
+      type: object
+      required: [key, name, subjectType, subjectId, goal, arms]
+      additionalProperties: false
+      properties:
+        key: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,39}$' }
+        name: { type: string }
+        hypothesis: { type: string }
+        subjectType: { type: string, enum: [page, item] }
+        subjectId: { type: string }
+        goal: { type: string }
+        minSampleSize: { type: integer, minimum: 10, default: 100 }
+        arms: { type: array, minItems: 2, maxItems: 4, items: { $ref: '#/components/schemas/ExperimentArmInput' } }
+    ExperimentReport:
+      type: object
+      properties:
+        arms:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              exposures: { type: integer }
+              conversions: { type: integer }
+              rate: { type: number }
+              uplift: { type: number, nullable: true }
+              z: { type: number, nullable: true }
+              pValue: { type: number, nullable: true }
+              significant: { type: boolean }
+        totals: { type: object, properties: { exposures: { type: integer }, conversions: { type: integer } } }
+        sampleReached: { type: boolean }
+        recommendation: { type: object, nullable: true, properties: { arm: { type: string }, reason: { type: string } } }
     AudienceRules:
       type: object
       required: [conditions]
@@ -2894,6 +2935,162 @@ paths:
       responses:
         '200': { description: '`{ data: null }`' }
         '404': { description: NOT_FOUND }
+  /experiments:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    get:
+      summary: List A/B experiments (#763, site admin)
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [draft, running, stopped, completed] } }
+      responses:
+        '200': { description: '`{ data: Experiment[] }`' }
+    post:
+      summary: Create an A/B experiment (draft) with its arms
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExperimentInput' }
+      responses:
+        '201': { description: The experiment with its arms }
+        '400': { description: VALIDATION (arms need one `control` without overrides, 2–4 arms, overrides fit the subject) }
+        '404': { description: SUBJECT_NOT_FOUND }
+        '409': { description: EXPERIMENT_KEY_TAKEN }
+  /experiments/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Experiment with its arms and report
+      responses:
+        '200': { description: '`{ data: Experiment & { arms, report } }`' }
+        '404': { description: NOT_FOUND }
+    patch:
+      summary: Update name, hypothesis, goal, minSampleSize; arms only while draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: { type: string }
+                hypothesis: { type: string, nullable: true }
+                goal: { type: string }
+                minSampleSize: { type: integer, minimum: 10 }
+                arms: { type: array, minItems: 2, maxItems: 4, items: { $ref: '#/components/schemas/ExperimentArmInput' } }
+      responses:
+        '200': { description: The updated experiment }
+        '409': { description: INVALID_STATE (completed, or arms outside draft) }
+    delete:
+      summary: Delete an experiment that is not running
+      responses:
+        '200': { description: '`{ data: { id, deleted: true } }`' }
+        '409': { description: INVALID_STATE }
+  /experiments/{id}/start:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Start splitting traffic (draft or stopped → running)
+      responses:
+        '200': { description: The running experiment }
+        '404': { description: NOT_FOUND, SUBJECT_NOT_FOUND }
+        '409': { description: INVALID_STATE, SUBJECT_BUSY (one running experiment per subject), TOO_MANY_RUNNING (5 per site) }
+  /experiments/{id}/stop:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Stop splitting traffic (running → stopped)
+      responses:
+        '200': { description: The stopped experiment }
+        '409': { description: INVALID_STATE }
+  /experiments/{id}/report:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Insights report — per-arm rates, uplift and significance against control, recommendation, daily series
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      experiment: { type: object }
+                      report: { $ref: '#/components/schemas/ExperimentReport' }
+                      daily:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            day: { type: string, format: date }
+                            armKey: { type: string }
+                            kind: { type: string, enum: [exposure, conversion] }
+                            count: { type: integer }
+        '404': { description: NOT_FOUND }
+  /experiments/{id}/promote:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Request promotion of an arm — parks a promoteExperimentWinner approval (HITL), never promotes directly
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [arm]
+              additionalProperties: false
+              properties:
+                arm: { type: string }
+                rationale: { type: string, maxLength: 2000 }
+      responses:
+        '202': { description: '`{ data: { status: pending_approval, approvalId } }`' }
+        '403': { description: DENIED }
+        '404': { description: NOT_FOUND, ARM_NOT_FOUND }
+        '409': { description: INVALID_STATE }
+  /experiment-events/{site_id}:
+    post:
+      summary: Public beacon — report experiment exposures and conversions (#763)
+      description: Unauthenticated, rate-limited. Needs `X-Lumi-Consent analytics`; bots, DNT and Sec-GPC are dropped. Only arms of a running experiment count, and a conversion only for the experiment's goal. Counted as a daily rollup without visitor data.
+      security: []
+      parameters:
+        - { name: site_id, in: path, required: true, schema: { type: string } }
+        - { name: X-Lumi-Consent, in: header, schema: { type: string }, description: Must include `analytics` }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              additionalProperties: false
+              properties:
+                events:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    type: object
+                    required: [experiment, arm, kind]
+                    additionalProperties: false
+                    properties:
+                      experiment: { type: string }
+                      arm: { type: string }
+                      kind: { type: string, enum: [exposure, conversion] }
+                      goal: { type: string }
+      responses:
+        '204': { description: Accepted (also when dropped) }
+        '400': { description: INVALID_BODY }
   /personalisation/exposures:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'

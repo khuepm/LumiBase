@@ -146,6 +146,8 @@ export async function deliveryVariantHash(
   if (params.provenance === 'true') parts.push('provenance=true');
   // Resolved audience (#762): one cached copy per audience, never per raw attribute.
   if (params.audience) parts.push(`audience=${params.audience}`);
+  // Assigned experiment arms (#763): one copy per arm combination, never per visitor.
+  if (params.experiments) parts.push(`experiments=${params.experiments}`);
   if (parts.length === 0) return '0';
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(parts.join('&')));
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);

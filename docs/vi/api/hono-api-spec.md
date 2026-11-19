@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 61
-lastUpdated: 2026-11-19T06:12:10.009Z
+version: 62
+lastUpdated: 2026-11-19T07:25:43.944Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3158d8912c4d6a37
+sourceHash: d4ce1615e0f67e96
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T06:12:10.009Z
-codeVerifiedHash: 3158d8912c4d6a37
-codeVerifiedClaims: 654
+codeVerified: 2026-11-19T07:25:43.944Z
+codeVerifiedHash: d4ce1615e0f67e96
+codeVerifiedClaims: 664
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -1547,6 +1547,26 @@ Dashboard do người dùng xây dựng gồm các panel tổng hợp trên các
 
 `PanelQuery` (hợp đồng dùng chung `@lumibase/contracts`): `{ collection, aggregate (count|sum|avg|min|max), field?, groupBy?, filter? (quy tắc điều kiện), dateRange?, limit? }`. `field` is required for non-`count` aggregates. Trường nằm ngoài danh sách trắng của collection sẽ trả về `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
 
+### Experiments (thử nghiệm A/B, #763)
+
+Chỉ site admin. Một experiment chia lưu lượng của một trang hoặc một item giữa
+các arm; arm thắng chỉ được promote qua phê duyệt. Xem
+[Thử nghiệm A/B](../features/experiments.md).
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `GET/POST` | `/api/v1/experiments` | Liệt kê (`?status=`) / tạo `{ key, name, hypothesis?, subjectType, subjectId, goal, minSampleSize?, arms[] }`; `404 SUBJECT_NOT_FOUND`, `409 EXPERIMENT_KEY_TAKEN` |
+| `GET/PATCH/DELETE` | `/api/v1/experiments/:id` | Chi tiết kèm `report` / cập nhật (`arms` chỉ khi còn `draft`) / xoá (không xoá khi đang `running`) |
+| `POST` | `/api/v1/experiments/:id/start` | `draft`/`stopped` → `running`; `409 SUBJECT_BUSY`, `409 TOO_MANY_RUNNING` (5 mỗi site) |
+| `POST` | `/api/v1/experiments/:id/stop` | `running` → `stopped` |
+| `GET` | `/api/v1/experiments/:id/report` | `{ experiment, report: { arms[], totals, sampleReached, recommendation }, daily[] }` |
+| `POST` | `/api/v1/experiments/:id/promote` | `{ arm, rationale? }` → `202` kèm một approval `promoteExperimentWinner` đang chờ; không bao giờ promote trực tiếp |
+| `POST` | `/api/v1/experiment-events/:site_id` | Beacon công khai `{ events: [{ experiment, arm, kind, goal? }] }` (≤ 10), cần `X-Lumi-Consent: analytics`; luôn `204`, trừ `400` khi body sai dạng |
+
+Arm: 2–4, một arm `control` (không ghi đè). Với mỗi arm, báo cáo cho exposure,
+chuyển đổi, `rate`, `uplift`, `z`, `pValue` (kiểm định z hai tỉ lệ so với
+control) và `significant` (alpha 0.05, hiệu chỉnh Bonferroni).
+
 ### Mốc kích hoạt
 
 | Phương thức | Đường dẫn | Mô tả |
@@ -1630,6 +1650,15 @@ chứa audience. Với `X-Lumi-Consent: analytics`, mỗi ngày, slug và audien
 | `GET/POST` | `/api/v1/personalisation/variants` | Liệt kê (`?subjectType=&subjectId=&audienceId=`) / tạo `{ subjectType, subjectId, audienceId, overrides, status? }`; `404 SUBJECT_NOT_FOUND` / `AUDIENCE_NOT_FOUND`, `409 VARIANT_EXISTS`, `413 OVERRIDES_TOO_LARGE` |
 | `PATCH/DELETE` | `/api/v1/personalisation/variants/:id` | `{ overrides?, status? }` / xoá |
 | `GET` | `/api/v1/personalisation/exposures` | Số exposure theo ngày, slug và audience (`?from=&to=`, ≤ 366 ngày) kèm `meta.totals` |
+
+**Thử nghiệm A/B** (#763): khi có experiment đang chạy chạm tới trang, khách
+gửi `X-Lumi-Visitor` và `X-Lumi-Consent: analytics` được gán một arm một cách
+tất định và nhận nội dung của arm đó, kèm
+`experiments: [{ key, arm }]` và `X-Lumi-Experiments: key=arm,…`. Không có
+chúng, khách nhận `control` và không được liệt kê. `Vary` thêm
+`X-Lumi-Visitor`; key edge (`__exp=`), key app-cache và `ETag` chứa các arm
+được gán, không bao giờ chứa id khách. Xem
+[Thử nghiệm A/B](../features/experiments.md).
 
 ---
 

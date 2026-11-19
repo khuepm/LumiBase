@@ -338,6 +338,11 @@ export const AgentToolSchemas = {
   // ── config ───────────────────────────────────────────────────────────────
   upsertSetting: z.object({ key: z.string().min(1), value: z.unknown(), scope: z.string().optional() }).strict(),
   deleteSetting: z.object({ key: z.string().min(1) }).strict(),
+  /** A/B experiments (#763): read the report / propose promoting the winner (HITL). */
+  analyzeExperiment: z.object({ experimentId: z.string().min(1) }).strict(),
+  promoteExperimentWinner: z
+    .object({ experimentId: z.string().min(1), arm: z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/), rationale: z.string().max(2000).optional() })
+    .strict(),
   createTranslation: z
     .object({
       language: z.string().min(1),

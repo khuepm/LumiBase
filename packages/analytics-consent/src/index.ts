@@ -35,3 +35,13 @@ export {
   type GtagFn,
   type VariantExposure,
 } from './exposure';
+export {
+  conversionsFor,
+  experimentsFromHeaders,
+  exposuresFor,
+  sendExperimentEvents,
+  type ExperimentArm,
+  type ExperimentEvent,
+  type ExperimentEventKind,
+  type SendExperimentEventsOptions,
+} from './experiments';

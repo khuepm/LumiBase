@@ -86,6 +86,7 @@ const MissionControlConstitutionPage = lazy(() => import('./modules/mission-cont
 const MissionControlSkillsPage = lazy(() => import('./modules/mission-control/skills-page').then((m) => ({ default: m.SkillsPage })));
 const InsightsListPage = lazy(() => import('./modules/insights/list-page').then((m) => ({ default: m.InsightsListPage })));
 const InsightsDashboardPage = lazy(() => import('./modules/insights/dashboard-page').then((m) => ({ default: m.DashboardViewPage })));
+const InsightsExperimentsPage = lazy(() => import('./modules/insights/experiments-page').then((m) => ({ default: m.ExperimentsPage })));
 const UsersLayout = lazy(() => import('./modules/users/layout').then((m) => ({ default: m.UsersLayout })));
 const TeamsPage = lazy(() => import('./modules/users/teams-page').then((m) => ({ default: m.TeamsPage })));
 const UsersPage = lazy(() => import('./modules/users/users-page').then((m) => ({ default: m.UsersPage })));
@@ -1170,6 +1171,19 @@ const insightsRoute = createRoute({
   component: withSuspense(InsightsListPage),
 });
 
+// A/B experiment reports (#763). Static segment, so it wins over `$dashboardId`.
+const insightsExperimentsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/insights/experiments',
+  component: withSuspense(InsightsExperimentsPage),
+});
+
+const adminPathInsightsExperimentsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/insights/experiments',
+  component: withSuspense(InsightsExperimentsPage),
+});
+
 const insightsDashboardRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/insights/$dashboardId',
@@ -1481,8 +1495,10 @@ const routeTree = rootRoute.addChildren([
     adminPathMissionControlConstitutionRoute,
     adminPathMissionControlSkillsRoute,
     insightsRoute,
+    insightsExperimentsRoute,
     insightsDashboardRoute,
     adminPathInsightsRoute,
+    adminPathInsightsExperimentsRoute,
     adminPathInsightsDashboardRoute,
     cdcRoute,
     cdcNewRoute,
