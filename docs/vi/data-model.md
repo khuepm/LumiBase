@@ -1,13 +1,13 @@
 ---
-version: 27
-lastUpdated: 2026-11-19T04:50:59.253Z
+version: 28
+lastUpdated: 2026-11-19T05:03:11.947Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5bba5e24c582fa3e
+sourceHash: c6ffaa02d8304cca
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T04:50:59.253Z
-codeVerifiedHash: 5bba5e24c582fa3e
+codeVerified: 2026-11-19T05:03:11.947Z
+codeVerifiedHash: c6ffaa02d8304cca
 codeVerifiedClaims: 22
 ---
 
@@ -34,7 +34,7 @@ Các file schema được chia theo domain:
 | `core.ts` | `lumibase_organizations`, `lumibase_organization_members`, `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
-| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_file_captions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_file_captions`, `lumibase_video_assets`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
@@ -303,7 +303,10 @@ Khi seed local/staging/prod, phải seed permission cho system collection một 
 
 ### `file_captions`
 - `id`, `siteId`, `fileId` (video, FK cascade), `captionFileId` (file WebVTT, FK cascade), `locale`, `kind` (`subtitles`/`captions`/`descriptions`/`chapters`), `label`, `isDefault`, `createdBy`, `createdAt`, `updatedAt`.
-- Các track phụ đề/caption của một video (#871); duy nhất theo `(siteId, fileId, locale, kind)`. Migration `0044_file_captions`. Xem [Quản lý tài sản số](./features/digital-asset-management.md).
+- Các track phụ đề/caption của một video (#871); duy nhất theo `(siteId, fileId, locale, kind)`. Migration `0045_file_captions`. Xem [Quản lý tài sản số](./features/digital-asset-management.md).
+### `video_assets`
+- `id`, `siteId`, `fileId` (FK cascade, duy nhất theo site), `fileVersion`, `provider`, `providerAssetId`, `playbackId`, `status` (`uploaded`/`processing`/`ready`/`failed`), `error`, `attempts`, `durationMs`, `width`, `height`, `renditions jsonb`, `signedPlayback`, `submittedAt`, `readyAt`, `createdAt`, `updatedAt`.
+- Trạng thái xử lý video của một file (#871), gắn với `fileVersion` lúc được gửi; thay file sẽ xếp hàng lại dòng này. Mọi lần ghi là compare-and-set trên status + version. Partial index trên `(status, updatedAt)` cho các dòng đang xếp hàng/đang xử lý (lượt quét). Migration `0044_video_assets`. Xem [Quản lý tài sản số](./features/digital-asset-management.md).
 
 ## 5. UX state (`platform.ts`)
 

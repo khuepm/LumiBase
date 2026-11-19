@@ -1,10 +1,10 @@
 ---
-version: 27
-lastUpdated: 2026-11-19T04:50:59.253Z
+version: 28
+lastUpdated: 2026-11-19T05:03:11.947Z
 sourceLang: en
-contentHash: 5bba5e24c582fa3e
-codeVerified: 2026-11-19T04:50:59.253Z
-codeVerifiedHash: 5bba5e24c582fa3e
+contentHash: c6ffaa02d8304cca
+codeVerified: 2026-11-19T05:03:11.947Z
+codeVerifiedHash: c6ffaa02d8304cca
 codeVerifiedClaims: 22
 ---
 
@@ -30,7 +30,7 @@ Schema files are split by domain:
 | `core.ts` | `lumibase_organizations`, `lumibase_organization_members`, `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
-| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_file_captions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_file_captions`, `lumibase_video_assets`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
@@ -299,7 +299,10 @@ When seeding local/staging/prod, seed system collection permissions explicitly. 
 
 ### `file_captions`
 - `id`, `siteId`, `fileId` (the video, FK cascade), `captionFileId` (the WebVTT file, FK cascade), `locale`, `kind` (`subtitles`/`captions`/`descriptions`/`chapters`), `label`, `isDefault`, `createdBy`, `createdAt`, `updatedAt`.
-- Caption/subtitle tracks of a video (#871); unique `(siteId, fileId, locale, kind)`. Migration `0044_file_captions`. See [Digital Asset Management](./features/digital-asset-management.md).
+- Caption/subtitle tracks of a video (#871); unique `(siteId, fileId, locale, kind)`. Migration `0045_file_captions`. See [Digital Asset Management](./features/digital-asset-management.md).
+### `video_assets`
+- `id`, `siteId`, `fileId` (FK cascade, unique per site), `fileVersion`, `provider`, `providerAssetId`, `playbackId`, `status` (`uploaded`/`processing`/`ready`/`failed`), `error`, `attempts`, `durationMs`, `width`, `height`, `renditions jsonb`, `signedPlayback`, `submittedAt`, `readyAt`, `createdAt`, `updatedAt`.
+- Video processing state for one file (#871), tied to the `fileVersion` it was submitted for; a replace re-queues the row. Every write is a compare-and-set on status + version. Partial index on `(status, updatedAt)` for queued/processing rows (sweep). Migration `0044_video_assets`. See [Digital Asset Management](./features/digital-asset-management.md).
 
 ## 5. UX state (`platform.ts`)
 

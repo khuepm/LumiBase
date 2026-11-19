@@ -107,7 +107,7 @@ export default Sentry.withSentry(
     // per hour.
     const runtime = createCloudflareRuntime(env as unknown as Record<string, unknown>);
 
-    const sweepDeps = { db, runtime };
+    const sweepDeps = { db, runtime, env: env as unknown as Record<string, unknown> };
     if (controller.cron === '* * * * *') {
       // The scheduler tick includes the schedule-flow sweep Docker's
       // `flow-schedule` cron runs; overlapping ticks enqueue each due flow once
