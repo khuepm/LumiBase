@@ -45,6 +45,16 @@ describe('file upload policy helpers', () => {
     expect(isFileExtensionCompatibleWithMime('avatar.exe', 'image/jpeg')).toBe(false);
     expect(isFileExtensionCompatibleWithMime('report.pdf', 'application/pdf')).toBe(true);
     expect(isFileExtensionCompatibleWithMime('report.pdf.exe', 'application/pdf')).toBe(false);
+    // WebVTT caption tracks (#871).
+    expect(isFileExtensionCompatibleWithMime('captions.en.vtt', 'text/vtt')).toBe(true);
+    expect(isFileExtensionCompatibleWithMime('captions.srt', 'text/vtt')).toBe(false);
+    expect(isFileExtensionCompatibleWithMime('page.html', 'text/vtt')).toBe(false);
+  });
+
+  it('accepts real WebVTT and refuses HTML declared as captions (#871)', async () => {
+    const req = (body: string) => new Request('http://test', { method: 'POST', body });
+    expect(await isFileContentCompatibleWithMime(req('WEBVTT\n\n00:00.000 --> 00:01.000\nHi\n'), 'text/vtt')).toBe(true);
+    expect(await isFileContentCompatibleWithMime(req('<html><script>x()</script>'), 'text/vtt')).toBe(false);
   });
 
   it('sniffs signed upload content instead of trusting the declared MIME type', async () => {

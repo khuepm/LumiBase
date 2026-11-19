@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 61
-lastUpdated: 2026-11-19T04:30:25.866Z
+version: 62
+lastUpdated: 2026-11-19T07:57:07.092Z
 sourceLang: en
 translatedFrom: en
-sourceHash: d9ec353a18ad4392
+sourceHash: 032f2b143b5e0d7f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T04:30:25.866Z
-codeVerifiedHash: d9ec353a18ad4392
-codeVerifiedClaims: 656
+codeVerified: 2026-11-19T07:57:07.092Z
+codeVerifiedHash: 032f2b143b5e0d7f
+codeVerifiedClaims: 658
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -889,6 +889,9 @@ Response: `Cache-Control: private, no-store`, `X-Robots-Tag: noindex, nofollow`,
 | `HEAD` | `/api/v1/files/tus/:id` | `Upload-Offset` / `Upload-Length` đã ghi; `X-Lumi-File-Id` khi hoàn tất; `410` khi đã hết hạn |
 | `PATCH` | `/api/v1/files/tus/:id` | Nối một chunk tại `Upload-Offset` (`application/offset+octet-stream`), tất cả hoặc không; `409 OFFSET_MISMATCH`; chunk cuối tạo file (`X-Lumi-File-Id`) |
 | `DELETE` | `/api/v1/files/tus/:id` | Huỷ: abort multipart upload và xoá các phần đã lưu |
+| `GET` | `/api/v1/files/:id/captions` | Các track phụ đề/caption của video dưới dạng dữ liệu `<track>` (`kind`, `locale`, `label`, `isDefault`, `src` ghim version) (#871) |
+| `POST` | `/api/v1/files/:id/captions` | Gắn file WebVTT: `{ captionFileId, locale, kind?, label?, isDefault? }`; `409 CAPTION_EXISTS`, `415 CAPTION_NOT_VTT`, `422 LOCALE_NOT_ENABLED` |
+| `PATCH/DELETE` | `/api/v1/files/:id/captions/:captionId` | Sửa track (một mặc định mỗi kind) / gỡ track (file WebVTT vẫn giữ) |
 | `GET` | `/api/v1/assets/:id` | Phục vụ/biến đổi hình ảnh (tham số query bên dưới) |
 | `POST` | `/api/v1/media/:key` | Upload bytes media thô (RBAC `media:create`; bảo vệ upload áp dụng) |
 | `GET` | `/api/v1/media/:key` | Tải về media (phục vụ dạng `attachment` + `nosniff`); kèm tham số biến đổi → 302 tới file biến đổi |

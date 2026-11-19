@@ -39,6 +39,10 @@ Nguồn: `.kiro/research/competitor-features-2026-07.md` (D01–D08). Doc ngư�
 - [x] D04 #704 — TUS 1.0 `/files/tus` (creation, termination, expiration) trên
   `MultipartStorage` (R2 + S3), bảng `lumibase_upload_sessions` + lease một-writer,
   sweeper `upload-expiry`, Studio dùng TUS cho file ≥ 32 MiB. Backlog B220 đã xong.
+- [ ] D04 #704 — upload resumable (TUS / R2 multipart). **Chưa làm** — backlog B220.
+- [ ] #871 video pipeline. Phần 2 (PR này): track phụ đề/caption WebVTT gắn
+  locale (`lumibase_file_captions`, `/files/:id/captions`, loại upload `text/vtt`).
+  Phần 1 (transcode, PR #937) và phần 3 (Studio) là PR riêng.
 
 ## Theo dõi sau
 

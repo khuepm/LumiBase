@@ -1,11 +1,11 @@
 ---
-version: 62
-lastUpdated: 2026-11-19T04:30:25.866Z
+version: 63
+lastUpdated: 2026-11-19T07:57:07.092Z
 sourceLang: en
-contentHash: d9ec353a18ad4392
-codeVerified: 2026-11-19T04:30:25.866Z
-codeVerifiedHash: d9ec353a18ad4392
-codeVerifiedClaims: 656
+contentHash: 032f2b143b5e0d7f
+codeVerified: 2026-11-19T07:57:07.092Z
+codeVerifiedHash: 032f2b143b5e0d7f
+codeVerifiedClaims: 658
 ---
 
 # Hono API Specification — LumiBase
@@ -1014,6 +1014,9 @@ identical body. Responses: `Cache-Control: private, no-store`,
 | `HEAD` | `/api/v1/files/tus/:id` | Committed `Upload-Offset` / `Upload-Length`; `X-Lumi-File-Id` once complete; `410` when expired |
 | `PATCH` | `/api/v1/files/tus/:id` | Append a chunk at `Upload-Offset` (`application/offset+octet-stream`), all-or-nothing; `409 OFFSET_MISMATCH`; the final chunk creates the file (`X-Lumi-File-Id`) |
 | `DELETE` | `/api/v1/files/tus/:id` | Terminate: abort the multipart upload and drop stored parts |
+| `GET` | `/api/v1/files/:id/captions` | Caption/subtitle tracks of a video as `<track>` data (`kind`, `locale`, `label`, `isDefault`, version-pinned `src`) (#871) |
+| `POST` | `/api/v1/files/:id/captions` | Attach a WebVTT file: `{ captionFileId, locale, kind?, label?, isDefault? }`; `409 CAPTION_EXISTS`, `415 CAPTION_NOT_VTT`, `422 LOCALE_NOT_ENABLED` |
+| `PATCH/DELETE` | `/api/v1/files/:id/captions/:captionId` | Edit a track (one default per kind) / detach it (the WebVTT file stays) |
 | `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
 | `POST` | `/api/v1/media/:key` | Upload raw media bytes (RBAC `media:create`; upload guard applies) |
 | `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`); with transform params → 302 to derivative |

@@ -1,13 +1,13 @@
 ---
-version: 27
-lastUpdated: 2026-11-19T04:30:29.373Z
+version: 28
+lastUpdated: 2026-11-19T07:57:01.761Z
 sourceLang: en
 translatedFrom: en
-sourceHash: b4c6c8c8f37adc90
+sourceHash: 24c83e4701506734
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T04:30:29.373Z
-codeVerifiedHash: b4c6c8c8f37adc90
+codeVerified: 2026-11-19T07:57:01.761Z
+codeVerifiedHash: 24c83e4701506734
 codeVerifiedClaims: 22
 ---
 
@@ -34,7 +34,7 @@ Các file schema được chia theo domain:
 | `core.ts` | `lumibase_organizations`, `lumibase_organization_members`, `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
-| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_upload_sessions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_upload_sessions`, `lumibase_file_captions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
@@ -303,7 +303,10 @@ Khi seed local/staging/prod, phải seed permission cho system collection một 
 
 ### `upload_sessions`
 - `id`, `siteId`, `createdBy`, `filename`, `mime`, `length`, `offset`, `storageKey`, `multipartId`, `parts jsonb`, `tailSize`, `folder`, `metadata jsonb`, `status` (`active`/`completed`/`aborted`), `lockToken`, `lockedUntil`, `fileId`, `expiresAt`, `createdAt`, `updatedAt`.
-- Một upload TUS tiếp tục được đang diễn ra: `offset` đã ghi, các phần multipart đã ghi tới giờ và kích thước object đuôi. `lockToken`/`lockedUntil` là lease một-writer mà mỗi `PATCH` giữ; `fileId` được đặt khi hoàn tất. Index `(siteId, status)` và một partial index trên `expiresAt` cho các upload đang chạy (lượt quét hết hạn). Migration `0044_upload_sessions`. Xem [Quản lý tài sản số](./features/digital-asset-management.md).
+- Một upload TUS tiếp tục được đang diễn ra: `offset` đã ghi, các phần multipart đã ghi tới giờ và kích thước object đuôi. `lockToken`/`lockedUntil` là lease một-writer mà mỗi `PATCH` giữ; `fileId` được đặt khi hoàn tất. Index `(siteId, status)` và một partial index trên `expiresAt` cho các upload đang chạy (lượt quét hết hạn). Migration `0045_upload_sessions`. Xem [Quản lý tài sản số](./features/digital-asset-management.md).
+### `file_captions`
+- `id`, `siteId`, `fileId` (video, FK cascade), `captionFileId` (file WebVTT, FK cascade), `locale`, `kind` (`subtitles`/`captions`/`descriptions`/`chapters`), `label`, `isDefault`, `createdBy`, `createdAt`, `updatedAt`.
+- Các track phụ đề/caption của một video (#871); duy nhất theo `(siteId, fileId, locale, kind)`. Migration `0044_file_captions`. Xem [Quản lý tài sản số](./features/digital-asset-management.md).
 
 ## 5. UX state (`platform.ts`)
 
