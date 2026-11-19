@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { roles, sites, systemState, userSites, users, type Database } from '@lumibase/database';
+import { roles, sites, systemState, userIdentities, userSites, users, type Database } from '@lumibase/database';
 import { MemoryCacheProvider } from '@lumibase/runtime';
 
 import type { AppEnv } from '../../../env';
@@ -12,13 +12,15 @@ import { hashPassword } from '../../../services/auth/password';
 import { loadLockoutPolicyFromSettings } from '../../login-guard/middleware';
 import { emailRoot } from '../normalize';
 import { inviteUserToSite } from '../invite';
+import { provisionScimUser } from '../scim-provision';
 import {
   isEmailIdentityConflict,
   loadEmailIdentityMode,
   setInstanceEmailIdentityMode,
   setSiteEmailIdentityStrict,
 } from '../service';
-import { EMAIL_ROOT_FIXTURES } from './fixtures';
+import { normalizeEmail } from '../../login-guard/email-normalize';
+import { EMAIL_NORMALIZE_FIXTURES, EMAIL_ROOT_FIXTURES } from './fixtures';
 
 /**
  * Email identity policy (#794 PR 1) against real Postgres: the SQL
@@ -119,6 +121,21 @@ describe.skipIf(!hasDbIntegrationUrl)('Email identity policy — DB integration'
       expect({ input, root: sqlRoot }).toEqual({ input, root: emailRoot(input) });
       expect(sqlRoot).toBe(expected);
     }
+  });
+
+  it('SQL lumibase_email_normalize() matches TS normalizeEmail() on every fixture (#862)', async () => {
+    for (const [input, expected] of EMAIL_NORMALIZE_FIXTURES) {
+      const rows = await db.execute(sql`SELECT lumibase_email_normalize(${input}) AS key`);
+      const sqlKey = (rows as unknown as Array<{ key: string }>)[0]?.key;
+      expect({ input, key: sqlKey }).toEqual({ input, key: normalizeEmail(input) });
+      expect(sqlKey).toBe(expected);
+    }
+  });
+
+  it('exact-mode trigger keys a padded address the way lookups do (#862)', async () => {
+    const u = await addUser(`\u00a0Pad.Eidit@${DOMAIN}\t`);
+    expect(u.canonical).toBe(`pad.eidit@${DOMAIN}`);
+    expect(u.root).toBe(`pad.eidit@${DOMAIN}`);
   });
 
   // ── triggers ─────────────────────────────────────────────────────────
@@ -307,6 +324,87 @@ describe.skipIf(!hasDbIntegrationUrl)('Email identity policy — DB integration'
     const result = await inviteUserToSite(db, { siteId: SITE_STRICT, email: `inv+alias@${DOMAIN}` });
     expect(result).toEqual({ ok: false, code: 'EMAIL_IDENTITY_CONFLICT' });
     expect(await countEmail(`inv+alias@${DOMAIN}`)).toBe(0);
+  });
+
+  // ── invite: only bind an account whose mailbox is proven (#856) ─────
+
+  async function membershipCount(userId: string, siteId: string): Promise<number> {
+    const rows = await db
+      .select({ userId: userSites.userId })
+      .from(userSites)
+      .where(and(eq(userSites.userId, userId), eq(userSites.siteId, siteId)));
+    return rows.length;
+  }
+
+  it('invite does not bind an SSO JIT account (external login, no verified email) matched case-insensitively', async () => {
+    // What external-auth JIT writes: the IdP's `email` claim as is, `active`, no password.
+    const jit = await addUser(`Victim@${DOMAIN}`, { externalId: 'eidit-jit-victim' });
+    const result = await inviteUserToSite(db, { siteId: SITE_OPEN, email: `victim@${DOMAIN}` });
+    expect(result).toEqual({ ok: false, code: 'INVITEE_EMAIL_UNVERIFIED' });
+    expect(await membershipCount(jit.id, SITE_OPEN)).toBe(0);
+  });
+
+  it('under `root`, invite does not bind an unverified alias account', async () => {
+    expect((await setInstanceEmailIdentityMode(db, 'root')).ok).toBe(true);
+    const jitAlias = await addUser(`eidit.vic+x@gmail.com`, { externalId: 'eidit-jit-alias' });
+    const jitResult = await inviteUserToSite(db, { siteId: SITE_OPEN, email: 'eiditvic@gmail.com' });
+    expect(jitResult).toEqual({ ok: false, code: 'INVITEE_EMAIL_UNVERIFIED' });
+    expect(await membershipCount(jitAlias.id, SITE_OPEN)).toBe(0);
+
+    // Self-registered, verification link never clicked: still `invited` with a password.
+    const pending = await addUser(`eidit.reg+y@gmail.com`, { passwordHash: 'secret-hash', status: 'invited' });
+    const regResult = await inviteUserToSite(db, { siteId: SITE_OPEN, email: 'eiditreg@gmail.com' });
+    expect(regResult).toEqual({ ok: false, code: 'INVITEE_EMAIL_UNVERIFIED' });
+    expect(await membershipCount(pending.id, SITE_OPEN)).toBe(0);
+  });
+
+  it('under `root`, invite still binds a verified alias account', async () => {
+    expect((await setInstanceEmailIdentityMode(db, 'root')).ok).toBe(true);
+    const verified = await addUser(`eidit.ok+z@gmail.com`, { passwordHash: 'secret-hash' });
+    const result = await inviteUserToSite(db, { siteId: SITE_OPEN, email: 'eiditok@gmail.com' });
+    if (!result.ok) throw new Error(`expected invite to succeed, got ${result.code}`);
+    expect(result.user.id).toBe(verified.id);
+    expect(await membershipCount(verified.id, SITE_OPEN)).toBe(1);
+  });
+
+  it('invite binds a social-login account whose provider verified the same address', async () => {
+    const social = await addUser(`social@${DOMAIN}`);
+    await db.insert(userIdentities).values({
+      userId: social.id,
+      issuer: 'https://accounts.google.com',
+      subject: 'eidit-google-1',
+      emailAtLink: `social@${DOMAIN}`,
+    });
+    const result = await inviteUserToSite(db, { siteId: SITE_OPEN, email: `Social@${DOMAIN}` });
+    if (!result.ok) throw new Error(`expected invite to succeed, got ${result.code}`);
+    expect(result.user.id).toBe(social.id);
+  });
+
+  it('invite re-binds a pending invitation placeholder to another site', async () => {
+    const first = await inviteUserToSite(db, { siteId: SITE_OPEN, email: `again@${DOMAIN}` });
+    if (!first.ok) throw new Error(`expected invite to succeed, got ${first.code}`);
+    expect(first.created).toBe(true);
+    const second = await inviteUserToSite(db, { siteId: SITE_STRICT, email: `again@${DOMAIN}` });
+    if (!second.ok) throw new Error(`expected invite to succeed, got ${second.code}`);
+    expect(second.created).toBe(false);
+    expect(second.user.id).toBe(first.user.id);
+  });
+
+  it('under `root`, SCIM does not bind another site\'s unverified alias account (#912)', async () => {
+    expect((await setInstanceEmailIdentityMode(db, 'root')).ok).toBe(true);
+    // Site STRICT's IdP JIT-created this alias; site OPEN's SCIM provisions the root mailbox.
+    const jitAlias = await addUser(`eidit.scim+x@gmail.com`, { externalId: 'eidit-jit-scim-alias' });
+    await db.insert(userSites).values({ userId: jitAlias.id, siteId: SITE_STRICT });
+    expect(await provisionScimUser(db, { siteId: SITE_OPEN, userName: 'eiditscim@gmail.com' })).toEqual({ ok: false, code: 'CONFLICT' });
+    expect(await membershipCount(jitAlias.id, SITE_OPEN)).toBe(0);
+
+    // A verified alias account is still linked under `root`.
+    const verified = await addUser(`eidit.scimok+y@gmail.com`, { passwordHash: 'secret-hash' });
+    await db.insert(userSites).values({ userId: verified.id, siteId: SITE_STRICT });
+    const linked = await provisionScimUser(db, { siteId: SITE_OPEN, userName: 'eiditscimok@gmail.com' });
+    if (!linked.ok) throw new Error(`expected SCIM link to succeed, got ${linked.code}`);
+    expect(linked.user.id).toBe(verified.id);
+    expect(await membershipCount(verified.id, SITE_OPEN)).toBe(1);
   });
 
   // ── register / login through the real router ─────────────────────────

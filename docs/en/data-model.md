@@ -1,10 +1,10 @@
 ---
-version: 24
-lastUpdated: 2026-11-15T23:40:59.736Z
+version: 29
+lastUpdated: 2026-11-19T07:17:06.483Z
 sourceLang: en
-contentHash: ef6fd16483d977a5
-codeVerified: 2026-11-15T23:40:59.736Z
-codeVerifiedHash: ef6fd16483d977a5
+contentHash: 306ff0358825d150
+codeVerified: 2026-11-19T07:17:06.483Z
+codeVerifiedHash: 306ff0358825d150
 codeVerifiedClaims: 22
 ---
 
@@ -78,6 +78,8 @@ Unique indexes: `users_external_id_unique`, `users_is_bootstrap_unique` (partial
 - `identityKey` text (migration `0027`) — `users.email_root` when the site is strict, otherwise null. Unique index `user_sites_site_identity_unique` on `(site_id, identity_key)` allows one membership per root mailbox on a strict site (nulls never collide). Set by a trigger on insert and re-keyed when the member's email changes.
 
 **Email identity policy (migration `0027`).** The instance tier lives in `system_state.email_identity_mode` (`exact` | `root`, default `exact`; existing instances are backfilled to `exact`, so nothing changes on upgrade). Every writer — routes, SCIM, setup, seeds, an older app version — gets the same derived columns because triggers compute them: `lumibase_users_email_identity()` on `users` (reads the singleton `FOR SHARE`), `lumibase_user_sites_identity_key()` on `user_sites` (reads the site `FOR SHARE`) and `lumibase_users_rekey_memberships()` after an email change. The guarded change endpoint holds `FOR UPDATE` on the same rows, so a row is never keyed under a stale policy. See [User management](./security/user-management.md) and `/api/v1/admin/email-identity` in the API spec.
+
+**Release manifest (migration `0041`).** `release_manifests` is a singleton table (`id = 'current'`, CHECK-enforced) with `issued_at_ms` (bigint) and `manifest` (jsonb: the envelope as received, the verified `flags`, `issuedAt`, `acceptedAt`, `source` `push` | `pull`, `acceptedBy`). It holds the last signed release manifest the deployment accepted, written only after Ed25519 verification by an upsert that applies only when `issued_at_ms` is strictly greater. It has no `site_id`: release gates belong to the deployment. It is a separate table rather than a `system_state` column because Drizzle lists every declared column in an INSERT, so a new `system_state` column would break the startup INSERT of an image running on the previous schema. Per-site choices live in `settings` under key `release.flags`. See [Release flags](./features/release-flags.md).
 
 ### `teams` / `team_members`
 - `teams`: `id`, `siteId`, `name`, `description`.
@@ -588,6 +590,20 @@ ephemeral preview environments, and commit↔content provenance. All tables carr
 
 Tokens + webhook secrets are encrypted at rest via `CryptoService` (AES-GCM,
 AAD-bound to `{ siteId, integrationId, field }`); plaintext is never stored.
+
+## 11e. Backend templates (`backend-templates.ts`)
+
+Each site's private template catalog (#902, epic #900) and install plans
+(#903). Every table carries `site_id` (cascade) and is registered for RLS.
+Migrations `0044_backend_templates`, `0045_backend_template_plans`,
+`0046_backend_template_installations`.
+
+| Table (physical) | Purpose | Key columns |
+|-------|---------|-------------|
+| `lumibase_backend_templates` | One editable draft per `(site, slug)` | `slug`, `display_name`, `draft` (jsonb), `draft_revision` (optimistic counter), `created_by` |
+| `lumibase_backend_template_revisions` | Immutable published revisions | unique `(site_id, template_id, template_version)`; `digest` (`sha256:`), `document` (canonical jsonb), `published_by` |
+| `lumibase_backend_template_plans` | Expiring install plans (#903); `site_id` = the target | `source_kind`, `source_site_id`, `slug`, `template_version`, `digest`, `snapshot` (jsonb), `namespace_map`, `seed_pack`, `target_fingerprint`, `inventory`, `status`, `expires_at` |
+| `lumibase_backend_template_installations` | Committed installations (#904), written in the install transaction | unique `(site_id, idempotency_key)` and `(site_id, plan_id)`; `payload_digest`, `digest`, `namespace_map`, `seed_pack`, `baseline`, `resources` |
 
 ## 12. Indexing & RLS
 

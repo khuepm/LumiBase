@@ -28,13 +28,12 @@ services:
     name: lumibase
     runtime: image
     image:
-      # UNATTENDED UPGRADES: `latest` follows the newest release and the image
-      # migrates the database on every start, so a restart after a (major)
-      # release upgrades this instance. For production, change this one line
-      # to the release you tested:  url: ghcr.io/khuepm/lumibase-cms:<version>
-      # (`latest` stays the default because no older release tag has the
-      # entrypoint these templates rely on; docs/en/deployment/one-click.md).
-      url: ghcr.io/khuepm/lumibase-cms:latest
+      # A release tag, never the floating tag: the image migrates the database
+      # on every start, so a floating tag turns a restart after a (major)
+      # release into an unattended upgrade. `pnpm version:sync` moves this line
+      # to each release; your copy changes only when you change it, after
+      # reading the release's upgrade notes (docs/en/deployment/one-click.md).
+      url: ghcr.io/khuepm/lumibase-cms:2.1.0
     # Free instances spin down when idle, which stops the scheduler, the
     # veto-commit sweep and the queue workers this process runs. Starter is
     # the smallest plan that stays up.

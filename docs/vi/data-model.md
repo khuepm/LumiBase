@@ -1,13 +1,13 @@
 ---
-version: 24
-lastUpdated: 2026-11-15T23:40:59.736Z
+version: 29
+lastUpdated: 2026-11-19T07:17:06.483Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ef6fd16483d977a5
+sourceHash: 306ff0358825d150
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T23:40:59.736Z
-codeVerifiedHash: ef6fd16483d977a5
+codeVerified: 2026-11-19T07:17:06.483Z
+codeVerifiedHash: 306ff0358825d150
 codeVerifiedClaims: 22
 ---
 
@@ -82,6 +82,8 @@ Unique index: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, 
 - `identityKey` text (migration `0027`) — bằng `users.email_root` khi site strict, ngược lại là null. Unique index `user_sites_site_identity_unique` trên `(site_id, identity_key)` chỉ cho một membership mỗi hộp thư gốc trên site strict (null không bao giờ xung đột). Được trigger điền khi insert và cập nhật lại khi email của thành viên thay đổi.
 
 **Chính sách định danh email (migration `0027`).** Tầng instance nằm ở `system_state.email_identity_mode` (`exact` | `root`, mặc định `exact`; instance hiện có được backfill thành `exact`, nên nâng cấp không đổi hành vi). Mọi writer — route, SCIM, setup, seed, bản app cũ — đều có cùng giá trị cột dẫn xuất vì trigger tính chúng: `lumibase_users_email_identity()` trên `users` (đọc singleton `FOR SHARE`), `lumibase_user_sites_identity_key()` trên `user_sites` (đọc site `FOR SHARE`) và `lumibase_users_rekey_memberships()` sau khi đổi email. Endpoint đổi policy giữ `FOR UPDATE` trên cùng các hàng đó, nên không hàng nào bị gán khoá theo policy cũ. Xem [Quản lý người dùng](./security/user-management.md) và `/api/v1/admin/email-identity` trong API spec.
+
+**Release manifest (migration `0041`).** `release_manifests` là bảng một dòng (`id = 'current'`, ép bằng CHECK) với `issued_at_ms` (bigint) và `manifest` (jsonb: envelope như khi nhận, `flags` đã xác minh, `issuedAt`, `acceptedAt`, `source` `push` | `pull`, `acceptedBy`). Bảng giữ manifest phát hành có chữ ký gần nhất mà deployment đã chấp nhận, chỉ được ghi sau khi xác minh Ed25519 bằng một câu upsert chỉ cập nhật khi `issued_at_ms` lớn hơn hẳn. Bảng không có `site_id`: cổng phát hành thuộc về deployment. Đây là bảng riêng chứ không phải một cột của `system_state` vì Drizzle liệt kê mọi cột đã khai báo trong câu INSERT, nên thêm cột vào `system_state` sẽ làm hỏng câu INSERT lúc khởi động của image chạy trên schema trước đó. Lựa chọn theo site nằm trong `settings` với key `release.flags`. Xem [Release flags](./features/release-flags.md).
 
 ### `teams` / `team_members`
 - `teams`: `id`, `siteId`, `name`, `description`.
@@ -591,6 +593,20 @@ môi trường preview tạm thời và provenance commit↔content. Mọi bản
 
 Token + webhook secret được mã hoá at rest qua `CryptoService` (AES-GCM, AAD ràng
 buộc vào `{ siteId, integrationId, field }`); plaintext không bao giờ được lưu.
+
+## 11e. Backend templates (`backend-templates.ts`)
+
+Catalog template riêng của mỗi site (#902, epic #900) và plan cài đặt (#903).
+Mọi bảng đều có `site_id` (cascade) và được đăng ký cho RLS. Migration
+`0044_backend_templates`, `0045_backend_template_plans`,
+`0046_backend_template_installations`.
+
+| Bảng (vật lý) | Mục đích | Cột chính |
+|-------|---------|-------------|
+| `lumibase_backend_templates` | Mỗi `(site, slug)` một draft có thể sửa | `slug`, `display_name`, `draft` (jsonb), `draft_revision` (bộ đếm optimistic), `created_by` |
+| `lumibase_backend_template_revisions` | Revision đã publish, bất biến | unique `(site_id, template_id, template_version)`; `digest` (`sha256:`), `document` (jsonb canonical), `published_by` |
+| `lumibase_backend_template_plans` | Plan cài đặt có hạn dùng (#903); `site_id` = site đích | `source_kind`, `source_site_id`, `slug`, `template_version`, `digest`, `snapshot` (jsonb), `namespace_map`, `seed_pack`, `target_fingerprint`, `inventory`, `status`, `expires_at` |
+| `lumibase_backend_template_installations` | Bản cài đã commit (#904), ghi trong transaction cài đặt | unique `(site_id, idempotency_key)` và `(site_id, plan_id)`; `payload_digest`, `digest`, `namespace_map`, `seed_pack`, `baseline`, `resources` |
 
 ## 12. Indexing & RLS
 

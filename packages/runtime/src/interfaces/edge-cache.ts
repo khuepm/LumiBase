@@ -25,4 +25,25 @@ export interface EdgeCacheProvider {
    * than throwing, because the write path that triggered it must not fail.
    */
   purge(target: { urls: string[]; tags?: string[] }): Promise<number>;
+  /**
+   * Optional: the same purge, also naming the URLs it could not confirm.
+   *
+   * `purge` fails soft and returns a count, which cannot tell "nothing was
+   * cached" from "the CDN refused the call". The tag→URL index needs that
+   * distinction: it keeps a URL whose purge failed so the next purge of the
+   * tag retries it, instead of forgetting the only record of a copy still at
+   * the edge (#864).
+   *
+   * Fails soft like `purge`. A provider without this method is treated as
+   * all-or-nothing: a resolved `purge` acknowledges every URL, a rejected one
+   * none.
+   */
+  purgeWithOutcome?(target: { urls: string[]; tags?: string[] }): Promise<EdgePurgeOutcome>;
+}
+
+export interface EdgePurgeOutcome {
+  /** Same observability signal `purge` returns. */
+  purged: number;
+  /** URLs whose CDN purge failed and should be retried. Empty on success. */
+  failedUrls: string[];
 }

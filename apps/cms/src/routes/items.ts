@@ -298,8 +298,19 @@ itemsRouter.get('/:collection/export', async (c) => {
       siteLocales: await siteLocales(c),
       options,
     });
-    // Probe once so a bad filter/sort is a 400 now, not a broken stream later.
-    await svc.list(collection, { filter, sort: options.sort, status: options.status, limit: 1, withTotal: false });
+    // Relation reads are checked lazily during expansion, i.e. mid-stream;
+    // check them now so a missing grant is a 403, not a 200 + header (#855).
+    await svc.assertExportRelationsReadable(plan.expand);
+    // Probe once, with the plan's `deep`, so a bad filter/sort or a failing
+    // expansion is an error now, not a broken stream later.
+    await svc.list(collection, {
+      filter,
+      sort: options.sort,
+      status: options.status,
+      deep: plan.deep,
+      limit: 1,
+      withTotal: false,
+    });
     transform = await svc.exportRowTransformer(collection);
   } catch (err) {
     if (err instanceof ExportError) {

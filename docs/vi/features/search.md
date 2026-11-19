@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-11-12T11:48:21.842Z
+version: 4
+lastUpdated: 2026-11-17T19:26:46.796Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 815b076ad0385537
+sourceHash: c5c6e58c6a908aa1
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T11:48:21.842Z
-codeVerifiedHash: 815b076ad0385537
+codeVerified: 2026-11-17T19:26:46.796Z
+codeVerifiedHash: c5c6e58c6a908aa1
 codeVerifiedClaims: 14
 ---
 
@@ -110,6 +110,21 @@ Trước backlog B131, Worker không có queue này, nên trên Workers index kh
 bao giờ nhận thay đổi nội dung. Khi không có queue, hoặc Worker không có
 binding `content-indexing`, `ItemService` index trực tiếp (inline). Trên
 Workers không có `MEILISEARCH_HOST`, consumer ack job mà không index.
+
+Job được áp dụng theo thứ tự nhận được, và job lỗi được thử lại sau, khi các job
+mới hơn của cùng item có thể đã chạy. Vì vậy worker đọc lại dòng item trước khi
+áp dụng snapshot của `search:index`. Item đã xoá hoặc không còn tồn tại thì bị gỡ
+khỏi index, nên một lần thử lại không thể làm item đã xoá xuất hiện lại. Mỗi job
+mang `dataHash`, là SHA-256 của `data` đã lưu tại lần ghi tạo ra job đó. Nếu dữ
+liệu đã lưu thay đổi kể từ đó, snapshot bị bỏ qua, vì lần ghi mới hơn đã enqueue
+job riêng của nó. Việc này cần kết nối database trên cả hai runtime (`rotatorDb`
+trên Docker, kết nối system trên Workers).
+
+Job được enqueue trước khi có bước kiểm tra này không có `dataHash`. Worker chỉ
+index job như vậy khi `data` của nó bằng dữ liệu đã lưu, nếu không thì bỏ job và
+ghi cảnh báo, nên snapshot cũ không thể ghi đè entry mới hơn. Sau khi nâng cấp mà
+queue vẫn còn job, chạy `lumibase reindex` để khôi phục entry mà job bị bỏ để lại
+ở trạng thái cũ.
 
 ### Reindex CLI
 

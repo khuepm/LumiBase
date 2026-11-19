@@ -86,13 +86,14 @@ const COLLECTIONS = [
     field('big', 'bigInteger'),
     field('published', 'boolean'),
     field('at', 'dateTime'),
+    field('seen_at', 'datetime'), // canonical FieldType spelling (#865)
     field('payload', 'json'),
     field('gallery', 'files'),
     field('author_id', 'uuid'),
     field('status', 'string'), // collides with the structural column
     field('bad-name', 'string'), // not a GraphQL name
   ]),
-  collection('comments', [field('body', 'text'), field('post', 'uuid')]),
+  collection('comments', [field('body', 'text'), field('post', 'uuid'), field('rich', 'richtext')]),
 ];
 
 const RELATIONS = [
@@ -166,6 +167,16 @@ describe('GraphQL SDL target ↔ server schema parity', () => {
     const server = await buildSiteSchema(fakeSchemaService(COLLECTIONS));
     const generated = buildSchema(generateGraphQLSdl(manifestFor(COLLECTIONS)));
     expect(signature(generated)).toEqual(signature(server));
+  });
+
+  it('types both datetime spellings as DateTime on both sides (#865)', async () => {
+    const server = signature(await buildSiteSchema(fakeSchemaService(COLLECTIONS)));
+    const generated = signature(buildSchema(generateGraphQLSdl(manifestFor(COLLECTIONS))));
+    for (const sig of [server, generated]) {
+      const posts = Object.values(sig).find((fields) => 'seen_at' in fields && 'at' in fields);
+      expect(posts?.['at']).toMatch(/-> DateTime$/);
+      expect(posts?.['seen_at']).toMatch(/-> DateTime$/);
+    }
   });
 
   it('matches on a site with no collections', async () => {

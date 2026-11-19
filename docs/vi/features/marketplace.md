@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T12:59:56.000Z
+version: 4
+lastUpdated: 2026-11-16T15:30:00.700Z
 sourceLang: vi
-contentHash: f47ac6b8c1d63092
+contentHash: 291ea9be1c38e004
+codeVerified: 2026-11-16T15:30:00.700Z
+codeVerifiedHash: 291ea9be1c38e004
+codeVerifiedClaims: 32
 ---
 
 # Marketplace cho Extensions
@@ -22,6 +25,21 @@ LumiBase Marketplace cho phép publish và install extension đã được **ký
 | `marketplaceSlug` | Slug để build public detail URL |
 | `publishedAt` | Null khi chưa publish |
 | `bundleSha256` | SHA-256 hex của bundle để verify integrity |
+| `downloadCount` | Tổng số lượt tải package (tăng qua `/download`) |
+| `submissionStatus` | Trạng thái community submission: `pending` / `approved` / `rejected` (null = không phải submission) |
+| `submittedBy` | User đã gửi extension qua luồng community |
+| `isOfficial` | Cờ official do **server suy ra**: chỉ true khi tên nằm trong namespace `lumibase-` **và** bundle verify được với một key có cờ `official`. Không bao giờ lấy từ client hay manifest |
+| `autoInstall` | Tự động cài khi setup bootstrap / reconcile lúc tạo site |
+| `enabledByDefault` | Giá trị `enabled` ban đầu lúc cài (admin có thể tắt sau) |
+| `verifiedAt` | Thời điểm verify chữ ký thành công gần nhất (điều khiển badge) |
+
+`extension_votes` ghi lại lượt upvote trên marketplace — mỗi `(userId, marketplaceSlug)` một dòng, được đảm bảo bằng unique index nên vote là idempotent. Vote được khoá theo slug nên vẫn giữ nguyên khi lên version.
+
+| Column | Mục đích |
+|--------|----------|
+| `marketplaceSlug` | Listing được vote |
+| `userId` | Người vote (FK → `users`, cascade delete) |
+| `createdAt` | Thời điểm vote |
 
 ## Public keys registry
 
@@ -34,18 +52,63 @@ Public keys được khai báo trong env var `MARKETPLACE_PUBLIC_KEYS` dưới d
 }
 ```
 
-Loaded một lần khi router init, không cache lâu dài (có thể rotate qua env update + redeploy).
+Env map được parse lại mỗi lần resolve key, không cache lâu dài (có thể rotate qua env update + redeploy).
+
+Ngoài env, key còn được đăng ký trong bảng `lumibase_publisher_keys` (`keyId` duy nhất, `publicKeyPem`, `publisher`, `official`, `revoked`). Khi resolve một `publisherKeyId`, dòng trong DB được ưu tiên hơn env, nên một env var bị sửa không thể đánh dấu key là official hay gỡ revoke cho nó. Key chỉ có trong env luôn được coi là third-party (`official: false`, `revoked: false`); key đã revoke luôn verify thất bại. Key official của LumiBase được seed vào bảng này lúc setup.
+
+Implementation: `apps/cms/src/services/extension-verifier.ts`.
 
 ## API endpoints
 
 ```
-GET  /api/v1/marketplace/extensions             List published extensions
-GET  /api/v1/marketplace/extensions/:slug       Detail (kèm signature)
-POST /api/v1/marketplace/extensions/:slug/install   Install vào site hiện tại
-POST /api/v1/marketplace/publish                Publish một extension đã upload
+GET    /api/v1/marketplace/extensions              List published extensions
+GET    /api/v1/marketplace/extensions/:slug        Detail (kèm signature)
+GET    /api/v1/marketplace/extensions/:slug/download   Tải package (302 → bundle; ?redirect=0 → JSON)
+POST   /api/v1/marketplace/extensions/:slug/install    Install vào site hiện tại
+GET    /api/v1/marketplace/updates                 Bản cập nhật cho các extension đã cài trên site hiện tại
+POST   /api/v1/marketplace/extensions/:slug/vote       Upvote (cần auth; idempotent)
+DELETE /api/v1/marketplace/extensions/:slug/vote       Bỏ upvote (cần auth)
+POST   /api/v1/marketplace/publish                 Publish một extension đã upload (đã ký)
+POST   /api/v1/marketplace/submit                  Gửi extension từ cộng đồng để duyệt (cần auth)
+GET    /api/v1/marketplace/submissions?status=     Danh sách submission để kiểm duyệt (extensions:configure)
+POST   /api/v1/marketplace/submissions/:id/review  Duyệt / từ chối một submission (extensions:configure)
 ```
 
 Implementation: `apps/cms/src/routes/marketplace.ts`.
+
+Catalog projection thêm ba field suy ra bên cạnh các field public ổn định:
+`verified` (true khi listing có `verifiedAt` — chỉ được ghi sau khi verify chữ ký
+thật lúc publish/install — hoặc `isOfficial`; với các dòng cũ publish trước khi có
+bước ghi nhận này thì fallback về việc có đủ signature + publisher key id + hash
+integrity — field này điều khiển badge "Verified" và đường install tin cậy),
+`voteCount`, và `hasVoted` (cho caller đã xác thực). `totalDownloads` giờ phản ánh
+`downloadCount`.
+
+## Download
+
+`GET /extensions/:slug/download` tăng `downloadCount` trên version publish mới nhất
+và mặc định trả `302` redirect tới `bundleUrl` đã ký, để bundle lớn không bao giờ đi
+qua Worker. Client lập trình truyền `?redirect=0` để nhận metadata của bundle (URL,
+hash, signature, key id, số lượt mới) dưới dạng JSON.
+
+## Voting
+
+Mọi user đã xác thực đều có thể upvote một listing. `POST …/vote` insert một dòng với
+`ON CONFLICT DO NOTHING` dựa trên unique index `(userId, marketplaceSlug)`, nên vote
+lặp lại không có tác dụng; `DELETE …/vote` rút lại vote. Cả hai đều trả về
+`{ voteCount, hasVoted }` mới nhất.
+
+## Community submissions
+
+`POST /submit` cho phép mọi user đã xác thực đề xuất một extension cho catalog công
+khai. Endpoint validate payload (name, `version` theo SemVer, `type`, slug, bundle
+URL, description/publisher/repo/capabilities tùy chọn), từ chối slug đã đang live
+trong catalog (`409 SLUG_TAKEN`), và tạo một dòng **global, chưa publish**
+(`siteId = null`, `publishedAt = null`) với `submissionStatus = 'pending'` và
+`submittedBy = <user>`. Vì chưa publish nên nó không bao giờ xuất hiện trong catalog
+công khai cho tới khi moderator duyệt (`/submissions/:id/review`) **và** một bundle
+đã ký được publish qua `/publish`. Các endpoint kiểm duyệt yêu cầu permission
+`extensions:configure`.
 
 ## Verification flow
 
@@ -53,7 +116,7 @@ Khi `POST /install`:
 
 1. Fetch bundle từ `bundleUrl` (R2/S3/external).
 2. Recompute SHA-256 → so sánh với `bundleSha256`.
-3. Lookup `publisherKeyId` trong `MARKETPLACE_PUBLIC_KEYS`.
+3. Lookup `publisherKeyId` trong `lumibase_publisher_keys`, rồi tới `MARKETPLACE_PUBLIC_KEYS` (xem [Public keys registry](#public-keys-registry)).
 4. Verify `signature` qua `crypto.subtle.verify(algorithm, key, signatureBytes, sha256Bytes)`.
 5. Nếu thất bại → reject install, không mount.
 6. Nếu thành công → ghi extension vào DB cho `siteId` hiện tại với `enabled: false` mặc định, admin enable thủ công.
@@ -67,47 +130,47 @@ Khi `POST /install`:
 - Signature + `publisherKeyId`.
 - Slug duy nhất + `publisher` info.
 
-Chỉ admin (capability `marketplace:publish`) được phép.
+Chỉ moderator có permission `extensions:configure` được phép — cùng guard với `/submissions/:id/review`, vì publish ghi vào catalog global dùng chung cho mọi tenant.
 
 ## Roadmap
 
-- [x] Studio UI marketplace browser (browse + 1-click install).
-- [x] Versioning + auto-update notifications.
-- [x] Public marketplace site (apps/marketplace) backed by the real catalog API.
-- [x] Revenue sharing for commercial extensions: launch is **Free-first**; checkout/payout work is tracked as a separate commercial backlog.
+- [x] Trình duyệt marketplace trong Studio UI (duyệt + cài 1-click).
+- [x] Versioning + thông báo auto-update.
+- [x] Trang marketplace công khai (apps/marketplace) dùng catalog API thật.
+- [x] Chia sẻ doanh thu cho extension thương mại: ra mắt theo hướng **Free-first**; phần checkout/payout được theo dõi trong một backlog thương mại riêng.
 
 ## Public marketplace launch
 
-`apps/marketplace` is a Next.js static export deployed to Cloudflare Pages. It reads catalog data from CMS through:
+`apps/marketplace` là một Next.js static export deploy lên Cloudflare Pages. Nó đọc dữ liệu catalog từ CMS qua:
 
 ```
 GET /api/v1/marketplace/extensions?q=&category=&tags=&page=&perPage=&sort=
 GET /api/v1/marketplace/extensions/:slug
 ```
 
-The public catalog response is projected from `extensions.manifest.marketplace` first, then falls back to the existing `extensions` row. Stable public fields include `slug`, `name`, `description`, `readme`, `category`, `tags`, `publisherName`, `latestVersion`, `publishedAt`, `updatedAt`, `licenseType`, `repositoryUrl`, and `documentationUrl`. Existing fields (`marketplaceSlug`, `publisher`, `version`, `type`) remain for Studio compatibility.
+Response của catalog công khai được projection từ `extensions.manifest.marketplace` trước, rồi fallback về dòng `extensions` hiện có. Các field public ổn định gồm `slug`, `name`, `description`, `readme`, `category`, `tags`, `publisherName`, `latestVersion`, `publishedAt`, `updatedAt`, `licenseType`, `repositoryUrl` và `documentationUrl`. Các field cũ (`marketplaceSlug`, `publisher`, `version`, `type`) được giữ lại để tương thích với Studio.
 
-Launch checklist:
+Checklist ra mắt:
 
-- Set `NEXT_PUBLIC_USE_REAL_API=true`.
-- Set `NEXT_PUBLIC_CMS_API_URL` to the production CMS URL.
-- Build with `pnpm marketplace:build`.
-- Deploy with `pnpm marketplace:deploy` or Cloudflare Pages using `apps/marketplace/out`.
-- Smoke test `/`, `/extensions/`, `/categories/seo/`, and `/extensions/<slug>/`.
-- Seed listing metadata in `manifest.marketplace` if production rows are missing description/category/tags/license/link data.
+- Đặt `NEXT_PUBLIC_USE_REAL_API=true`.
+- Đặt `NEXT_PUBLIC_CMS_API_URL` là URL CMS production.
+- Build bằng `pnpm marketplace:build`.
+- Deploy bằng `pnpm marketplace:deploy` hoặc Cloudflare Pages với `apps/marketplace/out`.
+- Smoke test `/`, `/extensions/`, `/categories/seo/` và `/extensions/<slug>/`.
+- Seed metadata của listing trong `manifest.marketplace` nếu các dòng production thiếu dữ liệu description/category/tags/license/link.
 
 ## Revenue sharing status
 
-The launch marketplace is free-first. LumiBase does not process paid extension checkout, license entitlement, payout, refund, or tax handling in this phase.
+Marketplace lúc ra mắt theo hướng free-first. Ở giai đoạn này LumiBase không xử lý checkout cho extension trả phí, license entitlement, payout, hoàn tiền hay thuế.
 
-Commercial extensions backlog:
+Backlog cho extension thương mại:
 
-- Pricing fields for extension listings.
-- Publisher accounts and payout profile.
-- Default percentage-based platform commission.
-- License entitlement for paid extension installs.
-- Checkout provider integration.
-- Revenue ledger, payout lifecycle, and refund lifecycle.
+- Các field giá cho listing extension.
+- Tài khoản publisher và hồ sơ payout.
+- Commission mặc định của nền tảng theo phần trăm.
+- License entitlement khi cài extension trả phí.
+- Tích hợp nhà cung cấp checkout.
+- Revenue ledger, vòng đời payout và vòng đời hoàn tiền.
 
 ## Cấu trúc Phiên bản & Thông báo Cập nhật (Versioning & Auto-update)
 

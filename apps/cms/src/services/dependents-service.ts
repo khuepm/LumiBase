@@ -14,8 +14,10 @@
  * them explicitly via resolveAction.
  */
 
-import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { collections, fields, items, relations, scopeSite, type Database } from '@lumibase/database';
+import { collectRichTextRefs, isRichTextDocument } from '@lumibase/contracts/richtext';
+import { containsPattern } from './like-pattern';
 import { nextItemVersion } from './item-etag';
 import type { ItemService } from './item-service';
 import { itemServiceForSystem } from './item-service-factory';
@@ -29,7 +31,14 @@ export class DependentsError extends Error {
 }
 
 export interface DependentGroup {
+  /** Relation id, or `richtext:<collection>.<field>` for rich-text references (#697). */
   relation: string;
+  /**
+   * `relation`: an m2o/o2m relation row (resolvable via resolve-dependents).
+   * `richtext`: rich-text links/embeds pointing at the item — always blocking;
+   * resolved by editing the referencing content.
+   */
+  kind?: 'relation' | 'richtext';
   collection: string; // manyCollection
   field: string; // manyField
   onDelete: string;
@@ -66,6 +75,24 @@ export interface DependentsServiceDeps {
 }
 
 const SAMPLE_LIMIT = 10;
+
+/** Candidate rows scanned for rich-text references to one item (substring prefilter). */
+const RICHTEXT_SCAN_LIMIT = 1000;
+const RICHTEXT_GROUP_PREFIX = 'richtext:';
+
+/**
+ * Whether `value` (any field value, nested blocks included) holds a rich-text
+ * document with an item reference to `(collection, id)` — links, embeds and
+ * custom-block refs alike.
+ */
+export function richTextReferencesItem(value: unknown, collection: string, id: string, depth = 0): boolean {
+  if (depth > 8 || value === null || typeof value !== 'object') return false;
+  if (isRichTextDocument(value)) {
+    return collectRichTextRefs(value).some((r) => r.kind === 'item' && r.collection === collection && r.id === id);
+  }
+  const children = Array.isArray(value) ? value : Object.values(value as Record<string, unknown>);
+  return children.some((v) => richTextReferencesItem(v, collection, id, depth + 1));
+}
 
 export class DependentsService {
   constructor(private readonly deps: DependentsServiceDeps) {}
@@ -162,10 +189,72 @@ export class DependentsService {
 
       groups.push({
         relation: rel.id,
+        kind: 'relation',
         collection: rel.manyCollection,
         field: rel.manyField,
         onDelete: rel.onDelete,
         count,
+        sample,
+      });
+    }
+    return groups;
+  }
+
+  /**
+   * Items whose rich text links to or embeds `(collection, itemId)` (#697),
+   * grouped by referencing collection and top-level field. There is no FK to
+   * follow, so a site-scoped substring match on the id finds candidates and
+   * each one is verified against the parsed documents — no false positives.
+   * Always `restrict`: deleting would leave dangling references in content.
+   */
+  async resolveRichTextDependents(collection: string, itemId: string, limit = SAMPLE_LIMIT): Promise<DependentGroup[]> {
+    const rows = await this.deps.db
+      .select({ id: items.id, data: items.data, collection: collections.name })
+      .from(items)
+      .innerJoin(collections, and(eq(collections.id, items.collectionId), eq(collections.siteId, items.siteId)))
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          isNull(items.deletedAt),
+          sql`${items.data}::text LIKE ${containsPattern(itemId)}`,
+        ),
+      )
+      .limit(RICHTEXT_SCAN_LIMIT);
+
+    const byGroup = new Map<string, { collection: string; field: string; ids: string[] }>();
+    for (const row of rows) {
+      // An item linking to itself does not block its own deletion.
+      if (row.collection === collection && row.id === itemId) continue;
+      const data = row.data && typeof row.data === 'object' && !Array.isArray(row.data) ? (row.data as Record<string, unknown>) : {};
+      for (const [field, value] of Object.entries(data)) {
+        if (!richTextReferencesItem(value, collection, itemId)) continue;
+        const key = `${row.collection}.${field}`;
+        const group = byGroup.get(key) ?? { collection: row.collection, field, ids: [] };
+        group.ids.push(row.id);
+        byGroup.set(key, group);
+      }
+    }
+
+    const groups: DependentGroup[] = [];
+    for (const [key, g] of byGroup) {
+      // Count is unfiltered (integrity); sample ids follow the read scope.
+      const scope = await this.readScope(g.collection);
+      let sample: Array<{ id: string }> = [];
+      if (scope.allowed) {
+        const where = and(scopeSite(items.siteId, this.deps.siteId), inArray(items.id, g.ids), isNull(items.deletedAt));
+        sample = await this.deps.db
+          .select({ id: items.id })
+          .from(items)
+          .where(scope.where ? and(where, scope.where) : where)
+          .limit(limit);
+      }
+      groups.push({
+        relation: `${RICHTEXT_GROUP_PREFIX}${key}`,
+        kind: 'richtext',
+        collection: g.collection,
+        field: g.field,
+        onDelete: 'restrict',
+        count: g.ids.length,
         sample,
       });
     }
@@ -191,7 +280,11 @@ export class DependentsService {
     opts: { limit?: number; requireTarget?: PermissionAction } = {},
   ): Promise<DependentsReport> {
     if (opts.requireTarget) await this.requirePerm(collection, opts.requireTarget);
-    const dependents = await this.resolveDependents(collection, itemId, opts.limit ?? SAMPLE_LIMIT);
+    const limit = opts.limit ?? SAMPLE_LIMIT;
+    const dependents = [
+      ...(await this.resolveDependents(collection, itemId, limit)),
+      ...(await this.resolveRichTextDependents(collection, itemId, limit)),
+    ];
     return { dependents, blocking: this.isBlocking(dependents) };
   }
 
@@ -206,6 +299,13 @@ export class DependentsService {
     relationId: string,
     opts: { newTargetId?: string; hard?: boolean } = {},
   ): Promise<{ action: ResolveAction; relation: string; affected: number; policyOverridden: boolean }> {
+    if (relationId.startsWith(RICHTEXT_GROUP_PREFIX)) {
+      throw new DependentsError(
+        'RICHTEXT_REFERENCE',
+        'Rich-text content links to this item. Edit that content to remove the reference, then delete again.',
+        422,
+      );
+    }
     const [rel] = await this.deps.db
       .select()
       .from(relations)

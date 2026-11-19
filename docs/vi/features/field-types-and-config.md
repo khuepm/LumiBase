@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 4
-lastUpdated: 2026-11-15T21:57:22.542Z
+version: 6
+lastUpdated: 2026-11-17T19:26:39.389Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2a7cd82af0d95f46
+sourceHash: bd2b3b94530b8811
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T21:57:22.542Z
-codeVerifiedHash: 2a7cd82af0d95f46
+codeVerified: 2026-11-17T19:26:39.389Z
+codeVerifiedHash: bd2b3b94530b8811
 codeVerifiedClaims: 6
 ---
 
@@ -35,6 +35,7 @@ LumiBase coi mỗi field là schema object first-class. Field có metadata độ
 | `geometry` | `GeoJSON.Geometry` | Lưu dưới dạng GeoJSON-like JSON. |
 | `alias` | virtual | Dùng cho relation aliases, groups và presentation-only fields. |
 | `blocks` | `Array<{ id, type, data }>` | Dynamic zone: danh sách block có thứ tự, mỗi block được validate theo một block template nằm trong `options.allowedBlocks`. Xem [Dynamic zones](./dynamic-zones.md). |
+| `richtext` | `RichTextDocument` | Tài liệu rich text khả chuyển (khối, mark, tham chiếu), được validate và làm sạch khi ghi; GraphQL trả thêm HTML đã dựng. Xem [Rich text](./rich-text.md). |
 
 ## 2. Field metadata
 
@@ -184,7 +185,7 @@ Generated base collection interfaces biểu diễn stored values. Generated `Col
 Schema service phân loại risky field mutations trước apply:
 
 - Rename: dùng `renameFrom` và giữ nguyên `type`/`interface` hiện tại trong SDK rename helper.
-- Đổi type khi đã có data: cần `migrationPlan` và `confirmRiskyChange`.
+- Đổi tên hoặc đổi type khi đã có data: cần `migrationPlan` có `strategy` là chuỗi không rỗng (ví dụ `{ "strategy": "cast" }`), hoặc `confirmRiskyChange: true`. Plan rỗng hoặc không có strategy như `{}` bị từ chối với `409 FIELD_MIGRATION_REQUIRED`. Plan chưa được thực thi; nó chỉ xác nhận thay đổi.
 - Xóa field khi đã có data: cần destructive path rõ ràng. SDK nhận delete options như `confirmRiskyChange`, `migrationPlan`, `force`, `backupToRevisions`.
 
 Schema diff trả `risk` và `runtimeImpact` để Studio/automation yêu cầu xác nhận trước thay đổi phá hủy.

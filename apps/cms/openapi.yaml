@@ -2803,7 +2803,8 @@ paths:
         '400': { description: VALIDATION (bad file, unknown column, no rows, no format) }
         '403': { description: Missing create (or update for upsert) permission }
         '404': { description: Collection not found }
-        '413': { description: File larger than IMPORT_MAX_BYTES }
+        '413': { description: 'File larger than IMPORT_MAX_BYTES (counted while streaming; Content-Length not required)' }
+        '429': { description: 'LIMIT_EXCEEDED: the site already has IMPORT_MAX_PENDING_JOBS jobs or IMPORT_MAX_PENDING_BYTES of files queued or running' }
     get:
       summary: List recent import jobs (own jobs; site admins see all)
       parameters:
@@ -6261,6 +6262,155 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /backend-templates:
+    get:
+      tags: [Backend Templates]
+      summary: List the private templates of the site (site-admin, #902)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        '200': { description: OK }
+        '403': { description: Not a site admin }
+    post:
+      tags: [Backend Templates]
+      summary: Create a template draft from a document (object or raw JSON text)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '201': { description: Created }
+        '409': { description: CONFLICT - slug exists }
+        '403': { description: Not a site admin }
+  /backend-templates/official:
+    get:
+      tags: [Backend Templates]
+      summary: Read-only official templates bundled with the CMS
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '200': { description: OK }
+        '403': { description: Not a site admin }
+  /backend-templates/capture:
+    post:
+      tags: [Backend Templates]
+      summary: Capture selected collections of this site as a new draft (schema-only unless seed is given)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '201': { description: Created }
+        '422': { description: MISSING_DEPENDENCY or INVALID_TEMPLATE }
+        '403': { description: Not a site admin }
+  /backend-templates/{id}:
+    get:
+      tags: [Backend Templates]
+      summary: One template - draft, draftRevision, validation, revisions
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string }, description: Template id or slug }
+      responses:
+        '200': { description: OK }
+        '404': { description: Not found on this site }
+        '403': { description: Not a site admin }
+    patch:
+      tags: [Backend Templates]
+      summary: Replace the draft if it is still at draftRevision
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string }, description: Template id or slug }
+      responses:
+        '200': { description: OK }
+        '409': { description: DRAFT_CONFLICT }
+        '403': { description: Not a site admin }
+  /backend-templates/{id}/validate:
+    post:
+      tags: [Backend Templates]
+      summary: Validate the draft
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string }, description: Template id or slug }
+      responses:
+        '200': { description: OK }
+        '403': { description: Not a site admin }
+  /backend-templates/{id}/publish:
+    post:
+      tags: [Backend Templates]
+      summary: Publish an immutable revision of the templateVersion of the draft
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string }, description: Template id or slug }
+      responses:
+        '201': { description: Published }
+        '200': { description: Identical content already published }
+        '409': { description: IMMUTABLE_REVISION or DRAFT_CONFLICT }
+        '422': { description: INVALID_TEMPLATE }
+        '403': { description: Not a site admin }
+  /backend-templates/{id}/revisions/{version}:
+    get:
+      tags: [Backend Templates]
+      summary: The published canonical document (export)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string }, description: Template id or slug }
+        - { name: version, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '403': { description: Not a site admin }
+  /backend-templates/plans:
+    post:
+      tags: [Backend Templates]
+      summary: Preview installing an exact template revision into this site (#903); writes no schema or content
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '201': { description: Plan with report }
+        '400': { description: MISSING_INPUT or SITE_MISMATCH }
+        '404': { description: Template or revision not found or not readable }
+        '409': { description: AMBIGUOUS_TEMPLATE or NAME_CONFLICT }
+        '422': { description: INCOMPATIBLE_RUNTIME or INVALID_TEMPLATE }
+  /backend-templates/plans/{planId}:
+    get:
+      tags: [Backend Templates]
+      summary: Read a plan of this site
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: planId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { description: Not found }
+  /backend-templates/plans/{planId}/verify:
+    post:
+      tags: [Backend Templates]
+      summary: Re-check expiry, target schema fingerprint and runtime of a plan
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: planId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Fresh }
+        '409': { description: STALE_PLAN }
+        '422': { description: INCOMPATIBLE_RUNTIME }
+  /backend-templates/installations:
+    post:
+      tags: [Backend Templates]
+      summary: Apply a plan atomically (#904); idempotent per key and plan payload
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '201': { description: Installed }
+        '200': { description: Replay of a committed installation }
+        '403': { description: Not (or no longer) a site admin }
+        '409': { description: STALE_PLAN, NAME_CONFLICT or IDEMPOTENCY_CONFLICT }
+        '422': { description: INCOMPATIBLE_RUNTIME }
+  /backend-templates/installations/{installationId}:
+    get:
+      tags: [Backend Templates]
+      summary: Read an installation of this site
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: installationId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { description: Not found }
   /integrations/git:
     get:
       tags: [Git Integration]
@@ -6552,3 +6702,116 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /release-flags:
+    get:
+      tags: [Release Flags]
+      summary: Effective release flags for the active site (#869)
+      description: |
+        Members get `{ key, enabled }` for released flags only (unreleased keys
+        stay hidden). Site admins get every flag, with the stage,
+        the source of the release decision (`env` | `manifest` | `stage`), the
+        site choice and the flag's owner and removal date.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [key, enabled]
+                      properties:
+                        key: { type: string }
+                        enabled: { type: boolean }
+                        stage: { type: string, enum: [dark, beta, ga] }
+                        released: { type: boolean }
+                        releasedBy: { type: string, enum: [env, manifest, stage] }
+                        enabledBy: { type: string, enum: [release, site, site-default] }
+                        siteValue: { type: boolean, nullable: true }
+                        siteToggle: { type: boolean }
+                        siteDefault: { type: boolean }
+                        description: { type: string }
+                        owner: { type: string }
+                        removeBy: { type: string, format: date }
+  /release-flags/site:
+    put:
+      tags: [Release Flags]
+      summary: Set or clear the active site's choices for released flags (site admin)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [flags]
+              properties:
+                flags:
+                  type: object
+                  minProperties: 1
+                  maxProperties: 100
+                  description: '`true` / `false` sets the choice, `null` clears it.'
+                  additionalProperties: { type: boolean, nullable: true }
+      responses:
+        '200': { description: Stored choices and the resulting state of each changed flag }
+        '400':
+          description: Validation error, `UNKNOWN_FLAG` or `NOT_SITE_TOGGLE`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403': { description: Not a site admin }
+  /release-flags/manifest:
+    get:
+      tags: [Release Flags]
+      summary: Accepted release manifest, trusted key ids and last pull result (bootstrap admin)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '200': { description: OK }
+        '403': { description: Not the bootstrap admin, or an API key }
+    put:
+      tags: [Release Flags]
+      summary: Submit a signed release manifest (bootstrap admin)
+      description: |
+        The envelope carries a base64 payload and a detached Ed25519 signature
+        over the payload bytes. Accepted only when the key id is trusted
+        (`LUMIBASE_RELEASE_PUBLIC_KEYS`), the signature verifies, the audience
+        matches and `issuedAt` is later than the accepted manifest. Sending the
+        accepted manifest again is a no-op (`unchanged: true`).
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [keyId, payload, signature]
+              properties:
+                keyId: { type: string, maxLength: 100 }
+                payload: { type: string, maxLength: 65536, description: Base64 of the UTF-8 JSON payload }
+                signature: { type: string, maxLength: 512, description: Base64 Ed25519 signature }
+      responses:
+        '200': { description: Accepted (or unchanged) }
+        '400': { description: '`MANIFEST_REJECTED` with reason `MALFORMED_ENVELOPE`' }
+        '403': { description: Not the bootstrap admin, or an API key }
+        '409': { description: '`MANIFEST_REJECTED` with reason `STALE` or `KEYS_NOT_CONFIGURED`' }
+        '422': { description: '`MANIFEST_REJECTED` with reason `BAD_SIGNATURE`, `UNKNOWN_KEY`, `EXPIRED`, `NOT_YET_VALID`, `WRONG_AUDIENCE` or `MALFORMED_PAYLOAD`' }
+  /release-flags/manifest/pull:
+    post:
+      tags: [Release Flags]
+      summary: Fetch the manifest from LUMIBASE_RELEASE_MANIFEST_URL now (bootstrap admin)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '200': { description: Pulled and accepted (or unchanged) }
+        '403': { description: Not the bootstrap admin, or an API key }
+        '409': { description: '`PULL_NOT_CONFIGURED`' }
+        '502': { description: '`PULL_FAILED` with the reason; the accepted manifest stays in force' }

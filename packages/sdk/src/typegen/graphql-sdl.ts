@@ -22,6 +22,10 @@ export function generateGraphQLSdl(manifest: TypegenManifest): string {
   for (const collection of collections) {
     blocks.push(objectType(typeNames.get(collection.name) as string, itemFields(collection, typeNames)));
   }
+  // `richtext` fields (#695) resolve to the server's shared RichText type.
+  if (collections.some((c) => c.fields.some((f) => !f.system && f.type === 'richtext' && !RESERVED.has(f.name) && GRAPHQL_NAME.test(f.name)))) {
+    blocks.push(objectType('RichText', ['json: JSON', 'html: String', 'markdown: String', 'text: String']));
+  }
 
   const query: string[] = ['_collections: [String!]!'];
   const mutation: string[] = [];
@@ -171,11 +175,15 @@ function scalarFor(type: string): string {
       return 'Float';
     case 'bigInteger':
       return 'String';
+    // `datetime` is the canonical FieldType spelling; `dateTime` is legacy (#865).
+    case 'datetime':
     case 'dateTime':
     case 'date':
     case 'time':
     case 'timestamp':
       return 'DateTime';
+    case 'richtext':
+      return 'RichText';
     case 'json':
     case 'csv':
     case 'geometry':
