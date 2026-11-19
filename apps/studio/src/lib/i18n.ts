@@ -3,6 +3,7 @@ import { initReactI18next } from 'react-i18next';
 import { getApiClient } from './api';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { CONTENT_NS, registerContentBundles } from '@/modules/content/draft-review-i18n';
+import { RELEASE_FLAGS_NS, registerReleaseFlagBundles } from '@/modules/settings/release-flags-i18n';
 import { applyDocumentLanguage } from './text-direction';
 import { readStoredUiLanguage } from './ui-language';
 
@@ -31,7 +32,7 @@ export async function initI18n() {
       // Before sign-in. Once a session exists, `SiteLanguageSync` (mounted in
       // the admin layout) switches to the user's or the site's language.
       lng: initialLanguage,
-      ns: ['ui', CONTENT_NS],
+      ns: ['ui', CONTENT_NS, RELEASE_FLAGS_NS],
       defaultNS: 'ui',
       interpolation: {
         escapeValue: false, // React already escapes
@@ -39,6 +40,7 @@ export async function initI18n() {
       resources: {}, // We will load dynamically or inject
     });
   registerContentBundles(i18n);
+  registerReleaseFlagBundles(i18n);
   applyDocumentLanguage(initialLanguage);
 
   try {

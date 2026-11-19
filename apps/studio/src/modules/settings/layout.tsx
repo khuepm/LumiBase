@@ -71,6 +71,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'social-login', label: 'Social login', to: '/settings/social-login' },
       { id: 'encryption', label: 'Encryption', to: '/settings/encryption' },
       { id: 'updates', label: 'Updates', to: '/settings/updates' },
+      { id: 'release-flags', label: 'Release flags', to: '/settings/release-flags' },
     ],
   },
 ];
