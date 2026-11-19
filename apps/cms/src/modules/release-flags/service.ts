@@ -67,7 +67,7 @@ const manifestCache = createProcessCache<StoredManifest | null>({ ttlMs: MANIFES
  * window; the replica that accepted it clears its own cache immediately.
  * A read failure answers `null` for this call only (not cached), so flags fall
  * back to stage defaults rather than failing the request — including on a
- * schema that predates migration `0041` while an upgrade is rolling out.
+ * schema that predates migration `0043` while an upgrade is rolling out.
  */
 export async function loadAcceptedManifest(systemDb: Database): Promise<StoredManifest | null> {
   try {
