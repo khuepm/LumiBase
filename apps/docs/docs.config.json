@@ -69,6 +69,7 @@
           "features/reconciler-repair-loop",
           "features/site-skills",
           "features/agent-receipts",
+          "features/chat-agent",
           "features/locale-generator",
           "features/visual-editing",
           "features/external-action-tools",

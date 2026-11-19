@@ -1,11 +1,11 @@
 ---
-version: 61
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 62
+lastUpdated: 2026-11-19T05:28:33.145Z
 sourceLang: en
-contentHash: 1d86bff615c2ba39
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
-codeVerifiedClaims: 652
+contentHash: 4d12978a7a681d10
+codeVerified: 2026-11-19T05:28:33.145Z
+codeVerifiedHash: 4d12978a7a681d10
+codeVerifiedClaims: 674
 ---
 
 # Hono API Specification — LumiBase
@@ -1796,6 +1796,46 @@ on PR open/sync LumiBase seeds an ephemeral site (`${siteId}__pr-${number}`)
 served at `/api/v1/deliver/page/${ephemeralSiteId}/...`; on close/merge it is
 torn down. CI failure records an `agent_incident` (role `git-sync`) + a
 `git_ci_failed` audit entry.
+
+---
+
+## 12d. Chat agent (Slack / generic webhook)
+
+The Content Agent from a chat tool (#711). A message from a **linked** chat user
+runs one Copilot turn (`POST /api/v1/ai/chat`) **as that LumiBase user**, with
+their capabilities, autonomy level, approvals and audit trail. An approval is
+decided as the linked user who clicks it. Admin routes need site admin and
+`ENCRYPTION_KEY`; secrets are stored encrypted and never returned, except the
+generated webhook secret, which appears once in the create (and rotate)
+response. See [Chat agent](../features/chat-agent.md).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/chat-agent/integrations` | List integrations with their `endpoints` (no secrets) |
+| `POST` | `/api/v1/chat-agent/integrations` | Install `{ provider (slack\|webhook), name, externalId?, signingSecret?, botToken? }`. Slack needs `externalId` (workspace `team_id`) and `signingSecret`; a webhook generates its secret → `201` with `signingSecret` once |
+| `PATCH` | `/api/v1/chat-agent/integrations/:id` | Update `name`, `enabled`, `externalId`, `signingSecret`, `botToken` (`null` removes it) |
+| `POST` | `/api/v1/chat-agent/integrations/:id/rotate-secret` | Webhook only: new `signingSecret` (shown once); the old one stops verifying |
+| `DELETE` | `/api/v1/chat-agent/integrations/:id` | Uninstall (links and events are removed with it) |
+| `GET` | `/api/v1/chat-agent/integrations/:id/links` | Linked chat users |
+| `PUT` | `/api/v1/chat-agent/integrations/:id/links/:externalUserId` | Link `{ userId }` (must be a member of the site; `400` otherwise) |
+| `DELETE` | `/api/v1/chat-agent/integrations/:id/links/:externalUserId` | Unlink |
+
+Public (no session; signature-verified; the site and integration are in the path):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/chat-agent/slack/:siteId/:integrationId/events` | Slack Events API: `url_verification`; `app_mention` → turn as the linked user, reply in the thread (`chat.postMessage`, bot token). Acks at once; idempotent by `event_id` |
+| `POST` | `/api/v1/chat-agent/slack/:siteId/:integrationId/commands` | Slash command → ephemeral "Working on it…", answer via `response_url` |
+| `POST` | `/api/v1/chat-agent/slack/:siteId/:integrationId/interactions` | Approve / Reject buttons → `POST /ai/approvals/:id/decide` as the clicking user's link |
+| `POST` | `/api/v1/chat-agent/webhook/:siteId/:integrationId/messages` | `{ userId, text, threadId? }` → synchronous Copilot result (`+ threadId`). Optional `X-Lumibase-Delivery` makes it idempotent (`409 DUPLICATE_DELIVERY`) |
+| `POST` | `/api/v1/chat-agent/webhook/:siteId/:integrationId/approvals/:approvalId/decide` | `{ userId, decision: approved\|rejected }` → decided as the linked user |
+
+Signatures: Slack `X-Slack-Signature: v0=hex(HMAC-SHA256(secret, "v0:" + ts + ":" + body))`
+with `X-Slack-Request-Timestamp`; webhook `X-Lumibase-Signature: v1=hex(HMAC-SHA256(secret, ts + "." + body))`
+with `X-Lumibase-Timestamp`. Both refuse a timestamp more than 300 s away.
+Errors: `401 INVALID_SIGNATURE`, `403 WRONG_WORKSPACE` (Slack `team_id` differs),
+`403 USER_NOT_LINKED` (webhook), `404 NOT_FOUND` (unknown, disabled, other-provider
+or other-site integration), `500 SECRET_UNAVAILABLE`.
 
 ---
 

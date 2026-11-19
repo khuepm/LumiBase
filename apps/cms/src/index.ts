@@ -98,6 +98,7 @@ import { usersRouter } from './routes/users';
 import { utilsRouter, cacheUtilsRouter } from './routes/utils';
 import { pagesRouter } from './routes/pages';
 import { webhooksRouter } from './routes/webhooks';
+import { chatAgentPublicRouter, chatAgentRouter } from './modules/chat-agent';
 import { testAuthRouter } from './routes/test-auth';
 import { aiRouter } from './routes/ai';
 import { aiReviewRouter } from './routes/ai-review';
@@ -253,6 +254,16 @@ app.route('/api/v1/deployments/webhook', deploymentsWebhookRouter);
 // win; all other `/integrations/git/*` paths fall through to the authenticated
 // `gitRouter` below.
 app.route('/api/v1/integrations/git', gitPublicRouter);
+
+// Chat agent (#711) public surface — Slack events / commands / interactions and
+// the generic signed webhook. PUBLIC on purpose: Slack and chat bots cannot
+// carry a session; the per-integration request signature is the gate, and the
+// router scopes every query to the site in the path (`scopedDbFor`). Each chat
+// message then runs as the LINKED LumiBase user. Leaf paths are disjoint from
+// the authenticated `/chat-agent/integrations*` admin surface below.
+app.use('/api/v1/chat-agent/slack/*', withDb());
+app.use('/api/v1/chat-agent/webhook/*', withDb());
+app.route('/api/v1/chat-agent', chatAgentPublicRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
@@ -458,6 +469,10 @@ api.route('/firebase-sync', lumibaseFirebaseSyncRouter);
 // `requireSiteAdmin()` gate. The public OAuth-callback + webhook routes are
 // mounted above on the top-level `app` and win for their disjoint leaf paths.
 api.route('/integrations/git', gitRouter);
+
+// Chat agent admin surface (#711): install Slack / webhook integrations and
+// link chat users — `/api/v1/chat-agent/integrations*`, site admins only.
+api.route('/chat-agent', chatAgentRouter);
 
 // Share links are public. The opaque token resolves the site and share role.
 app.use('/api/v1/shares/*', withDb());

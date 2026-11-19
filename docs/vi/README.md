@@ -1,10 +1,10 @@
 ---
-version: 12
-lastUpdated: 2026-11-15T19:56:19.632Z
+version: 13
+lastUpdated: 2026-11-19T05:28:50.113Z
 sourceLang: vi
-contentHash: a13d2df6c1876273
-codeVerified: 2026-11-15T19:56:19.632Z
-codeVerifiedHash: a13d2df6c1876273
+contentHash: 2b4399fb07a420d1
+codeVerified: 2026-11-19T05:28:50.113Z
+codeVerifiedHash: 2b4399fb07a420d1
 codeVerifiedClaims: 4
 ---
 
@@ -71,6 +71,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [agent-harness-layer.md](./features/agent-harness-layer.md) — Agent goals, runs, tools, memory, approvals, artifacts, evaluations, và quản trị sinh ứng dụng.
   - [site-skills.md](./features/site-skills.md) — Site Skills: playbook có phiên bản được chèn vào agent run, CLI skills-as-code, MCP prompts.
   - [agent-receipts.md](./features/agent-receipts.md) — Agent receipts: run, approval, lần bác bỏ, chi phí, drift và autonomy trong một cửa sổ; ngưỡng cảnh báo và xuất CSV.
+  - [chat-agent.md](./features/chat-agent.md) — Chat agent: Content Agent từ Slack (mention, slash command, nút Approve / Reject) hoặc một webhook chung có chữ ký, chạy với tư cách user LumiBase đã liên kết.
   - [locale-generator.md](./features/locale-generator.md) — Locale generator: thêm locale trong một bước; bản dịch máy chờ trong hàng đợi review.
   - [external-action-tools.md](./features/external-action-tools.md) — Tool của agent có tác động ngoài CMS, được quản trị: rủi ro khai báo, approval chỉ dành cho người, bí mật theo site.
   - [runtime-abstraction.md](./features/runtime-abstraction.md) — Lớp `@lumibase/runtime` cho phép chạy trên Cloudflare và Docker.

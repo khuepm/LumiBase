@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 60
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 61
+lastUpdated: 2026-11-19T05:28:33.145Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1d86bff615c2ba39
+sourceHash: 4d12978a7a681d10
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
-codeVerifiedClaims: 652
+codeVerified: 2026-11-19T05:28:33.145Z
+codeVerifiedHash: 4d12978a7a681d10
+codeVerifiedClaims: 674
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -1586,6 +1586,46 @@ Public (không có phiên làm việc; xác minh chữ ký hoặc trạng thái 
 | `POST` | `/api/v1/integrations/git/webhook/:provider/:siteId/:integrationId` | Bộ nhận webhook — GitHub HMAC-SHA256 (`X-Hub-Signature-256`) / GitLab token (`X-Gitlab-Token`); idempotent theo delivery id |
 
 Môi trường xem trước là opt-in cho từng tích hợp (`sync_config.preview = true`): khi PR mở/đồng bộ, LumiBase khởi tạo một site tạm thời (`${siteId}__pr-${number}`) được phục vụ tại `/api/v1/deliver/page/${ephemeralSiteId}/...`; khi đóng/gộp PR nó sẽ bị hủy. Thất bại CI ghi lại một `agent_incident` (role `git-sync`) + một mục audit `git_ci_failed`.
+
+---
+
+## 12d. Chat agent (Slack / webhook chung)
+
+Content Agent từ một công cụ chat (#711). Tin nhắn của một user chat **đã liên kết**
+chạy một lượt Copilot (`POST /api/v1/ai/chat`) **với tư cách user LumiBase đó**,
+với capability, mức autonomy, quy trình phê duyệt và audit trail của họ. Một
+approval được quyết định với tư cách user đã liên kết của người bấm nút. Route
+admin cần site admin và `ENCRYPTION_KEY`; secret được lưu mã hoá và không bao
+giờ được trả về, trừ webhook secret được sinh ra, chỉ xuất hiện một lần trong
+response tạo (và rotate). Xem [Chat agent](../features/chat-agent.md).
+
+| Method | Path | Mô tả |
+|--------|------|-------------|
+| `GET` | `/api/v1/chat-agent/integrations` | Liệt kê integration kèm `endpoints` (không có secret) |
+| `POST` | `/api/v1/chat-agent/integrations` | Cài `{ provider (slack\|webhook), name, externalId?, signingSecret?, botToken? }`. Slack cần `externalId` (`team_id` của workspace) và `signingSecret`; webhook tự sinh secret → `201` kèm `signingSecret` một lần |
+| `PATCH` | `/api/v1/chat-agent/integrations/:id` | Cập nhật `name`, `enabled`, `externalId`, `signingSecret`, `botToken` (`null` để gỡ) |
+| `POST` | `/api/v1/chat-agent/integrations/:id/rotate-secret` | Chỉ webhook: `signingSecret` mới (hiện một lần); secret cũ ngừng xác minh được |
+| `DELETE` | `/api/v1/chat-agent/integrations/:id` | Gỡ cài đặt (liên kết và event bị xoá theo) |
+| `GET` | `/api/v1/chat-agent/integrations/:id/links` | Các user chat đã liên kết |
+| `PUT` | `/api/v1/chat-agent/integrations/:id/links/:externalUserId` | Liên kết `{ userId }` (phải là thành viên của site; nếu không trả `400`) |
+| `DELETE` | `/api/v1/chat-agent/integrations/:id/links/:externalUserId` | Huỷ liên kết |
+
+Public (không session; xác minh chữ ký; site và integration nằm trong path):
+
+| Method | Path | Mô tả |
+|--------|------|-------------|
+| `POST` | `/api/v1/chat-agent/slack/:siteId/:integrationId/events` | Slack Events API: `url_verification`; `app_mention` → một lượt với tư cách user đã liên kết, trả lời trong thread (`chat.postMessage`, bot token). Phản hồi ngay; idempotent theo `event_id` |
+| `POST` | `/api/v1/chat-agent/slack/:siteId/:integrationId/commands` | Slash command → "Working on it…" (ephemeral), câu trả lời gửi qua `response_url` |
+| `POST` | `/api/v1/chat-agent/slack/:siteId/:integrationId/interactions` | Nút Approve / Reject → `POST /ai/approvals/:id/decide` với tư cách liên kết của người bấm |
+| `POST` | `/api/v1/chat-agent/webhook/:siteId/:integrationId/messages` | `{ userId, text, threadId? }` → kết quả Copilot đồng bộ (`+ threadId`). `X-Lumibase-Delivery` (tuỳ chọn) làm request idempotent (`409 DUPLICATE_DELIVERY`) |
+| `POST` | `/api/v1/chat-agent/webhook/:siteId/:integrationId/approvals/:approvalId/decide` | `{ userId, decision: approved\|rejected }` → quyết định với tư cách user đã liên kết |
+
+Chữ ký: Slack `X-Slack-Signature: v0=hex(HMAC-SHA256(secret, "v0:" + ts + ":" + body))`
+kèm `X-Slack-Request-Timestamp`; webhook `X-Lumibase-Signature: v1=hex(HMAC-SHA256(secret, ts + "." + body))`
+kèm `X-Lumibase-Timestamp`. Cả hai từ chối timestamp lệch quá 300 giây.
+Lỗi: `401 INVALID_SIGNATURE`, `403 WRONG_WORKSPACE` (`team_id` của Slack khác),
+`403 USER_NOT_LINKED` (webhook), `404 NOT_FOUND` (integration không tồn tại, đã
+tắt, khác provider hoặc thuộc site khác), `500 SECRET_UNAVAILABLE`.
 
 ---
 
