@@ -116,6 +116,20 @@ export default Sentry.withSentry(
     const runtime = createCloudflareRuntime(env as unknown as Record<string, unknown>);
 
     const sweepDeps = { db, runtime };
+    // Release manifest pull (#897), on every trigger: it pulls only when the
+    // refresh interval has passed since the last attempt by any isolate, so
+    // overlapping triggers do not multiply requests. Opt-in, never throws.
+    ctx.waitUntil(
+      import('./modules/release-flags/service')
+        .then(({ releaseEnvFromRecord, runScheduledReleasePull }) =>
+          runScheduledReleasePull({
+            systemDb: db,
+            env: releaseEnvFromRecord(env as unknown as Record<string, unknown>),
+            cache: runtime.cache,
+          }),
+        )
+        .catch(() => console.error('[release-flags] scheduled pull failed')),
+    );
     if (controller.cron === '* * * * *') {
       // The scheduler tick includes the schedule-flow sweep Docker's
       // `flow-schedule` cron runs; overlapping ticks enqueue each due flow once

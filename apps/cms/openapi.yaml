@@ -6626,6 +6626,10 @@ paths:
     get:
       tags: [Release Flags]
       summary: Accepted release manifest, trusted key ids and last pull result (bootstrap admin)
+      description: >-
+        `lastPull` is the last attempt in the answering process; `pullHistory`
+        is the deployment-wide record shared by every replica (`lastAttemptAt`,
+        `lastSuccessAt`, `acceptedIssuedAt`, `consecutiveFailures`, `lastError`).
       parameters:
         - { $ref: '#/components/parameters/SiteHeader' }
       responses:
