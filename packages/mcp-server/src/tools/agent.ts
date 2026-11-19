@@ -2,7 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { registerCrud } from './_crud.js';
-import { run } from './_shared.js';
+import { ASK_USER_LIMITS } from '@lumibase/contracts';
+import { fail, run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 /** Same 5-field cron gate as `intentInputSchema` and the canonical `createIntent`. */
@@ -97,6 +98,49 @@ export function registerAgentTools(server: McpServer, client: LumiBaseClient) {
       },
     },
     async (input) => run(() => client.post<unknown>('/agent/intents/compile', input)),
+  );
+
+  // ── askUser clarification questions (#710, B208) ──────────────────────────
+  // Harness-only skills: `GOVERNED_TOOLS` routes both to `POST /api/v1/mcp`.
+  // There is no REST route to fall back on, so when the governed endpoint is
+  // unavailable these handlers refuse instead of pretending to ask.
+  const harnessOnly = (tool: string) => async () =>
+    fail(
+      new Error(
+        `${tool} runs only through the governed harness (POST /api/v1/mcp), which is unavailable: ` +
+          'enable contentOs.mcp for this site.',
+      ),
+    );
+
+  server.registerTool(
+    'ask_user',
+    {
+      description:
+        'Ask a person a clarification question instead of guessing. The run pauses (waiting_user) and the question ' +
+        'appears in the Mission Control inbox; read the outcome later with get_user_answer using the returned questionId.',
+      inputSchema: {
+        question: z.string().min(1).max(ASK_USER_LIMITS.question),
+        options: z
+          .array(z.string().trim().min(1).max(ASK_USER_LIMITS.option))
+          .min(2)
+          .max(ASK_USER_LIMITS.options)
+          .optional()
+          .describe('Choices to offer; must differ after trimming.'),
+        allow_free_text: z.boolean().optional().describe('Default true; false requires options.'),
+        context: z.string().max(ASK_USER_LIMITS.context).optional(),
+        timeout_minutes: z.number().int().min(1).max(ASK_USER_LIMITS.timeoutMinutes).optional(),
+      },
+    },
+    harnessOnly('ask_user'),
+  );
+
+  server.registerTool(
+    'get_user_answer',
+    {
+      description: 'Read the outcome of a question this caller asked with ask_user (pending, answered, expired or cancelled).',
+      inputSchema: { question_id: z.string().min(1) },
+    },
+    harnessOnly('get_user_answer'),
   );
 
   // ── Flows — mounted at /flows ──────────────────────────────────────────────

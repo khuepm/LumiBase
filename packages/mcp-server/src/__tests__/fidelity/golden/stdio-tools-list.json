@@ -5188,6 +5188,65 @@
       }
     },
     {
+      "name": "ask_user",
+      "description": "Ask a person a clarification question instead of guessing. The run pauses (waiting_user) and the question appears in the Mission Control inbox; read the outcome later with get_user_answer using the returned questionId.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "options": {
+            "description": "Choices to offer; must differ after trimming.",
+            "minItems": 2,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "allow_free_text": {
+            "description": "Default true; false requires options.",
+            "type": "boolean"
+          },
+          "context": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "timeout_minutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10080
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_user_answer",
+      "description": "Read the outcome of a question this caller asked with ask_user (pending, answered, expired or cancelled).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "question_id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
       "name": "list_flows",
       "description": "List flows for the current site.",
       "inputSchema": {
@@ -6195,6 +6254,8 @@
     "list_intent_drifts",
     "scan_intent",
     "compile_intent",
+    "ask_user",
+    "get_user_answer",
     "list_flows",
     "get_flow",
     "create_flow",
@@ -6289,6 +6350,7 @@
     "get_intent",
     "list_intent_drifts",
     "compile_intent",
+    "get_user_answer",
     "list_flows",
     "get_flow",
     "list_flow_runs",
