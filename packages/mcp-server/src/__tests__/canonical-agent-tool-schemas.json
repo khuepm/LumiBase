@@ -364,6 +364,27 @@
       "id"
     ]
   },
+  "describeImage": {
+    "properties": [
+      "fileId",
+      "language",
+      "maxLength"
+    ],
+    "required": [
+      "fileId"
+    ]
+  },
+  "extractFieldsFromPdf": {
+    "properties": [
+      "collection",
+      "fileId",
+      "instruction"
+    ],
+    "required": [
+      "collection",
+      "fileId"
+    ]
+  },
   "getUserAnswer": {
     "properties": [
       "questionId"

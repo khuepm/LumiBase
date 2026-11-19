@@ -10,6 +10,7 @@ import { isAdminPrincipal } from '../middleware/control-plane-access-guard';
 import { auditSecurityGuardDenied } from '../middleware/security-audit';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
 import { AccessService } from '../services/access-service';
+import { lazyAttachmentReader } from '../services/ai-attachments';
 import { AISecureHarness, CORE_SKILLS, isControlPlaneSkill, skillCatalog } from '../services/ai-harness';
 import { ConfigService } from '../services/config-service';
 import { ExtensionsService } from '../services/extensions-service';
@@ -143,6 +144,8 @@ async function handleMcp(c: Context<AppEnv>) {
       permissionCtx: buildRequestPermissionContext({ auth, siteId, headers: c.req.header(), ip: c.get('ip') ?? null }),
     }),
     llm,
+    // describeImage / extractFieldsFromPdf read files with the caller's access (#709).
+    attachments: lazyAttachmentReader(c),
     queue: runtime.queue,
     notify: buildAgentNotifier(c),
     // Deployment skills are part of the MCP tool surface; the KeyProvider is

@@ -480,6 +480,31 @@ export const AgentToolSchemas = {
     }),
   /** Reads the outcome of an `askUser` question this caller asked. */
   getUserAnswer: z.object({ questionId: id }).strict(),
+
+  // ── Files as model input (#709) ────────────────────────────────────────
+  /** Alt text for a media-library image. Read-only: nothing is written. */
+  describeImage: z
+    .object({
+      fileId: id,
+      /** Character cap of the alt text (default 125, the common screen-reader guidance). */
+      maxLength: z.number().int().min(20).max(500).optional(),
+      /** BCP 47 tag of the language to write in; default English. */
+      language: z.string().min(2).max(35).optional(),
+    })
+    .strict(),
+  /**
+   * Proposed field values for a new item of `collection`, read from a PDF.
+   * Read-only: creating the item is a separate `createItem` call, which goes
+   * through the usual capability check and HITL.
+   */
+  extractFieldsFromPdf: z
+    .object({
+      fileId: id,
+      collection: slug,
+      /** Extra guidance, e.g. "the invoice total is on page 2". */
+      instruction: z.string().max(1000).optional(),
+    })
+    .strict(),
 } as const satisfies Record<string, z.ZodType>;
 
 export type AgentToolName = keyof typeof AgentToolSchemas;

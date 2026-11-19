@@ -14,7 +14,14 @@ import { approvalDeciderFromAuth, approvalRequesterFromAuth, principalRefFromAut
 import { IntentService } from '../services/intent-service';
 import { SchemaService } from '../services/schema-service';
 import { itemServiceForRequest, buildRequestPermissionContext } from '../services/item-service-factory';
-import { createConfiguredLLMProvider, createLLMProvider } from '../services/llm-provider';
+import { createConfiguredLLMProvider, createLLMProvider, withAttachmentNotice, type LLMAttachment } from '../services/llm-provider';
+import {
+  AI_ATTACHMENT_LIMITS,
+  AttachmentError,
+  attachmentReaderForRequest,
+  lazyAttachmentReader,
+  readTurnAttachments,
+} from '../services/ai-attachments';
 import { loadCopilotHistory } from '../services/copilot-history';
 import { resolveCopilotPlaybooks } from '../services/site-skill-service';
 import { createDecisionProvider, type DecisionProviderEnv } from '../services/decision-provider';
@@ -65,6 +72,14 @@ export const chatSchema = z.object({
     .transform((s) => s.trim())
     .pipe(z.string().min(1, 'Message must not be empty after trimming')),
   conversationId: z.string().optional(),
+  /**
+   * Media-library images / PDFs sent to the model with this turn (#709).
+   * Read with the caller's `files::read` access; see services/ai-attachments.ts.
+   */
+  attachments: z
+    .array(z.object({ fileId: z.string().min(1).max(64) }).strict())
+    .max(AI_ATTACHMENT_LIMITS.maxPerTurn)
+    .optional(),
 });
 
 export const decideSchema = z.object({
@@ -176,6 +191,7 @@ export async function buildAuthorizedHarness(c: Context<AppEnv>): Promise<AISecu
       permissionCtx: buildRequestPermissionContext({ auth, siteId, headers: c.req.header(), ip: c.get('ip') ?? null }),
     }),
     llm,
+    attachments: lazyAttachmentReader(c),
     queue: runtime.queue,
     notify: buildAgentNotifier(c),
     // An approved `triggerDeployment` executes here — without the KeyProvider
@@ -249,6 +265,26 @@ aiRouter.post('/chat', async (c) => {
 
   const { message, conversationId: inputConversationId } = parsed.data;
 
+  // Files first (#709): a refused attachment must not leave a stored turn.
+  let attachments: LLMAttachment[] = [];
+  if (parsed.data.attachments && parsed.data.attachments.length > 0) {
+    try {
+      attachments = await readTurnAttachments(
+        await attachmentReaderForRequest(c),
+        parsed.data.attachments.map((a) => a.fileId),
+      );
+    } catch (err) {
+      if (err instanceof AttachmentError) {
+        return c.json({ errors: [{ code: err.code, message: err.message, path: ['attachments'] }] }, err.status);
+      }
+      throw err;
+    }
+  }
+  // Stored with the turn: which files, never their bytes.
+  const attachmentsMeta = attachments.length > 0
+    ? { attachments: attachments.map(({ fileId, name, mimeType, size }) => ({ fileId, name, mimeType, size })) }
+    : {};
+
   try {
     const db = c.get('db');
     const siteId = c.get('siteId');
@@ -292,13 +328,16 @@ aiRouter.post('/chat', async (c) => {
       conversationId,
       role: 'user',
       content: message,
+      ...(attachments.length > 0 ? { metadata: attachmentsMeta } : {}),
     });
 
     const userCapabilities = await getUserCapabilities(c);
 
     // Async path: enqueue LLM + harness on worker; HITL still surfaces via poll.
     // Without a `flow-runs` binding (Workers, B118) fall through to the sync path.
-    if (prefersAsyncResponse(c) && queueAccepts(runtime.queue, FLOW_RUNS_QUEUE)) {
+    // A turn with files always runs here: file access is the caller's, checked
+    // on this request, and the bytes are not queued (#709).
+    if (attachments.length === 0 && prefersAsyncResponse(c) && queueAccepts(runtime.queue, FLOW_RUNS_QUEUE)) {
       const run = await createPendingRun(db, {
         siteId,
         runType: 'ai_chat',
@@ -330,6 +369,17 @@ aiRouter.post('/chat', async (c) => {
 
     // Step 4: Load conversation history for LLM context (newest window, #582)
     const llmMessages = await loadCopilotHistory(db, conversationId);
+    if (attachments.length > 0) {
+      // The turn just stored is the newest user message of the window.
+      const current = llmMessages.map((m) => m.role).lastIndexOf('user');
+      if (current !== -1) {
+        llmMessages[current] = {
+          ...llmMessages[current]!,
+          content: withAttachmentNotice(llmMessages[current]!.content, attachments),
+          attachments,
+        };
+      }
+    }
 
     // Step 5: Call LLM
     const llmProvider = createLLMProvider(
@@ -372,6 +422,7 @@ aiRouter.post('/chat', async (c) => {
             message: responseText,
             conversationId,
             ...siteSkillsMeta,
+            ...attachmentsMeta,
           },
         },
         200,
@@ -394,6 +445,7 @@ aiRouter.post('/chat', async (c) => {
       schemaService,
       itemService,
       llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
+      attachments: lazyAttachmentReader(c),
       queue: runtime.queue,
       notify: buildAgentNotifier(c),
       // Enables the deployment skills, which decrypt target tokens.
@@ -452,6 +504,7 @@ aiRouter.post('/chat', async (c) => {
           message: responseMessage,
           conversationId,
           ...siteSkillsMeta,
+          ...attachmentsMeta,
         },
       },
       200,

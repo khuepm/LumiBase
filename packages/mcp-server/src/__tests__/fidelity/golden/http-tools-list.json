@@ -1144,6 +1144,61 @@
       }
     },
     {
+      "name": "describeImage",
+      "description": "Write alt text for a media-library image (read-only)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fileId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "maxLength": {
+            "type": "integer",
+            "minimum": 20,
+            "maximum": 500
+          },
+          "language": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 35
+          }
+        },
+        "required": [
+          "fileId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "extractFieldsFromPdf",
+      "description": "Propose field values for a new item from a media-library PDF (read-only)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fileId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "instruction": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "fileId",
+          "collection"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "generateApiDocs",
       "description": "Generate API documentation artifact from schema and permissions",
       "inputSchema": {

@@ -207,6 +207,20 @@ components:
       properties:
         message:        { type: string, maxLength: 2000 }
         conversationId: { type: string }
+        attachments:
+          type: array
+          maxItems: 4
+          description: >-
+            Media-library images (PNG, JPEG, GIF, WebP; ≤ 5 MB each) or PDFs (≤ 10 MB each) sent to the
+            model with this turn (#709), read with the caller's files read access; 20 MB per turn.
+            Errors: 403 FORBIDDEN, 404 NOT_FOUND, 409 FILE_NOT_AVAILABLE, 413 ATTACHMENT_TOO_LARGE,
+            415 UNSUPPORTED_MEDIA_TYPE, 422 LLM_ATTACHMENTS_UNSUPPORTED.
+          items:
+            type: object
+            additionalProperties: false
+            required: [fileId]
+            properties:
+              fileId: { type: string, maxLength: 64 }
 
     AIChatResponseExecuted:
       type: object

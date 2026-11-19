@@ -1,10 +1,10 @@
 ---
-version: 61
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 62
+lastUpdated: 2026-11-19T04:59:54.687Z
 sourceLang: en
-contentHash: 1d86bff615c2ba39
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
+contentHash: 975da46040306d66
+codeVerified: 2026-11-19T04:59:54.687Z
+codeVerifiedHash: 975da46040306d66
 codeVerifiedClaims: 652
 ---
 
@@ -1252,6 +1252,21 @@ X-Lumi-Site: <siteId>
 **Chat request:**
 ```json
 { "message": "Create a collection called 'products' with title, price, and status fields" }
+```
+
+**Attaching images and PDFs** (#709). `attachments` sends up to 4 media-library
+files with the turn. Accepted types are PNG, JPEG, GIF and WebP images (≤ 5 MB
+each) and PDFs (≤ 10 MB each), 20 MB per turn. Files are read with the caller's
+own `files::read` access. The stored message keeps `{ fileId, name, mimeType, size }`
+in `metadata.attachments`, never the bytes, and older turns are not re-sent with
+their files. A turn with files always runs synchronously, even with
+`Prefer: respond-async`. The response echoes `attachments`. Errors:
+`403 FORBIDDEN` (no file access), `404 NOT_FOUND`, `409 FILE_NOT_AVAILABLE`
+(quarantined, not yet scanned or missing bytes), `413 ATTACHMENT_TOO_LARGE`,
+`415 UNSUPPORTED_MEDIA_TYPE`, `422 LLM_ATTACHMENTS_UNSUPPORTED` (Workers AI).
+See [AI skills → Images and PDFs](../ai-skills.md#images-and-pdfs-as-input-709).
+```json
+{ "message": "Write alt text for this image", "attachments": [{ "fileId": "f_8Kq2" }] }
 ```
 
 **Safe skill response:**
