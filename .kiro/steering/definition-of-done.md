@@ -81,19 +81,19 @@ Với MỌI feature đụng tới dữ liệu, hàng đợi, cache, realtime, ba
   > Sanity #12794 (preview secret dùng được ở workspace khác) và Builder.io #4501 (postMessage không kiểm origin → chạy code cross-origin). Gate: `preview.db.integration.test.ts` (token site A bị từ chối ở site B, revoke/expired → 401 + audit), `visual-editing` protocol fuzz + bundle-size test, `security-headers.test.ts`, e2e `packages/visual-editing/e2e/bridge.e2e.mjs`.
 - [ ] Tripwire test `apps/cms/src/__tests__/security-guards.wiring.test.ts` vẫn pass; nếu tái cấu trúc guard thì cập nhật assertion CÙNG với behavioural test mới, không xoá.
 
-## 2d. Desktop/mobile shell impact — RÀ SOÁT khi đổi Studio SPA hoặc auth/CORS
+## 2d. Native host (desktop/mobile) impact — RÀ SOÁT khi đổi Studio SPA hoặc auth/CORS
 
-> `apps/shell` (Tauri 2) chỉ **bọc** Studio SPA, nên nó phụ thuộc một số **contract** của Studio/CMS. Một thay đổi ở nơi khác có thể làm **hỏng bản desktop/mobile mà KHÔNG hỏng bản trình duyệt** — đúng class "quên, không phải sai" mà 2c cảnh báo, chỉ khác là failure chỉ lộ khi chạy trong shell. Danh sách contract đầy đủ + hệ quả nằm ở bảng "Contracts future work must not break" trong `apps/shell/README.md`.
+> Bản desktop/mobile là một **native host** (Tauri 2) chỉ **bọc** Studio SPA; nó được build và phát hành ngoài repo này, nên phụ thuộc một số **contract** của Studio/CMS và repo này không build thử nó. Một thay đổi ở nơi khác có thể làm **hỏng bản desktop/mobile mà KHÔNG hỏng bản trình duyệt** — đúng class "quên, không phải sai" mà 2c cảnh báo, chỉ khác là failure chỉ lộ khi chạy trong host. Danh sách contract đầy đủ + hệ quả nằm ở bảng "Contracts future work must not break" trong `apps/studio/NATIVE_HOST_CONTRACT.md`.
 
 Với feature đụng tới auth/token, base URL API, build output của Studio, dev server, hoặc thêm endpoint mà SPA gọi:
 
-- [ ] **Token**: mọi lưu/đọc session token đi qua `apps/studio/src/lib/token-store.ts` (hoặc accessor trong `api.ts`) — KHÔNG ghi thẳng `localStorage` (C1). Ghi thẳng sẽ bỏ qua OS keychain của shell.
+- [ ] **Token**: mọi lưu/đọc session token đi qua `apps/studio/src/lib/token-store.ts` (hoặc accessor trong `api.ts`) — KHÔNG ghi thẳng `localStorage` (C1). Ghi thẳng sẽ bỏ qua OS keychain của host.
 - [ ] **API base**: luôn resolve qua `getApiBaseUrl()`; KHÔNG hardcode `/api` same-origin hay đọc `import.meta.env.VITE_API_URL` trực tiếp (C2).
 - [ ] **Gọi API phải mang bearer**: mọi `fetch` tới `/api/v1/*` từ Studio đi qua `getApiClient()` hoặc tự kèm `Authorization: Bearer ${getActiveToken()}`. `withAuth` **chỉ** đọc header `authorization` — không có nhánh cookie — nên `credentials: 'same-origin'` một mình luôn trả **401**, và component test mock `fetch` sẽ không phát hiện. Đã xảy ra: trang Settings → Security của `user-totp-2fa` load 401 rồi rơi về `Status: Disabled` trong khi user thật đang bật 2FA — báo sai trạng thái bảo mật; cùng class còn `encryption-page.tsx`, `security-audit-tab.tsx`, `/api/v1/translations` (backlog B26). Kèm theo: query trạng thái bảo mật lỗi thì KHÔNG fallback sang giá trị nghe như chắc chắn — render lỗi tường minh.
 - [ ] **Cross-origin auth/CORS**: luồng auth mới chạy được ở chế độ bundled (`tauri://localhost`) — hỗ trợ token-in-body chứ không chỉ cookie same-origin; endpoint mới SPA gọi phải CORS-reachable (C6). Đổi endpoint `/health` phải giữ public/no-auth (C7).
-- [ ] **Build/dev contract**: đổi `build.outDir`/`base` (C3) hoặc port dev 2026 (C4) của Studio → cập nhật `apps/shell/src-tauri/tauri.conf.json` cùng lúc.
+- [ ] **Build/dev contract**: đổi `build.outDir`/`base` (C3) hoặc port dev 2026 (C4) của Studio là breaking change cho mọi host (host ghi cứng hai giá trị này) → ghi rõ trong changelog và cập nhật `apps/studio/NATIVE_HOST_CONTRACT.md`.
 - [ ] **Webview compat**: API trình duyệt mới phải degrade gracefully trên WKWebView/WebView2/WebKitGTK (C5).
-- [ ] **Không ảnh hưởng**: nếu feature không đụng các contract trên → không cần làm gì, nhưng câu hỏi phải được hỏi (ghi một dòng trong mô tả PR). `pnpm -F @lumibase/shell exec tauri` + workflow `shell-check.yml` (cargo check desktop + android) là hàng rào cơ giới một phần.
+- [ ] **Không ảnh hưởng**: nếu feature không đụng các contract trên → không cần làm gì, nhưng câu hỏi phải được hỏi (ghi một dòng trong mô tả PR). Repo này không còn hàng rào cơ giới nào build host; các test contract của Studio (`token-store.test.ts`, `setup-api-base.test.tsx`, `draft-review-api.test.tsx`) là phần kiểm được ở đây.
 
 
 ## 2e. Dependency & override hygiene — RÀ SOÁT khi bump version hoặc sửa `overrides`

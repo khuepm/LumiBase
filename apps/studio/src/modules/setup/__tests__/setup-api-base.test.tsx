@@ -16,7 +16,7 @@ import { setProjectDraft } from '../steps/step-project';
 import { STANDARD_PRESET, lockoutPolicySchema } from '../schemas/policy';
 
 /**
- * Shell contract C2 (`apps/shell/README.md`): every Setup Wizard request
+ * Shell contract C2 (`apps/studio/NATIVE_HOST_CONTRACT.md`): every Setup Wizard request
  * resolves the CMS origin through `getApiBaseUrl()`. In the bundled
  * desktop/mobile shell the SPA runs at `tauri://localhost`, so a same-origin
  * `/api/...` path never reaches the CMS and first-run setup cannot finish.
