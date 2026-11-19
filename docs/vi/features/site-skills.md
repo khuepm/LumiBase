@@ -1,14 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-11-12T18:43:32.411Z
+version: 3
+lastUpdated: 2026-11-19T04:35:27.253Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ef3117c0b3b07b7c
+sourceHash: 39159c84ee68906c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T18:43:32.411Z
-codeVerifiedHash: ef3117c0b3b07b7c
-codeVerifiedClaims: 24
+codeVerified: 2026-11-19T04:35:27.253Z
+codeVerifiedHash: 39159c84ee68906c
+codeVerifiedClaims: 26
 ---
 
 # Site Skills
@@ -186,6 +186,27 @@ nội dung mình chưa thấy.
   xuất và tin nhắn chat không bao giờ trở thành skill, và chúng tiếp tục đi vào
   prompt dưới dạng dữ liệu không tin cậy.
 
+### Agent đề xuất skill
+
+Agent có thể **đề xuất** một skill qua harness tool có governance
+`proposeSiteSkill`, cũng được endpoint MCP HTTP liệt kê. Tham số là các trường
+front matter cộng `body` và một `rationale` bắt buộc — lý do agent cho rằng cần
+playbook này (ví dụ: những chỗ biên tập viên cứ phải sửa đi sửa lại).
+
+- Tool là `dangerous: true` và cần `config:write`. Dưới autopilot (L1–L3), đề
+  xuất luôn nằm chờ trong hàng đợi phê duyệt; không gì được ghi cho tới khi một
+  người duyệt. Một agent tự viết chỉ dẫn cho chính mình mà không ai rà soát là
+  leo thang quyền.
+- Đề xuất được duyệt tạo ra một **draft**, không bao giờ là skill active. Việc
+  kích hoạt là một bước riêng của con người trong Studio hoặc qua REST.
+- Version trail ghi tên agent (`authorLabel` `agent:proposeSiteSkill`, không có
+  `authorId`) và change note mang theo rationale.
+- Đề xuất không thể ghi đè skill đã có: slug trùng sẽ fail lúc thực thi và
+  không thay đổi gì. Muốn sửa một skill thì con người sửa.
+- Đầu vào không hợp lệ (slug không phải kebab-case, slug dành riêng như
+  `import`, thân dài hơn 12.000 ký tự, trường lạ) bị từ chối với `VALIDATION`
+  trước khi bất cứ thứ gì được đưa vào hàng đợi.
+
 ## API
 
 Mọi route nằm dưới `/api/v1/agent/skills`. `:id` nhận id hoặc slug.
@@ -258,6 +279,15 @@ không phải admin, một site API key — `prompts/list` rỗng. Trên đó, `
 `requiredCapabilities` của từng skill vẫn lọc những gì admin thấy. Một prompt
 người gọi không được thấy và một prompt không tồn tại trả lời giống hệt nhau.
 Các lời gọi organization-plane (`org:*`) không đưa ra prompt.
+
+Server stdio (`packages/mcp-server`) chuyển tiếp chính các prompt đó. Khi khởi
+động, nó gọi `prompts/list` tới endpoint HTTP bằng token đã cấu hình và đăng ký
+từng prompt nhận được; mọi `prompts/get` đều được chuyển tiếp tới endpoint, nên
+các quy tắc truy cập ở trên được áp dụng ở đó, không bao giờ trong tiến trình
+stdio. Không prompt nào được đăng ký khi endpoint không khả dụng (flag
+`contentOs.mcp` tắt), ở chế độ ops-only (`LUMIBASE_OPS_TOKEN` mà không có
+`LUMIBASE_TOKEN`), hoặc với organization token không gắn với một site. Skill
+được kích hoạt sau khi khởi động sẽ xuất hiện sau khi server stdio khởi động lại.
 
 ## Multi-tenancy
 

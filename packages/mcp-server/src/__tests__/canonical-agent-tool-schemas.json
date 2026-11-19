@@ -424,6 +424,25 @@
       "key"
     ]
   },
+  "proposeSiteSkill": {
+    "properties": [
+      "body",
+      "collections",
+      "description",
+      "name",
+      "rationale",
+      "slug",
+      "surfaces",
+      "tools",
+      "triggers"
+    ],
+    "required": [
+      "body",
+      "name",
+      "rationale",
+      "slug"
+    ]
+  },
   "removeTeamMember": {
     "properties": [
       "teamId",
