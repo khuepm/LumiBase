@@ -9,6 +9,26 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [2.2.0] - 2026-11-19
+
+### Version
+- `v2.2.0`
+
+### Date
+- `2026-11-19`
+
+### Highlights
+- **The new home page:** lumibase.dev becomes a storybook. Lumi, the mascot, rises from a lamp and travels through seven chapters in a three.js scene. Devices without a real GPU, or too slow to keep it moving, get a static night sky and an SVG Lumi instead (#885, #998).
+- **Rich text (epic #669):** a `richtext` field with a block editor in Studio, sanitised HTML/Markdown codecs, semantic tables, footnotes, item references and plugin blocks.
+- **Live preview & visual editing (epic #667)** and **editorial UX (epic #668):** a preview pane beside the item form, `@lumibase/visual-editing`, publication state, duplicate, manual ordering, revision retention and release validation.
+- **Digital asset management (epic #670):** replace in place with versions, duplicates and safe delete, embedded metadata, folders, bulk upload, a shared media picker and optional malware scanning.
+- **Agents and MCP (epic #671):** extension MCP tools/prompts/resources, the agent receipts dashboard and a one-shot translation generator for a new locale.
+- **Release flags (#869, part 1):** ship features dark and release them per deployment with a signed manifest.
+- Developer experience: typegen configs with Zod/GraphQL/OpenAPI targets, Vue/Svelte/Astro adapters, extension hot reload, Studio RTL layout, Studio intent links, a Studio bundle budget and Storybook for `@lumibase/ui`.
+- Liveness no longer depends on PostgreSQL, Redis, S3 or search (`GET /health/live`), and several SCIM, invite, import, search and cache fixes.
+
 ### Added
 - **Rich text** (epic #669): a `richtext` field type storing a portable JSON document, edited in a block editor in Studio (TipTap, lazy-loaded: toolbar, `/` slash menu, keyboard shortcuts, tables, file embeds via the media picker, item references, footnotes, Markdown import/export). Field options (`headingLevels`, `marks`, `blocks`, `links`, `references`, `referenceCollections`, `customBlocks`, `maxLength`) limit the editor and are enforced by the API on write. Writes are validated with size limits and sanitised (URL scheme allowlist, control characters stripped); pasted HTML from Word / Google Docs is parsed into the model, never stored. GraphQL returns a shared `RichText { json html markdown text }` type; HTML is allowlist-sanitised and tables are semantic (`<caption>`, `<thead>`, `<th scope>`). Markdown import/export round-trips GFM tables and footnotes; extensions add custom blocks with `registerRichTextPlugin` (`@lumibase/extension-sdk`). Typegen emits `RichTextDocument`. Search indexes rich text as plain text. Deleting an item that rich text links to or embeds is refused (409 `DEPENDENT_RECORDS_EXIST`, dependents group `kind: "richtext"`) until the reference is removed; Studio's delete dialog links to the referencing items. See [Rich text](docs/en/features/rich-text.md). No migration.
 - **Release flags** (#869, part 1): merge features to `main` dark and release them per deployment with a signed manifest, then let site admins choose per site. Flags are declared once in `apps/cms/src/modules/release-flags/registry.ts` (stage `dark` / `beta` / `ga`, owner issue, removal date — a test fails once the date passes). The release gate resolves `LUMIBASE_RELEASE_FLAGS` (operator override) → the accepted Ed25519-signed manifest → the stage default; a site can never enable a flag the gate keeps off. Manifests arrive by push (`PUT /api/v1/release-flags/manifest`, bootstrap admin only, never an API key) or by an opt-in pull from `LUMIBASE_RELEASE_MANIFEST_URL`; an older or replayed manifest is refused, and a failed pull keeps the last accepted manifest in force. `requireReleaseFlag(key)` answers `404 NOT_FOUND` while a flag is off, and members only see released flags. Removing a key from `LUMIBASE_RELEASE_PUBLIC_KEYS` withdraws the manifests it signed; every accepted or rejected manifest is audited at instance scope. `scripts/release-flags/manifest.mjs` generates the key pair and signs manifests. New env: `LUMIBASE_RELEASE_PUBLIC_KEYS`, `LUMIBASE_RELEASE_FLAGS`, `LUMIBASE_RELEASE_MANIFEST_URL`, `LUMIBASE_RELEASE_MANIFEST_REFRESH_S`, `LUMIBASE_INSTANCE_ID`. The in-app Upgrade button from #869 is not part of this change. See [Release flags](docs/en/features/release-flags.md).
@@ -47,6 +67,8 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - Landing page (`apps/landing`) rebuilt as a storybook in WebGL: a pinned three.js scene behind seven scroll-driven chapters, with a procedural 3D Lumi (soft velvet coat) rising from a lamp in the genie's place. Compared with the previous home page the detailed feature cards (collection builder, field-level permissions, realtime collaboration, typegen, CDC) are gone; the FAQ and its `FAQPage` structured data stay as an afterword below the story, and the starfield backdrop still renders on every other page. The scene is procedural (no models or textures), lazy-loaded after first paint, adapts quality to frame time, honours `prefers-reduced-motion`, and falls back to CSS and SVG without WebGL. The fallback also covers devices that cannot run the scene well: software WebGL (SwiftShader, llvmpipe) never loads it, and a device that stays under 15 fps on the lightest settings drops it after a few seconds. On phones the fallback Lumi keeps out of the copy, a chapter counts as reached when its heading sits just below the scene, and timed animation follows the wall clock below 20 fps instead of slowing down. Adds `three` to `@lumibase/landing`. No CMS, database, setup, auth or shell contract changes. Notes: `apps/landing/NOTES.md`.
 - `/api/v1/files` is no longer site-admin only: members with a `files` policy permission are admitted, scoped per file by the permission's rule. Sites that never grant `files` see no change. Folder management, `PUT /api/v1/files/settings` and `POST /api/v1/files/:id/scan` stay site-admin only.
 - `DELETE /api/v1/files/folders/:id` refuses a non-empty folder with `409 FOLDER_NOT_EMPTY` (it used to fail on the files' foreign key).
+- The extension manifest accepted by `POST/PATCH /api/v1/extensions` may now carry the structured `mcp` block; it is validated at install time. Other manifest values must still be strings.
+- `buildAuthorizedHarness` (approval decision routes) is now async, so the decision path knows the site's extension tools.
 
 ### Fixed
 - SCIM: `PUT`, `PATCH` and `DELETE /scim/v2/Users/:id` no longer change an account that is also a member of another site. A site's SCIM token could rename such an account's email or suspend it on every site. `userName` and name changes are now ignored for it, and `active: false` or `DELETE` remove only the membership of the token's site. Accounts that belong to one site behave as before.
@@ -58,20 +80,26 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - Liveness no longer depends on PostgreSQL, Redis, S3 or search. New `GET /health/live` answers `200` in milliseconds without probing anything; the Docker image `HEALTHCHECK` (`docker/scripts/healthcheck.mjs`) and the Helm chart's startup and liveness probes now use it. `/health` waits up to 3 s on a down dependency, longer than those probes' timeouts, so a database outage restarted (Kubernetes) or marked unhealthy (Docker) a CMS that was serving fine, and the v2.1.0 release smoke test failed with the container stuck in `starting`. Readiness (`/health/ready`) still reports dependency state; the chart's readiness probe gets `timeoutSeconds: 5` so a down dependency yields a 503 rather than a probe timeout. The release smoke test now also asserts `/health/live` 200 and `/health/ready` 503 with every dependency down, and that a `LUMIBASE_PROCESS_ROLE=worker` container turns healthy.
 - `GET /api/v1/collections/:name/index-advice` names the index after a hash of the collection id, the exact JSON path and the cast (`items_<collection>_<path>_<cast>_<hash12>_idx`, at most 63 bytes). The old name used only the collection name and the path joined by `_`, so two sites with a `products.price` field, the paths `a_b` and `a.b`, or two long names cut to the same 63 bytes got one name, and the second `CREATE INDEX CONCURRENTLY IF NOT EXISTS` did nothing (#858).
 
+### Migrations
+- `0035_items_site_scoped_pk`: item ids become unique per site (primary key `(site_id, id)`, same-site composite foreign keys). **Rebuilds the items primary key under an ACCESS EXCLUSIVE lock: run it in a maintenance window on large tables.** This change and `0036` are described in the 2.1.0 notes but first ship in this release.
+- `0036_items_version`: `version` column on items for `ETag` / `If-Match`; no rewrite, no backfill.
+- `0037_item_publication_state`: publication columns and a partial index on items; backfills publish dates for published items.
+- `0038_dam_assets`: asset hash/version/scan columns on files and `lumibase_file_versions`; no backfill.
+- `0039_preview_secrets`: `lumibase_preview_secrets`; no backfill.
+- `0040_locale_generation`: locale-generation jobs and translation suggestions; no backfill.
+- `0041_email_normalize_parity`: one email normaliser shared by the SQL trigger and the TS lookups, with a backfill of the normalised keys (#862).
+- `0042_import_chunks`: `lumibase_import_chunks` for staged import rows; no backfill.
+- `0043_release_manifest`: `lumibase_release_manifests` (deployment-wide singleton); no backfill.
+- All are re-runnable. `packages/database/migrations/rls-policies.sql` changed in this release: re-apply it after migrating.
+
 ### Upgrade notes
 - Index advice (#858): indexes created from the 2.1.0 advice keep working, since Postgres matches an index by its expression and `WHERE`, not its name. No migration runs. Running the new advice for a collection that already has one creates a second, identical index under the new name: drop the old one first, after checking with `SELECT indexdef FROM pg_indexes WHERE indexname = '<old name>'` that its `collection_id` is the collection you mean, because a colliding name may belong to another site's collection. A site whose advice was a silent no-op has no index yet and gets one from the new DDL.
 - Migration `0042_import_chunks` adds the table `lumibase_import_chunks` (additive, re-runnable, no backfill) and lists it in `rls-policies.sql`; re-apply that file on instances with RLS enabled. Imports queued before the upgrade keep their file in `lumibase_import_jobs.source` and are staged by their next step (#859).
 - Migration `0037_item_publication_state` adds three columns and a partial index to `lumibase_items` and backfills `first_published_at`/`published_at` for items that are already `published` (from `publish_at`, else `updated_at`). It is additive and re-runnable.
 - A release that contains an item failing full validation (for example a required field left empty by an import) is now blocked at publish. Run `GET /releases/:id/validate` on pending scheduled releases after upgrading.
 - Migration `0038_dam_assets` is additive and idempotent (`lumibase_files.content_hash` / `version` / `scan_status` / `updated_at`, new `lumibase_file_versions`). No backfill is required: existing files keep `scan_status = skipped` (served as before) and a NULL hash, which only means they do not show up as duplicates until replaced. If you run with `LUMIBASE_DB_RLS=enforce`, re-apply `rls-policies.sql` so the new table gets the `site_isolation` policy pair.
-
-### Upgrade notes
 - Migration `0043_release_manifest` adds one table, `lumibase_release_manifests` (a deployment-wide singleton; additive, idempotent, no backfill). Until a manifest is accepted every flag uses its stage default, so nothing changes on upgrade. An image running against the previous schema keeps working: flag evaluation falls back to stage defaults while the table is missing. To accept manifests, set `LUMIBASE_RELEASE_PUBLIC_KEYS`.
 - Migration `0040_locale_generation` adds `lumibase_locale_generation_jobs` and `lumibase_translation_suggestions` (additive, no backfill) and both are added to `rls-policies.sql`.
-
-### Changed
-- The extension manifest accepted by `POST/PATCH /api/v1/extensions` may now carry the structured `mcp` block; it is validated at install time. Other manifest values must still be strings.
-- `buildAuthorizedHarness` (approval decision routes) is now async, so the decision path knows the site's extension tools.
 
 ## [2.1.0] - 2026-11-16
 
