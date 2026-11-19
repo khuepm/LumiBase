@@ -1,11 +1,15 @@
 ---
-version: 21
-lastUpdated: 2026-11-17T19:30:58.168Z
-sourceLang: vi
-contentHash: a58f8cf63869353b
-codeVerified: 2026-11-17T19:30:58.168Z
-codeVerifiedHash: a58f8cf63869353b
+version: 22
+lastUpdated: 2026-11-19T08:34:44.458Z
+sourceLang: en
+contentHash: 0d43631475d2ecb0
+codeVerified: 2026-11-19T08:34:44.458Z
+codeVerifiedHash: 4d7c0192b7b2fb0a
 codeVerifiedClaims: 40
+translatedFrom: en
+sourceHash: 4d7c0192b7b2fb0a
+mtEngine: manual
+syncStatus: human-translated
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -37,6 +41,7 @@ Nguồn: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`
   - `tools/call` — chạy qua `AISecureHarness.execute(skillName, args, capabilities, contextMessage)`. Kết quả bọc `{ content, structuredContent, isError }`.
   - `prompts/list`, `prompts/get` — các [Site Skills](../features/site-skills.md) đang `active` của site; `name` là slug, thân trả về dưới dạng một user message. Chỉ phục vụ cho người gọi đọc được skill qua REST, tức principal được resolve thành control-plane admin của site (`grant.allowed && grant.controlPlaneAdmin` trong `routes/mcp.ts`): member không phải admin hay site API key nhận `prompts/list` rỗng. Với admin, `surfaces`/`requiredCapabilities` của từng skill vẫn lọc thêm. Prompt không tồn tại và prompt không được phép thấy trả lời giống hệt nhau.
   - Extension (#715): extension đã bật và được cấp `mcp:prompts` thêm prompt tĩnh `ext:<key>:<name>` (cho caller có capability của prompt, mặc định `items:read`, không cần admin; `_meta['lumibase/extension']` thay cho provenance site skill); được cấp `mcp:resources` thì `initialize` có thêm `resources: { listChanged: false }` và phục vụ `resources/list`, `resources/read` (URI `lumibase-ext://<key>/<name>`). Tool của extension (`ext_<key>__<tool>`, cần `mcp:tools`) đi qua harness như external-action tool. Xem [Extension System §10](../features/extensions-system.md).
+  - Server stdio (`packages/mcp-server`, `src/tools/prompts.ts`) chuyển tiếp các prompt này (#712): khi khởi động nó liệt kê chúng từ endpoint này bằng token của chính nó và chuyển tiếp từng `prompts/get` về đây, nên các quy tắc ở trên áp dụng nguyên vẹn. Không áp dụng ở chế độ ops-only hoặc với organization token không gắn với một site; khởi động lại để nhận các skill mới được kích hoạt.
   - `notifications/initialized`, `notifications/cancelled` → trả `null` ⇒ HTTP `202 Accepted` không body.
 - **Mapping quyết định → kết quả tool** (bất biến quan trọng):
   - `executed` → `isError: false`, data trong `structuredContent`.

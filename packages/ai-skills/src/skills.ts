@@ -804,6 +804,27 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
     parameters: { type: 'object', properties: { scope: { type: 'string' } }, required: [] },
     requiredCapabilities: ['config:read'],
   },
+  proposeSiteSkill: {
+    name: 'proposeSiteSkill',
+    description:
+      'Propose a new site playbook (Site Skill) — house rules written for agents. A human approves it; it is then created as a draft that an admin activates.',
+    parameters: {
+      type: 'object',
+      properties: {
+        slug: { type: 'string', description: 'Lowercase letters, digits and single hyphens, e.g. "house-style".' },
+        name: { type: 'string' },
+        description: { type: 'string' },
+        body: { type: 'string', description: 'The playbook in Markdown (at most 12000 characters).' },
+        triggers: { type: 'array', items: { type: 'string' } },
+        surfaces: { type: 'array', items: { type: 'string', enum: ['copilot', 'generation', 'mcp'] } },
+        tools: { type: 'array', items: { type: 'string' } },
+        collections: { type: 'array', items: { type: 'string' } },
+        rationale: { type: 'string', description: 'Why this playbook is needed; shown to the approver.' },
+      },
+      required: ['slug', 'name', 'body', 'rationale'],
+    },
+    requiredCapabilities: ['config:write'],
+  },
   upsertSetting: {
     name: 'upsertSetting',
     description: 'Create or update a site setting (upsert by key).',

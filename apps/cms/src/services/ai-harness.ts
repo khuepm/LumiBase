@@ -27,6 +27,7 @@ import { redactSettingRow } from './settings-redaction';
 import {
   EMPTY_RESOLVED_SKILLS,
   SiteSkillService,
+  siteSkillInputSchema,
   withSiteSkills,
   type AppliedSiteSkill,
 } from './site-skill-service';
@@ -1935,6 +1936,39 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         // Copilot clients and, over governed MCP, an external model's context.
         const rows = await configService.listSettings(args['scope'] as string | undefined);
         return { settings: rows.map(redactSettingRow) };
+      },
+    },
+
+    // ── Site Skills proposed by an agent (#712, B201) ─────────────────────
+    // An agent writing instructions for agents is an escalation unless a
+    // person reviews it: `dangerous` parks every call for approval below
+    // autopilot (and the MCP backstop requires an admin principal), and an
+    // approved proposal only ever creates a DRAFT. Activating it stays a
+    // separate admin action in Studio / the skills API.
+    proposeSiteSkill: {
+      name: 'proposeSiteSkill',
+      description:
+        'Propose a new site playbook (Site Skill) for a human to review. On approval it is created as a draft; an admin activates it.',
+      requiredCapabilities: ['config:write'],
+      service: 'agent',
+      dangerous: true,
+      handler: async (args) => {
+        if (!db || !siteId) throw new Error('SITE_SKILLS_NOT_CONFIGURED: no tenant context');
+        const rationale = String(args['rationale'] ?? '');
+        const skill = await new SiteSkillService({ db, siteId, actor: { label: 'agent:proposeSiteSkill' } }).create(
+          siteSkillInputSchema.parse({
+            slug: args['slug'],
+            name: args['name'],
+            description: args['description'] ?? '',
+            body: args['body'],
+            triggers: args['triggers'] ?? [],
+            surfaces: args['surfaces'] ?? [],
+            tools: args['tools'] ?? [],
+            collections: args['collections'] ?? [],
+          }),
+          { source: 'api', changeNote: `Proposed by an agent: ${rationale}`.slice(0, 1000) },
+        );
+        return { proposed: true, status: skill.status, skill: { id: skill.id, slug: skill.slug, version: skill.version } };
       },
     },
 
