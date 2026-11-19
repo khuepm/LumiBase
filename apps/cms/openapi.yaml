@@ -6594,6 +6594,10 @@ paths:
     put:
       tags: [Release Flags]
       summary: Set or clear the active site's choices for released flags (site admin)
+      description: >-
+        `null` clears a choice. Switches that predate the registry
+        (`content-os.*`, `ai-decisions.flows`, `ai-decisions.drift`) are
+        written to their original settings object (`contentOs`, `aiDecisions`).
       parameters:
         - { $ref: '#/components/parameters/SiteHeader' }
       requestBody:

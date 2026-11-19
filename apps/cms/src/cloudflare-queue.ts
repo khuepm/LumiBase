@@ -4,6 +4,7 @@ import { processCloudflareEnvelopeMigrationQueue } from './cloudflare-envelope-q
 import { processCloudflareFlowEventsQueue, processCloudflareFlowRunsQueue } from './cloudflare-flow-queue';
 import { ackHealthProbes } from './cloudflare-queue-common';
 import type { Bindings } from './env';
+import { pickReleaseEnv, rememberReleaseEnv } from './modules/release-flags/gate';
 
 /**
  * Worker `queue()` dispatcher (B10, B118, B131).
@@ -66,6 +67,8 @@ export async function processCloudflareQueue(
   env: Bindings,
   ctx?: ExecutionContext,
 ): Promise<void> {
+  // Consumers evaluate release flags outside a request (#896).
+  rememberReleaseEnv(pickReleaseEnv(env));
   const logical = resolveLogicalQueue(batch.queue);
   if (logical) {
     await HANDLERS[logical](batch, env, ctx);
