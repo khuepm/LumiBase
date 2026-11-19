@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useSearch } from '@tanstack/react-router';
-import { ChevronLeft, Lock, Save } from 'lucide-react';
+import { useNavigate, useSearch } from '@tanstack/react-router';
+import { BackToList, ItemBreadcrumbs } from './item-breadcrumbs';
+import { Lock, Save } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { FieldResource, ItemRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
@@ -86,24 +87,9 @@ export function ItemCreate({ collection, intentField }: { collection: string; in
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs uppercase text-muted-foreground">
-            <Link to="/" className="hover:underline">Content</Link>
-            <span className="mx-1">/</span>
-            <Link to="/content/$collection" params={{ collection }} className="hover:underline">
-              {collection}
-            </Link>
-            <span className="mx-1">/</span>
-            <span>new</span>
-          </p>
+          <ItemBreadcrumbs collection={collection} current="New item" />
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <Link
-              to="/content/$collection"
-              params={{ collection }}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Back to list"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </Link>
+            <BackToList collection={collection} />
             New item
           </h1>
         </div>
