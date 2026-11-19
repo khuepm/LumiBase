@@ -371,4 +371,29 @@ describe.skipIf(!hasDbIntegrationUrl)('#906 backend template MCP tools — real 
     const [role] = await db.select().from(roles).where(eq(roles.id, memberRoleId));
     expect(role!.adminAccess).toBe(false);
   });
+
+  it('BT09-AC03 — journey: agent demo install, then the new backend is populated through MCP under normal permissions', async () => {
+    const { plan, parked } = await planAndPark(ADMIN, { seedMode: 'pack', seedPack: 'demo' });
+    expect(plan.binding['seedPack']).toBe('demo');
+    expect((await decide(ADMIN, parked.agentApprovalId!, 'approved')).status).toBe(200);
+    const installation = await call(ADMIN, 'getBackendTemplateInstallation', { installationId: plan.planId });
+    expect(installation.data.resources.seedRecords).toBe(17);
+    const seeded = await itemCount();
+    expect(seeded).toBe(17);
+
+    // Later content goes through the ordinary item tools: no reseed, no template involved.
+    const author = await call(ADMIN, 'createItem', { collection: 'authors', data: { name: 'New Author', slug: 'new-author' } });
+    expect(author.status, author.message).toBe('executed');
+    const post = await call(ADMIN, 'createItem', {
+      collection: 'posts', data: { title: 'Written later', slug: 'written-later', author: (author.data as { id: string }).id },
+    });
+    expect(post.status, post.message).toBe('executed');
+    expect(await itemCount()).toBe(seeded + 2);
+    // The item contract still applies: a post without its required title is refused.
+    const invalid = await call(ADMIN, 'createItem', { collection: 'posts', data: { slug: 'no-title' } });
+    expect(invalid.status).toBe('denied');
+    // And a member without item rights on these new collections cannot write them.
+    const member = await call(MEMBER, 'createItem', { collection: 'posts', data: { title: 'x', slug: 'x' } });
+    expect(member.status).toBe('denied');
+  });
 });

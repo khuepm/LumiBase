@@ -39,7 +39,7 @@
       {
         "type": "category",
         "label": "Tutorials",
-        "items": ["tutorials", "tutorials/nextjs-quickstart", "tutorials/astro-starter", "tutorials/sveltekit-starter"]
+        "items": ["tutorials", "tutorials/nextjs-quickstart", "tutorials/astro-starter", "tutorials/sveltekit-starter", "tutorials/backend-template-blog"]
       },
       {
         "type": "category",
@@ -56,6 +56,7 @@
         "label": "Features",
         "items": [
           "features/collections-builder",
+          "features/backend-templates",
           "features/field-types-and-config",
           "features/rich-text",
           "features/timezone-aware-datetime",
