@@ -47,6 +47,8 @@ vi.mock('@/lib/keybindings/use-keybindings', () => ({ useSaveHandler: () => unde
 vi.mock('@/components/presence-chip', () => ({ PresenceStack: () => null }));
 vi.mock('@/components/co-editing-banner', () => ({ CoEditingBanner: () => null }));
 vi.mock('@/hooks/use-presence', () => ({ useCoEditors: () => ({ coEditors: [] }) }));
+// The editor watches realtime updates of its item (#685).
+vi.mock('@/hooks/use-realtime', () => ({ useRealtimeSubscription: () => {} }));
 vi.mock('../revisions-panel', () => ({ RevisionsPanel: () => null }));
 vi.mock('../raw-json-panel', () => ({ RawJsonPanel: () => null }));
 vi.mock('../version-panel', () => ({ VersionPanel: () => null }));

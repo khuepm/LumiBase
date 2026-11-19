@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:21:20.573Z
+version: 2
+lastUpdated: 2026-11-19T04:49:43.404Z
 sourceLang: en
-contentHash: 3fcc9c501310e61f
-codeVerified: 2026-08-02T19:21:20.573Z
-codeVerifiedHash: 3fcc9c501310e61f
+contentHash: abb915a4d020234e
+codeVerified: 2026-11-19T04:49:43.404Z
+codeVerifiedHash: abb915a4d020234e
 codeVerifiedClaims: 4
 ---
 
@@ -110,7 +110,7 @@ Client messages:
 ```
 
 ```json
-{ "type": "presence", "collection": "posts", "itemId": "item_123", "meta": { "cursor": "title" } }
+{ "type": "presence", "collection": "posts", "itemId": "item_123", "meta": { "name": "Ann" }, "focus": "title", "lock": "title" }
 ```
 
 ```json
@@ -146,6 +146,8 @@ Server messages:
       "userId": "user_1",
       "collection": "posts",
       "itemId": "item_123",
+      "focus": "title",
+      "lock": { "field": "title", "since": "2026-06-02T10:00:00.000Z" },
       "lastSeen": "2026-06-02T10:00:00.000Z"
     }
   ]
@@ -155,6 +157,36 @@ Server messages:
 ```json
 { "type": "error", "code": "FORBIDDEN", "message": "Read access required." }
 ```
+
+## Presence, field focus and soft locks
+
+Presence is what a session last said about itself: the collection and item it
+has open, a small `meta` object (display name, avatar) and, in the item editor,
+two optional fields (#685):
+
+- `focus` — the field the user has focused (`null` on blur);
+- `lock` — the field the user is typing in, as a soft lock (`null` releases it).
+
+The server applies these rules on both runtimes (Cloudflare `SiteRoom` and the
+Node hub used by Docker):
+
+- `userId` comes from the signed ticket, never from the message.
+- `meta` larger than 2 KB serialized is dropped.
+- `focus` and `lock` exist only on the studio plane and only with an `itemId`;
+  moving to another item clears them, and an omitted value keeps the previous
+  one. Field names are 1–128 characters of `A-Z a-z 0-9 _ . -`.
+- When the locked field changes the server stamps `lock.since` with its own
+  clock, so a later claim on the same field (a "take over") wins regardless of
+  client clocks.
+- A session that disconnects, or is dropped after 90 s without a heartbeat,
+  leaves presence at once, so its focus and lock clear for everyone.
+- Each recipient receives only entries on collections its ticket allows (plus
+  entries on no collection).
+
+Locks are advisory: they guide editors in Studio (the field shows who is
+editing it and is read-only until they leave it or someone takes over); the
+API does not refuse writes because of them. Conflicting saves are caught by
+`If-Match` instead.
 
 ## SDK
 
@@ -193,8 +225,7 @@ If a row-level rule means the user can no longer see an item after an update, th
 
 ## Current limits
 
-- Durable Object `SiteRoom` is only available on Cloudflare Workers.
-- Docker runtime needs a separate WebSocket adapter before realtime can run self-hosted.
-- The first phase only supports collection events and basic presence. Filtered subscriptions and collaborative editing are later phases.
+- Durable Object `SiteRoom` is only available on Cloudflare Workers. Docker runs the Node hub instead, with the same protocol; its presence covers the sessions on one process, so with several replicas behind a load balancer two editors on different replicas do not see each other.
+- Field focus and soft locks are advisory (see above); there is no character-level co-editing of one field.
 
 See the detailed implementation plan in [Realtime WebSocket Implementation](../architecture/realtime-websocket-implementation.md).

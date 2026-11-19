@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 5
-lastUpdated: 2026-11-19T08:18:11.416Z
+version: 6
+lastUpdated: 2026-11-19T09:08:02.560Z
 translatedFrom: en
-sourceHash: 64c2530cdd83570a
+sourceHash: 341d6bc4931ac165
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T08:18:11.416Z
-codeVerifiedHash: 64c2530cdd83570a
+codeVerified: 2026-11-19T09:08:02.560Z
+codeVerifiedHash: 341d6bc4931ac165
 codeVerifiedClaims: 22
 ---
 
@@ -185,6 +185,36 @@ SDK có `client.items('menu').reorder(id, { after })`.
   lỗi khác (validation, quyền, xung đột) vẫn do màn hình gửi request hiển thị
   như trước. Màn hình bị lỗi khi render sẽ hiện **Try again** và
   **Go to Content** thay vì một trang trống.
+## Cùng biên tập
+
+Khi nhiều người cùng mở một item, Studio thể hiện điều đó ở ba mức:
+
+- **Ai đang ở đây.** Avatar của những người biên tập khác nằm ở đầu trình
+  soạn, và một banner cho biết item đang được mở ở nơi khác.
+- **Trường nào.** Một nhãn cạnh tên trường cho biết ai đang focus trường đó.
+  Nhãn biến mất khi họ rời trường, rời item hoặc rời Studio.
+- **Khoá mềm.** Lần gõ phím đầu tiên trong một trường sẽ lấy khoá mềm của nó.
+  Với mọi người khác, trường chuyển sang chỉ đọc kèm "Ann is editing this
+  field" và nút **Take over**; take over sẽ chuyển khoá (server sắp thứ tự các
+  lần giành theo đồng hồ của chính nó, nên lần mới nhất thắng) và trường của
+  người giữ trước đó lại chuyển sang chỉ đọc. Rời trường sẽ nhả khoá. Khoá là
+  phép lịch sự giữa những người biên tập: API không cưỡng chế chúng.
+
+Lưu vẫn có thể bị tranh chấp. Khi ai đó lưu một phiên bản mới hơn trong lúc
+bản nháp của bạn đang mở, một banner đề xuất **Merge their changes** hoặc
+**Discard mine and load latest** trước khi bạn lưu. Nếu bạn vẫn lưu, lần lưu bị
+từ chối (`412`, `If-Match`) và bạn chọn:
+
+- **Merge with latest** — merge ba chiều theo từng trường so với phiên bản bạn
+  bắt đầu: trường chỉ bạn sửa giữ giá trị của bạn, trường chỉ họ sửa lấy giá
+  trị của họ, và trường cả hai cùng sửa giữ giá trị của bạn và được liệt kê để
+  xem lại. Không có gì được lưu cho tới khi bạn lưu lại.
+- **Overwrite with my changes** — lưu bản nháp của bạn đè lên phiên bản mới
+  nhất.
+- **Discard my changes and load latest.**
+
+Protocol đằng sau được mô tả trong
+[Realtime / WebSocket](./websockets-realtime.md#presence-focus-trường-và-khoá-mềm).
 
 ## Tóm tắt kiểm tra hợp lệ của release
 

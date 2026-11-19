@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:21:20.573Z
+version: 2
+lastUpdated: 2026-11-19T04:49:43.404Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3fcc9c501310e61f
+sourceHash: abb915a4d020234e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:21:20.573Z
-codeVerifiedHash: 3fcc9c501310e61f
+codeVerified: 2026-11-19T04:49:43.404Z
+codeVerifiedHash: abb915a4d020234e
 codeVerifiedClaims: 4
 ---
 
@@ -113,7 +113,7 @@ Client gửi:
 ```
 
 ```json
-{ "type": "presence", "collection": "posts", "itemId": "item_123", "meta": { "cursor": "title" } }
+{ "type": "presence", "collection": "posts", "itemId": "item_123", "meta": { "name": "Ann" }, "focus": "title", "lock": "title" }
 ```
 
 ```json
@@ -149,6 +149,8 @@ Server gửi:
       "userId": "user_1",
       "collection": "posts",
       "itemId": "item_123",
+      "focus": "title",
+      "lock": { "field": "title", "since": "2026-06-02T10:00:00.000Z" },
       "lastSeen": "2026-06-02T10:00:00.000Z"
     }
   ]
@@ -158,6 +160,36 @@ Server gửi:
 ```json
 { "type": "error", "code": "FORBIDDEN", "message": "Read access required." }
 ```
+
+## Presence, focus trường và khoá mềm
+
+Presence là điều một phiên nói về chính nó lần gần nhất: collection và item
+đang mở, một object `meta` nhỏ (tên hiển thị, avatar) và, trong trình soạn
+item, hai trường tuỳ chọn (#685):
+
+- `focus` — trường người dùng đang focus (`null` khi blur);
+- `lock` — trường người dùng đang gõ, như một khoá mềm (`null` để nhả).
+
+Server áp dụng các quy tắc sau trên cả hai runtime (Cloudflare `SiteRoom` và
+Node hub mà Docker dùng):
+
+- `userId` lấy từ ticket đã ký, không bao giờ từ message.
+- `meta` lớn hơn 2 KB khi tuần tự hoá bị bỏ.
+- `focus` và `lock` chỉ tồn tại ở plane studio và chỉ khi có `itemId`; chuyển
+  sang item khác sẽ xoá chúng, và giá trị bỏ trống giữ nguyên giá trị trước.
+  Tên trường dài 1–128 ký tự thuộc `A-Z a-z 0-9 _ . -`.
+- Khi trường bị khoá thay đổi, server đóng dấu `lock.since` bằng đồng hồ của
+  chính nó, nên lần giành sau trên cùng trường (một lần "take over") luôn
+  thắng bất kể đồng hồ của client.
+- Phiên ngắt kết nối, hoặc bị loại sau 90 giây không có heartbeat, rời presence
+  ngay, nên focus và khoá của nó được xoá với mọi người.
+- Mỗi người nhận chỉ nhận các mục trên collection mà ticket của họ cho phép
+  (cộng các mục không thuộc collection nào).
+
+Khoá chỉ mang tính gợi ý: chúng dẫn dắt người biên tập trong Studio (trường
+hiện ai đang sửa và chỉ đọc cho tới khi người đó rời trường hoặc có người take
+over); API không từ chối ghi vì chúng. Các lần lưu xung đột được bắt bởi
+`If-Match`.
 
 ## SDK
 
@@ -196,8 +228,7 @@ Nếu row-level rule làm user không còn thấy item sau update, server nên g
 
 ## Giới hạn hiện tại
 
-- Durable Object `SiteRoom` chỉ khả dụng trên Cloudflare Workers.
-- Docker runtime cần adapter WebSocket riêng nếu muốn chạy realtime self-hosted.
-- Phase đầu chỉ hỗ trợ event theo collection và presence cơ bản; filter/query subscriptions và collaborative editing là bước sau.
+- Durable Object `SiteRoom` chỉ khả dụng trên Cloudflare Workers. Docker chạy Node hub thay thế, cùng protocol; presence của nó bao phủ các phiên trên một process, nên khi có nhiều replica sau load balancer, hai người biên tập ở hai replica khác nhau không thấy nhau.
+- Focus trường và khoá mềm chỉ mang tính gợi ý (xem trên); không có đồng biên tập từng ký tự trong một trường.
 
 Xem tài liệu triển khai chi tiết tại [Realtime WebSocket Implementation](../architecture/realtime-websocket-implementation.md).

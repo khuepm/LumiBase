@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 5
-lastUpdated: 2026-11-19T08:18:11.416Z
-contentHash: 64c2530cdd83570a
-codeVerified: 2026-11-19T08:18:11.416Z
-codeVerifiedHash: 64c2530cdd83570a
+version: 6
+lastUpdated: 2026-11-19T09:08:02.560Z
+contentHash: 341d6bc4931ac165
+codeVerified: 2026-11-19T09:08:02.560Z
+codeVerifiedHash: 341d6bc4931ac165
 codeVerifiedClaims: 22
 ---
 
@@ -183,6 +183,35 @@ places it before. The SDK has `client.items('menu').reorder(id, { after })`.
   errors (validation, permissions, conflicts) are shown by the screen that made
   the request, as before. A screen that fails to render shows **Try again** and
   **Go to Content** instead of an empty page.
+## Editing together
+
+When several people have the same item open, Studio shows it at three levels:
+
+- **Who is here.** Avatars of the other editors sit in the editor's header, and
+  a banner says the item is open elsewhere.
+- **Which field.** A badge beside a field's label names whoever has it
+  focused. It clears when they leave the field, the item or the Studio.
+- **Soft locks.** The first keystroke in a field takes its soft lock. For
+  everyone else the field turns read-only with "Ann is editing this field" and
+  a **Take over** button; taking over moves the lock (the server orders claims
+  by its own clock, so the latest one wins) and the previous holder's field
+  turns read-only in turn. Leaving the field releases the lock. Locks are a
+  courtesy between editors: the API does not enforce them.
+
+Saving can still race. When someone saves a newer version while your draft is
+open, a banner offers **Merge their changes** or **Discard mine and load
+latest** before you save. If you save anyway, the save is refused (`412`,
+`If-Match`) and you choose:
+
+- **Merge with latest** — a field-by-field three-way merge against the version
+  you started from: fields only you changed keep your value, fields only they
+  changed take theirs, and fields both of you changed keep yours and are listed
+  for review. Nothing is saved until you save again.
+- **Overwrite with my changes** — save your draft over the latest version.
+- **Discard my changes and load latest.**
+
+The protocol behind this is described in
+[Realtime / WebSocket](./websockets-realtime.md#presence-field-focus-and-soft-locks).
 
 ## Release validation summary
 
