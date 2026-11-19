@@ -399,3 +399,79 @@ export interface IntentHandlerDefinition {
 export function defineIntentHandler(def: IntentHandlerDefinition): IntentHandlerDefinition {
   return def;
 }
+
+/* ── Rich-text plugins (epic #669, #698) ─────────────────────────────────── */
+
+/**
+ * A custom block an extension adds to the rich-text editor. Structurally the
+ * same as `RichTextBlockDefinition` in `@lumibase/contracts/richtext` (the
+ * SDK stays dependency-free), so a plugin object can be passed to the
+ * server-side serialisers unchanged.
+ *
+ * `toHtml` output is untrusted: the renderer passes it through the allowlist
+ * sanitiser, so scripts, styles and event handlers are dropped.
+ */
+export interface RichTextBlockDefinition {
+  label?: string;
+  description?: string;
+  icon?: string;
+  defaultData?: Record<string, unknown>;
+  toHtml?: (data: Record<string, unknown>, ctx: { escape: (text: string) => string; resolveRef: (ref: { kind: 'item' | 'file'; collection?: string; id: string }) => string | null }) => string;
+  toMarkdown?: (data: Record<string, unknown>) => string;
+  toText?: (data: Record<string, unknown>) => string;
+}
+
+export interface RichTextPluginDefinition {
+  /** Unique id, e.g. the extension name. A second registration with the same name replaces the first. */
+  name: string;
+  /** Custom blocks keyed by block name (`[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}`). */
+  blocks?: Record<string, RichTextBlockDefinition>;
+  /** Markdown import hook: rewrite parsed blocks (remark-style). */
+  transformMarkdownImport?: (blocks: Array<Record<string, unknown>>) => Array<Record<string, unknown>>;
+}
+
+export function defineRichTextPlugin(def: RichTextPluginDefinition): RichTextPluginDefinition {
+  return def;
+}
+
+const RICHTEXT_PLUGINS_KEY = '__lumibaseRichTextPlugins__';
+const RICHTEXT_LISTENERS_KEY = '__lumibaseRichTextPluginListeners__';
+
+function pluginStore(): Map<string, RichTextPluginDefinition> {
+  const g = globalThis as Record<string, unknown>;
+  if (!(g[RICHTEXT_PLUGINS_KEY] instanceof Map)) g[RICHTEXT_PLUGINS_KEY] = new Map<string, RichTextPluginDefinition>();
+  return g[RICHTEXT_PLUGINS_KEY] as Map<string, RichTextPluginDefinition>;
+}
+
+function pluginListeners(): Set<() => void> {
+  const g = globalThis as Record<string, unknown>;
+  if (!(g[RICHTEXT_LISTENERS_KEY] instanceof Set)) g[RICHTEXT_LISTENERS_KEY] = new Set<() => void>();
+  return g[RICHTEXT_LISTENERS_KEY] as Set<() => void>;
+}
+
+/**
+ * Register a rich-text plugin from a UI extension. Its blocks appear in the
+ * editor's slash menu (for fields that allow custom blocks) and its Markdown
+ * hook runs on Markdown import. Returns an unregister function.
+ */
+export function registerRichTextPlugin(def: RichTextPluginDefinition): () => void {
+  pluginStore().set(def.name, def);
+  for (const l of pluginListeners()) l();
+  return () => {
+    if (pluginStore().get(def.name) === def) {
+      pluginStore().delete(def.name);
+      for (const l of pluginListeners()) l();
+    }
+  };
+}
+
+/** Every registered rich-text plugin, in registration order. */
+export function getRichTextPlugins(): RichTextPluginDefinition[] {
+  return [...pluginStore().values()];
+}
+
+/** Subscribe to plugin (un)registration; returns an unsubscribe function. */
+export function subscribeRichTextPlugins(listener: () => void): () => void {
+  pluginListeners().add(listener);
+  return () => pluginListeners().delete(listener);
+}

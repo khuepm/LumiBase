@@ -225,7 +225,7 @@ describe('Workers consumers get the same providers as Docker (c)', () => {
   });
 
   it.each([
-    ['registerContentIndexingWorker', ['queue', 'search']],
+    ['registerContentIndexingWorker', ['db', 'queue', 'search']],
     ['registerRevalidationWorker', ['db', 'queue']],
   ])('%s: same deps keys on both entrypoints', (name, expected) => {
     const docker = keysOf(SERVE, name);

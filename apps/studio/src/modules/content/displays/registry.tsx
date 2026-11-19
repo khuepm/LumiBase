@@ -15,6 +15,7 @@ import { TagsPillsDisplay } from './tags-pills';
 import { TextDisplay } from './text';
 import { ComponentTemplateDisplay } from './component-template';
 import { GeopointDisplay } from './geopoint';
+import { RichTextDisplay } from './richtext';
 import { readDisplayKey, type DisplayComponent } from './types';
 
 /**
@@ -49,6 +50,8 @@ const REGISTRY: Record<string, DisplayComponent<any>> = {
   'mustache-template': MustacheDisplay,
   // geopoint (#746).
   geopoint: GeopointDisplay,
+  // Rich-text excerpt (#695).
+  richtext: RichTextDisplay,
 };
 
 const INTERFACE_TO_DISPLAY: Record<string, string> = {
@@ -61,6 +64,7 @@ const INTERFACE_TO_DISPLAY: Record<string, string> = {
   tags: 'tags-pills',
   'relation-m2o': 'relation',
   'relation-m2a': 'relation-m2a',
+  richtext: 'richtext',
 };
 
 const TYPE_TO_DISPLAY: Record<string, string> = {
@@ -69,6 +73,7 @@ const TYPE_TO_DISPLAY: Record<string, string> = {
   datetime: 'formatted-date',
   timestamp: 'formatted-date',
   geopoint: 'geopoint',
+  richtext: 'richtext',
 };
 
 export function resolveDisplay(field: FieldResource): DisplayComponent<unknown> {
@@ -102,6 +107,7 @@ export const DISPLAY_CATALOGUE: Array<{ id: string; label: string; hint: string 
   { id: 'mustache-template', label: 'Mustache template', hint: 'Compose a row template like `{{title}} ({{slug}})`.' },
   { id: 'component-template', label: 'Component template', hint: 'Visual block-based template (Phase F).' },
   { id: 'geopoint', label: 'Geopoint', hint: 'Latitude, longitude with a pin.' },
+  { id: 'richtext', label: 'Rich text excerpt', hint: 'First line of a rich-text document as plain text.' },
 ];
 
 export const DISPLAY_NAMES = Object.keys(REGISTRY);

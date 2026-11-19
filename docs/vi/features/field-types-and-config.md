@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 5
-lastUpdated: 2026-11-16T15:44:03.829Z
+version: 6
+lastUpdated: 2026-11-17T19:26:39.389Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 7c2ce3c50294ee08
+sourceHash: bd2b3b94530b8811
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-16T15:44:03.829Z
-codeVerifiedHash: 7c2ce3c50294ee08
+codeVerified: 2026-11-17T19:26:39.389Z
+codeVerifiedHash: bd2b3b94530b8811
 codeVerifiedClaims: 6
 ---
 
@@ -35,6 +35,7 @@ LumiBase coi mỗi field là schema object first-class. Field có metadata độ
 | `geometry` | `GeoJSON.Geometry` | Lưu dưới dạng GeoJSON-like JSON. |
 | `alias` | virtual | Dùng cho relation aliases, groups và presentation-only fields. |
 | `blocks` | `Array<{ id, type, data }>` | Dynamic zone: danh sách block có thứ tự, mỗi block được validate theo một block template nằm trong `options.allowedBlocks`. Xem [Dynamic zones](./dynamic-zones.md). |
+| `richtext` | `RichTextDocument` | Tài liệu rich text khả chuyển (khối, mark, tham chiếu), được validate và làm sạch khi ghi; GraphQL trả thêm HTML đã dựng. Xem [Rich text](./rich-text.md). |
 
 ## 2. Field metadata
 

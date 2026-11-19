@@ -131,6 +131,16 @@ const FIELD_TYPE_JSON_SCHEMA: Readonly<Record<string, JsonSchema>> = {
   time: { type: 'string', format: 'time' },
   timestamp: { type: 'string', format: 'date-time' },
   geometry: { type: 'object', additionalProperties: true, description: 'GeoJSON geometry object.' },
+  richtext: {
+    type: 'object',
+    required: ['type', 'version', 'content'],
+    properties: {
+      type: { type: 'string', enum: ['doc'] },
+      version: { type: 'integer', enum: [1] },
+      content: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    },
+    description: 'Portable rich-text document (see the RichTextDocument type).',
+  },
 };
 
 function withNull(schema: JsonSchema): JsonSchema {
