@@ -17,6 +17,9 @@ import {
 import StoryCanvas from "./StoryCanvas";
 import styles from "./StorybookLanding.module.css";
 
+// docs.lumibase.dev serves the docs landing at `/en/` and every page under
+// `/en/docs/<slug>/`; the bare `/en/docs` prefix is not a page (404).
+const DOCS_HOME = "https://docs.lumibase.dev/en/";
 const DOCS = "https://docs.lumibase.dev/en/docs";
 const GITHUB = "https://github.com/khuepm/lumibase";
 
@@ -104,8 +107,8 @@ const lineage = [
 ];
 
 const connections = [
-  { label: "MCP", detail: "Governed HTTP endpoint", href: "https://docs.lumibase.dev/en/mcp/" },
-  { label: "Agent API", detail: "The harness, over HTTP", href: `${DOCS}/features/agent-harness-layer` },
+  { label: "MCP", detail: "Governed HTTP endpoint", href: `${DOCS}/mcp/` },
+  { label: "Agent API", detail: "The harness, over HTTP", href: `${DOCS}/features/agent-harness-layer/` },
   { label: "SDK", detail: "Typed client", href: "https://github.com/khuepm/lumibase/tree/main/packages/sdk" },
 ];
 
@@ -153,7 +156,7 @@ export default function StorybookLanding() {
           </p>
           <div className={styles.actions}>
             <Action href={GITHUB}>Start building</Action>
-            <Action href={DOCS} secondary>
+            <Action href={DOCS_HOME} secondary>
               Read the docs
             </Action>
           </div>
@@ -256,7 +259,7 @@ export default function StorybookLanding() {
             Inspect changes, decide what needs approval, and resolve incidents in one place. Step in
             or stop agents whenever you need.
           </p>
-          <Action href={`${DOCS}/features/studio`} secondary>
+          <Action href={`${DOCS}/ui/studio-ui-spec/`} secondary>
             Explore the Studio
           </Action>
         </div>
@@ -378,7 +381,7 @@ export default function StorybookLanding() {
               </li>
             ))}
           </ol>
-          <Link href={`${DOCS}/features/agent-harness-layer`} className={styles.textLink}>
+          <Link href={`${DOCS}/features/agent-harness-layer/`} className={styles.textLink}>
             Follow the trail <ArrowRight size={15} aria-hidden="true" />
           </Link>
         </div>
