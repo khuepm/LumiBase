@@ -31,6 +31,12 @@ export interface StoryOptions {
   reducedMotion: boolean;
   /** Phones and other constrained devices start on the lighter settings. */
   lowPower: boolean;
+  /**
+   * Called once if the device cannot keep the scene moving even on the
+   * lightest settings. The caller should drop the scene for the static
+   * fallback; a story at a few frames a second reads worse than none.
+   */
+  onGiveUp?: () => void;
 }
 
 export interface StoryScene {
@@ -87,6 +93,10 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
     antialias: false, // the composer's multisampled target does this
     powerPreference: "high-performance",
     alpha: false,
+    // A software rasteriser (SwiftShader, llvmpipe) draws this scene at a
+    // frame or two a second. Refuse it, so the page falls back to the static
+    // stage instead of stalling the main thread.
+    failIfMajorPerformanceCaveat: true,
   });
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.toneMappingExposure = 1.05;
@@ -321,13 +331,43 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
   // back to the quality it started at and stops judging.
   const WINDOW = 60;
   const WARMUP = 24;
+  /** Longer than this is a pause (tab switch, scrolled away), not a slow frame. */
+  const PAUSE = 2;
   const samples = new Float32Array(WINDOW);
   let sampled = -WARMUP;
   let probe: { from: number; baseline: number; steps: number } | null = null;
   let settled = false;
 
+  // A device far below budget would take minutes to walk the ladder one probe
+  // at a time — and a window of slow frames is exactly when the reader is
+  // looking at a stalled page. So a run of very slow frames skips straight to
+  // the bottom rung, and a second run there gives the scene up.
+  const STALLED = 1 / 15;
+  const STALL_RUN = 12;
+  let stallRun = 0;
+  let gaveUp = false;
+
+  function rescue(frame: number) {
+    if (gaveUp || frame <= 0 || frame > PAUSE) return;
+    if (frame < STALLED) {
+      stallRun = 0;
+      return;
+    }
+    if (++stallRun < STALL_RUN) return;
+    stallRun = 0;
+    if (rung < QUALITY.length - 1) {
+      rung = QUALITY.length - 1;
+      probe = null;
+      settled = true;
+      buildComposer();
+    } else {
+      gaveUp = true;
+      options.onGiveUp?.();
+    }
+  }
+
   function judge(frame: number) {
-    if (settled || frame <= 0 || frame > 0.5) return;
+    if (settled || frame <= 0 || frame > PAUSE) return;
     if (sampled < 0) {
       sampled++; // let a rebuilt chain warm up before measuring it
       return;
@@ -362,11 +402,16 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
 
   function render(now: number) {
     const seconds = now / 1000;
-    const dt = last < 0 ? 1 / 60 : Math.min(0.05, Math.max(0, seconds - last));
-    const rawDt = last < 0 ? 0 : seconds - last;
+    const rawDt = last < 0 ? 0 : Math.max(0, seconds - last);
     last = seconds;
+    // Timed beats (the intro, hops, blinks) follow the wall clock, so a slow
+    // device shows them at their real length rather than in slow motion; only
+    // a pause is cut short. Damping and springs step at most 0.1 s, which they
+    // stay stable at — at 0.05 s they lagged far behind below 20 fps.
+    const tick = rawDt === 0 ? 1 / 60 : Math.min(0.25, rawDt);
+    const dt = Math.min(0.1, tick);
     // Under reduced motion the clock is parked, so idle animation never runs.
-    if (!reduced) clock += dt;
+    if (!reduced) clock += tick;
     // A parked clock must sit before Lumi's first blink, or the eyes stay shut.
     const time = reduced ? 1 : clock;
     if (introStart < 0) introStart = clock;
@@ -386,7 +431,8 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
     heavens.position.set(camera.position.x * 0.9, camera.position.y * 0.94, 0);
     stars.update(time, renderer.getPixelRatio() * Math.max(0.8, height / 900), 0.55 + 0.45 * altitude);
     const moonHalf = halfHeightAt(MOON_Z);
-    const moonX = layout === "desktop" ? 0.63 : 0.58;
+    // On a phone Lumi's high poses sit near x 0.4-0.5; keep the moon clear of them.
+    const moonX = layout === "desktop" ? 0.63 : 0.74;
     const moonY = layout === "desktop" ? 0.72 : 0.8;
     moon.position.set(moonX * moonHalf * aspect, moonY * moonHalf + camera.position.y * 0.02, MOON_Z);
     moon.scale.setScalar(moonHalf * (layout === "desktop" ? 0.46 : 0.34));
@@ -577,7 +623,10 @@ export function createStoryScene(canvas: HTMLCanvasElement, options: StoryOption
     if (composer) composer.render(dt);
     else renderer.render(scene, camera);
 
-    if (!reduced && clock > 1.5) judge(rawDt);
+    if (!reduced && clock > 1.5) {
+      judge(rawDt);
+      rescue(rawDt);
+    }
   }
 
   return {

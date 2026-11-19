@@ -35,13 +35,23 @@ It replaces the iridescent page, which is kept on `feature/iridescent-landing` f
 - three.js (about 160 KB gzipped) is a dynamic import started after first paint; the heading and
   call to action never wait on it. The canvas fades in once a frame exists.
 - A quality ladder (pixel ratio, fur layers, multisampling, bloom) starts lower on phones and
-  low-core devices and steps down when frames run long. It never steps back up.
+  low-core devices and steps down when frames run long. It never steps back up. A run of
+  frames under 15 fps skips to the bottom rung; a second run there drops the scene for the
+  fallback.
+- Software WebGL (SwiftShader, llvmpipe) never loads the scene: the context is requested with
+  `failIfMajorPerformanceCaveat`, and the renderer string is checked as well.
+- Timed beats (intro, hops, blinks) follow the wall clock, so a slow device plays them at their
+  real length. Damping and springs step at most 0.1 s.
 - Rendering stops when the tab is hidden or the stage is off screen.
 - `prefers-reduced-motion`: no intro, no idle motion, no particles; the scene is redrawn only
   when the reader scrolls or resizes.
-- Without WebGL (or if the scene fails to load) a CSS night sky and an SVG Lumi stand in.
-- On phones the scene takes the top of the screen. Copy fades as it scrolls into that band
-  (CSS scroll-driven animation); browsers without it show the copy over the scene instead.
+- Without WebGL (or if the scene fails to load or gives up) a CSS night sky and an SVG Lumi
+  stand in. On phones that Lumi sits below the copy at ground level (opening and ending) and
+  above it in the other chapters.
+- On phones the scene takes the top of the screen. A chapter counts as reached when its heading
+  is 42% of the way down the screen, just below Lumi, rather than when the chapter is centred.
+  Copy fades as it scrolls above 30% of the screen (CSS scroll-driven animation); browsers
+  without it show the copy over the scene instead.
 - The canvas is `aria-hidden`; controls are native links and buttons with visible focus.
 
 ## Files
@@ -64,9 +74,14 @@ It replaces the iridescent page, which is kept on `feature/iridescent-landing` f
 headless Chromium on software WebGL (SwiftShader) at 1440×900 and an iPhone 13 viewport, with
 each chapter centred, with reduced motion, and from the static export under `out/`.
 
+Headless Chromium now gets the fallback, because its WebGL is software. The scene path was
+checked in a test build with GPU detection switched off: on desktop the scene gave up about
+two seconds after its first frame and the fallback took over; in iPhone 13 emulation it ran
+at about 20 fps and kept going.
+
 Not verified: frame rate on real GPUs and real phones (software rendering says nothing about
-it — the quality ladder is the mitigation, not a measurement), Safari and Firefox, and the
-no-WebGL fallback in a browser that genuinely lacks WebGL.
+it — the quality ladder and the give-up are the mitigation, not a measurement), Safari and
+Firefox, and the no-WebGL fallback in a browser that genuinely lacks WebGL.
 
 ## Local development
 

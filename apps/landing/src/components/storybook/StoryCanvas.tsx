@@ -3,20 +3,36 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useStaticMotion } from "@/components/scroll/useStaticMotion";
 import LumiMark from "./LumiMark";
-import { chapterFromScroll, type Layout } from "./scene/timeline";
+import { LAST_CHAPTER, chapterFromScroll, type Layout } from "./scene/timeline";
 import type { StoryScene } from "./scene/createStoryScene";
 import styles from "./StorybookLanding.module.css";
 
 const MOBILE_QUERY = "(max-width: 860px)";
 
+/** Renderers that rasterise on the CPU. The scene runs at a frame or two a second on them. */
+const SOFTWARE_RENDERER = /swiftshader|llvmpipe|softpipe|software|basic render/i;
+
 let webglSupport: boolean | undefined;
-/** Probed once: creating a context is not free, and the answer never changes. */
+/**
+ * Probed once: creating a context is not free, and the answer never changes.
+ *
+ * "Supported" means a GPU will draw the scene, not merely that WebGL exists.
+ * `failIfMajorPerformanceCaveat` makes the browser refuse a context it would
+ * otherwise back with a software rasteriser; the renderer string catches the
+ * browsers that hand one out anyway.
+ */
 function canUseWebGL(): boolean {
   if (webglSupport === undefined) {
     try {
       const probe = document.createElement("canvas");
-      const gl = probe.getContext("webgl2") ?? probe.getContext("webgl");
-      webglSupport = !!gl;
+      const attributes: WebGLContextAttributes = { failIfMajorPerformanceCaveat: true };
+      const gl = probe.getContext("webgl2", attributes) ?? probe.getContext("webgl", attributes);
+      let renderer = "";
+      if (gl) {
+        const info = gl.getExtension("WEBGL_debug_renderer_info");
+        renderer = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? "");
+      }
+      webglSupport = !!gl && !SOFTWARE_RENDERER.test(renderer);
       // Browsers cap live contexts; do not leave the probe's one behind.
       gl?.getExtension("WEBGL_lose_context")?.loseContext();
     } catch {
@@ -25,6 +41,31 @@ function canUseWebGL(): boolean {
   }
   return webglSupport;
 }
+/**
+ * Where the scene considers each chapter "arrived", as document offsets.
+ *
+ * Normally that is the chapter's centre. On a phone the scene owns the top of
+ * the screen and a chapter's copy is often taller than the space below it, so
+ * at the centre the heading would sit under Lumi. There a chapter arrives when
+ * its heading reaches `HEADING_LINE` down the screen, just below the scene. The
+ * opening and the ending keep their centres: their copy sits at the top.
+ */
+const HEADING_LINE = 0.42;
+function chapterCenters(story: HTMLElement, mobile: boolean): number[] {
+  const chapters = Array.from(story.querySelectorAll<HTMLElement>("[data-chapter]"));
+  const viewport = window.innerHeight;
+  return chapters.map((el, index) => {
+    const ground = index === 0 || index === chapters.length - 1;
+    const heading = mobile && !ground ? el.querySelector<HTMLElement>("h2") : null;
+    if (heading) {
+      const top = heading.getBoundingClientRect().top + window.scrollY;
+      return top + viewport * (0.5 - HEADING_LINE);
+    }
+    const rect = el.getBoundingClientRect();
+    return rect.top + window.scrollY + rect.height / 2;
+  });
+}
+
 const subscribeNever = () => () => {};
 /** The server cannot know, so it renders the canvas and the client corrects it. */
 const assumeWebGL = () => true;
@@ -53,9 +94,11 @@ export default function StoryCanvas({
   // Read through useSyncExternalStore so server and first client render agree
   // without a setState inside an effect.
   const supported = useSyncExternalStore(subscribeNever, canUseWebGL, assumeWebGL);
-  // "pending" until the scene has drawn once; "failed" if loading it threw.
+  // "pending" until the scene has drawn once; "failed" if loading it threw or
+  // the device could not keep it moving. Failure is final for this page view.
   const [progress, setProgress] = useState<"pending" | "live" | "failed">("pending");
   const status = !supported || progress === "failed" ? "fallback" : progress;
+  const failedRef = useRef(false);
 
   useEffect(() => {
     sceneRef.current?.setLevel(level);
@@ -66,7 +109,7 @@ export default function StoryCanvas({
     const canvas = canvasRef.current;
     const stage = stageRef.current;
     const story = storyRef.current;
-    if (!canvas || !stage || !story || !supported) return;
+    if (!canvas || !stage || !story || !supported || failedRef.current) return;
 
     let disposed = false;
     let scene: StoryScene | null = null;
@@ -78,10 +121,7 @@ export default function StoryCanvas({
     const layoutNow = (): Layout => (mobile.matches ? "mobile" : "desktop");
 
     const measure = () => {
-      centers = Array.from(story.querySelectorAll<HTMLElement>("[data-chapter]")).map((el) => {
-        const rect = el.getBoundingClientRect();
-        return rect.top + window.scrollY + rect.height / 2;
-      });
+      centers = chapterCenters(story, mobile.matches);
     };
     const draw = (now: number) => {
       if (!scene) return;
@@ -93,7 +133,7 @@ export default function StoryCanvas({
       draw(now);
       // Reduced motion draws on demand only; otherwise keep the scene alive
       // while it is visible and the tab is in front.
-      if (!reduced && onScreen && !document.hidden) raf = requestAnimationFrame(loop);
+      if (!disposed && !reduced && onScreen && !document.hidden) raf = requestAnimationFrame(loop);
     };
     const wake = () => {
       if (!raf && scene) raf = requestAnimationFrame(loop);
@@ -163,6 +203,18 @@ export default function StoryCanvas({
           layout: layoutNow(),
           reducedMotion: reduced,
           lowPower: mobile.matches || (navigator.hardwareConcurrency ?? 8) <= 4,
+          // Called from inside a frame; leave that frame to finish first.
+          onGiveUp: () =>
+            setTimeout(() => {
+              if (disposed) return;
+              const given = scene;
+              failedRef.current = true;
+              teardown();
+              // The canvas stays mounted, so teardown keeps the context; this
+              // scene is never coming back, so hand it to the browser now.
+              given?.loseContext();
+              setProgress("failed");
+            }, 0),
         });
         sceneRef.current = scene;
         scene.setLevel(level);
@@ -185,10 +237,13 @@ export default function StoryCanvas({
         });
       })
       .catch(() => {
-        if (!disposed) setProgress("failed");
+        if (disposed) return;
+        failedRef.current = true;
+        setProgress("failed");
       });
 
-    return () => {
+    const teardown = () => {
+      if (disposed) return;
       disposed = true;
       if (raf) cancelAnimationFrame(raf);
       observer.disconnect();
@@ -200,6 +255,7 @@ export default function StoryCanvas({
       document.removeEventListener("visibilitychange", onVisibility);
       mobile.removeEventListener("change", resize);
       const finished = scene;
+      scene = null;
       finished?.dispose();
       sceneRef.current = null;
       // Browsers cap live GL contexts, so hand this one back — but only on a
@@ -212,15 +268,44 @@ export default function StoryCanvas({
       }
       wakeRef.current = () => {};
     };
+    return teardown;
     // `level` is pushed through its own effect; re-creating the scene for it
     // would restart the story.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reduced, storyRef, supported]);
 
+  // Without the scene, the stand-in Lumi still has to keep out of the copy. On
+  // a phone the copy is at the top of the screen at ground level (the opening
+  // and the ending) and at the bottom everywhere else, so the mark swaps ends.
+  const fallback = status === "fallback";
+  useEffect(() => {
+    const stage = stageRef.current;
+    const story = storyRef.current;
+    if (!fallback || !stage || !story) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const mobile = window.matchMedia(MOBILE_QUERY).matches;
+      const c = chapterFromScroll(chapterCenters(story, mobile), window.scrollY + window.innerHeight / 2);
+      stage.dataset.ground = String(c < 0.5 || c > LAST_CHAPTER - 0.5);
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+    };
+  }, [fallback, storyRef]);
+
   return (
     <div ref={stageRef} className={styles.stage} aria-hidden="true">
       <canvas ref={canvasRef} className={styles.canvas} data-live={status === "live"} />
-      {status === "fallback" && (
+      {fallback && (
         <div className={styles.fallback}>
           <LumiMark size={260} className={styles.fallbackLumi} />
         </div>
