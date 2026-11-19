@@ -4,6 +4,8 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { requireSiteAdmin } from '../middleware/site-admin';
+import { invalidateSiteReleaseValues } from '../modules/release-flags/service';
+import { RELEASE_FLAGS, siteSettingsKeysOf } from '../modules/release-flags/registry';
 import { redactSettingRow } from '../services/settings-redaction';
 
 export const settingsRouter = new Hono<AppEnv>();
@@ -22,6 +24,11 @@ settingsRouter.delete('*', requireSiteAdmin());
 // Secret-bearing fields are redacted for every caller. The rule is shared with
 // the `listSettings` agent skill (`services/settings-redaction.ts`, #579).
 const redactRow = redactSettingRow;
+
+// Keys that hold release-flag site choices (`release.flags`, `contentOs`,
+// `aiDecisions`, #896). A write through this generic endpoint drops the cached
+// copy, so the release-flags listing does not lag behind the change.
+const RELEASE_FLAG_SETTINGS_KEYS = new Set(siteSettingsKeysOf(RELEASE_FLAGS));
 
 settingsRouter.get('/', async (c) => {
   const siteId = c.get('siteId');
@@ -87,6 +94,9 @@ settingsRouter.post('/', async (c) => {
     })
     .returning();
 
+  if (RELEASE_FLAG_SETTINGS_KEYS.has(input.key)) {
+    await invalidateSiteReleaseValues(c.get('runtime')?.cache, siteId);
+  }
   return c.json({ data: row });
 });
 
@@ -104,5 +114,8 @@ settingsRouter.delete('/:key', async (c) => {
     return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
   }
 
+  if (RELEASE_FLAG_SETTINGS_KEYS.has(key)) {
+    await invalidateSiteReleaseValues(c.get('runtime')?.cache, siteId);
+  }
   return c.json({ data: null });
 });

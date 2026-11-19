@@ -1,20 +1,32 @@
 import { releaseManifests, settings, type Database } from '@lumibase/database';
 import type { CacheProvider } from '@lumibase/runtime';
 import { formatSafeError } from '@lumibase/contracts/utils';
-import { and, eq, sql } from 'drizzle-orm';
-import { z } from 'zod';
-import { verifyEd25519 } from '@lumibase/contracts/extensions';
-import { createProcessCache } from '../../services/process-cache';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { AuditLogger } from '../audit/logger';
 import {
   MANIFEST_MAX_PAYLOAD_CHARS,
   parseReleasePublicKeys,
-  releaseManifestEnvelopeSchema,
   verifyReleaseManifest,
   type ManifestRejection,
 } from './manifest';
-import { RELEASE_FLAGS, type ReleaseFlagDefinition } from './registry';
+import {
+  RELEASE_FLAGS,
+  SITE_RELEASE_FLAGS_SETTINGS_KEY,
+  siteSettingsKeysOf,
+  type ReleaseFlagDefinition,
+} from './registry';
+import {
+  clearManifestCache,
+  loadAcceptedManifest,
+  resetReleaseStateForTests,
+  trustedAcceptedManifest,
+  type ReleaseEnv,
+  type StoredManifest,
+} from './state';
+import { asRecord, composeSiteValues, groupSiteChanges } from './storage';
 import { parseReleaseFlagOverrides, resolveReleaseFlag, type ReleaseFlagState } from './resolver';
+
+export { loadAcceptedManifest, trustedAcceptedManifest, type ReleaseEnv, type StoredManifest } from './state';
 
 /**
  * Storage and orchestration for release flags (#869).
@@ -25,102 +37,18 @@ import { parseReleaseFlagOverrides, resolveReleaseFlag, type ReleaseFlagState } 
  *    what this deployment has released and contain no tenant data.
  *  - **Per site**: each site's choices for `siteToggle` flags, stored in
  *    `lumibase_settings` (key `release.flags`, already under `site_isolation`)
- *    and cached under `release-flags:site:{siteId}`.
+ *    and cached under `release-flags:site:v2:{siteId}`; legacy switches (#896)
+ *    keep their choice in their original settings object (`./storage`).
  */
 
-export const SITE_RELEASE_FLAGS_KEY = 'release.flags';
+export const SITE_RELEASE_FLAGS_KEY = SITE_RELEASE_FLAGS_SETTINGS_KEY;
 const SITE_CACHE_TTL_SECONDS = 60;
-const MANIFEST_CACHE_TTL_MS = 30_000;
 const DEFAULT_REFRESH_SECONDS = 300;
 const MIN_REFRESH_SECONDS = 60;
 const PULL_TIMEOUT_MS = 5_000;
 
-export const siteReleaseCacheKey = (siteId: string) => `release-flags:site:${siteId}`;
-
-/** Raw environment the module reads. Strings as they come from env/bindings. */
-export interface ReleaseEnv {
-  readonly LUMIBASE_RELEASE_FLAGS?: string;
-  readonly LUMIBASE_RELEASE_PUBLIC_KEYS?: string;
-  readonly LUMIBASE_RELEASE_MANIFEST_URL?: string;
-  readonly LUMIBASE_RELEASE_MANIFEST_REFRESH_S?: string;
-  readonly LUMIBASE_INSTANCE_ID?: string;
-}
-
-// ─── Accepted manifest (deployment-wide) ─────────────────────────────────────
-
-const storedManifestSchema = z.object({
-  envelope: releaseManifestEnvelopeSchema,
-  issuedAt: z.string(),
-  issuedAtMs: z.number(),
-  flags: z.record(z.string(), z.boolean()),
-  acceptedAt: z.string(),
-  source: z.enum(['push', 'pull']),
-  acceptedBy: z.string().nullable(),
-});
-export type StoredManifest = z.infer<typeof storedManifestSchema>;
-
-const manifestCache = createProcessCache<StoredManifest | null>({ ttlMs: MANIFEST_CACHE_TTL_MS });
-
-/**
- * The manifest this deployment accepted, or `null`. Cached per process for
- * 30 s: another replica that accepts a manifest is picked up within that
- * window; the replica that accepted it clears its own cache immediately.
- * A read failure answers `null` for this call only (not cached), so flags fall
- * back to stage defaults rather than failing the request — including on a
- * schema that predates migration `0043` while an upgrade is rolling out.
- */
-export async function loadAcceptedManifest(systemDb: Database): Promise<StoredManifest | null> {
-  try {
-    return await manifestCache.get(async () => {
-      const [row] = await systemDb
-        .select({ manifest: releaseManifests.manifest })
-        .from(releaseManifests)
-        .where(eq(releaseManifests.id, 'current'))
-        .limit(1);
-      const parsed = storedManifestSchema.safeParse(row?.manifest);
-      return parsed.success ? parsed.data : null;
-    });
-  } catch (err) {
-    console.warn('[release-flags] could not read the accepted manifest', formatSafeError(err));
-    return null;
-  }
-}
-
-const trustCache = new Map<string, boolean>();
-
-function decodePayload(payload: string): Uint8Array | null {
-  try {
-    return Uint8Array.from(atob(payload), (ch) => ch.charCodeAt(0));
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The stored manifest, but only while the key that signed it is still trusted.
- * Removing a key from `LUMIBASE_RELEASE_PUBLIC_KEYS` (rotation, or a leaked
- * key) therefore withdraws every manifest it signed: flags fall back to the
- * next source. The signature is re-checked against the currently configured
- * PEM (memoised per key + signature), so swapping the PEM behind a key id also
- * counts as revoking it.
- */
-export async function trustedAcceptedManifest(
-  stored: StoredManifest | null,
-  env: ReleaseEnv,
-): Promise<StoredManifest | null> {
-  if (!stored) return null;
-  const pem = parseReleasePublicKeys(env.LUMIBASE_RELEASE_PUBLIC_KEYS)[stored.envelope.keyId];
-  if (!pem) return null;
-  const memoKey = `${stored.envelope.keyId}\n${pem}\n${stored.envelope.signature}`;
-  let ok = trustCache.get(memoKey);
-  if (ok === undefined) {
-    const bytes = decodePayload(stored.envelope.payload);
-    ok = bytes ? await verifyEd25519(pem, stored.envelope.signature, bytes) : false;
-    if (trustCache.size > 64) trustCache.clear();
-    trustCache.set(memoKey, ok);
-  }
-  return ok ? stored : null;
-}
+// `v2` (#896): the cached value now also carries legacy switches.
+export const siteReleaseCacheKey = (siteId: string) => `release-flags:site:v2:${siteId}`;
 
 /** Who triggered an accept, for the instance-level audit trail. */
 export interface ReleaseAuditContext {
@@ -178,7 +106,7 @@ export async function acceptReleaseManifest(args: {
   const publicKeys = parseReleasePublicKeys(args.env.LUMIBASE_RELEASE_PUBLIC_KEYS);
   if (Object.keys(publicKeys).length === 0) return { ok: false, reason: 'KEYS_NOT_CONFIGURED' };
 
-  manifestCache.clear();
+  clearManifestCache();
   const current = await loadAcceptedManifest(args.systemDb);
   const now = args.now ?? Date.now();
   const verified = await verifyReleaseManifest(args.input, {
@@ -211,7 +139,7 @@ export async function acceptReleaseManifest(args: {
       setWhere: sql`${releaseManifests.issuedAtMs} < ${record.issuedAtMs}`,
     })
     .returning({ id: releaseManifests.id });
-  manifestCache.clear();
+  clearManifestCache();
 
   if (written.length === 0) {
     // Another replica (or a racing pull) may have just stored this very
@@ -351,14 +279,29 @@ export function maybeStartReleasePull(args: {
 
 // ─── Site choices (per tenant) ───────────────────────────────────────────────
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+/** Read the settings objects that hold the site's choices, uncached. */
+async function readSiteSettingRows(
+  db: Database,
+  siteId: string,
+  registry: ReadonlyMap<string, ReleaseFlagDefinition>,
+): Promise<Map<string, unknown>> {
+  const rows = await db
+    .select({ key: settings.key, value: settings.value })
+    .from(settings)
+    .where(and(eq(settings.siteId, siteId), inArray(settings.key, siteSettingsKeysOf(registry))));
+  return new Map(rows.map((row) => [row.key, row.value]));
 }
 
+/**
+ * The site's choice for every flag, keyed by flag key — from `release.flags`
+ * and from the legacy settings objects (#896). Cached for 60 s under
+ * `release-flags:site:v2:{siteId}`; every write path deletes or rewrites it.
+ */
 export async function loadSiteReleaseValues(
   db: Database,
   cache: CacheProvider | null | undefined,
   siteId: string,
+  registry: ReadonlyMap<string, ReleaseFlagDefinition> = RELEASE_FLAGS,
 ): Promise<Record<string, unknown>> {
   const key = siteReleaseCacheKey(siteId);
   if (cache) {
@@ -369,12 +312,7 @@ export async function loadSiteReleaseValues(
       // Cache outage → read the database.
     }
   }
-  const [row] = await db
-    .select({ value: settings.value })
-    .from(settings)
-    .where(and(eq(settings.siteId, siteId), eq(settings.key, SITE_RELEASE_FLAGS_KEY)))
-    .limit(1);
-  const values = asRecord(row?.value);
+  const values = composeSiteValues(await readSiteSettingRows(db, siteId, registry), registry);
   if (cache) {
     try {
       await cache.set(key, JSON.stringify(values), { ttl: SITE_CACHE_TTL_SECONDS });
@@ -385,39 +323,50 @@ export async function loadSiteReleaseValues(
   return values;
 }
 
+/** Drop the cached site choices, e.g. after a generic `POST /settings` write. */
+export async function invalidateSiteReleaseValues(
+  cache: CacheProvider | null | undefined,
+  siteId: string,
+): Promise<void> {
+  if (!cache) return;
+  try {
+    await cache.delete(siteReleaseCacheKey(siteId));
+  } catch (err) {
+    console.warn('[release-flags] site cache delete failed; relying on TTL', formatSafeError(err));
+  }
+}
+
 /**
- * Merge `changes` into the site's stored choices (`null` clears a choice) in a
- * single SQL statement — concurrent writers to different keys never lose each
- * other's choice — and write the result through to the cache, so a reader that
- * raced the write cannot leave a stale copy behind.
+ * Merge `changes` into the site's stored choices (`null` clears a choice).
+ * Each settings object is updated by a single SQL statement — concurrent
+ * writers to different fields never lose each other's choice — and legacy
+ * switches (#896) are written to their original object, so the feature's own
+ * reader sees the change. The result is written through to the cache, so a
+ * reader that raced the write cannot leave a stale copy behind.
  */
 export async function saveSiteReleaseValues(
   db: Database,
   cache: CacheProvider | null | undefined,
   siteId: string,
   changes: Readonly<Record<string, boolean | null>>,
+  registry: ReadonlyMap<string, ReleaseFlagDefinition> = RELEASE_FLAGS,
 ): Promise<Record<string, boolean>> {
-  const set: Record<string, boolean> = {};
-  const cleared: string[] = [];
-  for (const [key, value] of Object.entries(changes)) {
-    if (value === null) cleared.push(key);
-    else set[key] = value;
+  for (const [settingsKey, { set, cleared }] of groupSiteChanges(changes, registry)) {
+    const clearedArray = cleared.length
+      ? sql`ARRAY[${sql.join(cleared.map((k) => sql`${k}`), sql`, `)}]::text[]`
+      : sql`'{}'::text[]`;
+    await db
+      .insert(settings)
+      .values({ siteId, key: settingsKey, value: set, scope: 'site' })
+      .onConflictDoUpdate({
+        target: [settings.siteId, settings.key],
+        set: {
+          value: sql`(CASE WHEN jsonb_typeof(${settings.value}) = 'object' THEN ${settings.value} ELSE '{}'::jsonb END - ${clearedArray}) || ${JSON.stringify(set)}::jsonb`,
+          updatedAt: new Date(),
+        },
+      });
   }
-  const clearedArray = cleared.length
-    ? sql`ARRAY[${sql.join(cleared.map((k) => sql`${k}`), sql`, `)}]::text[]`
-    : sql`'{}'::text[]`;
-  const [row] = await db
-    .insert(settings)
-    .values({ siteId, key: SITE_RELEASE_FLAGS_KEY, value: set, scope: 'site' })
-    .onConflictDoUpdate({
-      target: [settings.siteId, settings.key],
-      set: {
-        value: sql`(CASE WHEN jsonb_typeof(${settings.value}) = 'object' THEN ${settings.value} ELSE '{}'::jsonb END - ${clearedArray}) || ${JSON.stringify(set)}::jsonb`,
-        updatedAt: new Date(),
-      },
-    })
-    .returning({ value: settings.value });
-  const stored = asRecord(row?.value);
+  const stored = composeSiteValues(await readSiteSettingRows(db, siteId, registry), registry);
   const next: Record<string, boolean> = {};
   for (const [key, value] of Object.entries(stored)) {
     if (typeof value === 'boolean') next[key] = value;
@@ -427,11 +376,7 @@ export async function saveSiteReleaseValues(
       await cache.set(siteReleaseCacheKey(siteId), JSON.stringify(stored), { ttl: SITE_CACHE_TTL_SECONDS });
     } catch (err) {
       console.warn('[release-flags] site cache write failed; relying on TTL', formatSafeError(err));
-      try {
-        await cache.delete(siteReleaseCacheKey(siteId));
-      } catch {
-        // TTL bounds staleness.
-      }
+      await invalidateSiteReleaseValues(cache, siteId);
     }
   }
   return next;
@@ -459,7 +404,7 @@ export async function evaluateReleaseFlags(args: {
   }
   const [manifest, siteValues] = await Promise.all([
     loadAcceptedManifest(args.systemDb).then((stored) => trustedAcceptedManifest(stored, args.env)),
-    args.siteId ? loadSiteReleaseValues(args.db, args.cache, args.siteId) : Promise.resolve({}),
+    args.siteId ? loadSiteReleaseValues(args.db, args.cache, args.siteId, registry) : Promise.resolve({}),
   ]);
   const inputs = { envOverrides: overrides, manifestFlags: manifest?.flags ?? null, siteValues };
   const states = new Map<string, ReleaseFlagState>();
@@ -469,8 +414,7 @@ export async function evaluateReleaseFlags(args: {
 
 /** Test hook: forget process-level state. */
 export function resetReleaseFlagStateForTests(): void {
-  manifestCache.clear();
-  trustCache.clear();
+  resetReleaseStateForTests();
   lastPullAttemptAt = 0;
   lastPullStatus = null;
   warnedOverrides.clear();

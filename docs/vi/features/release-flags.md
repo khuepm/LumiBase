@@ -1,14 +1,14 @@
 ---
-version: 4
-lastUpdated: 2026-11-19T04:31:58.266Z
+version: 5
+lastUpdated: 2026-11-19T08:06:26.707Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2c357c3aff9d32ed
+sourceHash: 05e957924d0875b4
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T04:32:04.952Z
-codeVerifiedHash: 2c357c3aff9d32ed
-codeVerifiedClaims: 28
+codeVerified: 2026-11-19T08:06:26.707Z
+codeVerifiedHash: 05e957924d0875b4
+codeVerifiedClaims: 30
 ---
 
 # Release Flags
@@ -170,6 +170,55 @@ Quy tắc cho một flag mới:
    tính năng đang tắt.
 3. Khi tính năng đã phổ biến, xoá flag và các chỗ kiểm tra nó.
 
+## Các công tắc có sẵn
+
+Trước khi có registry, một số tính năng đã có công tắc riêng theo site trong
+`lumibase_settings`. Mỗi công tắc hoặc là một **cổng phát hành** (quyết định một
+tính năng đã triển khai có chạy hay không), hoặc là một **giá trị cấu hình**
+(điều chỉnh cách một tính năng đã có hoạt động). Chỉ cổng phát hành mới thuộc về
+registry ([#896](https://github.com/khuepm/LumiBase/issues/896)).
+
+Cổng phát hành được khai báo trong registry với `stage: 'ga'`, `siteToggle` và
+`siteDefault: false`, và giữ nguyên chỗ lưu cũ thông qua `siteSetting`. Không
+giá trị nào bị chuyển chỗ:
+
+| Flag | Lưu ở | Hàm đọc |
+|---|---|---|
+| `content-os.reconciler` | `contentOs.reconciler` | `getContentOsFlags` |
+| `content-os.veto-window` | `contentOs.vetoWindow` | `getContentOsFlags` |
+| `content-os.agent-review` | `contentOs.agentReview` | `getContentOsFlags` |
+| `content-os.mcp` | `contentOs.mcp` | `getContentOsFlags` |
+| `ai-decisions.flows` | `aiDecisions.flows` | `readDecisionSettings` |
+| `ai-decisions.drift` | `aiDecisions.drift` | `readDecisionSettings` |
+
+Điều thay đổi và điều không đổi:
+
+- Khi không có manifest và không có `LUMIBASE_RELEASE_FLAGS`, mọi site hoạt
+  động như trước: `ga` đã được phát hành, nên giá trị đã lưu quyết định.
+- Manifest hoặc `LUMIBASE_RELEASE_FLAGS` giờ có thể **rút lại** một trong các
+  tính năng này trên toàn deployment, ví dụ `content-os.mcp=off`. Chúng không
+  bao giờ bật tính năng cho một site chưa chọn bật.
+- `PUT /api/v1/release-flags/site` ghi lựa chọn vào đúng object cũ
+  (`contentOs`, `aiDecisions`), nên hàm đọc của tính năng và các màn hình
+  settings hiện có thấy cùng một giá trị.
+- `ai-decisions.flows` và `ai-decisions.drift` còn cần site đồng ý dùng AI
+  decisions (`aiDecisions.enabled`); riêng flag không gửi nội dung tới provider.
+- Code chạy ngoài request (chu kỳ reconciler, consumer của queue) đọc cổng phát
+  hành bằng `resolveStoredSiteFlags` trong `modules/release-flags/gate.ts`. Nếu
+  không đọc được manifest, manifest gần nhất mà process đã đọc vẫn có hiệu lực,
+  nên lỗi đọc không bao giờ bật lại một tính năng đã bị rút.
+
+Giá trị cấu hình giữ nguyên chỗ, đọc qua endpoint riêng của chúng:
+
+| Key settings | Vì sao là cấu hình |
+|---|---|
+| `aiDecisions` (`enabled`, giới hạn, `review`) | `enabled` là sự đồng ý của site để gửi nội dung tới provider và là công tắc khẩn của site; `review` là pilot theo từng collection. |
+| `files.dam` | Chính sách xoá, thời gian giữ phiên bản, metadata và tuỳ chọn quét mã độc. |
+| `openapi` | Có công khai tài liệu OpenAPI trực tiếp hay không và cho những ai. |
+| `encryption.envelope` | Chế độ bảo mật kèm migration chạy nền, đổi bằng step-up auth. |
+| `deployment.environments` | Ánh xạ target triển khai vào môi trường và cổng phê duyệt. |
+| `cdc_feed`, `erasureDualControl`, `media.signedTransform`, `upload_policy`, `password_policy`, `login_security_policy`, `preview`, `locales`, `revalidation.targets`, `retention.policies` | Thiết lập vận hành, không phải công tắc tính năng. |
+
 ## Giới hạn
 
 - **Không phải rào chắn bảo mật hay bản quyền trên instance tự host.** Code và
@@ -179,8 +228,10 @@ Quy tắc cho một flag mới:
   `LUMIBASE_RELEASE_MANIFEST_URL` được đặt.
 - **Thay đổi không lan ngay lập tức giữa các replica.** Replica chấp nhận
   manifest dùng nó ngay; các replica khác đọc được trong vòng 30 giây. Lựa chọn
-  của site đặt qua API có hiệu lực ở request tiếp theo; nếu ghi qua endpoint
-  settings chung thì có thể mất tới 60 giây.
+  của site đặt qua API có hiệu lực ở request tiếp theo. Ghi qua endpoint
+  settings chung vào `release.flags`, `contentOs` hoặc `aiDecisions` sẽ xoá bản
+  cache, nên cũng có hiệu lực ở request tiếp theo; thay đổi sửa thẳng trong
+  database có thể mất tới 60 giây.
 
 ## Đa tenant
 
@@ -188,9 +239,10 @@ Quy tắc cho một flag mới:
 |---|---|---|
 | Manifest đã chấp nhận (`lumibase_release_manifests`, một dòng) | Toàn deployment | Ghi nhận những gì deployment đã phát hành. Không chứa dữ liệu tenant. |
 | `LUMIBASE_RELEASE_FLAGS`, khoá tin cậy, URL pull | Toàn deployment | Cấu hình của operator. |
-| Lựa chọn của site (`lumibase_settings`, key `release.flags`) | Theo site | Nằm dưới policy RLS `site_isolation` sẵn có. |
-| Cache `release-flags:site:{siteId}` | Theo site | Key chứa site id. |
+| Lựa chọn của site (`lumibase_settings`, key `release.flags`, và `contentOs` / `aiDecisions` cho các công tắc có sẵn) | Theo site | Nằm dưới policy RLS `site_isolation` sẵn có. |
+| Cache `release-flags:site:v2:{siteId}` | Theo site | Key chứa site id. |
 
 Kiểm chứng bằng `apps/cms/src/modules/release-flags/__tests__/release-flags.db.integration.test.ts`
-và `routes.db.integration.test.ts` trong cùng thư mục: lựa chọn ở một site không
+, `legacy-switches.db.integration.test.ts` và `routes.db.integration.test.ts`
+trong cùng thư mục: lựa chọn ở một site không
 làm đổi site khác, và một route có gắn cờ chỉ mở trên site đã chọn bật.
