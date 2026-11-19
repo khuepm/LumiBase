@@ -31,7 +31,7 @@ import { formatSafeError } from '@lumibase/contracts/utils';
 export interface WorkerSweepDeps {
   db: Database;
   runtime: RuntimeContext;
-  /** Worker bindings; sweeps that read deployment config (video provider) need them. */
+  /** Worker bindings; sweeps that read deployment config (scanner URL, video provider) need them. */
   env?: Record<string, unknown>;
 }
 
@@ -106,6 +106,16 @@ const vetoCommits: Sweep = async ({ db, runtime }) => {
 };
 
 /**
+ * Pending malware scans (#707, B222). Docker runs it every five minutes. On
+ * Workers the scanner is the HTTP adapter (`MALWARE_SCAN_URL`; no clamd TCP);
+ * overlap is safe because each verdict is written under the file's version.
+ */
+const malwareScanSweep: Sweep = async ({ db, runtime, env }) => {
+  const { sweepPendingScans } = await import('./modules/malware-scan/sweeper');
+  return sweepPendingScans({ db, storage: runtime.storage, clamd: runtime.clamd, env });
+};
+
+/**
  * Video pipeline backstop (#871). Docker runs it every five minutes. Overlap
  * is safe: every write is a compare-and-set on the asset's status + version.
  */
@@ -138,6 +148,7 @@ export const MINUTE_SWEEPS: Record<string, Sweep> = {
 export const FIVE_MINUTE_SWEEPS: Record<string, Sweep> = {
   'veto-sweep': vetoCommits,
   'video-sweep': videoSweep,
+  'malware-scan-sweep': malwareScanSweep,
 };
 
 /** Expired resumable uploads (#704). Docker runs it hourly at :41. */

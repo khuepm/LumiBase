@@ -1,10 +1,10 @@
 ---
-version: 29
-lastUpdated: 2026-11-19T08:32:13.743Z
+version: 30
+lastUpdated: 2026-11-19T09:24:28.613Z
 sourceLang: en
-contentHash: a987366e6118de3d
-codeVerified: 2026-11-19T08:32:13.743Z
-codeVerifiedHash: a987366e6118de3d
+contentHash: 5787aa0c1b489e3b
+codeVerified: 2026-11-19T09:24:28.613Z
+codeVerifiedHash: 5787aa0c1b489e3b
 codeVerifiedClaims: 22
 ---
 
@@ -288,7 +288,7 @@ When seeding local/staging/prod, seed system collection permissions explicitly. 
 
 ### `files`
 - `id`, `siteId`, `storage` (`r2`/`s3`/external), `filenameDisk`, `filenameDownload`, `mime`, `filesize`, `width`, `height`, `duration`, `folder`, `metadata jsonb`, `uploadedBy`, `contentHash`, `version`, `scanStatus`, `createdAt`, `updatedAt`.
-- `contentHash` — full SHA-256 (hex) of the current binary, used for duplicate detection; index `(siteId, contentHash)`. `version` — bumped by every in-place replace (same id and `filenameDisk`). `scanStatus` — `skipped` (default) / `pending` / `clean` / `infected` / `error`; only `skipped` and `clean` are delivered. `metadata.embedded` holds extracted EXIF/IPTC/XMP and `metadata.searchText` the searchable summary. Migration `0038_dam_assets`.
+- `contentHash` — full SHA-256 (hex) of the current binary, used for duplicate detection; index `(siteId, contentHash)`. `version` — bumped by every in-place replace (same id and `filenameDisk`). `scanStatus` — `skipped` (default) / `pending` / `clean` / `infected` / `error`; only `skipped` and `clean` are delivered. `metadata.embedded` holds extracted EXIF/IPTC/XMP and `metadata.searchText` the searchable summary. Migration `0038_dam_assets`. Partial index `files_pending_scan_idx` on `updatedAt` where `scanStatus = 'pending'` serves the malware-scan sweeper (migration `0046_malware_scan_pending_idx`).
 
 ### `file_versions`
 - `id`, `siteId`, `fileId` (FK cascade), `version`, `filenameDisk` (archive key `sites/<site>/file-versions/<id>/v<n>`), `filenameDownload`, `mime`, `filesize`, `width`, `height`, `contentHash`, `metadata jsonb`, `replacedBy`, `createdAt`, `expiresAt`.
@@ -299,7 +299,7 @@ When seeding local/staging/prod, seed system collection permissions explicitly. 
 
 ### `upload_sessions`
 - `id`, `siteId`, `createdBy`, `filename`, `mime`, `length`, `offset`, `storageKey`, `multipartId`, `parts jsonb`, `tailSize`, `folder`, `metadata jsonb`, `status` (`active`/`completed`/`aborted`), `lockToken`, `lockedUntil`, `fileId`, `expiresAt`, `createdAt`, `updatedAt`.
-- One TUS resumable upload in progress: committed `offset`, the multipart parts written so far and the size of the tail object. `lockToken`/`lockedUntil` is the single-writer lease taken by each `PATCH`; `fileId` is set on completion. Index `(siteId, status)` and a partial index on `expiresAt` for active uploads (expiry sweep). Migration `0046_upload_sessions`. See [Digital Asset Management](./features/digital-asset-management.md).
+- One TUS resumable upload in progress: committed `offset`, the multipart parts written so far and the size of the tail object. `lockToken`/`lockedUntil` is the single-writer lease taken by each `PATCH`; `fileId` is set on completion. Index `(siteId, status)` and a partial index on `expiresAt` for active uploads (expiry sweep). Migration `0047_upload_sessions`. See [Digital Asset Management](./features/digital-asset-management.md).
 ### `file_captions`
 - `id`, `siteId`, `fileId` (the video, FK cascade), `captionFileId` (the WebVTT file, FK cascade), `locale`, `kind` (`subtitles`/`captions`/`descriptions`/`chapters`), `label`, `isDefault`, `createdBy`, `createdAt`, `updatedAt`.
 - Caption/subtitle tracks of a video (#871); unique `(siteId, fileId, locale, kind)`. Migration `0045_file_captions`. See [Digital Asset Management](./features/digital-asset-management.md).

@@ -1,13 +1,13 @@
 ---
-version: 29
-lastUpdated: 2026-11-19T08:32:13.743Z
+version: 30
+lastUpdated: 2026-11-19T09:24:28.613Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a987366e6118de3d
+sourceHash: 5787aa0c1b489e3b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T08:32:13.743Z
-codeVerifiedHash: a987366e6118de3d
+codeVerified: 2026-11-19T09:24:28.613Z
+codeVerifiedHash: 5787aa0c1b489e3b
 codeVerifiedClaims: 22
 ---
 
@@ -292,7 +292,7 @@ Khi seed local/staging/prod, phải seed permission cho system collection một 
 
 ### `files`
 - `id`, `siteId`, `storage` (`r2`/`s3`/external), `filenameDisk`, `filenameDownload`, `mime`, `filesize`, `width`, `height`, `duration`, `folder`, `metadata jsonb`, `uploadedBy`, `contentHash`, `version`, `scanStatus`, `createdAt`, `updatedAt`.
-- `contentHash` — SHA-256 đầy đủ (hex) của binary hiện tại, dùng để phát hiện trùng lặp; index `(siteId, contentHash)`. `version` — tăng sau mỗi lần thay tại chỗ (cùng id và `filenameDisk`). `scanStatus` — `skipped` (mặc định) / `pending` / `clean` / `infected` / `error`; chỉ `skipped` và `clean` được phân phối. `metadata.embedded` chứa EXIF/IPTC/XMP đã trích và `metadata.searchText` là bản tóm tắt để tìm kiếm. Migration `0038_dam_assets`.
+- `contentHash` — SHA-256 đầy đủ (hex) của binary hiện tại, dùng để phát hiện trùng lặp; index `(siteId, contentHash)`. `version` — tăng sau mỗi lần thay tại chỗ (cùng id và `filenameDisk`). `scanStatus` — `skipped` (mặc định) / `pending` / `clean` / `infected` / `error`; chỉ `skipped` và `clean` được phân phối. `metadata.embedded` chứa EXIF/IPTC/XMP đã trích và `metadata.searchText` là bản tóm tắt để tìm kiếm. Migration `0038_dam_assets`. Partial index `files_pending_scan_idx` trên `updatedAt` với `scanStatus = 'pending'` phục vụ sweeper quét mã độc (migration `0046_malware_scan_pending_idx`).
 
 ### `file_versions`
 - `id`, `siteId`, `fileId` (FK cascade), `version`, `filenameDisk` (archive key `sites/<site>/file-versions/<id>/v<n>`), `filenameDownload`, `mime`, `filesize`, `width`, `height`, `contentHash`, `metadata jsonb`, `replacedBy`, `createdAt`, `expiresAt`.
@@ -303,7 +303,7 @@ Khi seed local/staging/prod, phải seed permission cho system collection một 
 
 ### `upload_sessions`
 - `id`, `siteId`, `createdBy`, `filename`, `mime`, `length`, `offset`, `storageKey`, `multipartId`, `parts jsonb`, `tailSize`, `folder`, `metadata jsonb`, `status` (`active`/`completed`/`aborted`), `lockToken`, `lockedUntil`, `fileId`, `expiresAt`, `createdAt`, `updatedAt`.
-- Một upload TUS tiếp tục được đang diễn ra: `offset` đã ghi, các phần multipart đã ghi tới giờ và kích thước object đuôi. `lockToken`/`lockedUntil` là lease một-writer mà mỗi `PATCH` giữ; `fileId` được đặt khi hoàn tất. Index `(siteId, status)` và một partial index trên `expiresAt` cho các upload đang chạy (lượt quét hết hạn). Migration `0046_upload_sessions`. Xem [Quản lý tài sản số](./features/digital-asset-management.md).
+- Một upload TUS tiếp tục được đang diễn ra: `offset` đã ghi, các phần multipart đã ghi tới giờ và kích thước object đuôi. `lockToken`/`lockedUntil` là lease một-writer mà mỗi `PATCH` giữ; `fileId` được đặt khi hoàn tất. Index `(siteId, status)` và một partial index trên `expiresAt` cho các upload đang chạy (lượt quét hết hạn). Migration `0047_upload_sessions`. Xem [Quản lý tài sản số](./features/digital-asset-management.md).
 ### `file_captions`
 - `id`, `siteId`, `fileId` (video, FK cascade), `captionFileId` (file WebVTT, FK cascade), `locale`, `kind` (`subtitles`/`captions`/`descriptions`/`chapters`), `label`, `isDefault`, `createdBy`, `createdAt`, `updatedAt`.
 - Các track phụ đề/caption của một video (#871); duy nhất theo `(siteId, fileId, locale, kind)`. Migration `0045_file_captions`. Xem [Quản lý tài sản số](./features/digital-asset-management.md).

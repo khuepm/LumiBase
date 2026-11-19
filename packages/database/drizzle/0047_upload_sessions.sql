@@ -2,10 +2,9 @@
 -- see `uploadSessions` in packages/database/src/schema/platform.ts. Additive,
 -- no backfill, re-runnable.
 --
--- 0046: follows 0044_video_assets (#937) and 0045_file_captions (#938),
--- which landed on epic/670-dam through #939. Each open epic PR (#935, #936)
--- carries 0046 with `when` in epic order; whichever merges next keeps 0046 and
--- the other moves up. Numbers are reassigned again if main moves first.
+-- 0047: follows 0046_malware_scan_pending_idx (#935), the last migration on
+-- epic/670-dam when this branch merged it. Numbers are reassigned again if
+-- main moves before the epic lands.
 --
 -- Rollback: DROP TABLE IF EXISTS lumibase_upload_sessions;
 CREATE TABLE IF NOT EXISTS "lumibase_upload_sessions" (

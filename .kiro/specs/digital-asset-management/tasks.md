@@ -39,6 +39,9 @@ Nguồn: `.kiro/research/competitor-features-2026-07.md` (D01–D08). Doc ngư�
 - [x] D04 #704 — TUS 1.0 `/files/tus` (creation, termination, expiration) trên
   `MultipartStorage` (R2 + S3), bảng `lumibase_upload_sessions` + lease một-writer,
   sweeper `upload-expiry`, Studio dùng TUS cho file ≥ 32 MiB. Backlog B220 đã xong.
+  Bổ sung: adapter clamd native qua `runtime.clamd` (Docker, `CLAMD_HOST`) và
+  sweeper quét lại file `pending` > 10 phút (Docker cron + Workers cron),
+  partial index `files_pending_scan_idx` (migration 0041).
 - [ ] D04 #704 — upload resumable (TUS / R2 multipart). **Chưa làm** — backlog B220.
 - [x] #871 video pipeline. Phần 1 (PR #937): port provider + adapter Cloudflare
   Stream / Mux, `lumibase_video_assets` (`uploaded → processing → ready/failed`),
@@ -53,4 +56,4 @@ Nguồn: `.kiro/research/competitor-features-2026-07.md` (D01–D08). Doc ngư�
 - B219 key upload có chữ ký chưa có tiền tố tenant (upload TUS đã dùng
   `sites/<site>/uploads/…`; đường presigned vẫn còn).
 - B221 lọc rule `files` trong bộ nhớ (trần 5000 dòng) → biên dịch sang SQL.
-- B222 sweeper quét lại file `pending` bị kẹt.
+- ~~B222 sweeper quét lại file `pending` bị kẹt~~ — xong (#707): `modules/malware-scan/sweeper.ts`.

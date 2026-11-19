@@ -327,8 +327,15 @@
     {
       "idx": 46,
       "version": "7",
+      "when": 1796284800000,
+      "tag": "0046_malware_scan_pending_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
       "when": 1796371200000,
-      "tag": "0046_upload_sessions",
+      "tag": "0047_upload_sessions",
       "breakpoints": true
     }
   ]

@@ -44,7 +44,8 @@ export interface FilesContext {
     assets: VideoAssetRepository;
     provider: VideoProvider | null;
     sourceUrl: (fileId: string, version: number) => Promise<string | null>;
-  };  /** Caption/subtitle tracks of videos (#871). */
+  };
+  /** Caption/subtitle tracks of videos (#871). */
   captions?: CaptionRepository;
   /** The site's locales (`settings.locales.supported`). */
   locales?: () => Promise<string[]>;
@@ -61,7 +62,7 @@ export async function filesContext(c: Context<AppEnv>): Promise<FilesContext> {
     uploads: new DrizzleUploadSessionRepository(db, siteId),
     storage: c.get('runtime').storage,
     settings: await loadDamSettings(db, siteId),
-    scanner: scannerFromEnv(env),
+    scanner: scannerFromEnv(env, c.get('runtime').clamd),
     captions: new DrizzleCaptionRepository(db, siteId),
     locales: () => siteLocales(db, siteId),
     video: {
