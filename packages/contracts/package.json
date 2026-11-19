@@ -37,7 +37,8 @@
     "./version": "./src/version.ts",
     "./utils": "./src/utils/logger.ts",
     "./richtext": "./src/richtext/index.ts",
-    "./migrate": "./src/migrate/index.ts"
+    "./migrate": "./src/migrate/index.ts",
+    "./backend-templates": "./src/backend-templates/index.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -104,6 +105,11 @@
         "types": "./dist/migrate/index.d.ts",
         "import": "./dist/migrate/index.js",
         "require": "./dist/migrate/index.cjs"
+      },
+      "./backend-templates": {
+        "types": "./dist/backend-templates/index.d.ts",
+        "import": "./dist/backend-templates/index.js",
+        "require": "./dist/backend-templates/index.cjs"
       }
     }
   },
@@ -117,6 +123,8 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "ajv": "^8.20.0",
+    "fast-check": "^4.10.2",
     "parse5": "^8.1.1",
     "tsup": "^9.0.0",
     "typescript": "^5.6.2",
