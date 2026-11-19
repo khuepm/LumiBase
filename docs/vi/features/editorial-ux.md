@@ -1,14 +1,14 @@
 ---
 sourceLang: en
-version: 4
-lastUpdated: 2026-11-19T04:31:50.251Z
+version: 5
+lastUpdated: 2026-11-19T08:18:11.416Z
 translatedFrom: en
-sourceHash: 1b54f237178b479a
+sourceHash: 64c2530cdd83570a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T04:31:50.251Z
-codeVerifiedHash: 1b54f237178b479a
-codeVerifiedClaims: 16
+codeVerified: 2026-11-19T08:18:11.416Z
+codeVerifiedHash: 64c2530cdd83570a
+codeVerifiedClaims: 22
 ---
 
 # Editorial UX
@@ -102,7 +102,10 @@ Phản hồi là `201 { data: <copy>, meta: { sourceId, related } }`, trong đó
 `related` liệt kê id của các item con và dòng junction đã sao chép theo từng
 collection, và một mục audit `item_duplicated` ghi lại bản gốc và bản sao. Trong
 Studio, nút **Duplicate** ở đầu trình soạn item đưa ra ba chế độ quan hệ và mở
-bản sao.
+bản sao. Trong danh sách collection, **Duplicate (n)** sao chép mọi item đang
+chọn (theo tham chiếu), mỗi item một request, nên mỗi bản sao có kiểm tra quyền,
+revision và mục audit riêng; một bản sao thất bại không chặn các bản còn lại và
+được báo cạnh nút.
 
 ## Ghi không tạo revision
 
@@ -209,6 +212,35 @@ trường, focus và làm nổi bật nó. **Publish** bị vô hiệu khi lần
 nhất còn lỗi. Trường nằm trong một tab form-layout chưa mở sẽ không được focus
 tự động — hãy mở tab đó.
 
+## So sánh revision
+
+`GET /items/:collection/:id/revisions/compare?from=&to=` so sánh hai snapshot
+bất kỳ của một item: `from` là id của một revision hoặc `empty` (trạng thái
+trước khi item tồn tại, mặc định), `to` là id của một revision hoặc `current`
+(item đang live, mặc định). Người gọi cần quyền `read` trên item; cả hai phía
+được giải mã và che theo quyền đọc trường của người gọi, đúng như một lần đọc
+thông thường, nên phép so sánh không bao giờ hiện trường mà chính item sẽ ẩn.
+Phản hồi là `{ data: { from, to, before, after, changes } }`, trong đó
+`from`/`to` cho biết các revision (`null` cho empty, `"current"` cho item live)
+và `changes` là danh sách theo từng trường (`added`, `removed`, `changed`,
+`unchanged`).
+
+`POST /items/:collection/:id/revisions/:revisionId/restore` đặt các trường trở
+lại giá trị của chúng trong revision đó. Với `{ "fields": ["title"] }` chỉ các
+trường đó thay đổi; với body rỗng mọi trường của snapshot được khôi phục. Trường
+mà revision chưa có được khôi phục thành `null`, và tên trường lạ trả
+`400 UNKNOWN_FIELD`. Việc khôi phục là một lần cập nhật thông thường, nên
+validation, pin Law Zero, hook và quyền đều áp dụng, và nó ghi một revision mới
+mang provenance của người gọi (không có gì trong lịch sử bị viết lại).
+
+Trong Studio, tab **Revisions** của item có chế độ **Compare**: chọn snapshot
+**From** và **To**, mọi trường hiện cạnh nhau theo dạng giá trị — văn bản theo
+từng từ, danh sách id hoặc tag theo phần tử thêm và bớt, object và block theo
+các đường dẫn lá đã đổi. Khi **From** là một revision, mỗi trường đã đổi có nút
+**Restore**. Phép so sánh ở tab **Versions** dùng cùng cách hiển thị. SDK có
+`items(name).compareRevisions(id, { from, to })` và
+`items(name).restoreRevisionFields(id, revisionId, fields?)`.
+
 ## Tóm tắt API
 
 | Method | Path | Ghi chú |
@@ -219,6 +251,8 @@ tự động — hãy mở tab đó.
 | `POST` | `/api/v1/items/:collection/:id/duplicate` | Bản sao dạng draft. |
 | `POST` | `/api/v1/items/:collection/:id/reorder` | Sắp xếp thủ công. |
 | `GET` | `/api/v1/releases/:id/validate` | Tóm tắt kiểm tra hợp lệ của release. |
+| `GET` | `/api/v1/items/:collection/:id/revisions/compare?from=&to=` | So sánh hai snapshot. |
+| `POST` | `/api/v1/items/:collection/:id/revisions/:revisionId/restore` | Khôi phục trường từ một revision. |
 
 Xem thêm [Content releases](./content-releases.md) và
 [tài liệu API](../api/hono-api-spec.md#3-items-generic-crud).

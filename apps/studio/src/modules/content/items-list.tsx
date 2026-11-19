@@ -21,6 +21,7 @@ import { CollectionTreeView } from './tree-view';
 import { reorderTargetFor, type ReorderTarget } from './manual-order';
 import { readListSearch, rememberListSearch, writeListSearch } from './list-url-state';
 import { useSingletonRedirect, wantsListView } from './singleton-redirect';
+import { BulkDuplicateButton } from './item-publication';
 
 const PAGE_SIZE = 25;
 
@@ -383,6 +384,17 @@ export function ItemsListPage() {
               {canUpdate ? <Code2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
               Edit raw ({selected.size})
             </button>
+          )}
+          {selected.size > 0 && (
+            <BulkDuplicateButton
+              collection={collection}
+              ids={[...selected]}
+              canCreate={canCreate}
+              onDone={(r) => {
+                // Keep the selection (and the failure note) when a copy failed.
+                if (r.failed.length === 0) setSelected(new Set());
+              }}
+            />
           )}
           <button
             type="button"

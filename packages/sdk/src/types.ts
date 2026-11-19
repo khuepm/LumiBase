@@ -528,6 +528,26 @@ export interface ListItemsParams {
 
 export type PublicationState = 'live' | 'preview' | 'all';
 
+/** A revision named in a comparison (#686). */
+export interface RevisionRef {
+  id: string;
+  createdAt: string;
+  userId: string | null;
+  authorType: string;
+  staged: boolean;
+}
+
+/** `items(name).compareRevisions()` result (#686). */
+export interface RevisionComparison {
+  /** `null` = the empty state before the item existed. */
+  from: RevisionRef | null;
+  /** `'current'` = the live item. */
+  to: RevisionRef | 'current';
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  changes: Array<{ key: string; state: 'added' | 'removed' | 'changed' | 'unchanged'; before: unknown; after: unknown }>;
+}
+
 /** Options for `items(name).duplicate()` — `POST /items/:collection/:id/duplicate` (#689). */
 export interface DuplicateItemOptions {
   /** `reference` (default) copies m2m links; `deep` also copies o2m children; `none` copies the item alone. */

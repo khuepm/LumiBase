@@ -1,11 +1,11 @@
 ---
 sourceLang: en
-version: 4
-lastUpdated: 2026-11-19T04:31:50.251Z
-contentHash: 1b54f237178b479a
-codeVerified: 2026-11-19T04:31:50.251Z
-codeVerifiedHash: 1b54f237178b479a
-codeVerifiedClaims: 16
+version: 5
+lastUpdated: 2026-11-19T08:18:11.416Z
+contentHash: 64c2530cdd83570a
+codeVerified: 2026-11-19T08:18:11.416Z
+codeVerifiedHash: 64c2530cdd83570a
+codeVerifiedClaims: 22
 ---
 
 # Editorial UX
@@ -99,7 +99,10 @@ The response is `201 { data: <copy>, meta: { sourceId, related } }`, where
 `related` lists the ids of the copied children and junction rows per
 collection, and an `item_duplicated` audit entry names the source and the copy.
 In Studio, **Duplicate** in the item editor's header offers the three relation
-modes and opens the copy.
+modes and opens the copy. In the collection list, **Duplicate (n)** copies every
+selected item (by reference), one request each, so each copy gets its own
+permission check, revision and audit entry; a failed copy does not stop the rest
+and is reported next to the button.
 
 ## Writes without a revision
 
@@ -207,6 +210,34 @@ to the field, focuses it and highlights it. **Publish** stays disabled while the
 last check found problems. A field inside a form-layout tab that is not open is
 not focused automatically — open the tab.
 
+## Comparing revisions
+
+`GET /items/:collection/:id/revisions/compare?from=&to=` compares any two
+snapshots of an item: `from` is a revision id or `empty` (the state before the
+item existed, the default), `to` is a revision id or `current` (the live item,
+the default). The caller needs `read` on the item; both sides are decrypted and
+masked with the caller's field permissions, exactly like a normal read, so a
+comparison never shows a field the item itself would hide. The response is
+`{ data: { from, to, before, after, changes } }`, where `from`/`to` name the
+revisions (`null` for empty, `"current"` for the live item) and `changes` is the
+per-field list (`added`, `removed`, `changed`, `unchanged`).
+
+`POST /items/:collection/:id/revisions/:revisionId/restore` sets fields back to
+their value in that revision. With `{ "fields": ["title"] }` only those fields
+change; with an empty body every field of the snapshot is restored. A field the
+revision did not have is restored as `null`, and an unknown field name is
+`400 UNKNOWN_FIELD`. The restore is a normal update, so validation, Law Zero
+pins, hooks and permissions apply, and it writes a new revision with the
+caller's provenance (nothing in the history is rewritten).
+
+In Studio the item's **Revisions** tab has a **Compare** mode: pick a **From**
+and a **To** snapshot and every field is shown side by side, by value shape —
+text word by word, lists of ids or tags as added and removed members, objects
+and blocks as their changed leaf paths. When **From** is a revision, each
+changed field has a **Restore** button. The **Versions** tab's comparison uses
+the same rendering. The SDK has `items(name).compareRevisions(id, { from, to })`
+and `items(name).restoreRevisionFields(id, revisionId, fields?)`.
+
 ## API summary
 
 | Method | Path | Notes |
@@ -217,6 +248,8 @@ not focused automatically — open the tab.
 | `POST` | `/api/v1/items/:collection/:id/duplicate` | Draft copy. |
 | `POST` | `/api/v1/items/:collection/:id/reorder` | Manual ordering. |
 | `GET` | `/api/v1/releases/:id/validate` | Release validation summary. |
+| `GET` | `/api/v1/items/:collection/:id/revisions/compare?from=&to=` | Compare two snapshots. |
+| `POST` | `/api/v1/items/:collection/:id/revisions/:revisionId/restore` | Restore fields from a revision. |
 
 See also [Content releases](./content-releases.md) and the
 [API reference](../api/hono-api-spec.md#3-items-generic-crud).
