@@ -17,8 +17,10 @@
  *     {@link EmailIdentityMode} — `exact` keeps today's behaviour (case-folded
  *     address), `root` collapses every alias onto its root mailbox.
  *
- * The database derives the same values in `lumibase_email_root()` /
- * `lumibase_users_email_identity()` (migration 0027), which is what actually
+ * Both keys start from {@link normalizeEmail} (`trim()` + lower-case). The
+ * database derives the same values in `lumibase_email_normalize()` /
+ * `lumibase_email_root()` / `lumibase_users_email_identity()` (migrations 0027,
+ * 0041 — #862 aligned the SQL trim with JS `trim()`), which is what actually
  * populates `users.email_root` / `users.email_canonical`. This module is the
  * request-side mirror used for lookups; an integration test pins both to the
  * same fixture list so they cannot drift.

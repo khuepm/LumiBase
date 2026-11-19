@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { Hono } from 'hono';
-import type { Database } from '@lumibase/database';
+import { systemState, type Database } from '@lumibase/database';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 import type { AppEnv, AuthPrincipal } from '../../env';
 import { adminSecurityRouter } from '../admin-security';
 
@@ -21,6 +23,7 @@ import { adminSecurityRouter } from '../admin-security';
 interface CapturedSelectCall {
   table: unknown;
   predicateText: string;
+  predicate: unknown;
 }
 interface CapturedUpdateCall {
   table: unknown;
@@ -30,6 +33,13 @@ interface CapturedUpdateCall {
 interface CapturedDeleteCall {
   table: unknown;
   predicateText: string;
+  predicate: unknown;
+}
+
+const dialect = new PgDialect();
+function renderSql(predicate: unknown): { sql: string; params: unknown[] } {
+  const q = dialect.sqlToQuery(predicate as SQL);
+  return { sql: q.sql, params: q.params };
 }
 
 interface FakeDb {
@@ -40,6 +50,8 @@ interface FakeDb {
     selectCalls: CapturedSelectCall[];
     updateCalls: CapturedUpdateCall[];
     deleteCalls: CapturedDeleteCall[];
+    /** Instance email identity mode returned for `system_state` reads (#862). */
+    identityMode: 'exact' | 'root';
   };
 }
 
@@ -70,12 +82,16 @@ function predicateToString(predicate: unknown): string {
   }
 }
 
-function makeFakeDb(initial: { selectRow?: { id: string; email: string } | null }): FakeDb {
+function makeFakeDb(initial: {
+  selectRow?: { id: string; email: string } | null;
+  identityMode?: 'exact' | 'root';
+}): FakeDb {
   const state: FakeDb['state'] = {
     selectRow: initial.selectRow ?? null,
     selectCalls: [],
     updateCalls: [],
     deleteCalls: [],
+    identityMode: initial.identityMode ?? 'exact',
   };
 
   const db = {
@@ -83,9 +99,12 @@ function makeFakeDb(initial: { selectRow?: { id: string; email: string } | null 
       from: (table: unknown) => ({
         where: (predicate: unknown) => ({
           limit: async () => {
+            // The email identity mode read (#794) is not a user lookup.
+            if (table === systemState) return [{ mode: state.identityMode }];
             state.selectCalls.push({
               table,
               predicateText: predicateToString(predicate),
+              predicate,
             });
             return state.selectRow ? [state.selectRow] : [];
           },
@@ -113,6 +132,7 @@ function makeFakeDb(initial: { selectRow?: { id: string; email: string } | null 
         state.deleteCalls.push({
           table,
           predicateText: predicateToString(predicate),
+          predicate,
         });
       },
     }),
@@ -172,10 +192,12 @@ describe('POST /admin/security/unlock-user — Req 7.6, design §4.5', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ data: { unlocked: true } });
 
-    // The user lookup should be case-insensitive — the predicate
-    // contains `lower(...)`.
+    // The user lookup is case-insensitive: under `exact` mode it matches
+    // the case-folded canonical key (#794), falling back to `lower(email)`.
     expect(state.selectCalls).toHaveLength(1);
-    expect(state.selectCalls[0]?.predicateText).toContain('lower(');
+    const lookup = renderSql(state.selectCalls[0]?.predicate);
+    expect(lookup.sql).toContain('lower(');
+    expect(lookup.params).toContain('locked@example.com');
 
     // Updated `users` row clears the lockout columns.
     expect(state.updateCalls).toHaveLength(1);
@@ -187,6 +209,32 @@ describe('POST /admin/security/unlock-user — Req 7.6, design §4.5', () => {
 
     // Drained the email's recent fail rows from `login_attempts`.
     expect(state.deleteCalls).toHaveLength(1);
+  });
+
+  it('resolves an alias to its account under root identity mode (#862)', async () => {
+    const { db, state } = makeFakeDb({
+      selectRow: { id: 'usr_locked', email: 'locked@example.com' },
+      identityMode: 'root',
+    });
+    const app = buildApp(db, { auth: adminPrincipal });
+
+    const res = await app.request('/admin/security/unlock-user', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'Locked+tag@Example.com' }),
+    });
+
+    expect(res.status).toBe(200);
+    // Matches on `email_canonical` with the root mailbox — the same key
+    // login and forgot-password resolve the alias to.
+    const lookup = renderSql(state.selectCalls[0]?.predicate);
+    expect(lookup.sql).toContain('"email_canonical" = $1');
+    expect(lookup.params[0]).toBe('locked@example.com');
+    // Drains the counter for both the typed alias and the account address.
+    const drain = renderSql(state.deleteCalls[0]?.predicate);
+    expect(drain.params).toEqual(
+      expect.arrayContaining(['locked+tag@example.com', 'locked@example.com']),
+    );
   });
 
   it('returns 404 USER_NOT_FOUND when no user matches the email', async () => {

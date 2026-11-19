@@ -10,21 +10,24 @@ import {
   Archive,
   Shield,
   PanelsTopLeft,
+  Gauge,
 } from 'lucide-react';
 import { useState } from 'react';
 import { getApiClient } from '@/lib/api';
 import { DisplayTab } from './display-tab';
 import { FieldsTab } from './fields-tab';
 import { FormLayoutTab } from './form-layout-tab';
+import { IndexAdviceTab } from './index-advice-tab';
 import { RawJsonTab } from './raw-json-tab';
 
-type Tab = 'fields' | 'layout' | 'display' | 'archive' | 'raw';
+type Tab = 'fields' | 'layout' | 'display' | 'archive' | 'indexes' | 'raw';
 
 const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
   { id: 'fields', label: 'Fields', icon: Layers },
   { id: 'layout', label: 'Form layout', icon: PanelsTopLeft },
   { id: 'display', label: 'Display template', icon: LayoutDashboard },
   { id: 'archive', label: 'Archive', icon: Archive },
+  { id: 'indexes', label: 'Indexes', icon: Gauge },
   { id: 'raw', label: 'Raw JSON', icon: FileJson },
 ];
 
@@ -134,6 +137,7 @@ export function CollectionDetailPage() {
         {tab === 'layout' && <FormLayoutTab collectionName={collection.name} />}
         {tab === 'display' && <DisplayTab collectionName={collection.name} />}
         {tab === 'archive' && <ArchiveTab collection={collection} />}
+        {tab === 'indexes' && <IndexAdviceTab collectionName={collection.name} />}
         {tab === 'raw' && <RawJsonTab collectionName={collection.name} />}
       </section>
     </div>

@@ -1,4 +1,4 @@
-import { createCloudflareRuntime, type QueueProvider } from '@lumibase/runtime';
+import type { QueueProvider } from '@lumibase/runtime';
 import { z } from 'zod';
 import { ackHealthProbes, openWorkerQueueResources } from './cloudflare-queue-common';
 import type { Bindings } from './env';
@@ -39,6 +39,7 @@ const id = z.string().min(1);
 const searchIndexData = z.object({
   siteId: id, collection: id, id,
   data: z.record(z.string(), z.unknown()),
+  dataHash: z.string().min(1).optional(),
 }) satisfies z.ZodType<SearchIndexJob>;
 const searchRemoveData = z.object({ siteId: id, collection: id, id }) satisfies z.ZodType<SearchRemoveJob>;
 const contentIndexingMessage = z.discriminatedUnion('jobName', [
@@ -100,13 +101,15 @@ export async function processCloudflareContentIndexingQueue(
     for (const message of messages) message.ack();
     return;
   }
-  // Indexing reads only the job payload and the search provider; no database.
-  const runtime = createCloudflareRuntime({ ...env });
+  // The item row is re-read before a snapshot is applied (#857), so a retried
+  // job can never resurrect a deleted item or overwrite a newer version.
+  const { db, runtime } = openWorkerQueueResources(env, 'Content indexing queue');
   const queue = runtime.queue;
   // Infra misconfiguration: throw before claiming anything so Cloudflare retries the batch.
   if (!canHandleMessages(queue)) throw new Error('Content indexing queue requires the Cloudflare queue provider.');
   registerContentIndexingWorker(
     {
+      db,
       search: runtime.search,
       queue,
     },
