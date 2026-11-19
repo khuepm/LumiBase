@@ -180,7 +180,44 @@ export class ExtensionsService {
     if (input.enabled === true && current.isOfficial && !current.verifiedAt) {
       throw new ExtensionMutationError('SIGNATURE_REQUIRED', 'Cannot enable an unverified official extension.', 400);
     }
-    const [row] = await this.deps.db.update(extensions).set(input).where(where).returning();
+    // A new bundle location or version is a new piece of code (#990). Verify
+    // it the same way the sandbox will before it loads it — against the row's
+    // signature metadata — and refuse the change when the policy requires a
+    // signature, so the previous, verified bundle stays the active one instead
+    // of being swapped silently (or replaced by one that will never load).
+    const bundleChanged =
+      (input.bundleUrl !== undefined && input.bundleUrl !== current.bundleUrl) ||
+      (input.version !== undefined && input.version !== current.version);
+    let verifiedAt: Date | null | undefined;
+    if (bundleChanged) {
+      const nextName = input.name ?? current.name;
+      const verifier = new ExtensionVerifierService(this.deps.db, this.deps.env ?? { LUMIBASE_ENV: 'production' });
+      const verdict = await verifier.verifyByMetadata(nextName, {
+        bundleUrl: input.bundleUrl ?? current.bundleUrl,
+        bundleSha256: current.bundleSha256 ?? null,
+        signature: current.signature ?? null,
+        publisherKeyId: current.publisherKeyId ?? null,
+        signatureAlg: current.signatureAlg ?? null,
+      });
+      const signatureRequired =
+        current.isOfficial ||
+        ExtensionVerifierService.isReservedName(nextName) ||
+        (this.deps.env?.LUMIBASE_EXT_SIGNATURE_POLICY ?? 'require') !== 'warn';
+      const ok = current.isOfficial ? verdict.ok && verdict.isOfficial : verdict.ok;
+      if (signatureRequired && !ok) {
+        throw new ExtensionMutationError(
+          'SIGNATURE_REQUIRED',
+          `The new bundle failed signature verification (${verdict.reason ?? 'invalid'}); the installed version stays active.`,
+          400,
+        );
+      }
+      verifiedAt = ok ? new Date() : null;
+    }
+    const [row] = await this.deps.db
+      .update(extensions)
+      .set(verifiedAt === undefined ? input : { ...input, verifiedAt })
+      .where(where)
+      .returning();
     if (!row) throw new ExtensionMutationError('NOT_FOUND', 'Extension not found.', 404);
     if (input.bundleUrl !== undefined || input.version !== undefined) {
       new ExtensionSandbox({ ...this.deps.env }).evict(row.name);

@@ -41,9 +41,60 @@ describe('extension write boundary', () => {
       update: () => ({ set: () => ({ where: () => ({ returning: async () => [row] }) }) }),
     } as unknown as Database;
     const evict = vi.spyOn(ExtensionSandbox.prototype, 'evict').mockImplementation(() => {});
+    // A new bundle is re-verified before it replaces the old one (#990).
+    vi.spyOn(ExtensionVerifierService.prototype, 'verifyByMetadata').mockResolvedValue({ ok: true, isOfficial: false, reason: 'ok' });
     const harness = new AISecureHarness({ db, siteId: ctx.siteId, extensionsService: new ExtensionsService({ db, siteId: ctx.siteId, permissionCtx: ctx }), enableAgentHarnessAudit: false });
     expect((await harness.runSkill('updateExtension', { id: row.id, bundleUrl: 'https://example.com/v2.js' })).success).toBe(true);
     expect(evict).toHaveBeenCalledWith(row.name);
+  });
+  describe('bundle change re-verifies the signature (#990)', () => {
+    const signed = { ...input, id: 'ext-a', siteId: ctx.siteId, enabled: true, isOfficial: false, verifiedAt: new Date(0), capabilities: [],
+      bundleSha256: 'a'.repeat(64), signature: 'sig', publisherKeyId: 'pub-1', signatureAlg: 'ed25519' };
+    function dbCapturing(sets: unknown[]) {
+      return {
+        select: () => ({ from: () => ({ where: () => ({ limit: async () => [signed] }) }) }),
+        update: () => ({ set: (v: unknown) => { sets.push(v); return { where: () => ({ returning: async () => [{ ...signed, ...(v as object) }] }) }; } }),
+      } as unknown as Database;
+    }
+    it('refuses an unverifiable new bundle under the default policy and leaves the row untouched', async () => {
+      allow();
+      const sets: unknown[] = [];
+      const verify = vi.spyOn(ExtensionVerifierService.prototype, 'verifyByMetadata').mockResolvedValue({ ok: false, isOfficial: false, reason: 'bad-signature' });
+      const service = new ExtensionsService({ db: dbCapturing(sets), siteId: ctx.siteId, permissionCtx: ctx });
+      await expect(service.updateExtension('ext-a', { bundleUrl: 'https://evil.example/x.js' })).rejects.toMatchObject({ code: 'SIGNATURE_REQUIRED' });
+      expect(sets).toEqual([]);
+      // Verified against the row's signature metadata, at the NEW location.
+      expect(verify).toHaveBeenCalledWith('third-party', expect.objectContaining({ bundleUrl: 'https://evil.example/x.js', bundleSha256: 'a'.repeat(64), signature: 'sig' }));
+    });
+    it('also re-verifies a version bump', async () => {
+      allow();
+      vi.spyOn(ExtensionVerifierService.prototype, 'verifyByMetadata').mockResolvedValue({ ok: false, isOfficial: false, reason: 'bad-signature' });
+      const service = new ExtensionsService({ db: dbCapturing([]), siteId: ctx.siteId, permissionCtx: ctx });
+      await expect(service.updateExtension('ext-a', { version: '2' })).rejects.toMatchObject({ code: 'SIGNATURE_REQUIRED' });
+    });
+    it('stamps verifiedAt when the new bundle verifies', async () => {
+      allow();
+      const sets: unknown[] = [];
+      vi.spyOn(ExtensionVerifierService.prototype, 'verifyByMetadata').mockResolvedValue({ ok: true, isOfficial: false, reason: 'ok' });
+      const service = new ExtensionsService({ db: dbCapturing(sets), siteId: ctx.siteId, permissionCtx: ctx });
+      await service.updateExtension('ext-a', { bundleUrl: 'https://example.com/v2.js' });
+      expect((sets[0] as { verifiedAt: Date }).verifiedAt.getTime()).toBeGreaterThan(0);
+    });
+    it('under the warn policy, accepts it but clears verifiedAt', async () => {
+      allow();
+      const sets: unknown[] = [];
+      vi.spyOn(ExtensionVerifierService.prototype, 'verifyByMetadata').mockResolvedValue({ ok: false, isOfficial: false, reason: 'missing-fields' });
+      const service = new ExtensionsService({ db: dbCapturing(sets), siteId: ctx.siteId, permissionCtx: ctx, env: { LUMIBASE_EXT_SIGNATURE_POLICY: 'warn' } as never });
+      await service.updateExtension('ext-a', { bundleUrl: 'https://example.com/v3.js' });
+      expect(sets[0]).toMatchObject({ verifiedAt: null });
+    });
+    it('does not re-verify a change that keeps the bundle (e.g. enable toggle)', async () => {
+      allow();
+      const verify = vi.spyOn(ExtensionVerifierService.prototype, 'verifyByMetadata');
+      const service = new ExtensionsService({ db: dbCapturing([]), siteId: ctx.siteId, permissionCtx: ctx });
+      await service.updateExtension('ext-a', { enabled: false });
+      expect(verify).not.toHaveBeenCalled();
+    });
   });
   it('approval scope binds the extension principal even when ItemService is absent, then restores it', async () => {
     const db = {} as Database;
