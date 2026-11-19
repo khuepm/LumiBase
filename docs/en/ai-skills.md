@@ -1,10 +1,10 @@
 ---
-version: 6
-lastUpdated: 2026-11-19T04:59:54.493Z
+version: 7
+lastUpdated: 2026-11-19T09:50:09.980Z
 sourceLang: en
-contentHash: 07e2c53527ae88a4
-codeVerified: 2026-11-19T04:59:54.493Z
-codeVerifiedHash: 07e2c53527ae88a4
+contentHash: e8e91333010d7759
+codeVerified: 2026-11-19T09:50:09.980Z
+codeVerifiedHash: e8e91333010d7759
 codeVerifiedClaims: 10
 ---
 
@@ -103,6 +103,7 @@ Skills run through the **governed endpoint** `POST /api/v1/mcp` (gated by the pe
 | `listCdcSubscriptions` / `getCdcSubscriptionStatus` / `createCdcSubscription` / `replayCdcSubscription` / `deleteCdcSubscription` | `cdc:manage` | reads safe; `create`/`replay`/`delete` are control-plane → HITL below autopilot. `create`/`replay` carry an explicit `dangerous` flag, `delete` via the `delete` name prefix — so the agent/MCP path matches the admin-only `/api/v1/cdc` REST surface |
 | `askUser` / `getUserAnswer` | `items:read` | safe — `askUser` parks the run in `waiting_user` until a human answers in Mission Control (or it times out / is cancelled); `getUserAnswer` returns the answer to the requester only, as untrusted data. Not on the autonomy gradient: asking is allowed at every level. Not offered to the Copilot chat, which has no run to pause. See [agent harness](features/agent-harness-layer.md#asking-a-human-askuser-710) |
 | `describeImage` / `extractFieldsFromPdf` | `items:read` | safe — read-only; the file is read with the caller's `files::read` access. `describeImage` returns alt text, `extractFieldsFromPdf` proposes field values for a new item (creating it is a separate `createItem`). See [Images and PDFs as input](#images-and-pdfs-as-input-709) |
+| `proposeSiteSkill` | `config:write` | dangerous — always parks for a human's approval below autopilot; an approved proposal creates a **draft** Site Skill (never active, never overwrites an existing slug), with the agent and its `rationale` on the version trail. See [Site Skills](features/site-skills.md#agent-proposals) |
 
 **Reserved collection names.** `createCollection` (and any rename via `updateCollection`) rejects names starting with the `lumibase_` prefix, which is owned by the platform (CDC/Firebase sync tables, internal config). The guard lives in `SchemaService.ensureName`, so it applies uniformly to the AI harness, the builder/Studio routes, and any other caller; violations raise `RESERVED_NAME` (HTTP 422).
 

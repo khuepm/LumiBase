@@ -479,6 +479,29 @@ export const AgentToolSchemas = {
         seen.add(option);
       });
     }),
+  /**
+   * An agent proposes a new Site Skill (#712, B201). Always parked for a human
+   * (the skill is `dangerous`) and, once approved, created as a **draft**: an
+   * admin still has to activate it. Limits mirror the site-skill API.
+   */
+  proposeSiteSkill: z
+    .object({
+      slug: z
+        .string()
+        .min(1)
+        .max(64)
+        .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'slug must be lowercase letters, digits and single hyphens')
+        .refine((slug) => !['import', 'export', 'match'].includes(slug), 'slug is reserved'),
+      name: z.string().trim().min(1).max(120),
+      description: z.string().trim().max(500).optional(),
+      body: z.string().min(1).max(12_000).describe('The playbook in Markdown.'),
+      triggers: z.array(z.string().trim().min(1).max(80)).max(32).optional(),
+      surfaces: z.array(z.enum(['copilot', 'generation', 'mcp'])).max(3).optional(),
+      tools: z.array(z.string().trim().min(1).max(120)).max(64).optional(),
+      collections: z.array(z.string().trim().min(1).max(120)).max(64).optional(),
+      rationale: z.string().trim().min(1).max(1000).describe('Why the agent proposes this playbook; shown to the approver.'),
+    })
+    .strict(),
   // ── read skills (B204, #716) ─────────────────────────────────────────────
   // These advertised `{type:"object"}`, so a client could not learn that
   // `listItems` needs `collection`. Each schema lists exactly the keys the

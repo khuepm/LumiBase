@@ -243,6 +243,7 @@ const ROUTER_DB_CLASS: Record<string, { class: RouterClass; file?: string; note?
   '/api/v1/deliver/preview': { class: 'self-scoped', file: 'routes/preview-delivery.ts' },
   '/api/v1/pageviews': { class: 'self-scoped', file: 'modules/pageviews/routes.ts' },
   '/api/v1/integrations/git': { class: 'mixed', file: 'modules/git-integration/routes.ts' },
+  '/api/v1/chat-agent': { class: 'self-scoped', file: 'modules/chat-agent/routes.ts' },
 };
 
 describe('Router DB classes — every top-level mount declares how its db is scoped', () => {

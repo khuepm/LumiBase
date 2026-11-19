@@ -106,6 +106,8 @@ DECLARE
     -- Git integration (GitHub / GitLab) — site-isolated.
     'lumibase_git_integrations', 'lumibase_git_pull_requests', 'lumibase_git_ci_runs',
     'lumibase_git_webhook_events', 'lumibase_git_preview_envs', 'lumibase_git_provenance',
+    -- Chat agent (#711): Slack / signed-webhook integrations, user links, events.
+    'lumibase_chat_integrations', 'lumibase_chat_user_links', 'lumibase_chat_events',
     -- Flow engine (visual-flow-builder + high-load async runs).
     'lumibase_flows', 'lumibase_flow_runs',
     -- Draft review profiles, runs and feedback (Jev J05, site-isolated). The

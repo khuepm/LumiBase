@@ -1,13 +1,13 @@
 ---
-version: 7
-lastUpdated: 2026-11-12T18:29:47.859Z
+version: 8
+lastUpdated: 2026-11-19T04:21:11.242Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 0832f7037ca51e29
+sourceHash: 300e2705015abef6
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T18:29:47.859Z
-codeVerifiedHash: 0832f7037ca51e29
+codeVerified: 2026-11-19T04:21:11.242Z
+codeVerifiedHash: 300e2705015abef6
 codeVerifiedClaims: 30
 ---
 
@@ -307,7 +307,11 @@ ngay từ đầu.
 **MCP.** Một `tools/call` tới `askUser` trả về một tool result bình thường (không
 bao giờ là lỗi JSON-RPC, `isError: false`) với `status: "waiting_user"`,
 `questionId` và `runId` — cùng quy tắc hình dạng như `pending_approval` với
-`approvalId`.
+`approvalId`. Server stdio `@lumibase/mcp-server` cung cấp cùng cặp này dưới tên
+`ask_user` (`question`, `options`, `allow_free_text`, `context`,
+`timeout_minutes`) và `get_user_answer` (`question_id`), định tuyến tới endpoint
+có quản trị (B208). Chúng không có route REST phía sau, nên khi `contentOs.mcp`
+tắt thì bị từ chối thay vì fallback.
 
 **Metric autonomy.** `lumibase_agent_questions_total{status}`
 (`asked` | `answered` | `expired` | `cancelled`) và

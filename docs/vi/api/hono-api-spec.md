@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 61
-lastUpdated: 2026-11-19T04:59:54.687Z
+version: 63
+lastUpdated: 2026-11-19T09:50:15.403Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 975da46040306d66
+sourceHash: 6c70731289a66c81
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T04:59:54.687Z
-codeVerifiedHash: 975da46040306d66
-codeVerifiedClaims: 652
+codeVerified: 2026-11-19T09:50:15.403Z
+codeVerifiedHash: 6c70731289a66c81
+codeVerifiedClaims: 674
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -1270,7 +1270,7 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `POST` | `/api/v1/locale-generation/suggestions/:id/decide` | `{ decision: 'approve', text? }` \| `{ decision: 'reject' }`. Duyệt ghi qua item service của reviewer (RBAC, validation, revision); `{ status: 'stale' }` khi nguồn đã đổi hoặc locale đã được ghi; `409 ALREADY_DECIDED`; `422` khi lần ghi bị từ chối (suggestion vẫn pending) |
 | `POST` | `/api/v1/locale-generation/suggestions/decide-bulk` | `{ decision, locale, ids?, jobId?, collection?, limit? ≤ 200 }` → `{ approved, rejected, stale, failed, processed, failures }` |
 | `GET/POST` | `/api/v1/agent/staged[...]` | Cửa sổ veto: các bản staging đang chờ bổ sung `approvalId/collection/itemId/patch/agentRole` từ bản sửa đổi staging (trường null khi staging không còn); `POST :id/veto` loại bỏ một staging |
-| `GET` | `/api/v1/agent/approvals` | Hộp thư approval (bộ lọc `status`; mặc định `pending`) |
+| `GET` | `/api/v1/agent/approvals` | Hộp thư approval, mới nhất trước, tối đa 100 dòng. `?status=pending` (mặc định) \| `deciding` \| `approved` \| `rejected` \| `expired` \| `failed` \| `all`; giá trị khác → `400 VALIDATION`. Không bao giờ liệt kê câu hỏi `askUser` (xem `/questions`) |
 | `POST` | `/api/v1/agent/approvals/:id/decide` | Quyết định của con người cho một hành động đang bị giữ. Body `{ decision: 'approved' \| 'rejected', reason? }`; cần `approvals:decide` (nếu không thì 403), `404` cho id không tồn tại hoặc thuộc tenant khác, `409` khi approval đã rời `pending`. Với `approved`, harness là nơi duy nhất đổi trạng thái, nên việc thực thi và việc ghi status xảy ra đúng một lần. Lúc thực thi, quyền của **người yêu cầu** được resolve lại và hành động chạy với `requester ∩ decider`: approval mà người yêu cầu đã bị thu hồi, hạ quyền hay rời site sẽ bị từ chối, và approval không có thông tin người yêu cầu (bị giữ từ trước khi có cột provenance) bị từ chối với `APPROVAL_PROVENANCE_MISSING`. Approval lưu với `approvalPolicy: human_required` (mọi [external-action tool](../features/external-action-tools.md)) chỉ được giải phóng bởi một người dùng đã đăng nhập: API key, connector token hoặc agent nhận `409 EXECUTION_FAILED` kèm `HUMAN_APPROVAL_REQUIRED`, và approval vẫn ở `pending` |
 | `POST` | `/api/v1/agent/approvals/:id/reopen` | Đưa một approval đang ở `failed` về `pending` để quyết định lại. Body `{ reason }` là **bắt buộc** và được ghi audit; cần `approvals:decide`. Một skill đã chạm tới service rồi mới lỗi thì bị giữ lại chứ không tự mời lại, vì thử lại có thể lặp một phép ghi không idempotent — đây là đường về có chủ ý. Một approval `veto` mà patch đã staged của nó đã live (một lần commit chết sau khi áp patch) thì trả `409 VETO_ALREADY_APPLIED`, vì reopen sẽ áp patch đó lần thứ hai |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Quyết định của Agent với tư cách người đánh giá (cần `review:<domain>`; cấm tự đánh giá) |
@@ -1601,6 +1601,46 @@ Public (không có phiên làm việc; xác minh chữ ký hoặc trạng thái 
 | `POST` | `/api/v1/integrations/git/webhook/:provider/:siteId/:integrationId` | Bộ nhận webhook — GitHub HMAC-SHA256 (`X-Hub-Signature-256`) / GitLab token (`X-Gitlab-Token`); idempotent theo delivery id |
 
 Môi trường xem trước là opt-in cho từng tích hợp (`sync_config.preview = true`): khi PR mở/đồng bộ, LumiBase khởi tạo một site tạm thời (`${siteId}__pr-${number}`) được phục vụ tại `/api/v1/deliver/page/${ephemeralSiteId}/...`; khi đóng/gộp PR nó sẽ bị hủy. Thất bại CI ghi lại một `agent_incident` (role `git-sync`) + một mục audit `git_ci_failed`.
+
+---
+
+## 12d. Chat agent (Slack / webhook chung)
+
+Content Agent từ một công cụ chat (#711). Tin nhắn của một user chat **đã liên kết**
+chạy một lượt Copilot (`POST /api/v1/ai/chat`) **với tư cách user LumiBase đó**,
+với capability, mức autonomy, quy trình phê duyệt và audit trail của họ. Một
+approval được quyết định với tư cách user đã liên kết của người bấm nút. Route
+admin cần site admin và `ENCRYPTION_KEY`; secret được lưu mã hoá và không bao
+giờ được trả về, trừ webhook secret được sinh ra, chỉ xuất hiện một lần trong
+response tạo (và rotate). Xem [Chat agent](../features/chat-agent.md).
+
+| Method | Path | Mô tả |
+|--------|------|-------------|
+| `GET` | `/api/v1/chat-agent/integrations` | Liệt kê integration kèm `endpoints` (không có secret) |
+| `POST` | `/api/v1/chat-agent/integrations` | Cài `{ provider (slack\|webhook), name, externalId?, signingSecret?, botToken? }`. Slack cần `externalId` (`team_id` của workspace) và `signingSecret`; webhook tự sinh secret → `201` kèm `signingSecret` một lần |
+| `PATCH` | `/api/v1/chat-agent/integrations/:id` | Cập nhật `name`, `enabled`, `externalId`, `signingSecret`, `botToken` (`null` để gỡ) |
+| `POST` | `/api/v1/chat-agent/integrations/:id/rotate-secret` | Chỉ webhook: `signingSecret` mới (hiện một lần); secret cũ ngừng xác minh được |
+| `DELETE` | `/api/v1/chat-agent/integrations/:id` | Gỡ cài đặt (liên kết và event bị xoá theo) |
+| `GET` | `/api/v1/chat-agent/integrations/:id/links` | Các user chat đã liên kết |
+| `PUT` | `/api/v1/chat-agent/integrations/:id/links/:externalUserId` | Liên kết `{ userId }` (phải là thành viên của site; nếu không trả `400`) |
+| `DELETE` | `/api/v1/chat-agent/integrations/:id/links/:externalUserId` | Huỷ liên kết |
+
+Public (không session; xác minh chữ ký; site và integration nằm trong path):
+
+| Method | Path | Mô tả |
+|--------|------|-------------|
+| `POST` | `/api/v1/chat-agent/slack/:siteId/:integrationId/events` | Slack Events API: `url_verification`; `app_mention` → một lượt với tư cách user đã liên kết, trả lời trong thread (`chat.postMessage`, bot token). Phản hồi ngay; idempotent theo `event_id` |
+| `POST` | `/api/v1/chat-agent/slack/:siteId/:integrationId/commands` | Slash command → "Working on it…" (ephemeral), câu trả lời gửi qua `response_url` |
+| `POST` | `/api/v1/chat-agent/slack/:siteId/:integrationId/interactions` | Nút Approve / Reject → `POST /ai/approvals/:id/decide` với tư cách liên kết của người bấm |
+| `POST` | `/api/v1/chat-agent/webhook/:siteId/:integrationId/messages` | `{ userId, text, threadId? }` → kết quả Copilot đồng bộ (`+ threadId`). `X-Lumibase-Delivery` (tuỳ chọn) làm request idempotent (`409 DUPLICATE_DELIVERY`) |
+| `POST` | `/api/v1/chat-agent/webhook/:siteId/:integrationId/approvals/:approvalId/decide` | `{ userId, decision: approved\|rejected }` → quyết định với tư cách user đã liên kết |
+
+Chữ ký: Slack `X-Slack-Signature: v0=hex(HMAC-SHA256(secret, "v0:" + ts + ":" + body))`
+kèm `X-Slack-Request-Timestamp`; webhook `X-Lumibase-Signature: v1=hex(HMAC-SHA256(secret, ts + "." + body))`
+kèm `X-Lumibase-Timestamp`. Cả hai từ chối timestamp lệch quá 300 giây.
+Lỗi: `401 INVALID_SIGNATURE`, `403 WRONG_WORKSPACE` (`team_id` của Slack khác),
+`403 USER_NOT_LINKED` (webhook), `404 NOT_FOUND` (integration không tồn tại, đã
+tắt, khác provider hoặc thuộc site khác), `500 SECRET_UNAVAILABLE`.
 
 ---
 

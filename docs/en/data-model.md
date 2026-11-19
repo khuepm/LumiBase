@@ -1,10 +1,10 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 27
+lastUpdated: 2026-11-19T05:28:34.996Z
 sourceLang: en
-contentHash: 52465604769f9c24
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+contentHash: ca41a43b338b0d35
+codeVerified: 2026-11-19T05:28:34.996Z
+codeVerifiedHash: ca41a43b338b0d35
 codeVerifiedClaims: 22
 ---
 
@@ -590,6 +590,22 @@ ephemeral preview environments, and commit↔content provenance. All tables carr
 
 Tokens + webhook secrets are encrypted at rest via `CryptoService` (AES-GCM,
 AAD-bound to `{ siteId, integrationId, field }`); plaintext is never stored.
+
+## 11e. Chat agent (`chat-agent.ts`)
+
+The Content Agent reached from Slack or a signed generic webhook (#711). All
+three tables carry `site_id` (cascade) and are registered for RLS. Migration
+`0044_chat_agent`.
+
+| Table (physical) | Purpose | Key columns |
+|-------|---------|-------------|
+| `lumibase_chat_integrations` | One installed Slack app or webhook per row | `provider` (slack\|webhook), `name`, `external_id` (Slack workspace `team_id`), `signing_secret_enc`, `bot_token_enc`, `enabled` |
+| `lumibase_chat_user_links` | Chat user → LumiBase user of the same site | unique `(integration_id, external_user_id)`; `user_id` |
+| `lumibase_chat_events` | Delivered events: idempotency and thread → conversation | unique `(integration_id, event_key)`; `thread_key`, `external_user_id`, `conversation_id`, `status` |
+
+The signing secret and bot token are encrypted at rest via `CryptoService`
+(AES-GCM, AAD-bound to `{ siteId, collection: 'chat_integrations', field, recordId }`).
+A link counts only while its user is still a member of the site.
 
 ## 12. Indexing & RLS
 

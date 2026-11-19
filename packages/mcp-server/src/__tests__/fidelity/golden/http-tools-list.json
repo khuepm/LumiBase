@@ -1722,6 +1722,88 @@
       }
     },
     {
+      "name": "proposeSiteSkill",
+      "description": "Propose a new site playbook (Site Skill) for a human to review. On approval it is created as a draft; an admin activates it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 12000,
+            "description": "The playbook in Markdown."
+          },
+          "triggers": {
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          },
+          "surfaces": {
+            "maxItems": 3,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "copilot",
+                "generation",
+                "mcp"
+              ]
+            }
+          },
+          "tools": {
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            }
+          },
+          "collections": {
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            }
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "Why the agent proposes this playbook; shown to the approver."
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "body",
+          "rationale"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "removeTeamMember",
       "description": "Remove a user from a team.",
       "inputSchema": {

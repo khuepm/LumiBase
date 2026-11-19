@@ -1,10 +1,10 @@
 ---
-version: 7
-lastUpdated: 2026-11-12T18:29:47.859Z
+version: 8
+lastUpdated: 2026-11-19T04:21:11.242Z
 sourceLang: en
-contentHash: 0832f7037ca51e29
-codeVerified: 2026-11-12T18:29:47.859Z
-codeVerifiedHash: 0832f7037ca51e29
+contentHash: 300e2705015abef6
+codeVerified: 2026-11-19T04:21:11.242Z
+codeVerifiedHash: 300e2705015abef6
 codeVerifiedClaims: 30
 ---
 
@@ -314,6 +314,11 @@ cancelled. A frozen agent cannot ask in the first place.
 **MCP.** A `tools/call` of `askUser` returns an ordinary tool result (never a
 JSON-RPC error, `isError: false`) with `status: "waiting_user"`, `questionId`
 and `runId` — the same shape rule as `pending_approval` with `approvalId`.
+The stdio server `@lumibase/mcp-server` exposes the same pair as `ask_user`
+(`question`, `options`, `allow_free_text`, `context`, `timeout_minutes`) and
+`get_user_answer` (`question_id`), routed to the governed endpoint (B208). They
+have no REST route behind them, so when `contentOs.mcp` is off they refuse
+instead of falling back.
 
 **Autonomy metrics.** `lumibase_agent_questions_total{status}`
 (`asked` | `answered` | `expired` | `cancelled`) and

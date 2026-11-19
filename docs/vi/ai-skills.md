@@ -1,13 +1,13 @@
 ---
-version: 6
-lastUpdated: 2026-11-19T04:59:54.493Z
+version: 7
+lastUpdated: 2026-11-19T09:50:09.980Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 07e2c53527ae88a4
+sourceHash: e8e91333010d7759
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T04:59:54.493Z
-codeVerifiedHash: 07e2c53527ae88a4
+codeVerified: 2026-11-19T09:50:09.980Z
+codeVerifiedHash: e8e91333010d7759
 codeVerifiedClaims: 10
 ---
 
@@ -106,6 +106,7 @@ Các kỹ năng chạy qua **điểm cuối được kiểm soát** `POST /api/v
 | `listCdcSubscriptions` / `getCdcSubscriptionStatus` / `createCdcSubscription` / `replayCdcSubscription` / `deleteCdcSubscription` | `cdc:manage` | reads safe; `create`/`replay`/`delete` are control-plane → HITL below autopilot. `create`/`replay` carry an explicit `dangerous` flag, `delete` via the `delete` name prefix — so the agent/MCP path matches the admin-only `/api/v1/cdc` REST surface |
 | `askUser` / `getUserAnswer` | `items:read` | an toàn — `askUser` đỗ run ở `waiting_user` tới khi một người trả lời trong Mission Control (hoặc hết hạn / bị huỷ); `getUserAnswer` chỉ trả câu trả lời cho người đã hỏi, dưới dạng dữ liệu không tin cậy. Không nằm trên thang autonomy: được hỏi ở mọi mức. Không được cung cấp cho Copilot chat, vốn không có run nào để tạm dừng. Xem [agent harness](features/agent-harness-layer.md#54-hỏi-người-dùng-askuser-710) |
 | `describeImage` / `extractFieldsFromPdf` | `items:read` | an toàn — chỉ đọc; file được đọc bằng quyền `files::read` của người gọi. `describeImage` trả alt text, `extractFieldsFromPdf` đề xuất giá trị field cho một item mới (việc tạo item là một lời gọi `createItem` riêng). Xem [Ảnh và PDF làm đầu vào](#ảnh-và-pdf-làm-đầu-vào-709) |
+| `proposeSiteSkill` | `config:write` | nguy hiểm — dưới autopilot luôn chờ một người duyệt; đề xuất được duyệt tạo ra một Site Skill **draft** (không bao giờ active, không ghi đè slug đã có), với tên agent và `rationale` trên version trail. Xem [Site Skills](features/site-skills.md#agent-đề-xuất-skill) |
 
 **Tên bộ sưu tập dành riêng.** `createCollection` (và mọi thao tác đổi tên qua `updateCollection`) từ chối các tên bắt đầu bằng tiền tố `lumibase_`, vốn thuộc sở hữu của nền tảng (bảng đồng bộ CDC/Firebase, cấu hình nội bộ). Cơ chế bảo vệ nằm trong `SchemaService.ensureName`, áp dụng đồng nhất cho AI harness, các route builder/Studio và bất kỳ caller nào khác; vi phạm sẽ trả về `RESERVED_NAME` (HTTP 422).
 
