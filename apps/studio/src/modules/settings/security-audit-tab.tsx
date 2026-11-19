@@ -82,7 +82,8 @@ import {
 /**
  * The audit event codes offered in the `event` filter dropdown: the 15
  * Req 15.1 codes plus `admin_change` (#988 — one row per admin-plane change:
- * extensions, pages, flows, webhooks, settings, schema, access, …).
+ * extensions, pages, flows, webhooks, settings, schema, access, …) and
+ * `content_integrity_alert` (#989 — suspicious content that went live).
  *
  * NOTE: this list MIRRORS the CMS `FILTERABLE_AUDIT_EVENTS` const in
  * `apps/cms/src/modules/audit/logger.ts`. The Studio deliberately does
@@ -107,6 +108,7 @@ export const AUDIT_EVENT_CODES = [
   'recovery_completed',
   'backup_code_used',
   'admin_change',
+  'content_integrity_alert',
 ] as const;
 
 export type AuditEventCode = (typeof AUDIT_EVENT_CODES)[number];

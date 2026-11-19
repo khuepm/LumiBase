@@ -73,6 +73,7 @@ import { nanoid } from 'nanoid';
 import { ExtensionSandbox, type ExtensionActorDataAccess } from '../extensions/sandbox';
 import { HookDispatcher } from '../extensions/hook-dispatcher';
 import { buildSandboxVerifyOptions } from './extension-verifier';
+import { checkContentIntegrity, type ContentIntegrityActor } from '../modules/content-integrity/monitor';
 import type { Bindings } from '../env';
 import {
   OutboxWriter,
@@ -1367,6 +1368,7 @@ export class ItemService {
     await this.dispatchFirebaseSync(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     await this.dispatchFlowEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     await this.writeCdcEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
+    await this.contentIntegrityGate(collectionName, row, row.status === 'published');
     // After hook — fire-and-forget.
     hooks?.dispatch('items.create.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
@@ -1609,6 +1611,7 @@ export class ItemService {
       row.data as Record<string, unknown>,
       Object.keys(patch.data ?? {}),
     );
+    await this.contentIntegrityGate(collectionName, row, isRecentFirstPublish(row.firstPublishedAt));
     // After hook — fire-and-forget.
     hooks?.dispatch('items.update.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
@@ -3032,6 +3035,50 @@ export class ItemService {
   }
 
   /** Per-write invalidation: immediate normally, deferred while coalescing. */
+  /**
+   * Content-integrity check for content that is live after this write (#989,
+   * see modules/content-integrity). Under the site's `unpublish` policy, an
+   * item carrying a download link or an off-site SEO URL goes back to draft
+   * here — its revision is kept — and the returned row says so. Never throws.
+   */
+  private async contentIntegrityGate(
+    collectionName: string,
+    row: { id: string; status: string; data: unknown },
+    firstPublish: boolean,
+  ): Promise<void> {
+    if (row.status !== 'published') return;
+    const actor: ContentIntegrityActor =
+      this.provenance.authorType === 'agent'
+        ? { type: 'agent', runId: this.provenance.runId ?? null }
+        : this.deps.cdcActor?.type === 'api_key'
+          ? { type: 'api_key' }
+          : this.deps.userId
+            ? { type: 'user', userId: this.deps.userId }
+            : { type: 'system' };
+    const outcome = await checkContentIntegrity(
+      { db: this.deps.db, siteId: this.deps.siteId, actor },
+      { collection: collectionName, itemId: row.id, content: row.data, firstPublish },
+    );
+    if (!outcome.unpublish) return;
+    try {
+      await this.deps.db
+        .update(items)
+        .set({ status: 'draft', updatedAt: new Date() })
+        .where(and(eq(items.siteId, this.deps.siteId), eq(items.id, row.id)));
+      await this.deps.db.insert(activity).values({
+        siteId: this.deps.siteId,
+        action: 'integrity_unpublish',
+        userId: null,
+        collection: collectionName,
+        itemId: row.id,
+        payload: { signals: outcome.signals },
+      });
+      row.status = 'draft';
+    } catch (err) {
+      console.error('[content-integrity] unpublish failed', formatSafeError(err));
+    }
+  }
+
   private async afterWriteInvalidation(collectionName: string): Promise<void> {
     if (this.writeCoalescer) {
       this.writeCoalescer.record(collectionName);
@@ -3701,4 +3748,9 @@ function assignRelation(
 
 function limitArray<T>(values: T[], limit: number | undefined): T[] {
   return typeof limit === 'number' ? values.slice(0, limit) : values;
+}
+
+/** True when an item's first publication happened within the last minute (this write). */
+function isRecentFirstPublish(firstPublishedAt: Date | null | undefined): boolean {
+  return firstPublishedAt instanceof Date && Date.now() - firstPublishedAt.getTime() < 60_000;
 }

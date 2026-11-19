@@ -17,6 +17,7 @@ import { nanoid } from 'nanoid';
 import type { CacheProvider } from '@lumibase/runtime';
 import { isValidSlug } from './identifier-guard';
 import { forgetNegative, negativePageKey } from './negative-cache';
+import { checkContentIntegrity } from '../modules/content-integrity/monitor';
 
 export type PageRow = typeof pages.$inferSelect;
 
@@ -102,6 +103,7 @@ export class PageService {
         return inserted;
       });
       await forgetNegative(this.deps.cache, negativePageKey(this.deps.siteId, row.slug));
+      await this.integrityCheck(row);
       return row;
     } catch (err) {
       this.rethrowUnique(err);
@@ -149,6 +151,7 @@ export class PageService {
       if (previousSlug !== nextSlug) {
         await forgetNegative(this.deps.cache, negativePageKey(this.deps.siteId, previousSlug));
       }
+      if (input.layoutConfig !== undefined) await this.integrityCheck(row);
       return row;
     } catch (err) {
       this.rethrowUnique(err);
@@ -169,6 +172,22 @@ export class PageService {
       await this.recordActivity(tx, 'delete', id, { before });
     });
     // Do not write a tombstone here — deliver miss path owns setNegative.
+  }
+
+  /**
+   * Content-integrity scan of a page that just went live (#989). Pages have no
+   * draft state, so this only alerts (audit `content_integrity_alert`), even
+   * under the `unpublish` policy. Never throws.
+   */
+  private async integrityCheck(row: PageRow): Promise<void> {
+    await checkContentIntegrity(
+      {
+        db: this.deps.db,
+        siteId: this.deps.siteId,
+        actor: this.deps.actorId ? { type: 'user', userId: this.deps.actorId } : { type: 'api_key' },
+      },
+      { collection: PAGE_ACTIVITY_COLLECTION, itemId: row.id, content: { title: row.title, layoutConfig: row.layoutConfig }, firstPublish: false },
+    );
   }
 
   private async recordActivity(
