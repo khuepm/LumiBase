@@ -33,6 +33,13 @@ describe('mergeAttachments', () => {
   });
 });
 
+// jsdom has no layout, so it does not implement `scrollIntoView`. The panel
+// scrolls 50 ms after each message; without this stub that timer can fire
+// after a test and surface as an unhandled TypeError that fails the run.
+if (typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = () => {};
+}
+
 describe('AIAssistant attachments', () => {
   let bodies: Array<Record<string, unknown>>;
 
