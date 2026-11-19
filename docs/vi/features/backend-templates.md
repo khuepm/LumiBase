@@ -1,14 +1,14 @@
 ---
-version: 4
-lastUpdated: 2026-11-19T07:17:00.031Z
+version: 7
+lastUpdated: 2026-11-19T08:15:58.367Z
 sourceLang: en
 translatedFrom: en
-sourceHash: fdc741104b73ea16
+sourceHash: ba35fbc188f2fbe9
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T07:17:00.031Z
-codeVerifiedHash: fdc741104b73ea16
-codeVerifiedClaims: 22
+codeVerified: 2026-11-19T08:15:58.367Z
+codeVerifiedHash: ba35fbc188f2fbe9
+codeVerifiedClaims: 30
 ---
 
 # Backend templates
@@ -23,8 +23,8 @@ cùng model đó vào một site khác. Epic #900; đặc tả
 > `@lumibase/contracts/backend-templates` (#901), và **catalog** riêng của mỗi
 > site (#902): draft, revision đã publish và capture, và **plan** (#903), dùng
 > để xem trước một lần cài mà không thay đổi gì, và **cài schema** từ một plan
-> (#904). Seed pack, MCP tool và màn hình Studio do #905–#909 đảm nhận; cho tới
-> khi #905 xong, plan chọn seed pack sẽ bị từ chối.
+> (#904), kể cả seed pack tuỳ chọn (#905). MCP tool và màn hình Studio do
+> #906–#909 đảm nhận.
 
 Code: `packages/contracts/src/backend-templates/` (`envelope.ts`, `validate.ts`, `ingest.ts`, `canonical.ts`, `limits.ts`). Test: `packages/contracts/src/backend-templates/__tests__/backend-template-contract.test.ts`.
 
@@ -240,8 +240,10 @@ nhất được ghi là dòng plan (`lumibase_backend_template_plans`, gắn v�
   (`compatibility.cmsVersionRange`) và runtime có transaction được kiểm tra
   trước khi phát hành plan. Không đạt thì trả `422 INCOMPATIBLE_RUNTIME`. Khi
   phiên bản CMS không được gắn, plan kèm một cảnh báo thay vào đó.
-- **Seed.** `seedPack` mặc định là không có, và pack không tồn tại là
-  `422 INVALID_TEMPLATE`.
+- **Seed.** `seedMode` là `none` (mặc định) hoặc `pack`, với `seedPack` nêu
+  tên pack. Một `seedPack` không kèm `seedMode` nghĩa là `pack`. `none` kèm
+  pack, hoặc `pack` không kèm pack, bị từ chối với `400`, và pack không tồn tại
+  là `422 INVALID_TEMPLATE`.
 
 Response (`201`) có `id` của plan, `expiresAt`, `targetFingerprint` của schema
 đích và một `report`. Report liệt kê các collection, relation và số lượng, lựa
@@ -284,3 +286,116 @@ làm thay đổi nó.
   backend đã cài.
 
 `GET /api/v1/backend-templates/installations/:id` đọc một bản cài của site.
+
+## Seed pack khi cài
+
+Mặc định một lần cài chỉ tạo schema, với không item content nào, kể cả khi
+template có kèm pack. Plan lập với `seedMode: "pack"` và một `seedPack` sẽ cài
+các record của pack đó bên trong transaction cài đặt. Code:
+`apps/cms/src/services/backend-templates/seed-writer.ts`.
+
+- **Với tư cách người gọi.** Mỗi record được tạo qua chính item service của
+  người gọi, gắn với transaction, nên quyền item và validation field của họ
+  được áp dụng. Một record người gọi không được tạo sẽ làm cả lần cài thất bại,
+  và không schema hay content nào còn lại.
+- **Id mới.** Khoá logic của record trở thành id mới. Cùng một pack cài vào hai
+  site sẽ có id khác nhau, và các reference của nó được giải quyết trong từng
+  site. Bản cài giữ bảng ánh xạ khoá sang id trong `resources.seedKeys`.
+- **Reference.** Record được tạo theo thứ tự mà mọi reference bắt buộc đều đã
+  tồn tại. Reference tuỳ chọn tới một record được tạo sau sẽ được gán ở lượt
+  thứ hai, nên vòng tuỳ chọn như hai bài viết trỏ lẫn nhau vẫn hoạt động. Vòng
+  bắt buộc bị validator từ chối trước khi ghi bất cứ thứ gì.
+- **Không gì ngoài dữ liệu.** Việc seed không tạo user, credential hay file, và
+  không tải gì về. Flow, webhook, search index và extension hook không chạy
+  trên content seed, vì item service gắn với transaction không có queue,
+  search, cache hay hook.
+- **Một lần.** Thử lại một lần cài đã hoàn tất trả về chính nó mà không seed
+  lại. Content người dùng đã sửa sau đó giữ nguyên như đã sửa. Thêm content sau
+  này qua item API hoặc MCP thông thường.
+
+## MCP và agent tool
+
+Cùng catalog, planner và installer đó được cung cấp dưới dạng tool có quản
+trị trên `POST /api/v1/mcp` (và trên các route quyết định duyệt). Code nằm ở
+`apps/cms/src/services/backend-templates/agent-tools.ts`, còn schema đầu vào
+nằm ở `packages/contracts/src/backend-templates/tools.ts`. `tools/list`
+quảng bá đúng các schema này.
+
+| Tool | Capability | Việc nó làm |
+|---|---|---|
+| `listBackendTemplates` | `schema:read` | Template chính thức cùng catalog riêng của site |
+| `getBackendTemplate` | `schema:read` | Một template theo `source` + `slug`, có thể kèm một `version` đã publish |
+| `validateBackendTemplate` | `schema:read` | Kiểm tra một document mà không lưu |
+| `createBackendTemplate` / `updateBackendTemplate` | `config:write` | Soạn draft (`draftRevision` như REST) |
+| `publishBackendTemplate` | `config:write` | Revision bất biến; không cài gì |
+| `captureBackendTemplate` | `config:write` + `schema:read` | Draft từ chính các collection của site |
+| `planBackendTemplate` | `schema:read` | Plan và inventory; trả về `binding` |
+| `instantiateBackendTemplate` | `schema:create` | Cài một plan, **luôn sau khi một người duyệt** |
+| `getBackendTemplateInstallation` | `schema:read` | Một installation, theo id của nó hoặc theo `planId` mà nó được cài từ |
+
+- **Chỉ site admin.** Mọi tool đều dành cho site admin, như mọi route REST.
+  Người gọi khác không thấy các tool này trong `tools/list`, và lời gọi bị
+  từ chối. Với một approval, quyền admin của người yêu cầu ban đầu được kiểm
+  tra lại khi việc cài chạy, chứ không chỉ quyền của người duyệt.
+- **Không có site mặc định.** `planBackendTemplate` thiếu `targetSiteId` trả
+  về `MISSING_INPUT` và bảo agent hỏi người dùng về đích.
+- **Approval gắn với plan.** Plan trả về một `binding`: site đích, template,
+  version, digest, seed pack, namespace và fingerprint schema đích.
+  `instantiateBackendTemplate` phải gửi lại nó nguyên vẹn, và lời gọi chờ
+  duyệt. Khi được duyệt, installer so binding với plan bên trong transaction
+  cài. Nó cũng kiểm tra template đã lưu vẫn băm ra đúng digest. Bất kỳ khác
+  biệt nào là `BINDING_MISMATCH`. Không gì được ghi, và plan bị vô hiệu, nên
+  cần plan mới và approval mới.
+- **Một lần.** Approval đã quyết thì không quyết lại được. Instantiate lại
+  cùng plan dùng idempotency key `plan:<planId>` và trả về cùng installation.
+  Approval bị từ chối, hết hạn hoặc bị thu hồi quyền thì không ghi gì.
+- **Đọc kết quả.** Route quyết định không trả về installation. Đọc nó bằng
+  `getBackendTemplateInstallation`, truyền vào `planId`.
+- **Văn bản template là dữ liệu.** Tên, mô tả, ghi chú và giá trị seed đến từ
+  tác giả template. Chúng không bao giờ được đọc như chỉ dẫn, và không thể đổi
+  đích, lựa chọn seed hay những gì người gọi được phép làm.
+- **Khác biệt so với REST.** Tool plan chỉ gọi template theo `slug`. Cách tìm
+  theo `displayName` của REST không được cung cấp, vì "slug hoặc displayName"
+  là một lựa chọn loại trừ mà schema của tool không quảng bá được. Việc kiểm
+  tra một draft đã lưu được làm khi publish.
+- **Không có trong Copilot chat.** Chat không có ngữ cảnh template, nên các
+  tool này bị loại khỏi danh sách tool của nó.
+
+## Template chính thức: `wordpress-alike` 1.0.0
+
+Một backend blog dựng theo các khái niệm quen thuộc của WordPress. Nó đi kèm
+CMS (`GET /api/v1/backend-templates/official`). Asset là
+`apps/cms/src/services/backend-templates/official/wordpress-alike.template.json`,
+và nó nhắm tới CMS `>=2.1.0 <3.0.0`.
+
+| Collection | Field | Relation |
+|---|---|---|
+| `authors` | `name`*, `slug`*, `email`, `bio` | — |
+| `posts` | `title`*, `slug`*, `excerpt`, `body`, `status` (draft · published · private), `published_at`, `author`, `comment_status` (open · closed), `featured` | `author` → `authors` |
+| `pages` | `title`*, `slug`*, `body`, `status`, `parent`, `author`, `menu_order` | `parent` → `pages`, `author` → `authors` |
+| `categories` | `name`*, `slug`*, `description`, `parent` | `parent` → `categories` |
+| `tags` | `name`*, `slug`* | — |
+| `post_categories` | `post`*, `category`* | junction: `post` → `posts`, `category` → `categories` |
+| `post_tags` | `post`*, `tag`* | junction: `post` → `posts`, `tag` → `tags` |
+| `comments` | `post`*, `author`, `author_name`*, `author_email`, `body`*, `status` (pending · approved · spam), `parent` | `post` → `posts`, `author` → `authors`, `parent` → `comments` |
+
+`*` đánh dấu field bắt buộc. Mọi relation đều là m2o, và alias của nó là tên
+field, nên `author.name` hoặc `parent.title` đọc được qua nó. Các junction
+taxonomy là collection tường minh.
+
+- **Author là hồ sơ nội dung, không phải tài khoản đăng nhập.** Một author
+  không thể đăng nhập, và việc cài template không tạo user, role hay
+  permission nào.
+- **Lựa chọn.** Các lựa chọn của `status` và `comment_status` được kiểm tra
+  khi ghi. Giá trị mặc định của chúng (`draft`, `open`, `pending`) được điền
+  sẵn trong form Studio; item API lưu đúng những gì nhận được và không tự điền.
+- **Tính duy nhất.** Các field `slug` được khai báo `unique`, nhưng việc ghi
+  item chưa bắt buộc tính duy nhất trên collection JSONB (backlog B240). Field
+  relation cũng chưa được kiểm tra đích có tồn tại khi ghi (B241).
+- **Demo pack.** Không có seed pack thì lần cài chỉ có schema, và cả tám
+  collection đều trống. Pack `demo` thêm record tổng hợp vào mọi collection và
+  qua mọi relation, gồm một trang con, một category con và một comment trả lời.
+  Nó không chứa người thật, tài khoản, file hay secret nào.
+- **Những gì nó không phải.** Không có PHP và không tương thích WordPress REST
+  API, và không có plugin, theme, nội dung thư viện media hay hosting. Đây là
+  một content model, không phải bản sao WordPress.

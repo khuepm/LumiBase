@@ -24,6 +24,8 @@ import { SiteSkillService } from '../services/site-skill-service';
 import { ToolRegistryService } from '../services/tool-registry-service';
 import { loadSiteExtensionMcp, siteExternalToolRegistry } from '../extensions/mcp-extension-tools';
 import { mcpResourceContext } from '../middleware/mcp-oauth';
+import { backendTemplateToolsFor } from './backend-templates';
+import { BACKEND_TEMPLATE_TOOL_NAMES } from '@lumibase/contracts/backend-templates';
 import { DECISION_CAPABILITY, satisfiesCapability } from '../services/effective-capability-service';
 import { MCP_SCOPES, bearerChallenge, narrowCapabilitiesByScopes, scopesForCapabilities } from '../services/mcp-oauth';
 
@@ -123,6 +125,8 @@ async function handleMcp(c: Context<AppEnv>) {
   });
   const externalTools = await siteExternalToolRegistry({ db, siteId, ...(extensionMcp ? { preloaded: extensionMcp } : {}) });
   const registry = new ToolRegistryService(db, siteId, skillCatalog(externalTools));
+  const backendTemplates = backendTemplateToolsFor(c);
+  const templateToolNames = new Set<string>(BACKEND_TEMPLATE_TOOL_NAMES);
   const harness = new AISecureHarness({
     db,
     siteId,
@@ -149,6 +153,8 @@ async function handleMcp(c: Context<AppEnv>) {
     // what lets them decrypt target tokens (capabilities still gate access).
     keys: runtime.keys,
     cache: runtime.cache,
+    // Backend templates (#906): same services and admin gate as REST.
+    backendTemplates,
   });
 
   // Capabilities come from the live RBAC bundle, not from `auth.roles` (#472).
@@ -228,13 +234,18 @@ async function handleMcp(c: Context<AppEnv>) {
           }
         : null;
     },
-    listTools: async () => [
+    listTools: async () => {
+      const showTemplateTools = await backendTemplates.callerIsAdmin();
+      return [
       ...(await registry.listTools())
         // An external-action tool is advertised only to a caller that holds
         // its capability. Listing is not authorization (the harness decides
         // every call), but a tool that reaches a third party should not be
         // discoverable by a token that could never use it.
         .filter((tool) => !tool.external || (grant.allowed && satisfiesCapability(grant.capabilities, tool.external.capability)))
+        // Backend template tools are for site admins, as their REST routes are
+        // (#906): hidden from anyone else, and refused if called anyway.
+        .filter((tool) => !templateToolNames.has(tool.name) || showTemplateTools)
         .map((tool) => ({
         name: tool.name,
         description: tool.description,
@@ -244,7 +255,8 @@ async function handleMcp(c: Context<AppEnv>) {
         annotations: toolAnnotations(tool),
       })),
       ...(organizationPort ? (await organizationPort.listTools()).filter((tool) => tool.name === 'org:get_organization' || tool.name === 'org:list_sites') : []),
-    ],
+      ];
+    },
     execute: (skillName, args, capabilities, contextMessage) =>
       harness.execute(skillName, args, capabilities, contextMessage, {
         // Provenance for anything this call parks (#472), so approving it later

@@ -47,6 +47,21 @@
       "question"
     ]
   },
+  "captureBackendTemplate": {
+    "properties": [
+      "collections",
+      "description",
+      "displayName",
+      "seed",
+      "slug",
+      "templateVersion"
+    ],
+    "required": [
+      "collections",
+      "displayName",
+      "slug"
+    ]
+  },
   "createApiKey": {
     "properties": [
       "description",
@@ -56,6 +71,14 @@
     ],
     "required": [
       "name"
+    ]
+  },
+  "createBackendTemplate": {
+    "properties": [
+      "document"
+    ],
+    "required": [
+      "document"
     ]
   },
   "createCdcSubscription": {
@@ -364,6 +387,25 @@
       "id"
     ]
   },
+  "getBackendTemplate": {
+    "properties": [
+      "slug",
+      "source",
+      "version"
+    ],
+    "required": [
+      "slug",
+      "source"
+    ]
+  },
+  "getBackendTemplateInstallation": {
+    "properties": [
+      "installationId"
+    ],
+    "required": [
+      "installationId"
+    ]
+  },
   "getUserAnswer": {
     "properties": [
       "questionId"
@@ -390,6 +432,17 @@
       "version"
     ]
   },
+  "instantiateBackendTemplate": {
+    "properties": [
+      "expect",
+      "idempotencyKey",
+      "planId"
+    ],
+    "required": [
+      "expect",
+      "planId"
+    ]
+  },
   "inviteUser": {
     "properties": [
       "email",
@@ -397,6 +450,25 @@
     ],
     "required": [
       "email"
+    ]
+  },
+  "listBackendTemplates": {
+    "properties": [
+      "limit",
+      "offset"
+    ],
+    "required": []
+  },
+  "planBackendTemplate": {
+    "properties": [
+      "namespace",
+      "seedMode",
+      "seedPack",
+      "targetSiteId",
+      "template"
+    ],
+    "required": [
+      "template"
     ]
   },
   "planContentMigration": {
@@ -422,6 +494,15 @@
       "collection",
       "itemId",
       "key"
+    ]
+  },
+  "publishBackendTemplate": {
+    "properties": [
+      "draftRevision",
+      "templateId"
+    ],
+    "required": [
+      "templateId"
     ]
   },
   "removeTeamMember": {
@@ -511,6 +592,18 @@
     ],
     "required": [
       "id"
+    ]
+  },
+  "updateBackendTemplate": {
+    "properties": [
+      "document",
+      "draftRevision",
+      "templateId"
+    ],
+    "required": [
+      "document",
+      "draftRevision",
+      "templateId"
     ]
   },
   "updateExtension": {
@@ -604,6 +697,14 @@
     "required": [
       "key",
       "value"
+    ]
+  },
+  "validateBackendTemplate": {
+    "properties": [
+      "document"
+    ],
+    "required": [
+      "document"
     ]
   }
 }

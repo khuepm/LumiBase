@@ -5,6 +5,7 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
+import { backendTemplateToolsFor } from './backend-templates';
 import { siteExternalToolRegistry } from '../extensions/mcp-extension-tools';
 import { AISecureHarness } from '../services/ai-harness';
 import { AccessService } from '../services/access-service';
@@ -182,6 +183,8 @@ export async function buildAuthorizedHarness(c: Context<AppEnv>): Promise<AISecu
     // the approval would resolve into a configuration error.
     keys: runtime.keys,
     cache: runtime.cache,
+    // An approved `instantiateBackendTemplate` (#906) executes here.
+    backendTemplates: backendTemplateToolsFor(c),
   });
 }
 
