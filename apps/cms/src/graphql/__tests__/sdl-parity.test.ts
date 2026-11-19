@@ -93,7 +93,7 @@ const COLLECTIONS = [
     field('status', 'string'), // collides with the structural column
     field('bad-name', 'string'), // not a GraphQL name
   ]),
-  collection('comments', [field('body', 'text'), field('post', 'uuid')]),
+  collection('comments', [field('body', 'text'), field('post', 'uuid'), field('rich', 'richtext')]),
 ];
 
 const RELATIONS = [

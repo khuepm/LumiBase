@@ -162,7 +162,7 @@
  * — design §6.3, §7.3, §4.8.
  */
 
-import { and, eq, gte, isNull, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import {
   adminBackupCodes,
   loginAttempts,
@@ -173,6 +173,7 @@ import {
 
 import { verifyPassword } from '../../services/auth/password';
 import { normalizeEmail } from '../login-guard/email-normalize';
+import { emailLookup } from '../email-identity/service';
 import { loadLockoutPolicyFromSettings } from '../login-guard/middleware';
 import { STANDARD_LOCKOUT_POLICY } from '../setup/policy-codec';
 // Type-only import keeps the dependency direction one-way (the audit
@@ -790,13 +791,15 @@ export class RecoveryService {
     if (emailLower.length === 0) return null;
     if (typeof backupCode !== 'string' || backupCode.length === 0) return null;
 
-    // 1. Look up the user by lower-cased email (matches the
-    //    `users_email_lower_unique` index convention used across the
-    //    LoginGuard surface).
+    // 1. Look up the user under the instance email identity mode
+    //    (#794/#862) — the same resolution login and the LoginGuard use,
+    //    so under `root` an alias reaches the account it signs in to;
+    //    under `exact` this is the case-insensitive `lower(email)` match.
+    const { where: emailMatch } = await emailLookup(this.db, emailLower);
     const [user] = await this.db
-      .select({ id: users.id, isBootstrap: users.isBootstrap })
+      .select({ id: users.id, email: users.email, isBootstrap: users.isBootstrap })
       .from(users)
-      .where(sql`lower(${users.email}) = ${emailLower}`)
+      .where(emailMatch)
       .limit(1);
 
     // 2. Unknown email OR non-bootstrap user → generic failure. The
@@ -892,12 +895,16 @@ export class RecoveryService {
         .where(eq(users.id, user.id));
 
       // 6c. Drain the email's recent failure burst inside the active
-      //     window so the next login doesn't immediately re-lock.
+      //     window so the next login doesn't immediately re-lock. The
+      //     counter is keyed by the typed address, so drain both the
+      //     supplied address and the account's own (they differ for an
+      //     alias under `root` mode).
+      const drainEmails = [...new Set([emailLower, normalizeEmail(user.email)])];
       await tx
         .delete(loginAttempts)
         .where(
           and(
-            eq(loginAttempts.emailLower, emailLower),
+            inArray(loginAttempts.emailLower, drainEmails),
             eq(loginAttempts.result, 'fail'),
             gte(
               loginAttempts.createdAt,
@@ -982,8 +989,10 @@ export class RecoveryService {
     const emailLower = normalizeEmail(email);
     if (emailLower.length === 0) return;
 
-    // 1. Look up the user by lower-cased email (same convention as
-    //    `recover`).
+    // 1. Look up the user under the instance email identity mode (same
+    //    resolution as `recover`). The link is mailed to the account's
+    //    stored address (`user.email`), never to the typed alias.
+    const { where: emailMatch } = await emailLookup(this.db, emailLower);
     const [user] = await this.db
       .select({
         id: users.id,
@@ -991,7 +1000,7 @@ export class RecoveryService {
         isBootstrap: users.isBootstrap,
       })
       .from(users)
-      .where(sql`lower(${users.email}) = ${emailLower}`)
+      .where(emailMatch)
       .limit(1);
 
     // 2. Unknown email OR non-bootstrap user → silent no-op. Don't mint

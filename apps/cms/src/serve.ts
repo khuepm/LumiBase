@@ -330,6 +330,9 @@ async function main() {
     './services/content-indexing-worker'
   );
   registerContentIndexingWorker({
+    // Re-read the item before applying a snapshot, so a retried job cannot
+    // resurrect a deleted item or overwrite a newer one (#857).
+    db: rotatorDb,
     search: runtime.search,
     queue: runtime.queue,
   });

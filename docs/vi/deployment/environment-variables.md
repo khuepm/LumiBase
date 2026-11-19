@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 22
-lastUpdated: 2026-11-15T15:10:13.708Z
+version: 23
+lastUpdated: 2026-11-16T20:34:21.726Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 00159aeddfcd4dc0
+sourceHash: 58d9b567a0d582fc
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T15:10:13.708Z
-codeVerifiedHash: 00159aeddfcd4dc0
+codeVerified: 2026-11-16T20:34:21.726Z
+codeVerifiedHash: 58d9b567a0d582fc
 codeVerifiedClaims: 98
 ---
 
@@ -284,6 +284,8 @@ Import collection chạy nền (`POST /api/v1/imports`, xem [Data import](../fea
 | `IMPORT_MAX_CONCURRENCY` | ✗ | `20` | Số job chạy cùng lúc trên mỗi site. Job vượt quá giữ trạng thái `queued` cho tới khi có job xong. |
 | `IMPORT_MAX_BYTES` | ✗ | `52428800` | Kích thước upload lớn nhất, tính bằng byte (50 MiB). File lớn hơn nhận `413 PAYLOAD_TOO_LARGE`. |
 | `IMPORT_CHUNK_SIZE` | ✗ | `500` | Số dòng ghi trong mỗi bước (tối đa `5000`). Bước nhỏ phản hồi lệnh huỷ nhanh hơn; bước lớn xong sớm hơn. |
+| `IMPORT_MAX_PENDING_JOBS` | ✗ | `100` | Số job một site được có ở trạng thái `queued` hoặc `running` cùng lúc. Upload tiếp theo nhận `429 LIMIT_EXCEEDED`. |
+| `IMPORT_MAX_PENDING_BYTES` | ✗ | `209715200` | Tổng dung lượng file đã upload, tính bằng byte, một site được có ở trạng thái `queued` hoặc `running` cùng lúc (200 MiB). Không bao giờ nhỏ hơn `IMPORT_MAX_BYTES`. Upload tiếp theo nhận `429 LIMIT_EXCEEDED`. |
 
 ---
 

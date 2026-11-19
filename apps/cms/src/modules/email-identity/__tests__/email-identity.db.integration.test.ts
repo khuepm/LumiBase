@@ -12,13 +12,15 @@ import { hashPassword } from '../../../services/auth/password';
 import { loadLockoutPolicyFromSettings } from '../../login-guard/middleware';
 import { emailRoot } from '../normalize';
 import { inviteUserToSite } from '../invite';
+import { provisionScimUser } from '../scim-provision';
 import {
   isEmailIdentityConflict,
   loadEmailIdentityMode,
   setInstanceEmailIdentityMode,
   setSiteEmailIdentityStrict,
 } from '../service';
-import { EMAIL_ROOT_FIXTURES } from './fixtures';
+import { normalizeEmail } from '../../login-guard/email-normalize';
+import { EMAIL_NORMALIZE_FIXTURES, EMAIL_ROOT_FIXTURES } from './fixtures';
 
 /**
  * Email identity policy (#794 PR 1) against real Postgres: the SQL
@@ -119,6 +121,21 @@ describe.skipIf(!hasDbIntegrationUrl)('Email identity policy — DB integration'
       expect({ input, root: sqlRoot }).toEqual({ input, root: emailRoot(input) });
       expect(sqlRoot).toBe(expected);
     }
+  });
+
+  it('SQL lumibase_email_normalize() matches TS normalizeEmail() on every fixture (#862)', async () => {
+    for (const [input, expected] of EMAIL_NORMALIZE_FIXTURES) {
+      const rows = await db.execute(sql`SELECT lumibase_email_normalize(${input}) AS key`);
+      const sqlKey = (rows as unknown as Array<{ key: string }>)[0]?.key;
+      expect({ input, key: sqlKey }).toEqual({ input, key: normalizeEmail(input) });
+      expect(sqlKey).toBe(expected);
+    }
+  });
+
+  it('exact-mode trigger keys a padded address the way lookups do (#862)', async () => {
+    const u = await addUser(`\u00a0Pad.Eidit@${DOMAIN}\t`);
+    expect(u.canonical).toBe(`pad.eidit@${DOMAIN}`);
+    expect(u.root).toBe(`pad.eidit@${DOMAIN}`);
   });
 
   // ── triggers ─────────────────────────────────────────────────────────
@@ -371,6 +388,23 @@ describe.skipIf(!hasDbIntegrationUrl)('Email identity policy — DB integration'
     if (!second.ok) throw new Error(`expected invite to succeed, got ${second.code}`);
     expect(second.created).toBe(false);
     expect(second.user.id).toBe(first.user.id);
+  });
+
+  it('under `root`, SCIM does not bind another site\'s unverified alias account (#912)', async () => {
+    expect((await setInstanceEmailIdentityMode(db, 'root')).ok).toBe(true);
+    // Site STRICT's IdP JIT-created this alias; site OPEN's SCIM provisions the root mailbox.
+    const jitAlias = await addUser(`eidit.scim+x@gmail.com`, { externalId: 'eidit-jit-scim-alias' });
+    await db.insert(userSites).values({ userId: jitAlias.id, siteId: SITE_STRICT });
+    expect(await provisionScimUser(db, { siteId: SITE_OPEN, userName: 'eiditscim@gmail.com' })).toEqual({ ok: false, code: 'CONFLICT' });
+    expect(await membershipCount(jitAlias.id, SITE_OPEN)).toBe(0);
+
+    // A verified alias account is still linked under `root`.
+    const verified = await addUser(`eidit.scimok+y@gmail.com`, { passwordHash: 'secret-hash' });
+    await db.insert(userSites).values({ userId: verified.id, siteId: SITE_STRICT });
+    const linked = await provisionScimUser(db, { siteId: SITE_OPEN, userName: 'eiditscimok@gmail.com' });
+    if (!linked.ok) throw new Error(`expected SCIM link to succeed, got ${linked.code}`);
+    expect(linked.user.id).toBe(verified.id);
+    expect(await membershipCount(verified.id, SITE_OPEN)).toBe(1);
   });
 
   // ── register / login through the real router ─────────────────────────

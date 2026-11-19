@@ -14,7 +14,23 @@ const mockRedis = {
   expire: vi.fn(),
   quit: vi.fn(),
   pipeline: vi.fn(),
+  multi: vi.fn(),
+  zrange: vi.fn(),
+  eval: vi.fn(),
 };
+
+function mockMulti(results: Array<[Error | null, unknown]> = []) {
+  const chain = {
+    zadd: vi.fn().mockReturnThis(),
+    zremrangebyrank: vi.fn().mockReturnThis(),
+    expire: vi.fn().mockReturnThis(),
+    zrange: vi.fn().mockReturnThis(),
+    del: vi.fn().mockReturnThis(),
+    exec: vi.fn().mockResolvedValue(results),
+  };
+  mockRedis.multi.mockReturnValue(chain);
+  return chain;
+}
 
 function mockPipeline() {
   const chain = {
@@ -252,6 +268,78 @@ describe('RedisCacheProvider', () => {
       await provider.delete('key-to-delete');
 
       expect(mockRedis.del).toHaveBeenCalledWith('key-to-delete');
+    });
+  });
+
+  // #864 — the edge URL index needs adds that commute, not get + set.
+  describe('member sets', () => {
+    it('adds with ZADD, trims to the newest `limit` and refreshes the TTL in one MULTI', async () => {
+      const tx = mockMulti([[null, 1], [null, 0], [null, 1]]);
+
+      await provider.addMember('edgeurls:deliver:site-a', 'https://acme.test/a', { ttl: 300, limit: 200 });
+
+      expect(mockRedis.multi).toHaveBeenCalledTimes(1);
+      expect(tx.zadd).toHaveBeenCalledWith('lumi:set:edgeurls:deliver:site-a', expect.any(Number), 'https://acme.test/a');
+      expect(tx.zremrangebyrank).toHaveBeenCalledWith('lumi:set:edgeurls:deliver:site-a', 0, -201);
+      expect(tx.expire).toHaveBeenCalledWith('lumi:set:edgeurls:deliver:site-a', 300);
+      expect(tx.exec).toHaveBeenCalledTimes(1);
+      // No read of the old value: nothing to race against.
+      expect(mockRedis.get).not.toHaveBeenCalled();
+      expect(mockRedis.set).not.toHaveBeenCalled();
+    });
+
+    it('rejects when a command inside the MULTI fails', async () => {
+      mockMulti([[new Error('WRONGTYPE'), null]]);
+
+      await expect(provider.addMember('k', 'm')).rejects.toThrow('WRONGTYPE');
+    });
+
+    it('reads the newest `limit` members without deleting, and ack removes only unchanged scores', async () => {
+      mockRedis.zrange.mockResolvedValueOnce(['https://acme.test/b', '1700000000001', 'https://acme.test/c', '1700000000002']);
+      mockRedis.eval.mockResolvedValueOnce(2);
+
+      const batch = await provider.readMembers('edgeurls:deliver:site-a', { limit: 2 });
+
+      expect(batch.members).toEqual(['https://acme.test/b', 'https://acme.test/c']);
+      expect(mockRedis.zrange).toHaveBeenCalledWith('lumi:set:edgeurls:deliver:site-a', -2, '-1', 'WITHSCORES');
+      expect(mockRedis.del).not.toHaveBeenCalled();
+      expect(mockRedis.eval).not.toHaveBeenCalled();
+
+      await batch.ack();
+
+      expect(mockRedis.eval).toHaveBeenCalledWith(
+        expect.stringContaining('ZSCORE'),
+        1,
+        'lumi:set:edgeurls:deliver:site-a',
+        'https://acme.test/b',
+        '1700000000001',
+        'https://acme.test/c',
+        '1700000000002',
+      );
+    });
+
+    it('acks only the given subset, ignoring members it did not read', async () => {
+      mockRedis.zrange.mockResolvedValueOnce(['https://acme.test/b', '1700000000001', 'https://acme.test/c', '1700000000002']);
+      const batch = await provider.readMembers('edgeurls:deliver:site-a', { limit: 2 });
+
+      await batch.ack(['https://acme.test/c', 'https://acme.test/never-read']);
+
+      expect(mockRedis.eval).toHaveBeenCalledWith(
+        expect.stringContaining('ZSCORE'),
+        1,
+        'lumi:set:edgeurls:deliver:site-a',
+        'https://acme.test/c',
+        '1700000000002',
+      );
+    });
+
+    it('an empty subset acks nothing', async () => {
+      mockRedis.zrange.mockResolvedValueOnce(['https://acme.test/b', '1700000000001']);
+      const batch = await provider.readMembers('k');
+
+      await batch.ack([]);
+
+      expect(mockRedis.eval).not.toHaveBeenCalled();
     });
   });
 

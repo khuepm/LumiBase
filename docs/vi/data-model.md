@@ -1,13 +1,13 @@
 ---
-version: 25
-lastUpdated: 2026-11-18T04:54:08.741Z
+version: 27
+lastUpdated: 2026-11-19T04:30:29.373Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1328d1a4a8c7c30c
+sourceHash: b4c6c8c8f37adc90
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-18T04:54:08.741Z
-codeVerifiedHash: 1328d1a4a8c7c30c
+codeVerified: 2026-11-19T04:30:29.373Z
+codeVerifiedHash: b4c6c8c8f37adc90
 codeVerifiedClaims: 22
 ---
 
@@ -82,6 +82,8 @@ Unique index: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, 
 - `identityKey` text (migration `0027`) — bằng `users.email_root` khi site strict, ngược lại là null. Unique index `user_sites_site_identity_unique` trên `(site_id, identity_key)` chỉ cho một membership mỗi hộp thư gốc trên site strict (null không bao giờ xung đột). Được trigger điền khi insert và cập nhật lại khi email của thành viên thay đổi.
 
 **Chính sách định danh email (migration `0027`).** Tầng instance nằm ở `system_state.email_identity_mode` (`exact` | `root`, mặc định `exact`; instance hiện có được backfill thành `exact`, nên nâng cấp không đổi hành vi). Mọi writer — route, SCIM, setup, seed, bản app cũ — đều có cùng giá trị cột dẫn xuất vì trigger tính chúng: `lumibase_users_email_identity()` trên `users` (đọc singleton `FOR SHARE`), `lumibase_user_sites_identity_key()` trên `user_sites` (đọc site `FOR SHARE`) và `lumibase_users_rekey_memberships()` sau khi đổi email. Endpoint đổi policy giữ `FOR UPDATE` trên cùng các hàng đó, nên không hàng nào bị gán khoá theo policy cũ. Xem [Quản lý người dùng](./security/user-management.md) và `/api/v1/admin/email-identity` trong API spec.
+
+**Release manifest (migration `0041`).** `release_manifests` là bảng một dòng (`id = 'current'`, ép bằng CHECK) với `issued_at_ms` (bigint) và `manifest` (jsonb: envelope như khi nhận, `flags` đã xác minh, `issuedAt`, `acceptedAt`, `source` `push` | `pull`, `acceptedBy`). Bảng giữ manifest phát hành có chữ ký gần nhất mà deployment đã chấp nhận, chỉ được ghi sau khi xác minh Ed25519 bằng một câu upsert chỉ cập nhật khi `issued_at_ms` lớn hơn hẳn. Bảng không có `site_id`: cổng phát hành thuộc về deployment. Đây là bảng riêng chứ không phải một cột của `system_state` vì Drizzle liệt kê mọi cột đã khai báo trong câu INSERT, nên thêm cột vào `system_state` sẽ làm hỏng câu INSERT lúc khởi động của image chạy trên schema trước đó. Lựa chọn theo site nằm trong `settings` với key `release.flags`. Xem [Release flags](./features/release-flags.md).
 
 ### `teams` / `team_members`
 - `teams`: `id`, `siteId`, `name`, `description`.
@@ -301,7 +303,7 @@ Khi seed local/staging/prod, phải seed permission cho system collection một 
 
 ### `upload_sessions`
 - `id`, `siteId`, `createdBy`, `filename`, `mime`, `length`, `offset`, `storageKey`, `multipartId`, `parts jsonb`, `tailSize`, `folder`, `metadata jsonb`, `status` (`active`/`completed`/`aborted`), `lockToken`, `lockedUntil`, `fileId`, `expiresAt`, `createdAt`, `updatedAt`.
-- Một upload TUS tiếp tục được đang diễn ra: `offset` đã ghi, các phần multipart đã ghi tới giờ và kích thước object đuôi. `lockToken`/`lockedUntil` là lease một-writer mà mỗi `PATCH` giữ; `fileId` được đặt khi hoàn tất. Index `(siteId, status)` và một partial index trên `expiresAt` cho các upload đang chạy (lượt quét hết hạn). Migration `0041_upload_sessions`. Xem [Quản lý tài sản số](./features/digital-asset-management.md).
+- Một upload TUS tiếp tục được đang diễn ra: `offset` đã ghi, các phần multipart đã ghi tới giờ và kích thước object đuôi. `lockToken`/`lockedUntil` là lease một-writer mà mỗi `PATCH` giữ; `fileId` được đặt khi hoàn tất. Index `(siteId, status)` và một partial index trên `expiresAt` cho các upload đang chạy (lượt quét hết hạn). Migration `0044_upload_sessions`. Xem [Quản lý tài sản số](./features/digital-asset-management.md).
 
 ## 5. UX state (`platform.ts`)
 

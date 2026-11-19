@@ -146,3 +146,48 @@ describe('CloudflareEdgeCacheProvider.purge', () => {
     expect(JSON.parse(second.body as string)).toEqual({ files: ['https://a/1'] });
   });
 });
+
+/**
+ * #864 — the tag→URL index keeps URLs whose purge failed, so the provider has
+ * to say which ones failed; a fail-soft count cannot tell "nothing cached"
+ * from "refused".
+ */
+describe('CloudflareEdgeCacheProvider.purgeWithOutcome', () => {
+  function provider(statuses: number[]) {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      const status = statuses[Math.min(call, statuses.length - 1)] ?? 200;
+      call += 1;
+      return new Response('{}', { status });
+    });
+    return new CloudflareEdgeCacheProvider({ zoneId: 'z', apiToken: 't', fetchImpl: fetchImpl as unknown as typeof fetch });
+  }
+
+  it('reports the URL batches the zone API refused', async () => {
+    const urls = Array.from({ length: 45 }, (_, i) => `https://a/${i}`);
+
+    const outcome = await provider([200, 503]).purgeWithOutcome({ urls });
+
+    expect(outcome.failedUrls).toEqual(urls.slice(30));
+    expect(outcome.purged).toBe(30);
+  });
+
+  it('reports nothing failed when the tag purge succeeded', async () => {
+    const outcome = await provider([200]).purgeWithOutcome({ urls: ['https://a/1'], tags: ['deliver:site-a'] });
+    expect(outcome.failedUrls).toEqual([]);
+  });
+
+  it('reports every URL failed when both the tag and the URL purge are refused', async () => {
+    const outcome = await provider([503, 503]).purgeWithOutcome({ urls: ['https://a/1'], tags: ['deliver:site-a'] });
+    expect(outcome).toEqual({ purged: 0, failedUrls: ['https://a/1'] });
+  });
+
+  it('reports nothing failed without zone credentials — a retry could not reach further', async () => {
+    const outcome = await new CloudflareEdgeCacheProvider(undefined).purgeWithOutcome({ urls: ['https://a/1'] });
+    expect(outcome).toEqual({ purged: 0, failedUrls: [] });
+  });
+
+  it('purge() still returns only the count', async () => {
+    expect(await provider([403]).purge({ urls: ['https://a/1'] })).toBe(0);
+  });
+});

@@ -57,6 +57,7 @@
         "items": [
           "features/collections-builder",
           "features/field-types-and-config",
+          "features/rich-text",
           "features/timezone-aware-datetime",
           "features/permissions-rbac",
           "features/organizations",
@@ -77,7 +78,8 @@
           "features/jev-draft-review-pilot",
           "features/jev-automation",
           "features/jev-semantic-drift",
-          "features/rls-request-scope"
+          "features/rls-request-scope",
+          "features/release-flags"
         ]
       },
       {

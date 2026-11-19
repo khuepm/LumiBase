@@ -2,9 +2,9 @@
 -- see `uploadSessions` in packages/database/src/schema/platform.ts. Additive,
 -- no backfill, re-runnable.
 --
--- Numbered after the newest migration on epic/670-dam (0040). PR #935 also
--- claims 0041 on the same base; whichever merges second renumbers. All
--- numbers are reassigned when the epic branch merges into main.
+-- 0044 on this branch: first number after main's 0043_release_manifest
+-- (v2.2.0). Epic order: #935 0044, #936 0045, #937 0046, #938 0047; `when`
+-- is already set in that order, so after #935 lands this only renames to 0045.
 --
 -- Rollback: DROP TABLE IF EXISTS lumibase_upload_sessions;
 CREATE TABLE IF NOT EXISTS "lumibase_upload_sessions" (
