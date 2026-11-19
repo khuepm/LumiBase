@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { decodeProtectedHeader, jwtVerify } from 'jose';
+import { describe, expect, it, vi } from 'vitest';
+import { decodeJwt, decodeProtectedHeader, jwtVerify } from 'jose';
 import {
   appleClientSecret,
   buildAuthorizationUrl,
@@ -140,6 +140,23 @@ describe('Sign in with Apple', () => {
     const { payload } = await jwtVerify(secret, key.publicKey, { audience: 'https://appleid.apple.com', issuer: 'TEAM123' });
     expect(payload.sub).toBe('com.example.web');
     expect((payload.exp ?? 0) - (payload.iat ?? 0)).toBeLessThanOrEqual(300);
+  });
+
+  it('reads the clock once, so a second boundary cannot stretch the lifetime past 300 s', async () => {
+    const key = await makeAppleKey();
+    // Each clock read lands one tick later, crossing a second boundary.
+    let t = 1_700_000_000_999;
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => t++);
+    // jose reads the clock through `new Date()`.
+    const getTime = vi.spyOn(Date.prototype, 'getTime').mockImplementation(() => t++);
+    try {
+      const secret = await appleClientSecret({ teamId: 'TEAM123', keyId: 'KEY456', privateKeyPem: key.pem }, 'com.example.web');
+      const payload = decodeJwt(secret);
+      expect((payload.exp ?? 0) - (payload.iat ?? 0)).toBe(300);
+    } finally {
+      now.mockRestore();
+      getTime.mockRestore();
+    }
   });
 
   it('reads the first-authorization name from the posted `user` field and accepts "true" email_verified', async () => {

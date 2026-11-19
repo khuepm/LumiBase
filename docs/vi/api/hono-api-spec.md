@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 60
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 61
+lastUpdated: 2026-11-19T06:34:04.915Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1d86bff615c2ba39
+sourceHash: 5da6eaa5ddc0177f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
-codeVerifiedClaims: 652
+codeVerified: 2026-11-19T06:34:04.915Z
+codeVerifiedHash: 5da6eaa5ddc0177f
+codeVerifiedClaims: 658
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -1586,6 +1586,27 @@ Public (không có phiên làm việc; xác minh chữ ký hoặc trạng thái 
 | `POST` | `/api/v1/integrations/git/webhook/:provider/:siteId/:integrationId` | Bộ nhận webhook — GitHub HMAC-SHA256 (`X-Hub-Signature-256`) / GitLab token (`X-Gitlab-Token`); idempotent theo delivery id |
 
 Môi trường xem trước là opt-in cho từng tích hợp (`sync_config.preview = true`): khi PR mở/đồng bộ, LumiBase khởi tạo một site tạm thời (`${siteId}__pr-${number}`) được phục vụ tại `/api/v1/deliver/page/${ephemeralSiteId}/...`; khi đóng/gộp PR nó sẽ bị hủy. Thất bại CI ghi lại một `agent_incident` (role `git-sync`) + một mục audit `git_ci_failed`.
+
+---
+
+## 12d. Nhập từ Figma (#758)
+
+Chỉ site admin. Biến một frame Figma thành block template (collection ẩn với
+các trường đã ánh xạ + display template). Xem
+[Nhập từ Figma](../features/figma-import.md).
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `GET` | `/api/v1/integrations/figma` | `{ hasToken }` |
+| `PUT/DELETE` | `/api/v1/integrations/figma/token` | Lưu `{ token }` (tool secret mã hoá `FIGMA_TOKEN` của site, không bao giờ trả về) / xoá nó |
+| `POST` | `/api/v1/integrations/figma/preview` | `{ url, collection?, label? }` → `{ collection, label, fields, displayTemplate, tokens, theme, warnings, source }`; không ghi |
+| `POST` | `/api/v1/integrations/figma/import` | `{ url, collection?, label?, addToBlocksField?: { collection, field } }` → `201`; `409 COLLECTION_EXISTS`, `404 BLOCKS_FIELD_NOT_FOUND`, `422 FIGMA_NO_FIELDS` |
+
+Lỗi Figma: `400 FIGMA_URL_INVALID`, `422 FIGMA_TOKEN_REJECTED` (cả khi chưa lưu
+token), `404 FIGMA_NOT_FOUND`, `422 FIGMA_NOT_A_FRAME`, `429 FIGMA_RATE_LIMITED`,
+`502 FIGMA_UNAVAILABLE`. Các agent skill `mapDesignTokens` (chỉ đọc) và
+`applyThemeOverrides` (được quản trị, HITL) ánh xạ `tokens` của bản xem trước
+sang theme override của Studio.
 
 ---
 

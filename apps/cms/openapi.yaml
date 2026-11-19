@@ -30,6 +30,34 @@ components:
       schema: { type: string }
       description: Active tenant id. Required for every authenticated endpoint.
   schemas:
+    FigmaImportInput:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string, format: uri, description: 'Figma "Copy link to selection" URL with node-id' }
+        collection: { type: string, pattern: '^[a-z][a-z0-9_]{0,62}$' }
+        label: { type: string, maxLength: 120 }
+    FigmaBlockDraft:
+      type: object
+      properties:
+        collection: { type: string }
+        label: { type: string }
+        fields:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              type: { type: string, enum: [string, text] }
+              interface: { type: string, enum: [input, input-multiline, file] }
+              label: { type: string }
+              note: { type: string, nullable: true }
+              source: { type: object, properties: { nodeId: { type: string }, layer: { type: string } } }
+        displayTemplate: { type: string, nullable: true }
+        tokens: { type: object, description: '{ colors: [{ hex, count, usage }], fonts: [{ family, sizes }], radii: [{ value, count }] }' }
+        theme: { type: object, description: '{ light: { "--token": value }, rationale }' }
+        warnings: { type: array, items: { type: string } }
+        source: { type: object, properties: { fileKey: { type: string }, nodeId: { type: string } } }
     OpenApiConfig:
       type: object
       additionalProperties: false
@@ -2749,6 +2777,71 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /integrations/figma:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    get:
+      summary: Whether a Figma token is stored for the site (#758, site admin)
+      responses:
+        '200': { description: '`{ data: { hasToken } }`' }
+  /integrations/figma/token:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    put:
+      summary: Store the Figma personal access token (encrypted site tool secret FIGMA_TOKEN, never returned)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [token], additionalProperties: false, properties: { token: { type: string, minLength: 20, maxLength: 512 } } }
+      responses:
+        '200': { description: '`{ data: { hasToken: true } }`' }
+        '400': { description: VALIDATION }
+        '503': { description: KEYS_UNAVAILABLE (no key provider) }
+    delete:
+      summary: Remove the Figma token
+      responses:
+        '200': { description: '`{ data: { hasToken: false } }`' }
+  /integrations/figma/preview:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    post:
+      summary: Map a Figma frame to a block-template draft and a Studio theme suggestion, without writing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FigmaImportInput' }
+      responses:
+        '200': { description: Draft, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/FigmaBlockDraft' } } } } } }
+        '400': { description: FIGMA_URL_INVALID or VALIDATION }
+        '404': { description: FIGMA_NOT_FOUND }
+        '422': { description: FIGMA_TOKEN_REJECTED (incl. no token stored) or FIGMA_NOT_A_FRAME }
+        '429': { description: FIGMA_RATE_LIMITED }
+        '502': { description: FIGMA_UNAVAILABLE }
+  /integrations/figma/import:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    post:
+      summary: Create a hidden block-template collection from a Figma frame
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/FigmaImportInput'
+                - type: object
+                  properties:
+                    addToBlocksField:
+                      type: object
+                      required: [collection, field]
+                      properties: { collection: { type: string }, field: { type: string } }
+      responses:
+        '201': { description: Created; the draft plus `addedToBlocksField` }
+        '404': { description: BLOCKS_FIELD_NOT_FOUND, FIGMA_NOT_FOUND }
+        '409': { description: COLLECTION_EXISTS }
+        '422': { description: FIGMA_NO_FIELDS, FIGMA_TOKEN_REJECTED, FIGMA_NOT_A_FRAME }
   /imports:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'

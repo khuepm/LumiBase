@@ -8,6 +8,7 @@ import {
   flowRuns,
   flows,
   items as itemsTable,
+  sites,
 } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
 import { agentToolNamesWithSchema, jsonSchemaFor, validateAgentToolInput } from '@lumibase/contracts';
@@ -24,6 +25,9 @@ import { runFlow, type FlowGraph } from './flow-service';
 import { ContentVersionService } from './content-version-service';
 import { completeWithInstructions, type ConfiguredLLM } from './llm-provider';
 import { redactSettingRow } from './settings-redaction';
+import { ThemeOverridesSchema } from '@lumibase/contracts/schemas';
+import { z } from 'zod';
+import { suggestTheme } from '../modules/figma/theme';
 import {
   EMPTY_RESOLVED_SKILLS,
   SiteSkillService,
@@ -598,6 +602,16 @@ function openApiType(fieldType: string): string {
  * When a service is not provided, the handler returns a stub response
  * indicating the service is not configured.
  */
+/** Input of `mapDesignTokens` (#758): the `tokens` of a Figma import preview. */
+const designTokensArgs = z.object({
+  colors: z
+    .array(z.object({ hex: z.string().regex(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/), count: z.number().int().min(0), usage: z.array(z.enum(['fill', 'text', 'button', 'frame'])) }))
+    .max(100)
+    .default([]),
+  fonts: z.array(z.object({ family: z.string().max(200), sizes: z.array(z.number()).max(50) })).max(50).default([]),
+  radii: z.array(z.object({ value: z.number().min(0), count: z.number().int().min(0) })).max(50).default([]),
+});
+
 function buildCoreSkills(services: SkillServices): Record<string, SkillDefinition> {
   const { schemaService, itemService, accessService, intentService, configService, extensionsService, db, siteId } = services;
   /** Distinguishes "offline test registry" from "environment has no LLM". */
@@ -1970,6 +1984,41 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           scope: args['scope'] as string | undefined,
         });
         return { upserted: true, setting };
+      },
+    },
+
+    // Design tokens → Studio theme (#758). Mapping is pure and read-only;
+    // applying the result changes every editor's Studio, so it is governed.
+    mapDesignTokens: {
+      name: 'mapDesignTokens',
+      description:
+        'Map design tokens (e.g. from a Figma import preview: colors with usage, fonts, radii) to Studio theme overrides (HSL triples, --radius length). Read-only; returns { light, rationale }.',
+      requiredCapabilities: ['config:read'],
+      service: 'access',
+      handler: async (args) => {
+        const parsed = designTokensArgs.safeParse(args['tokens'] ?? {});
+        if (!parsed.success) {
+          throw new Error(`INVALID_INPUT: tokens: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
+        }
+        return suggestTheme(parsed.data);
+      },
+    },
+
+    applyThemeOverrides: {
+      name: 'applyThemeOverrides',
+      description:
+        "Replace the site's Studio theme overrides ({ light, dark } maps of whitelisted CSS tokens). Changes every editor's Studio, so it needs approval.",
+      requiredCapabilities: ['config:write'],
+      service: 'access',
+      dangerous: true,
+      handler: async (args) => {
+        if (!db || !siteId) throw new Error('SITE_DB_NOT_CONFIGURED: the site database is not available.');
+        const parsed = ThemeOverridesSchema.safeParse(args['themeOverrides']);
+        if (!parsed.success) {
+          throw new Error(`INVALID_INPUT: themeOverrides: ${parsed.error.issues.map((i) => `${i.path.join('.')} ${i.message}`).join('; ')}`);
+        }
+        await db.update(sites).set({ themeOverrides: parsed.data, updatedAt: new Date() }).where(eq(sites.id, siteId));
+        return { applied: true, themeOverrides: parsed.data };
       },
     },
 

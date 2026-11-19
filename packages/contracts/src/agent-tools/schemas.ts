@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CdcOperationSchema, CdcSubscriptionKindSchema } from '../schemas/cdc-feed';
+import { ThemeOverridesSchema } from '../schemas/site-config';
 
 /**
  * Nguồn schema **chuẩn duy nhất** cho agent tool (governed MCP contract, #454).
@@ -338,6 +339,13 @@ export const AgentToolSchemas = {
   // ── config ───────────────────────────────────────────────────────────────
   upsertSetting: z.object({ key: z.string().min(1), value: z.unknown(), scope: z.string().optional() }).strict(),
   deleteSetting: z.object({ key: z.string().min(1) }).strict(),
+  /**
+   * Figma design tokens → Studio theme (#758). `tokens` is the `tokens` object a
+   * Figma preview returns; the handler checks its shape.
+   */
+  mapDesignTokens: z.object({ tokens: record }).strict(),
+  /** Replaces the site's Studio theme overrides; values use the Studio token whitelist. */
+  applyThemeOverrides: z.object({ themeOverrides: ThemeOverridesSchema }).strict(),
   createTranslation: z
     .object({
       language: z.string().min(1),

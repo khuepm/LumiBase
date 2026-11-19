@@ -51,6 +51,7 @@ import { consentRouter } from './routes/consent';
 import { dataExportRouter } from './routes/data-export';
 import { restrictionRouter } from './routes/restriction';
 import { retentionRouter } from './routes/retention';
+import { figmaRouter } from './modules/figma/routes';
 import { emailPublicRouter } from './routes/email-public';
 import { deliverRouter } from './routes/deliver';
 import { deploymentsRouter, deploymentsWebhookRouter } from './routes/deployments';
@@ -458,6 +459,8 @@ api.route('/firebase-sync', lumibaseFirebaseSyncRouter);
 // `requireSiteAdmin()` gate. The public OAuth-callback + webhook routes are
 // mounted above on the top-level `app` and win for their disjoint leaf paths.
 api.route('/integrations/git', gitRouter);
+// Figma → block template import (#758), site admin.
+api.route('/integrations/figma', figmaRouter);
 
 // Share links are public. The opaque token resolves the site and share role.
 app.use('/api/v1/shares/*', withDb());

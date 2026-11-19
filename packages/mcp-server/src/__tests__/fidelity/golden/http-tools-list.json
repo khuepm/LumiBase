@@ -117,6 +117,44 @@
       }
     },
     {
+      "name": "applyThemeOverrides",
+      "description": "Replace the site's Studio theme overrides ({ light, dark } maps of whitelisted CSS tokens). Changes every editor's Studio, so it needs approval.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "themeOverrides": {
+            "type": "object",
+            "properties": {
+              "light": {
+                "default": {},
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "dark": {
+                "default": {},
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "themeOverrides"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "askUser",
       "description": "Ask a human a clarifying question and pause the run until it is answered, times out or is cancelled. Returns status \"waiting_user\" with a questionId.",
       "inputSchema": {
@@ -1425,6 +1463,26 @@
       "description": "List outbound webhooks for the current site.",
       "inputSchema": {
         "type": "object"
+      }
+    },
+    {
+      "name": "mapDesignTokens",
+      "description": "Map design tokens (e.g. from a Figma import preview: colors with usage, fonts, radii) to Studio theme overrides (HSL triples, --radius length). Read-only; returns { light, rationale }.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tokens": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "tokens"
+        ],
+        "additionalProperties": false
       }
     },
     {
