@@ -1,11 +1,11 @@
 ---
-version: 61
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 62
+lastUpdated: 2026-11-19T06:34:04.915Z
 sourceLang: en
-contentHash: 1d86bff615c2ba39
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
-codeVerifiedClaims: 652
+contentHash: 5da6eaa5ddc0177f
+codeVerified: 2026-11-19T06:34:04.915Z
+codeVerifiedHash: 5da6eaa5ddc0177f
+codeVerifiedClaims: 658
 ---
 
 # Hono API Specification — LumiBase
@@ -1796,6 +1796,27 @@ on PR open/sync LumiBase seeds an ephemeral site (`${siteId}__pr-${number}`)
 served at `/api/v1/deliver/page/${ephemeralSiteId}/...`; on close/merge it is
 torn down. CI failure records an `agent_incident` (role `git-sync`) + a
 `git_ci_failed` audit entry.
+
+---
+
+## 12d. Figma import (#758)
+
+Site admin only. Turns a Figma frame into a block template (hidden collection
+with mapped fields + display template). See
+[Figma import](../features/figma-import.md).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/integrations/figma` | `{ hasToken }` |
+| `PUT/DELETE` | `/api/v1/integrations/figma/token` | Store `{ token }` (encrypted site tool secret `FIGMA_TOKEN`, never returned) / remove it |
+| `POST` | `/api/v1/integrations/figma/preview` | `{ url, collection?, label? }` → `{ collection, label, fields, displayTemplate, tokens, theme, warnings, source }`; no writes |
+| `POST` | `/api/v1/integrations/figma/import` | `{ url, collection?, label?, addToBlocksField?: { collection, field } }` → `201`; `409 COLLECTION_EXISTS`, `404 BLOCKS_FIELD_NOT_FOUND`, `422 FIGMA_NO_FIELDS` |
+
+Figma errors: `400 FIGMA_URL_INVALID`, `422 FIGMA_TOKEN_REJECTED` (also when no
+token is stored), `404 FIGMA_NOT_FOUND`, `422 FIGMA_NOT_A_FRAME`,
+`429 FIGMA_RATE_LIMITED`, `502 FIGMA_UNAVAILABLE`. Agent skills
+`mapDesignTokens` (read-only) and `applyThemeOverrides` (governed, HITL) map the
+preview's `tokens` to Studio theme overrides.
 
 ---
 
