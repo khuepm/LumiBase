@@ -25,16 +25,26 @@ interface UsePresenceOptions {
 }
 
 interface UsePresenceResult {
-  /** Other users currently present (excludes self). */
+  /** Other sessions currently present (excludes this session). */
   peers: PresenceEntry[];
+  /** Every session, this one included (field locks are ordered across all). */
+  everyone: PresenceEntry[];
+  /** This session's id, from the server's `welcome` (null until connected). */
+  selfSessionId: string | null;
   /** Whether the WS connection for presence is active. */
   connected: boolean;
+  /** Announce the focused field (`null` on blur) — #685. */
+  setFocus: (field: string | null) => void;
+  /** Take (`field`) or release (`null`) the soft lock on a field — #685. */
+  setLock: (field: string | null) => void;
 }
 
 export function usePresence(options: UsePresenceOptions = {}): UsePresenceResult {
   const { collection, itemId, meta } = options;
   const wsRef = useRef<WebSocket | null>(null);
-  const [peers, setPeers] = useState<PresenceEntry[]>([]);
+  const [everyone, setEveryone] = useState<PresenceEntry[]>([]);
+  const [selfSessionId, setSelfSessionId] = useState<string | null>(null);
+  const selfRef = useRef<string | null>(null);
   const [connected, setConnected] = useState(false);
 
   // Obtain the current userId from localStorage dev token (or auth context).
@@ -100,10 +110,17 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceResult
 
         ws.onmessage = (event) => {
           try {
-            const msg = JSON.parse(event.data as string) as { type: string; users?: PresenceEntry[] };
+            const msg = JSON.parse(event.data as string) as {
+              type: string;
+              users?: PresenceEntry[];
+              sessionId?: string;
+            };
+            if (msg.type === 'welcome' && typeof msg.sessionId === 'string') {
+              selfRef.current = msg.sessionId;
+              setSelfSessionId(msg.sessionId);
+            }
             if (msg.type === 'presence' && Array.isArray(msg.users)) {
-              // Filter out self from the peer list.
-              setPeers(msg.users.filter((u) => u.userId !== userId));
+              setEveryone(msg.users);
             }
           } catch {
             /* ignore malformed */
@@ -112,7 +129,9 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceResult
 
         ws.onclose = () => {
           setConnected(false);
-          setPeers([]);
+          setEveryone([]);
+          selfRef.current = null;
+          setSelfSessionId(null);
         };
       } catch (err) {
         console.warn('Presence connection failed', err);
@@ -141,7 +160,23 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceResult
     }
   }, [sendPresence]);
 
-  return { peers, connected };
+  const sendField = useCallback(
+    (key: 'focus' | 'lock', field: string | null) => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ type: 'presence', collection, itemId, meta, [key]: field }));
+    },
+    [collection, itemId, meta],
+  );
+  const setFocus = useCallback((field: string | null) => sendField('focus', field), [sendField]);
+  const setLock = useCallback((field: string | null) => sendField('lock', field), [sendField]);
+
+  // Without a welcome yet, fall back to excluding our own user id.
+  const peers = everyone.filter((u) =>
+    selfSessionId ? u.sessionId !== selfSessionId : u.userId !== userId,
+  );
+
+  return { peers, everyone, selfSessionId, connected, setFocus, setLock };
 }
 
 /**
@@ -155,14 +190,23 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceResult
 export function useCoEditors(collection: string, itemId: string): {
   coEditors: PresenceEntry[];
   connected: boolean;
+  /** Every session on this item, this one included (for field presence). */
+  sessionsOnItem: PresenceEntry[];
+  selfSessionId: string | null;
+  setFocus: (field: string | null) => void;
+  setLock: (field: string | null) => void;
 } {
-  const { peers, connected } = usePresence({ collection, itemId });
+  const { peers, everyone, selfSessionId, connected, setFocus, setLock } = usePresence({ collection, itemId });
+  const sessionsOnItem = everyone.filter((u) => u.collection === collection && u.itemId === itemId);
 
   const coEditors = (() => {
     const seen = new Set<string>();
     const out: PresenceEntry[] = [];
+    // Your own other tabs are not "someone else" for the banner/avatar stack.
+    const selfUser = everyone.find((u) => u.sessionId === selfSessionId)?.userId;
     for (const peer of peers) {
       if (peer.itemId !== itemId) continue;
+      if (selfUser && peer.userId === selfUser) continue;
       if (seen.has(peer.userId)) continue;
       seen.add(peer.userId);
       out.push(peer);
@@ -170,5 +214,5 @@ export function useCoEditors(collection: string, itemId: string): {
     return out;
   })();
 
-  return { coEditors, connected };
+  return { coEditors, connected, sessionsOnItem, selfSessionId, setFocus, setLock };
 }

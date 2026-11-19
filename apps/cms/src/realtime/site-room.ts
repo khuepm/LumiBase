@@ -25,6 +25,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { nanoid } from 'nanoid';
 import { parseClientMessage, type RealtimeEvent } from '@lumibase/contracts';
+import { nextPresence, presenceEntries, visiblePresence } from './presence';
 import { canSubscribe, shouldDeliver, toWireMessage } from './fan-out';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -342,13 +343,8 @@ export class SiteRoom extends DurableObject<any> {
         break;
       }
       case 'presence': {
-        session.presence = {
-          userId: session.principal.userId,
-          subjectId: session.principal.subjectId,
-          collection: msg.collection,
-          itemId: msg.itemId,
-          meta: msg.meta,
-        };
+        // Identity from the ticket; meta bounded; focus/lock studio-only (#685).
+        session.presence = nextPresence(session.presence, msg, session.principal, new Date(now));
         this.broadcastPresence(session.principal.plane);
         break;
       }
@@ -376,17 +372,17 @@ export class SiteRoom extends DurableObject<any> {
 
   /** Presence is scoped per plane — studio peers never see audience presence. */
   private broadcastPresence(plane: 'studio' | 'public'): void {
-    const now = new Date().toISOString();
-    const users: PresenceEntry[] = [];
-    for (const s of this.sessions.values()) {
-      if (s.principal.plane !== plane) continue;
-      users.push({ sessionId: s.sessionId, ...s.presence, lastSeen: now });
-    }
-    const payload = JSON.stringify({ type: 'presence', users });
+    const users: PresenceEntry[] = presenceEntries(
+      [...this.sessions.values()].map((s) => ({ sessionId: s.sessionId, plane: s.principal.plane, presence: s.presence })),
+      plane,
+    );
     for (const session of this.sessions.values()) {
       if (session.principal.plane !== plane) continue;
       try {
-        session.ws.send(payload);
+        // Each peer sees presence only on collections its ticket allows.
+        session.ws.send(
+          JSON.stringify({ type: 'presence', users: visiblePresence(users, session.allowedCollections) }),
+        );
       } catch {
         /* disconnected */
       }
