@@ -63,6 +63,24 @@
 .fallbackLumi {
   filter: drop-shadow(0 0 60px rgb(255 190 100 / 45%));
 }
+/* On a phone the copy fills the width, so the stand-in Lumi cannot sit beside
+   it. It takes the part of the screen the scene would have used: under the
+   copy at ground level (the opening and the ending), above it everywhere else.
+   `StoryCanvas` sets `data-ground` from the scroll position. */
+@media (max-width: 860px) {
+  .fallback {
+    place-items: start center;
+    padding: calc(var(--header-h) + 2svh) 0 0;
+  }
+  .stage[data-ground="true"] .fallback {
+    place-items: end center;
+    padding: 0 0 9svh;
+  }
+  .fallbackLumi {
+    width: min(116px, 28vw, 16svh);
+    height: auto;
+  }
+}
 
 /* ── Chapters ──────────────────────────────────────────────────────────── */
 
@@ -804,7 +822,9 @@
 
 /* On a phone the copy scrolls up into the part of the screen the scene uses.
    Each block fades out as it crosses that line, so Lumi is never read through
-   a paragraph. The top 38% of the viewport is the scene's. */
+   a paragraph. Lumi and its props stay above ~30% of the viewport, so that is
+   the line; a block stays fully opaque until it is a third of the way past it,
+   so a heading sitting on the line while its chapter is centred still reads. */
 @supports (animation-timeline: view()) {
   @media (max-width: 860px) and (prefers-reduced-motion: no-preference) {
     .chapter:not(.prologue) .copy,
@@ -816,7 +836,7 @@
     .lineage,
     .consoleWrap {
       animation: pass linear both;
-      animation-timeline: view(block 38% 0%);
+      animation-timeline: view(block 30% 0%);
     }
   }
 }
@@ -829,10 +849,10 @@
     opacity: 1;
     transform: none;
   }
-  exit 0% {
+  exit 35% {
     opacity: 1;
   }
-  exit 85% {
+  exit 100% {
     opacity: 0;
   }
 }

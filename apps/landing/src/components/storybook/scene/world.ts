@@ -232,6 +232,10 @@ export function createMoon(track: <T extends Disposable>(item: T) => T): THREE.M
     new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
+      // Additive, so the moon only ever adds light. With normal blending the
+      // faint earthshine disc darkened whatever sat behind it, and a dark
+      // circle showed wherever the moon crossed Lumi's fuzz.
+      blending: THREE.AdditiveBlending,
       uniforms: {
         uLit: { value: new THREE.Color("#fff3d6") },
         uHalo: { value: new THREE.Color("#b9a8ff") },
