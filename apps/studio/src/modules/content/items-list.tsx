@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams } from '@tanstack/react-router';
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp, Bookmark, ChevronLeft, ChevronRight, ClipboardCheck, Code2, Download, Filter, ListTree, Upload, Lock, Plus, RefreshCw, Save, Table2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FieldResource } from '@lumibase/sdk';
@@ -19,6 +19,8 @@ import { MapLayout, geopointFields } from './geo/map-layout';
 import { ListLayoutToggle, type ListLayout } from './geo/list-layout-toggle';
 import { CollectionTreeView } from './tree-view';
 import { reorderTargetFor, type ReorderTarget } from './manual-order';
+import { readListSearch, rememberListSearch, writeListSearch } from './list-url-state';
+import { useSingletonRedirect, wantsListView } from './singleton-redirect';
 
 const PAGE_SIZE = 25;
 
@@ -37,12 +39,18 @@ export function ItemsListPage() {
   const client = getApiClient();
   const perms = usePermissions();
 
-  const [filters, setFilters] = useState<FilterCondition[]>([]);
-  const [showFilters, setShowFilters] = useState(false);
+  // List state lives in the URL too (#694): Back from an item returns to the
+  // same page, sort and filters. Read once on mount; written back below.
+  const navigate = useNavigate();
+  const search = useSearch({ strict: false });
+  const [fromUrl] = useState(() => readListSearch(search));
+  const urlHasState = useRef(Object.keys(fromUrl).length > 0);
+  const [filters, setFilters] = useState<FilterCondition[]>(fromUrl.filters ?? []);
+  const [showFilters, setShowFilters] = useState((fromUrl.filters?.length ?? 0) > 0);
   // "Modified since publish" (#687): published-once items edited since.
-  const [modifiedOnly, setModifiedOnly] = useState(false);
-  const [sort, setSort] = useState<SortState>({ field: 'updated_at', dir: 'desc' });
-  const [page, setPage] = useState(0);
+  const [modifiedOnly, setModifiedOnly] = useState(fromUrl.modifiedOnly ?? false);
+  const [sort, setSort] = useState<SortState>(fromUrl.sort ?? { field: 'updated_at', dir: 'desc' });
+  const [page, setPage] = useState(fromUrl.page ?? 0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showBulk, setShowBulk] = useState(false);
   const [liveMode, setLiveMode] = useState(false);
@@ -98,10 +106,25 @@ export function ItemsListPage() {
     const p = effectiveQuery.data;
     if (p) {
       const savedSort = (p.layoutQuery as { sort?: SortState })?.sort;
-      if (savedSort?.field) setSort(savedSort);
+      // A view carried in the URL (Back, shared link) wins over the saved default.
+      if (savedSort?.field && !urlHasState.current) setSort(savedSort);
       effectiveRef.current = { sort: savedSort, filter: p.filter };
     }
   }, [effectiveQuery.data]);
+
+  // Mirror the list state into the URL (replace, so Back skips the tweaks).
+  useEffect(() => {
+    const next = writeListSearch({ page, sort, filters, modifiedOnly });
+    const current = (search ?? {}) as Record<string, unknown>;
+    const rest = Object.fromEntries(
+      Object.entries(current).filter(([k]) => !['page', 'sort', 'f', 'modified'].includes(k)),
+    );
+    const merged = { ...rest, ...next };
+    rememberListSearch(collection, next);
+    if (JSON.stringify(merged) === JSON.stringify(current)) return;
+    void navigate({ to: '.', search: merged as never, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, sort, filters, modifiedOnly]);
 
   // Debounced save of the user's DEFAULT view when it drifts from effective.
   // Skipped while a named bookmark is active (that's a transient view, not the
@@ -157,7 +180,12 @@ export function ItemsListPage() {
         offset: page * PAGE_SIZE,
       }),
     // Wait for the collection so a tree collection does not also fetch the flat page.
-    enabled: !perms.isLoading && canRead && !collectionQuery.isLoading && !showTree,
+    enabled:
+      !perms.isLoading &&
+      canRead &&
+      !collectionQuery.isLoading &&
+      !showTree &&
+      (collectionQuery.data?.singleton !== true || wantsListView(search)),
   });
 
   const fields = fieldsQuery.data ?? [];
@@ -204,6 +232,12 @@ export function ItemsListPage() {
     if (target) reorderMutation.mutate({ id: dragId, target });
   };
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const singletonRedirect = useSingletonRedirect(
+    collection,
+    collectionQuery.data?.singleton,
+    canRead,
+    wantsListView(search),
+  );
 
   const toggleSort = (field: string) => {
     setPage(0);
@@ -213,6 +247,10 @@ export function ItemsListPage() {
         : { field, dir: 'asc' },
     );
   };
+
+  if (singletonRedirect) {
+    return <p className="text-sm text-muted-foreground">Opening {collection}…</p>;
+  }
 
   return (
     <div className="space-y-4">

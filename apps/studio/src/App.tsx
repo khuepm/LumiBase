@@ -6,6 +6,7 @@ import { SiteThemeStyle } from './components/site-theme';
 import { getApiBaseUrl } from './lib/api-base';
 import { isDesktopShell } from './lib/shell';
 import { ServerConnection } from './components/server-connection';
+import { ConnectionProblemDialog } from './components/connection-problem-dialog';
 import { hydrateTokens } from './lib/token-store';
 import { MediaPickerProvider } from './modules/files/media-picker';
 import { listenForShellIntentLinks } from './lib/intents/shell-deep-link';
@@ -51,6 +52,7 @@ export function App() {
       <MediaPickerProvider>
         <RouterProvider router={router} />
       </MediaPickerProvider>
+      <ConnectionProblemDialog />
     </>
   );
 }

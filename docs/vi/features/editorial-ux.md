@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 3
-lastUpdated: 2026-11-15T22:14:22.190Z
+version: 4
+lastUpdated: 2026-11-19T04:31:50.251Z
 translatedFrom: en
-sourceHash: c924e0830d3f4ac1
+sourceHash: 1b54f237178b479a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T22:14:22.190Z
-codeVerifiedHash: c924e0830d3f4ac1
+codeVerified: 2026-11-19T04:31:50.251Z
+codeVerifiedHash: 1b54f237178b479a
 codeVerifiedClaims: 16
 ---
 
@@ -158,6 +158,30 @@ bật `manualSort` trả `400 MANUAL_SORT_DISABLED`; đặt một item cạnh ch
 Trong Studio, collection sắp xếp thủ công mở ra theo `sort`, và các dòng có thể
 kéo thả: thả phía dưới đích sẽ đặt item sau nó, thả phía trên sẽ đặt trước nó.
 SDK có `client.items('menu').reorder(id, { after })`.
+
+## Điều hướng trong Studio
+
+- **Danh sách giữ nguyên chế độ xem.** Danh sách collection ghi trang, cách
+  sắp xếp, bộ lọc và nút **Modified since publish** vào URL (`?page=`,
+  `?sort=`, `?f=`, `?modified=`). Mở một item rồi bấm nút Back của trình duyệt
+  sẽ quay lại đúng trang và bộ lọc, và URL có thể chia sẻ hoặc đánh dấu. Chế độ
+  xem trong URL được ưu tiên hơn chế độ xem mặc định đã lưu.
+- **Breadcrumb.** Trình soạn item và form tạo mới hiển thị
+  **Content › collection › item** (tiêu đề, tên hoặc nhãn của item, nếu không
+  có thì một id rút gọn). Liên kết collection và mũi tên quay lại đưa về đúng
+  chế độ xem danh sách bạn vừa rời, và **Save and return** cùng **Delete** cũng
+  quay về đó.
+- **Singleton mở thẳng vào form.** Collection được đánh dấu singleton bỏ qua
+  danh sách: mở nó sẽ đi thẳng tới item duy nhất, hoặc tới form tạo mới khi
+  chưa có item nào. Thêm `?list=1` vào URL danh sách để vẫn xem danh sách.
+- **Lỗi kết nối không làm trắng trang.** Các lần đọc tự thử lại sau khi mất
+  kết nối, gặp `429` hoặc `502`–`504` (chờ theo `Retry-After` của server, nếu
+  không thì 1, 2, 4 giây). Nếu sự cố kéo dài hơn số lần thử lại, hoặc một lần
+  lưu thất bại theo cách đó, một hộp **Try again** xuất hiện ở góc màn hình;
+  trang giữ nguyên, và với lần lưu thì thử lại sẽ gửi lại đúng thay đổi đó. Các
+  lỗi khác (validation, quyền, xung đột) vẫn do màn hình gửi request hiển thị
+  như trước. Màn hình bị lỗi khi render sẽ hiện **Try again** và
+  **Go to Content** thay vì một trang trống.
 
 ## Tóm tắt kiểm tra hợp lệ của release
 
