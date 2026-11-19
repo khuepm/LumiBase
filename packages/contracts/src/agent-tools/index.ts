@@ -3,6 +3,7 @@ export {
   ASK_USER_LIMITS,
   AgentToolSchemas,
   agentToolNamesWithSchema,
+  isEnforceableObjectSchema,
   hasAgentToolSchema,
   jsonSchemaFor,
   validateAgentToolInput,
