@@ -1,10 +1,10 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 27
+lastUpdated: 2026-11-19T05:06:59.360Z
 sourceLang: en
-contentHash: 52465604769f9c24
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+contentHash: 6d5fde5aa4d4df52
+codeVerified: 2026-11-19T05:06:59.360Z
+codeVerifiedHash: 6d5fde5aa4d4df52
 codeVerifiedClaims: 22
 ---
 
@@ -30,7 +30,7 @@ Schema files are split by domain:
 | `core.ts` | `lumibase_organizations`, `lumibase_organization_members`, `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
-| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_presets`, `lumibase_dashboard_layouts`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
@@ -301,6 +301,9 @@ When seeding local/staging/prod, seed system collection permissions explicitly. 
 
 ### `presets` (bookmark + view state)
 - `id`, `siteId`, `bookmark` text nullable, `collection`, `userId?`, `roleId?`, `layout` (`tabular`/`cards`/`kanban`/`calendar`/`map`), `layoutQuery jsonb`, `layoutOptions jsonb`, `search`, `filter jsonb`, `icon`, `color`, `refreshInterval`.
+
+### `dashboard_layouts` (migration `0044`, physical `lumibase_dashboard_layouts`)
+- `id`, `siteId`, `userId?` (null = the site default), `layout jsonb` (`DashboardLayout` from `@lumibase/contracts`), `updatedBy?`, `createdAt`, `updatedAt`. One row per `(siteId, userId)` and one site default per site (two partial unique indexes). RLS-scoped by `site_id`.
 
 ### `translations` (UI strings + content)
 - `id`, `siteId`, `language`, `namespace` (`ui`/`field`/`content`), `key`, `value`. Unique `(siteId, language, namespace, key)`.

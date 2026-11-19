@@ -42,6 +42,7 @@ const ItemDetailPage = lazy(() => import('./modules/content/item-detail').then((
 const IntentPage = lazy(() => import('./modules/intents/intent-page').then((m) => ({ default: m.IntentPage })));
 const ItemsListPage = lazy(() => import('./modules/content/items-list').then((m) => ({ default: m.ItemsListPage })));
 const ReviewQueuePage = lazy(() => import('./modules/editorial/review-queue').then((m) => ({ default: m.ReviewQueuePage })));
+const HomeDashboardPage = lazy(() => import('./modules/home/dashboard-page').then((m) => ({ default: m.HomeDashboardPage })));
 const ReleasesPage = lazy(() => import('./modules/editorial/releases-page').then((m) => ({ default: m.ReleasesPage })));
 const CollectionsListPage = lazy(() => import('./modules/data-model/list').then((m) => ({ default: m.CollectionsListPage })));
 const McpSetupPage = lazy(() => import('./modules/data-model/mcp-setup').then((m) => ({ default: m.McpSetupPage })));
@@ -510,6 +511,19 @@ const contentReviewsRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/content/$collection/reviews',
   component: withSuspense(ReviewQueuePage),
+});
+
+// Studio home dashboard (#691).
+const homeDashboardRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/dashboard',
+  component: withSuspense(HomeDashboardPage),
+});
+
+const adminPathHomeDashboardRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/dashboard',
+  component: withSuspense(HomeDashboardPage),
 });
 
 // Content releases with the pre-publish validation summary (#692).
@@ -1420,6 +1434,7 @@ const routeTree = rootRoute.addChildren([
     contentCollectionRoute,
     contentReviewsRoute,
     releasesRoute,
+    homeDashboardRoute,
     contentItemRoute,
     intentRoute,
     dataModelRoute,
@@ -1504,6 +1519,7 @@ const routeTree = rootRoute.addChildren([
     adminPathContentCollectionRoute,
     adminPathContentReviewsRoute,
     adminPathReleasesRoute,
+    adminPathHomeDashboardRoute,
     adminPathContentItemRoute,
     adminPathIntentRoute,
     adminPathDataModelRoute,

@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   bigint,
   boolean,
@@ -117,6 +118,37 @@ export const fileVersions = pgTable(
   (t) => ({
     fileIdx: index('file_versions_file_idx').on(t.siteId, t.fileId, t.version),
     expiryIdx: index('file_versions_expiry_idx').on(t.expiresAt),
+  }),
+);
+
+/**
+ * Studio home dashboard layouts (#691). One row per user per site, plus one
+ * site default row (`user_id` NULL) that site admins set. `layout` is a
+ * `DashboardLayout` (@lumibase/contracts): widgets on a 12-column grid.
+ */
+export const dashboardLayouts = pgTable(
+  'lumibase_dashboard_layouts',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    /** NULL = the site default layout. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    layout: jsonb('layout').notNull(),
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    /** One layout per user per site. */
+    userUnique: uniqueIndex('dashboard_layouts_site_user_unique')
+      .on(t.siteId, t.userId)
+      .where(sql`${t.userId} is not null`),
+    /** One default per site (NULLs are distinct in a plain unique index). */
+    siteDefaultUnique: uniqueIndex('dashboard_layouts_site_default_unique')
+      .on(t.siteId)
+      .where(sql`${t.userId} is null`),
   }),
 );
 

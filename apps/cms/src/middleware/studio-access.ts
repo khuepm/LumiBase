@@ -35,6 +35,8 @@ const STUDIO_ACCESS_PATH_PREFIXES = [
   '/api/v1/agent',
   '/api/v1/api-keys',
   '/api/v1/collections',
+  // Studio home dashboard layout (#691) — Studio-only surface.
+  '/api/v1/dashboard',
   '/api/v1/domains',
   '/api/v1/extensions',
   // Admin switch for the live OpenAPI document (#745). Prefix-matched on

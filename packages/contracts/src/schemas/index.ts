@@ -410,3 +410,16 @@ export * from './field-options';
 export { GeoPointSchema, GeoNearSchema, GeoBBoxSchema } from './geopoint';
 export { richTextValueSchema, RichTextDocumentSchema } from './richtext';
 export * from './preview';
+export {
+  DASHBOARD_GRID_COLUMNS,
+  DASHBOARD_MAX_ROWS,
+  DASHBOARD_MAX_WIDGETS,
+  DASHBOARD_WIDGET_CONFIG_MAX_BYTES,
+  DEFAULT_DASHBOARD_LAYOUT,
+  dashboardLayoutSchema,
+  dashboardWidgetSchema,
+  dashboardWidgetTypeSchema,
+  type DashboardLayout,
+  type DashboardLayoutSource,
+  type DashboardWidget,
+} from './dashboard-layout';

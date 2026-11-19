@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 60
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 61
+lastUpdated: 2026-11-19T05:06:57.055Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1d86bff615c2ba39
+sourceHash: 8972c2b5feabfd46
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
-codeVerifiedClaims: 652
+codeVerified: 2026-11-19T05:06:57.055Z
+codeVerifiedHash: 8972c2b5feabfd46
+codeVerifiedClaims: 656
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -1546,6 +1546,23 @@ Dashboard do người dùng xây dựng gồm các panel tổng hợp trên các
 | `POST` | `/api/v1/dashboards/:id/panels/preview` | Chạy thử `PanelQuery` (xem trước trong trình chỉnh sửa) |
 
 `PanelQuery` (hợp đồng dùng chung `@lumibase/contracts`): `{ collection, aggregate (count|sum|avg|min|max), field?, groupBy?, filter? (quy tắc điều kiện), dateRange?, limit? }`. `field` is required for non-`count` aggregates. Trường nằm ngoài danh sách trắng của collection sẽ trả về `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
+
+### Bố cục dashboard trang chủ Studio
+
+Lưới widget của trang chủ Studio (`/dashboard`). Một bố cục là
+`{ version: 1, widgets: [{ id, type, x, y, w, h, title?, config? }] }` trên lưới
+12 cột (`x + w ≤ 12`, tối đa 40 widget, `config` ≤ 4 KB, `id` không trùng);
+`type` là tên một widget có sẵn hoặc `extension:<name>` cho một UI extension
+slot `panel`. Bố cục không hợp lệ trả về `400 { errors: [{ code: 'VALIDATION' }] }`.
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `GET` | `/api/v1/dashboard/layout` | Bố cục hiệu lực của người gọi → `{ data: { layout, source } }`, `source` là một trong `user`, `site`, `default` (`layout: null` nghĩa là bố cục mặc định có sẵn). |
+| `PUT` | `/api/v1/dashboard/layout` | Lưu bố cục riêng của người gọi `{ layout }`. Cần người dùng đã đăng nhập (`403 USER_REQUIRED` với API key). |
+| `DELETE` | `/api/v1/dashboard/layout` | Bỏ bố cục riêng; trả về bố cục hiệu lực được dùng thay thế. |
+| `GET` | `/api/v1/dashboard/layout/site-default` | Bố cục mặc định của site. Chỉ admin site. |
+| `PUT` | `/api/v1/dashboard/layout/site-default` | Đặt bố cục mặc định `{ layout }`. Chỉ admin site; ghi audit `dashboard_default_set`. |
+| `DELETE` | `/api/v1/dashboard/layout/site-default` | Xoá bố cục mặc định. Chỉ admin site; ghi audit `dashboard_default_cleared`. |
 
 ### Mốc kích hoạt
 
