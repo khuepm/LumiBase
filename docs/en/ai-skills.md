@@ -1,11 +1,11 @@
 ---
-version: 6
-lastUpdated: 2026-11-19T04:35:27.437Z
+version: 7
+lastUpdated: 2026-11-19T09:50:09.980Z
 sourceLang: en
-contentHash: 4604433a338447a3
-codeVerified: 2026-11-19T04:35:27.437Z
-codeVerifiedHash: 4604433a338447a3
-codeVerifiedClaims: 6
+contentHash: e8e91333010d7759
+codeVerified: 2026-11-19T09:50:09.980Z
+codeVerifiedHash: e8e91333010d7759
+codeVerifiedClaims: 10
 ---
 
 # AI Skills Documentation for LumiBase Development
@@ -102,9 +102,60 @@ Skills run through the **governed endpoint** `POST /api/v1/mcp` (gated by the pe
 | `listDeploymentTargets` / `listDeployments` / `getDeploymentStatus` / `triggerDeployment` | `deployments:read` / `deployments:write` | safe / dangerous (`trigger` gated by HITL below autopilot) |
 | `listCdcSubscriptions` / `getCdcSubscriptionStatus` / `createCdcSubscription` / `replayCdcSubscription` / `deleteCdcSubscription` | `cdc:manage` | reads safe; `create`/`replay`/`delete` are control-plane → HITL below autopilot. `create`/`replay` carry an explicit `dangerous` flag, `delete` via the `delete` name prefix — so the agent/MCP path matches the admin-only `/api/v1/cdc` REST surface |
 | `askUser` / `getUserAnswer` | `items:read` | safe — `askUser` parks the run in `waiting_user` until a human answers in Mission Control (or it times out / is cancelled); `getUserAnswer` returns the answer to the requester only, as untrusted data. Not on the autonomy gradient: asking is allowed at every level. Not offered to the Copilot chat, which has no run to pause. See [agent harness](features/agent-harness-layer.md#asking-a-human-askuser-710) |
+| `describeImage` / `extractFieldsFromPdf` | `items:read` | safe — read-only; the file is read with the caller's `files::read` access. `describeImage` returns alt text, `extractFieldsFromPdf` proposes field values for a new item (creating it is a separate `createItem`). See [Images and PDFs as input](#images-and-pdfs-as-input-709) |
 | `proposeSiteSkill` | `config:write` | dangerous — always parks for a human's approval below autopilot; an approved proposal creates a **draft** Site Skill (never active, never overwrites an existing slug), with the agent and its `rationale` on the version trail. See [Site Skills](features/site-skills.md#agent-proposals) |
 
 **Reserved collection names.** `createCollection` (and any rename via `updateCollection`) rejects names starting with the `lumibase_` prefix, which is owned by the platform (CDC/Firebase sync tables, internal config). The guard lives in `SchemaService.ensureName`, so it applies uniformly to the AI harness, the builder/Studio routes, and any other caller; violations raise `RESERVED_NAME` (HTTP 422).
+
+### Images and PDFs as input (#709)
+
+A Copilot turn can carry up to 4 files from the media library. The Studio
+assistant has two buttons for this: **Attach** picks from the library, and
+**Upload** adds a file from your device to the library first. Over the API, use
+`attachments: [{ fileId }]` on `POST /api/v1/ai/chat`. The provider adapters
+send each file as the provider's own image or document block (OpenAI
+`image_url` / `file`, Anthropic `image` / `document`, Gemini and Vertex
+`inlineData`).
+
+- **Types and limits** (`AI_ATTACHMENT_LIMITS` in `apps/cms/src/services/ai-attachments.ts`):
+  PNG, JPEG, GIF and WebP images up to 5 MB, PDFs up to 10 MB, 20 MB per turn.
+  SVG, HEIC and other types are refused with `415`.
+- **Access.** A file is read with the caller's own `files::read` access, the
+  same rule (site admin or a folder-scoped grant) that guards downloading it.
+  A file outside that scope answers `404`, like one that does not exist.
+  Quarantined or not-yet-scanned files are refused with `409`.
+- **Untrusted.** Text inside an image or a PDF is data, never instructions. The
+  turn opens with a notice that names the files and says so. Whatever the model
+  proposes still runs through the harness with the caller's capabilities,
+  autonomy level and approvals.
+- **Not stored.** The conversation keeps `{ fileId, name, mimeType, size }`,
+  never the bytes, and older turns are not re-sent with their files. A turn with
+  files always runs synchronously, because file access is checked on that
+  request.
+- **Providers.** OpenAI, Anthropic, Gemini and Vertex AI are supported (use a
+  model that accepts images and PDFs). Workers AI answers
+  `422 LLM_ATTACHMENTS_UNSUPPORTED` without calling the model. Files count
+  against the context budget by estimate: about 1,600 tokens per image, and at
+  least 3,000 per PDF, growing with its size. With the default
+  `LLM_CONTEXT_WINDOW_TOKENS` (32,768) the tool catalogue leaves room for about
+  one image. Set it to your model's real window to send PDFs; otherwise the
+  turn fails with `413 LLM_CONTEXT_LIMIT`.
+
+Two skills read a file by id, from the chat or from `POST /api/v1/mcp`:
+
+- `describeImage { fileId, maxLength?, language? }` returns
+  `{ fileId, altText, language }`. The alt text is cut at a word boundary
+  within `maxLength` (default 125).
+- `extractFieldsFromPdf { fileId, collection, instruction? }` returns
+  `{ fileId, collection, data, ignored, notes }`. Only fields a document can
+  fill are offered to the model; relations, files, aliases, rich text and
+  translations are left out. A value whose JSON type does not fit its field is
+  dropped and listed in `ignored`. Nothing is written. Creating the item is a
+  separate `createItem`, which goes through the same capability check, autonomy
+  level and approvals as any Copilot write.
+
+Without a request (an agent run, the queued chat worker) both skills fail with
+`FILES_NOT_CONFIGURED`.
 
 **External-action tools.** A tool whose effect lands outside the CMS is registered with a declared `risk`, `reversibility`, `blastRadius`, `capability` and secret references, and is decided on that declaration instead of the classification above. A high-risk or irreversible one waits for an approval at every autonomy level, and that approval can only be given by a signed-in user. Secrets are resolved from the `KeyProvider` when the handler runs and never reach the prompt, the tool result or a stored row. None is registered by default. See [external-action tools](features/external-action-tools.md).
 

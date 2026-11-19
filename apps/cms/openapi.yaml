@@ -3811,6 +3811,19 @@ paths:
               properties:
                 message: { type: string, maxLength: 2000 }
                 conversationId: { type: string, nullable: true }
+                attachments:
+                  type: array
+                  maxItems: 4
+                  description: >-
+                    Media-library images (PNG, JPEG, GIF, WebP; ≤ 5 MB each) or PDFs (≤ 10 MB each)
+                    sent to the model with this turn, read with the caller's files read access.
+                    20 MB per turn. A turn with files always runs synchronously.
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [fileId]
+                    properties:
+                      fileId: { type: string, maxLength: 64 }
       responses:
         '200':
           description: AI response
@@ -3822,6 +3835,36 @@ paths:
                   data: { $ref: '#/components/schemas/AIChatResponse' }
         '400':
           description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: An attachment was sent but the caller has no files read access (FORBIDDEN)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: An attached file does not exist or is outside the caller's file access (NOT_FOUND)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: An attached file is quarantined, not yet scanned or missing from storage (FILE_NOT_AVAILABLE)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413':
+          description: Attachments over the size or count limit (ATTACHMENT_TOO_LARGE), or the request exceeds the model context (LLM_CONTEXT_LIMIT)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '415':
+          description: An attached file is not an image or PDF the model accepts (UNSUPPORTED_MEDIA_TYPE)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: The configured provider does not accept image or PDF input (LLM_ATTACHMENTS_UNSUPPORTED)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

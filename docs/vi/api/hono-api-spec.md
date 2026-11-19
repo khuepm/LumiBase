@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 62
-lastUpdated: 2026-11-19T09:36:31.018Z
+version: 63
+lastUpdated: 2026-11-19T09:50:15.403Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 0c06929b6477adee
+sourceHash: 6c70731289a66c81
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T09:36:31.018Z
-codeVerifiedHash: 0c06929b6477adee
+codeVerified: 2026-11-19T09:50:15.403Z
+codeVerifiedHash: 6c70731289a66c81
 codeVerifiedClaims: 674
 ---
 
@@ -1107,6 +1107,21 @@ X-Lumi-Site: <siteId>
 **Request chat:**
 ```json
 { "message": "Create a collection called 'products' with title, price, and status fields" }
+```
+
+**Đính kèm ảnh và PDF** (#709). `attachments` gửi tối đa 4 file trong thư viện
+media cùng lượt chat. Loại được nhận là ảnh PNG, JPEG, GIF và WebP (≤ 5 MB mỗi
+file) và PDF (≤ 10 MB mỗi file), 20 MB mỗi lượt. File được đọc bằng chính quyền
+`files::read` của người gọi. Tin nhắn được lưu giữ `{ fileId, name, mimeType, size }`
+trong `metadata.attachments`, không bao giờ giữ nội dung file, và các lượt cũ
+không được gửi lại kèm file. Lượt có file luôn chạy đồng bộ, kể cả khi có
+`Prefer: respond-async`. Response trả lại `attachments`. Lỗi:
+`403 FORBIDDEN` (không có quyền file), `404 NOT_FOUND`, `409 FILE_NOT_AVAILABLE`
+(đang cách ly, chưa quét xong hoặc thiếu nội dung), `413 ATTACHMENT_TOO_LARGE`,
+`415 UNSUPPORTED_MEDIA_TYPE`, `422 LLM_ATTACHMENTS_UNSUPPORTED` (Workers AI).
+Xem [AI skills → Ảnh và PDF](../ai-skills.md#ảnh-và-pdf-làm-đầu-vào-709).
+```json
+{ "message": "Write alt text for this image", "attachments": [{ "fileId": "f_8Kq2" }] }
 ```
 
 **Response skill an toàn:**
