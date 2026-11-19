@@ -187,7 +187,15 @@ export type SystemContextReason =
    * writes nothing to items (only drift rows). Sending content to the provider
    * is gated by the site's `aiDecisions.enabled` + `aiDecisions.drift`.
    */
-  | 'semantic-drift-scan';
+  | 'semantic-drift-scan'
+  /**
+   * Commerce catalogue sync (#764). Writes only the provider-owned rows of
+   * `commerce_products` / `commerce_promotions` (keyed by provider + external
+   * id), after a site admin connected the store, from a site-admin full sync or
+   * a webhook whose signature matched that site's secret. The content written
+   * is always re-read from the provider, never taken from the webhook body.
+   */
+  | 'commerce-sync';
 
 /**
  * Construct an ItemService that intentionally runs with system privileges

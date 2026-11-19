@@ -1,11 +1,11 @@
 ---
-version: 7
-lastUpdated: 2026-11-14T02:15:35.397Z
+version: 8
+lastUpdated: 2026-11-19T09:11:10.946Z
 sourceLang: en
-contentHash: 40ce7652d5196dc5
-codeVerified: 2026-11-14T02:15:35.397Z
-codeVerifiedHash: 40ce7652d5196dc5
-codeVerifiedClaims: 36
+contentHash: db1b3b95143025ba
+codeVerified: 2026-11-19T09:11:10.946Z
+codeVerifiedHash: db1b3b95143025ba
+codeVerifiedClaims: 38
 ---
 
 # Task/Plan: Runtime security guards for LumiBase
@@ -167,7 +167,7 @@ Every `ItemService` construction goes through two explicit helpers in
   `overrides` cannot accidentally drop enforcement.
 - **`itemServiceForSystem(deps, reason)`** — used for system/background flows. It
   requires a `SystemContextReason` (`'scheduler'` | `'background-worker'` |
-  `'compliance-erasure'` | `'semantic-drift-scan'`) so the author must **state why** the fail-open posture
+  `'compliance-erasure'` | `'semantic-drift-scan'` | `'commerce-sync'`) so the author must **state why** the fail-open posture
   is safe.
 
 The regression test `apps/cms/src/__tests__/item-service-rbac-context.test.ts`
@@ -189,6 +189,7 @@ re-introduce a fail-open path without a reviewer noticing.
 | `services/agent-run-worker.ts` | principal (`itemServiceForPrincipal`) when the job carries a user or API-key principal; otherwise system `background-worker` | a job with a user or API-key principal enforces that principal's row/field RBAC, as the request path does (#580); reconciler (agent-role) and legacy capability-snapshot jobs have no principal and are gated by the harness (HITL/autonomy, agent role); a `dev` principal (development runtime + `admin` role only) resolves to a full admin bundle with no persisted role, so it keeps the system posture |
 | `services/erasure-service.ts` | system `compliance-erasure` | erasure/SAR gated by admin + dual-control at the service layer |
 | `services/review-content-access.ts` (`reviewContentAccessForDriftScan`) | system `semantic-drift-scan` | semantic drift pass (J12): reads only the rule's fields minus pinned fields, writes no item; sending content is gated by `aiDecisions.enabled` + `aiDecisions.drift` |
+| `modules/commerce/http.ts` (`syncDeps`) | request for the site-admin full sync; system `commerce-sync` for the provider webhook | the webhook has no principal: its signature must match the site's secret, it only names a product that is then re-read from the provider, and only the provider-owned rows of `commerce_products` / `commerce_promotions` are written (#764) |
 
 ### Checklist when adding a new ItemService
 

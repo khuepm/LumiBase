@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 7
-lastUpdated: 2026-11-14T02:15:35.397Z
+version: 8
+lastUpdated: 2026-11-19T09:11:10.946Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 40ce7652d5196dc5
+sourceHash: db1b3b95143025ba
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T02:15:35.397Z
-codeVerifiedHash: 40ce7652d5196dc5
-codeVerifiedClaims: 36
+codeVerified: 2026-11-19T09:11:10.946Z
+codeVerifiedHash: db1b3b95143025ba
+codeVerifiedClaims: 38
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -142,7 +142,7 @@ Mọi khởi tạo `ItemService` đi qua hai helper tường minh trong
   `permissionCtx` áp cuối cùng nên `overrides` không thể vô tình gỡ enforcement.
 - **`itemServiceForSystem(deps, reason)`** — dùng cho flow hệ thống/nền. Bắt buộc
   truyền `SystemContextReason` (`'scheduler'` | `'background-worker'` |
-  `'compliance-erasure'` | `'semantic-drift-scan'`) để tác giả phải **nêu lý do** tại sao fail-open an toàn.
+  `'compliance-erasure'` | `'semantic-drift-scan'` | `'commerce-sync'`) để tác giả phải **nêu lý do** tại sao fail-open an toàn.
 
 Test hồi quy `apps/cms/src/__tests__/item-service-rbac-context.test.ts` quét source
 và **fail CI** nếu có `new ItemService(...)` trực tiếp ngoài factory (trừ allowlist
@@ -162,6 +162,7 @@ và **fail CI** nếu có `new ItemService(...)` trực tiếp ngoài factory (t
 | `services/agent-run-worker.ts` | principal (`itemServiceForPrincipal`) khi job mang principal user hoặc API key; nếu không thì system `background-worker` | job có principal user hoặc API key áp RBAC row/field của principal đó, giống đường request (#580); job reconciler (agent-role) và job legacy chỉ có snapshot capability không có principal và được harness chặn (HITL/autonomy, agent role); principal `dev` (chỉ ở runtime development + role `admin`) resolve thành bundle admin đầy đủ, không có role lưu trong DB, nên giữ posture system |
 | `services/erasure-service.ts` | system `compliance-erasure` | erasure/SAR gated admin + dual-control ở tầng service |
 | `services/review-content-access.ts` (`reviewContentAccessForDriftScan`) | system `semantic-drift-scan` | pass drift ngữ nghĩa (J12): chỉ đọc các field của rule trừ field đã ghim, không ghi item nào; việc gửi nội dung bị chặn bởi `aiDecisions.enabled` + `aiDecisions.drift` |
+| `modules/commerce/http.ts` (`syncDeps`) | request cho full sync của site admin; system `commerce-sync` cho webhook của nhà cung cấp | webhook không có principal: chữ ký phải khớp secret của site, nó chỉ nêu một sản phẩm rồi sản phẩm được đọc lại từ nhà cung cấp, và chỉ các dòng do nhà cung cấp sở hữu trong `commerce_products` / `commerce_promotions` được ghi (#764) |
 
 ### Checklist khi thêm ItemService mới
 

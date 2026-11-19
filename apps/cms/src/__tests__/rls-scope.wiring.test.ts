@@ -242,6 +242,7 @@ const ROUTER_DB_CLASS: Record<string, { class: RouterClass; file?: string; note?
   '/api/v1/deliver': { class: 'self-scoped', file: 'routes/deliver.ts' },
   '/api/v1/deliver/preview': { class: 'self-scoped', file: 'routes/preview-delivery.ts' },
   '/api/v1/pageviews': { class: 'self-scoped', file: 'modules/pageviews/routes.ts' },
+  '/api/v1/commerce-webhooks': { class: 'self-scoped', file: 'modules/commerce/webhook.ts' },
   '/api/v1/integrations/git': { class: 'mixed', file: 'modules/git-integration/routes.ts' },
 };
 
