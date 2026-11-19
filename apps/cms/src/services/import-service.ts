@@ -4,12 +4,14 @@
  * An upload becomes a row in `lumibase_import_jobs`; workers then process it
  * in chunks under a short lease:
  *
- *   createImportJob   validate + parse once (400 on a bad file), store, queue
+ *   createImportJob   validate + parse once (400 on a bad file), stage the
+ *                     parsed rows as chunks, queue
  *   runImportStep     claim → check cancel/timeout → re-resolve principal →
- *                     write the next chunk → record counters/errors → release
+ *                     load the staged chunk at the cursor → write it →
+ *                     record counters/errors, drop the chunk → release
  *   driveImportJob    loop steps within a time budget (request `waitUntil`)
- *   runImportTick     cron: resume jobs whose lease expired, honouring the
- *                     per-site concurrency limit
+ *   runImportTick     cron: resume jobs whose lease expired, round-robin and
+ *                     fair per site, honouring the per-site concurrency limit
  *
  * Every row goes through `ItemService` bound to the job's principal, so
  * validation, permissions, hooks, revisions and CDC behave exactly as for a
@@ -18,9 +20,13 @@
  *
  * Works the same on Workers and Node: the only moving parts are SQL updates
  * guarded on `lease_until`, so overlapping ticks never process a chunk twice.
+ *
+ * Memory (#859): the file is parsed once, at create. A step loads one staged
+ * chunk, never the whole file, and job reads project `importJobColumns`, which
+ * leaves out the legacy `source` column.
  */
-import { and, asc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
-import { importJobs, type Database } from '@lumibase/database';
+import { and, asc, eq, getTableColumns, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { importChunks, importJobs, type Database } from '@lumibase/database';
 import type { RealtimeProvider } from '@lumibase/runtime';
 import { nanoid } from 'nanoid';
 import { ExportError, parseExport, type ExportFormat, type ImportRecord } from './export-service';
@@ -50,6 +56,13 @@ export interface ImportConfig {
   maxBytes: number;
   /** Rows written per step. `IMPORT_CHUNK_SIZE`, default 500. */
   chunkSize: number;
+  /**
+   * Bytes of uploads a site may have queued or running at once.
+   * `IMPORT_MAX_PENDING_BYTES`, default 200 MiB; never below `maxBytes`.
+   */
+  maxPendingBytes: number;
+  /** Jobs a site may have queued or running at once. `IMPORT_MAX_PENDING_JOBS`, default 100. */
+  maxPendingJobs: number;
   /** Row errors kept in the report; the rest are only counted. */
   maxErrors: number;
   /** How long a step may hold a job before another worker can take it. */
@@ -61,6 +74,8 @@ export const DEFAULT_IMPORT_CONFIG: ImportConfig = {
   maxConcurrency: 20,
   maxBytes: 50 * 1024 * 1024,
   chunkSize: 500,
+  maxPendingBytes: 200 * 1024 * 1024,
+  maxPendingJobs: 100,
   maxErrors: 1000,
   leaseMs: 120_000,
 };
@@ -73,27 +88,93 @@ function positiveInt(raw: string | undefined, fallback: number, max = Number.MAX
 
 /** Read the import knobs from env vars (Workers bindings or `process.env`). */
 export function resolveImportConfig(env: Record<string, string | undefined>): ImportConfig {
+  const maxBytes = positiveInt(env.IMPORT_MAX_BYTES, DEFAULT_IMPORT_CONFIG.maxBytes, 1024 * 1024 * 1024);
   return {
     ...DEFAULT_IMPORT_CONFIG,
     timeoutMs: positiveInt(env.IMPORT_TIMEOUT, DEFAULT_IMPORT_CONFIG.timeoutMs / 1000, 7 * 24 * 3600) * 1000,
     maxConcurrency: positiveInt(env.IMPORT_MAX_CONCURRENCY, DEFAULT_IMPORT_CONFIG.maxConcurrency, 1000),
-    maxBytes: positiveInt(env.IMPORT_MAX_BYTES, DEFAULT_IMPORT_CONFIG.maxBytes, 1024 * 1024 * 1024),
+    maxBytes,
     chunkSize: positiveInt(env.IMPORT_CHUNK_SIZE, DEFAULT_IMPORT_CONFIG.chunkSize, 5000),
+    // A pending budget smaller than one upload would refuse every file.
+    maxPendingBytes: Math.max(
+      maxBytes,
+      positiveInt(env.IMPORT_MAX_PENDING_BYTES, DEFAULT_IMPORT_CONFIG.maxPendingBytes, 16 * 1024 * 1024 * 1024),
+    ),
+    maxPendingJobs: positiveInt(env.IMPORT_MAX_PENDING_JOBS, DEFAULT_IMPORT_CONFIG.maxPendingJobs, 10_000),
   };
 }
 
 export class ImportError extends Error {
   constructor(
-    public readonly code: 'VALIDATION' | 'PAYLOAD_TOO_LARGE' | 'NOT_FOUND' | 'CONFLICT',
+    public readonly code: 'VALIDATION' | 'PAYLOAD_TOO_LARGE' | 'NOT_FOUND' | 'CONFLICT' | 'LIMIT_EXCEEDED',
     message: string,
-    public readonly status: 400 | 404 | 409 | 413 = 400,
+    public readonly status: 400 | 404 | 409 | 413 | 429 = 400,
   ) {
     super(message);
     this.name = 'ImportError';
   }
 }
 
-type ImportJobRow = typeof importJobs.$inferSelect;
+/**
+ * Every job column except `source`. Use it for every read of a job (#859):
+ * `source` can hold a whole uploaded file (up to `IMPORT_MAX_BYTES`) for jobs
+ * queued before staging existed, and nothing outside the staging fallback in
+ * `loadChunk` needs it.
+ */
+export const importJobColumns = (() => {
+  const { source, ...rest } = getTableColumns(importJobs);
+  void source;
+  return rest;
+})();
+
+/** A job row as read through `importJobColumns`. */
+export type ImportJobRow = Omit<typeof importJobs.$inferSelect, 'source'>;
+
+/** One staged chunk of parsed rows. */
+export interface StagedChunk {
+  startRow: number;
+  records: ImportRecord[];
+}
+
+/** Split parsed rows into chunks of `size`, numbered from `startRow`. */
+export function chunkRecords(records: ImportRecord[], size: number, startRow = 0): StagedChunk[] {
+  const out: StagedChunk[] = [];
+  for (let i = 0; i < records.length; i += size) {
+    out.push({ startRow: startRow + i, records: records.slice(i, i + size) });
+  }
+  return out;
+}
+
+/** Chunks per INSERT: bounds the statement size without one round trip per chunk. */
+const CHUNKS_PER_INSERT = 10;
+
+async function stageChunks(db: Database, siteId: string, jobId: string, chunks: StagedChunk[]): Promise<void> {
+  for (let i = 0; i < chunks.length; i += CHUNKS_PER_INSERT) {
+    await db.insert(importChunks).values(
+      chunks.slice(i, i + CHUNKS_PER_INSERT).map((c) => ({
+        siteId,
+        jobId,
+        startRow: c.startRow,
+        rowCount: c.records.length,
+        records: c.records,
+      })),
+    );
+  }
+}
+
+/**
+ * Transaction-scoped advisory lock on one site's imports. Both per-site
+ * decisions take it, so each is one atomic check-then-write:
+ *  - `createImportJob`: pending budget check → insert job → stage its chunks
+ *    (#859). A job only becomes visible, to the budget and to workers, with
+ *    all of its chunks in the same commit.
+ *  - `runImportStep` starting a queued job: running count → claim (#860).
+ * Under READ COMMITTED each statement after the lock sees every job the
+ * previous holder committed.
+ */
+function importSiteLock(siteId: string) {
+  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`lumibase_import:${siteId}`}, 0))`;
+}
 
 /** Public shape of a job (never includes the uploaded source). */
 export interface ImportJobView {
@@ -166,23 +247,54 @@ export async function createImportJob(input: {
     throw err;
   }
   if (records.length === 0) throw new ImportError('VALIDATION', 'The file has no rows to import.');
-  const [row] = await input.db
-    .insert(importJobs)
-    .values({
-      siteId: input.siteId,
-      collection: input.collection,
-      format: input.format,
-      mode: input.mode,
-      status: 'queued',
-      principal: input.principal,
-      createdBy: input.createdBy,
-      source: input.body,
-      sourceBytes: bytes,
-      totalRows: records.length,
-      timeoutMs: input.config.timeoutMs,
-    })
-    .returning();
-  return row!;
+  const chunks = chunkRecords(records, input.config.chunkSize);
+
+  return input.db.transaction(async (tx) => {
+    const db = tx as unknown as Database;
+    // Serialise creates per site so two uploads cannot both pass the budget check.
+    await db.execute(importSiteLock(input.siteId));
+    const [pending] = (await db
+      .select({
+        jobs: sql<number>`count(*)::int`,
+        bytes: sql<number>`coalesce(sum(${importJobs.sourceBytes}), 0)::bigint`,
+      })
+      .from(importJobs)
+      .where(and(eq(importJobs.siteId, input.siteId), inArray(importJobs.status, ['queued', 'running'])))) as [
+      { jobs: number; bytes: number | string },
+    ];
+    if (pending.jobs >= input.config.maxPendingJobs) {
+      throw new ImportError(
+        'LIMIT_EXCEEDED',
+        `This site already has ${pending.jobs} imports queued or running (limit ${input.config.maxPendingJobs}). Wait for one to finish.`,
+        429,
+      );
+    }
+    if (Number(pending.bytes) + bytes > input.config.maxPendingBytes) {
+      throw new ImportError(
+        'LIMIT_EXCEEDED',
+        `Imports queued or running on this site would exceed ${input.config.maxPendingBytes} bytes. Wait for one to finish.`,
+        429,
+      );
+    }
+
+    const [row] = await db
+      .insert(importJobs)
+      .values({
+        siteId: input.siteId,
+        collection: input.collection,
+        format: input.format,
+        mode: input.mode,
+        status: 'queued',
+        principal: input.principal,
+        createdBy: input.createdBy,
+        sourceBytes: bytes,
+        totalRows: records.length,
+        timeoutMs: input.config.timeoutMs,
+      })
+      .returning(importJobColumns);
+    await stageChunks(db, input.siteId, row!.id, chunks);
+    return row!;
+  });
 }
 
 // ── Step ──────────────────────────────────────────────────────────────────────
@@ -256,7 +368,7 @@ async function publishProgress(deps: ImportStepDeps, job: ImportJobRow): Promise
   }
 }
 
-/** Finish a job: set a terminal status, drop the source, release the lease. */
+/** Finish a job: set a terminal status, drop staged rows, release the lease. */
 async function finish(
   deps: ImportStepDeps,
   jobId: string,
@@ -266,22 +378,69 @@ async function finish(
   extra: Partial<typeof importJobs.$inferInsert> = {},
 ): Promise<ImportJobRow | undefined> {
   const now = deps.now?.() ?? new Date();
-  const [row] = await deps.db
-    .update(importJobs)
-    .set({
-      ...extra,
-      status,
-      message,
-      source: '',
-      finishedAt: now,
-      updatedAt: now,
-      leaseOwner: null,
-      leaseUntil: null,
-    })
-    .where(and(eq(importJobs.id, jobId), eq(importJobs.leaseOwner, owner)))
-    .returning();
+  // The terminal status and the removal of the staged rows commit together: a
+  // crash between them must not leave a finished job with chunks, or chunks
+  // gone under a job that still reads as queued/running.
+  const row = await deps.db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(importJobs)
+      .set({
+        ...extra,
+        status,
+        message,
+        source: '',
+        finishedAt: now,
+        updatedAt: now,
+        leaseOwner: null,
+        leaseUntil: null,
+      })
+      .where(and(eq(importJobs.id, jobId), eq(importJobs.leaseOwner, owner)))
+      .returning(importJobColumns);
+    if (updated) await tx.delete(importChunks).where(eq(importChunks.jobId, jobId));
+    return updated;
+  });
   if (row) await publishProgress(deps, row);
   return row;
+}
+
+/**
+ * The staged rows that start at the job's cursor. A job queued before staging
+ * existed (#859) still has its raw file in `source` and no chunks: parse it
+ * once here, stage what is left, and clear `source`. The only place that
+ * reads `source`.
+ */
+async function loadChunk(
+  deps: ImportStepDeps,
+  job: ImportJobRow,
+  owner: string,
+  fields: Pick<CompiledField, 'name' | 'type' | 'interface'>[],
+): Promise<ImportRecord[]> {
+  const [found] = await deps.db
+    .select({ records: importChunks.records })
+    .from(importChunks)
+    .where(and(eq(importChunks.jobId, job.id), eq(importChunks.startRow, job.cursor)))
+    .limit(1);
+  if (found) return found.records as ImportRecord[];
+
+  const [legacy] = await deps.db
+    .select({ source: importJobs.source })
+    .from(importJobs)
+    .where(and(eq(importJobs.id, job.id), eq(importJobs.leaseOwner, owner)))
+    .limit(1);
+  if (!legacy?.source) throw new Error('The staged rows of this import are missing.');
+  const rest = parseExport(legacy.source, job.format as ExportFormat, fields).slice(job.cursor);
+  if (rest.length === 0) throw new Error('The import file has no rows left to import.');
+  const chunks = chunkRecords(rest, deps.config.chunkSize, job.cursor);
+  // The schema may have changed since upload; the rows parsed now are the job.
+  job.totalRows = job.cursor + rest.length;
+  await deps.db.transaction(async (tx) => {
+    await stageChunks(tx as unknown as Database, job.siteId, job.id, chunks);
+    await tx
+      .update(importJobs)
+      .set({ source: '', totalRows: job.totalRows })
+      .where(and(eq(importJobs.id, job.id), eq(importJobs.leaseOwner, owner)));
+  });
+  return chunks[0]!.records;
 }
 
 /**
@@ -294,36 +453,54 @@ export async function runImportStep(deps: ImportStepDeps, jobId: string): Promis
   const owner = nanoid();
   const leaseUntil = new Date(now.getTime() + deps.config.leaseMs);
 
-  const [current] = await deps.db.select().from(importJobs).where(eq(importJobs.id, jobId)).limit(1);
+  const [current] = await deps.db.select(importJobColumns).from(importJobs).where(eq(importJobs.id, jobId)).limit(1);
   if (!current) return 'done';
   if (TERMINAL_STATUSES.includes(current.status as ImportStatus)) return 'done';
 
-  if (current.status === 'queued') {
-    const [{ running }] = (await deps.db
-      .select({ running: sql<number>`count(*)::int` })
-      .from(importJobs)
-      .where(and(eq(importJobs.siteId, current.siteId), eq(importJobs.status, 'running')))) as [{ running: number }];
-    if (running >= deps.config.maxConcurrency && current.cancelRequestedAt === null) return 'waiting';
-  }
-
   // Claim: only when nobody holds a live lease.
-  const [job] = await deps.db
-    .update(importJobs)
-    .set({
-      leaseOwner: owner,
-      leaseUntil,
-      status: sql`case when ${importJobs.status} = 'queued' then 'running' else ${importJobs.status} end`,
-      startedAt: sql`coalesce(${importJobs.startedAt}, ${now.toISOString()}::timestamp)`,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(importJobs.id, jobId),
-        inArray(importJobs.status, ['queued', 'running']),
-        or(isNull(importJobs.leaseUntil), lt(importJobs.leaseUntil, now)),
-      ),
-    )
-    .returning();
+  const claim = async (db: Database): Promise<ImportJobRow | undefined> => {
+    const [row] = await db
+      .update(importJobs)
+      .set({
+        leaseOwner: owner,
+        leaseUntil,
+        status: sql`case when ${importJobs.status} = 'queued' then 'running' else ${importJobs.status} end`,
+        startedAt: sql`coalesce(${importJobs.startedAt}, ${now.toISOString()}::timestamp)`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(importJobs.id, jobId),
+          inArray(importJobs.status, ['queued', 'running']),
+          or(isNull(importJobs.leaseUntil), lt(importJobs.leaseUntil, now)),
+        ),
+      )
+      .returning(importJobColumns);
+    return row;
+  };
+
+  let job: ImportJobRow | undefined;
+  if (current.status === 'queued' && current.cancelRequestedAt === null) {
+    // Starting a job counts against the per-site limit. The count and the
+    // claim must be one atomic decision, or parallel steps for different
+    // queued jobs all read a count below the limit and all claim (#860). A
+    // per-site transaction-scoped advisory lock serialises those decisions;
+    // under READ COMMITTED each statement after the lock sees every claim the
+    // previous holder committed.
+    const decision = await deps.db.transaction(async (tx) => {
+      await tx.execute(importSiteLock(current.siteId));
+      const [{ running }] = (await tx
+        .select({ running: sql<number>`count(*)::int` })
+        .from(importJobs)
+        .where(and(eq(importJobs.siteId, current.siteId), eq(importJobs.status, 'running')))) as [{ running: number }];
+      if (running >= deps.config.maxConcurrency) return 'waiting' as const;
+      return claim(tx as unknown as Database);
+    });
+    if (decision === 'waiting') return 'waiting';
+    job = decision;
+  } else {
+    job = await claim(deps.db);
+  }
   if (!job) return 'busy';
 
   if (job.cancelRequestedAt) {
@@ -344,7 +521,7 @@ export async function runImportStep(deps: ImportStepDeps, jobId: string): Promis
   let records: ImportRecord[];
   try {
     const meta = await bind(deps.db).describeForExport(job.collection);
-    records = parseExport(job.source, job.format as ExportFormat, meta.fields);
+    records = await loadChunk(deps, job, owner, meta.fields);
   } catch (err) {
     await finish(deps, job.id, owner, 'failed', err instanceof Error ? err.message : 'Could not read the import file.');
     return 'done';
@@ -363,7 +540,7 @@ export async function runImportStep(deps: ImportStepDeps, jobId: string): Promis
   // nothing. If this process dies, Postgres aborts the transaction and drops
   // the lock, and the expired lease lets the next tick resume.
   const start = job.cursor;
-  const end = Math.min(start + deps.config.chunkSize, records.length);
+  const end = Math.min(start + records.length, job.totalRows);
   let committed: ImportJobRow | undefined;
   try {
     committed = await deps.db.transaction(async (tx) => {
@@ -384,7 +561,7 @@ export async function runImportStep(deps: ImportStepDeps, jobId: string): Promis
       let updated = 0;
       const errors: ImportRowError[] = [];
       for (let i = start; i < end; i++) {
-        const rec = records[i]!;
+        const rec = records[i - start]!;
         try {
           // Savepoint per row: a failing row rolls back only its own writes.
           await tx.transaction(async () => {
@@ -418,8 +595,8 @@ export async function runImportStep(deps: ImportStepDeps, jobId: string): Promis
         leaseUntil: null,
         updatedAt: deps.now?.() ?? new Date(),
       };
-      if (end >= records.length) {
-        const failedAll = failedRows === records.length;
+      if (end >= job.totalRows) {
+        const failedAll = failedRows === job.totalRows;
         Object.assign(progress, {
           status: failedAll ? 'failed' : 'succeeded',
           message: failedAll ? 'Every row failed; see the error report.' : null,
@@ -431,8 +608,16 @@ export async function runImportStep(deps: ImportStepDeps, jobId: string): Promis
         .update(importJobs)
         .set(progress)
         .where(and(eq(importJobs.id, job.id), eq(importJobs.leaseOwner, owner)))
-        .returning();
+        .returning(importJobColumns);
       if (!row) throw new LeaseLostError();
+      // The chunk is consumed in the same commit that moves the cursor past it.
+      await tx
+        .delete(importChunks)
+        .where(
+          row.finishedAt
+            ? eq(importChunks.jobId, job.id)
+            : and(eq(importChunks.jobId, job.id), eq(importChunks.startRow, start)),
+        );
       return row;
     });
   } catch (err) {
@@ -468,13 +653,27 @@ export async function driveImportJob(deps: ImportStepDeps, jobId: string, budget
 }
 
 /**
- * Cron entry: resume unfinished jobs whose lease is free, oldest first. Uses
- * the system connection (crosses sites). Returns how many jobs it touched.
+ * Cron entry: resume unfinished jobs whose lease is free. Uses the system
+ * connection (crosses sites). Returns how many jobs it stepped.
+ *
+ * Fair across sites and jobs (#860):
+ *  - selection ranks due jobs within their site (oldest first) and takes the
+ *    first job of every site before the second of any, so one site's backlog
+ *    cannot fill the whole `limit`;
+ *  - the budget is shared round-robin, one chunk per job per round, so a large
+ *    import cannot hold the tick until it finishes while other jobs wait (and
+ *    run into their own timeout).
  */
 export async function runImportTick(deps: ImportStepDeps, opts: { budgetMs?: number; limit?: number } = {}): Promise<number> {
   const now = deps.now?.() ?? new Date();
-  const due = await deps.db
-    .select({ id: importJobs.id })
+  const ranked = deps.db
+    .select({
+      id: importJobs.id,
+      createdAt: importJobs.createdAt,
+      siteRank: sql<number>`row_number() over (partition by ${importJobs.siteId} order by ${importJobs.createdAt}, ${importJobs.id})`.as(
+        'site_rank',
+      ),
+    })
     .from(importJobs)
     .where(
       and(
@@ -482,22 +681,32 @@ export async function runImportTick(deps: ImportStepDeps, opts: { budgetMs?: num
         or(isNull(importJobs.leaseUntil), lt(importJobs.leaseUntil, now)),
       ),
     )
-    .orderBy(asc(importJobs.createdAt))
+    .as('ranked');
+  const due = await deps.db
+    .select({ id: ranked.id })
+    .from(ranked)
+    .orderBy(asc(ranked.siteRank), asc(ranked.createdAt), asc(ranked.id))
     .limit(opts.limit ?? 10);
+
   const budget = opts.budgetMs ?? 45_000;
   const started = Date.now();
-  let touched = 0;
-  for (const { id } of due) {
-    const left = budget - (Date.now() - started);
-    if (left <= 0) break;
-    try {
-      await driveImportJob(deps, id, left);
-      touched++;
-    } catch (err) {
-      console.error('[import] tick step failed', { jobId: id, err: err instanceof Error ? err.message : String(err) });
+  const stepped = new Set<string>();
+  let active = due.map((d) => d.id);
+  while (active.length > 0) {
+    const next: string[] = [];
+    for (const id of active) {
+      if (Date.now() - started >= budget) return stepped.size;
+      try {
+        const outcome = await runImportStep(deps, id);
+        stepped.add(id);
+        if (outcome === 'progressed') next.push(id);
+      } catch (err) {
+        console.error('[import] tick step failed', { jobId: id, err: err instanceof Error ? err.message : String(err) });
+      }
     }
+    active = next;
   }
-  return touched;
+  return stepped.size;
 }
 
 // ── Cancel / read ─────────────────────────────────────────────────────────────
@@ -508,20 +717,27 @@ export async function runImportTick(deps: ImportStepDeps, opts: { budgetMs?: num
  */
 export async function requestCancel(db: Database, siteId: string, jobId: string): Promise<ImportJobRow> {
   const now = new Date();
-  const [queued] = await db
-    .update(importJobs)
-    .set({ status: 'cancelled', cancelRequestedAt: now, message: 'Cancelled before it started.', source: '', finishedAt: now, updatedAt: now })
-    .where(and(eq(importJobs.id, jobId), eq(importJobs.siteId, siteId), eq(importJobs.status, 'queued'), isNull(importJobs.leaseUntil)))
-    .returning();
+  // Cancelling a queued job and dropping its staged rows is one commit. A
+  // worker claiming it at the same moment blocks on the row and then finds it
+  // no longer `queued`, so it never starts a job whose chunks are gone.
+  const queued = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(importJobs)
+      .set({ status: 'cancelled', cancelRequestedAt: now, message: 'Cancelled before it started.', source: '', finishedAt: now, updatedAt: now })
+      .where(and(eq(importJobs.id, jobId), eq(importJobs.siteId, siteId), eq(importJobs.status, 'queued'), isNull(importJobs.leaseUntil)))
+      .returning(importJobColumns);
+    if (row) await tx.delete(importChunks).where(and(eq(importChunks.jobId, jobId), eq(importChunks.siteId, siteId)));
+    return row;
+  });
   if (queued) return queued;
   const [running] = await db
     .update(importJobs)
     .set({ cancelRequestedAt: now, updatedAt: now })
     .where(and(eq(importJobs.id, jobId), eq(importJobs.siteId, siteId), inArray(importJobs.status, ['queued', 'running'])))
-    .returning();
+    .returning(importJobColumns);
   if (running) return running;
   const [existing] = await db
-    .select()
+    .select({ status: importJobs.status })
     .from(importJobs)
     .where(and(eq(importJobs.id, jobId), eq(importJobs.siteId, siteId)))
     .limit(1);

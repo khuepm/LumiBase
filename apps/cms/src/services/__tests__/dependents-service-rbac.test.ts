@@ -62,6 +62,8 @@ function dbWithRelation(): Database {
         table = t;
         return b;
       },
+      // Rich-text reference scan (#697) joins collections; it finds nothing here.
+      innerJoin: () => b,
       where: () => b,
       limit: () => Promise.resolve(rowsFor(table)),
       then: (res: (v: unknown[]) => unknown, rej: (e: unknown) => unknown) =>

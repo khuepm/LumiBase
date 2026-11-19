@@ -1,10 +1,10 @@
 ---
-version: 14
-lastUpdated: 2026-11-16T15:45:18.238Z
+version: 15
+lastUpdated: 2026-11-17T19:23:30.212Z
 sourceLang: en
-contentHash: b8df189d0eddde1f
-codeVerified: 2026-11-16T15:45:18.238Z
-codeVerifiedHash: b8df189d0eddde1f
+contentHash: c4cf5c68f57e9896
+codeVerified: 2026-11-17T19:23:30.212Z
+codeVerifiedHash: c4cf5c68f57e9896
 codeVerifiedClaims: 122
 ---
 
@@ -108,7 +108,11 @@ leading `+` is kept); for Gmail the local part also loses its dots and
 The rule lives twice, in `emailRoot()`
 (`apps/cms/src/modules/email-identity/normalize.ts`) and in the SQL function
 `lumibase_email_root()` (migration `0027`); an integration test pins both to
-one fixture list. Database triggers write `users.email_canonical` /
+one fixture list. Both start from the same normaliser — trim the whitespace JS
+`trim()` strips, then lower-case — in `normalizeEmail()` and in
+`lumibase_email_normalize()` (migration `0041`), which is also the `exact`-mode
+account key. SCIM trims `userName` and rejects a value that is not an address.
+Database triggers write `users.email_canonical` /
 `users.email_root` and `user_sites.identity_key`, so every writer — register,
 invite, SCIM, setup, seeds — is keyed the same way, and unique indexes (not a
 check-then-insert) enforce the result.
