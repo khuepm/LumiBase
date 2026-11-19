@@ -1,13 +1,13 @@
 ---
-version: 13
-lastUpdated: 2026-11-15T19:56:19.632Z
+version: 14
+lastUpdated: 2026-11-19T05:15:26.569Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: a13d2df6c1876273
+sourceHash: 98d810cab3a8cc8e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T19:56:19.632Z
-codeVerifiedHash: a13d2df6c1876273
+codeVerified: 2026-11-19T05:15:26.569Z
+codeVerifiedHash: 98d810cab3a8cc8e
 codeVerifiedClaims: 4
 ---
 
@@ -15,7 +15,14 @@ codeVerifiedClaims: 4
 
 Technical documentation for LumiBase — an Edge-native **Content Operating System (Content OS)**: where AI agents *operate* content while humans set intent, define taste, and hold ultimate accountability. **Runs on both Cloudflare Workers and self-hosted Docker** through a shared runtime abstraction layer.
 
-> As of **v0.5.0**, LumiBase is redefined from a *Content Management System* → a *Content Operating System*: the unit of work is **intent (intent/SLO)**, content is **continuously reconciled** toward the desired state, agents earn **autonomy by level (L0–L4)**, and every byte of content has **provenance**. See [ai-native-vision.md](./ai-native-vision.md).
+> As of **v0.5.0**, LumiBase moves from a *Content Management System* to a *Content Operating System*. Specifically:
+>
+> - **The unit of work is intent (intent/SLO):** you declare the desired state, for example "every published product must have an image and a description".
+> - **The system continuously reconciles** content against that state and corrects drift on its own.
+> - **Agents earn autonomy by level (L0–L4)**, expanded step by step as they prove trustworthy.
+> - **Every piece of content has provenance:** a record of what produced it and which sources it was based on.
+>
+> See [ai-native-vision.md](./ai-native-vision.md).
 
 > Goal: surpass Directus in **No-code Collection Builder**, **field-level / JSON-policy Permissions**, a **Raw editor for every field**, a **safe Extension SDK (with a signed Marketplace)**, **Display Templates**, **Realtime WebSocket**, and an **AI-First Copilot (HITL)** — while keeping LumiBase's Edge-native, Multi-tenant DNA but allowing self-hosting on Docker when needed.
 

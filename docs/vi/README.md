@@ -1,10 +1,10 @@
 ---
-version: 12
-lastUpdated: 2026-11-15T19:56:19.632Z
+version: 13
+lastUpdated: 2026-11-19T05:15:26.569Z
 sourceLang: vi
-contentHash: a13d2df6c1876273
-codeVerified: 2026-11-15T19:56:19.632Z
-codeVerifiedHash: a13d2df6c1876273
+contentHash: 98d810cab3a8cc8e
+codeVerified: 2026-11-19T05:15:26.569Z
+codeVerifiedHash: 98d810cab3a8cc8e
 codeVerifiedClaims: 4
 ---
 
@@ -12,7 +12,14 @@ codeVerifiedClaims: 4
 
 Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS)** Edge-native: nơi AI agent *vận hành* nội dung còn con người đặt ý định, định gu và chịu trách nhiệm cuối. **Chạy được trên cả Cloudflare Workers và Docker self-hosted** thông qua một runtime abstraction layer chung.
 
-> Từ **v0.5.0**, LumiBase được tái định nghĩa từ *Content Management System* → *Content Operating System*: đơn vị công việc là **ý định (intent/SLO)**, nội dung được **reconcile liên tục** về desired state, agent kiếm **autonomy theo cấp (L0–L4)**, và mọi byte nội dung đều có **lai lịch (provenance)**. Xem [ai-native-vision.md](./ai-native-vision.md).
+> Từ **v0.5.0**, LumiBase chuyển từ *hệ quản lý nội dung* (Content Management System) sang *hệ điều hành nội dung* (Content Operating System). Cụ thể:
+>
+> - **Đơn vị công việc là ý định (intent/SLO):** bạn khai báo trạng thái mong muốn, ví dụ "mọi sản phẩm đã xuất bản phải có ảnh và mô tả".
+> - **Hệ thống tự đối chiếu liên tục** nội dung với trạng thái đó (reconcile) và tự sửa khi lệch.
+> - **Agent có quyền tự chủ theo cấp (L0–L4)**, được mở rộng dần khi đã đáng tin cậy.
+> - **Mọi nội dung đều có lai lịch (provenance):** biết rõ thứ gì đã tạo ra nó và dựa trên nguồn nào.
+>
+> Xem [ai-native-vision.md](./ai-native-vision.md).
 
 > Mục tiêu: vượt Directus ở các mảng **No-code Collection Builder**, **Permissions theo field/JSON policy**, **Raw editor cho mọi field**, **Extension SDK an toàn (kèm Marketplace ký số)**, **Display Templates**, **Realtime WebSocket** và **AI-First Copilot (HITL)** — đồng thời giữ DNA Edge-native, Multi-tenant của LumiBase nhưng cho phép tự host trên Docker khi cần.
 
