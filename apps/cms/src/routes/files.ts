@@ -18,6 +18,13 @@ import {
 } from '../services/content-invalidation';
 import { damSettingsUpdateSchema, saveDamSettings, type DamSettings } from '../services/files/dam-settings';
 import { canActOnFile, canPlaceInFolder, type FilesAccess, type FilesAction } from '../services/files/file-access';
+import {
+  CaptionService,
+  captionCreateSchema,
+  captionPatchSchema,
+  presentCaption,
+  type CaptionRecord,
+} from '../services/files/captions';
 import { FileAssetError, FileAssetService } from '../services/files/file-asset-service';
 import type { FileListFilter, FileRecord } from '../services/files/file-repository';
 import type { FileUsageReport } from '../services/files/file-usage';
@@ -72,7 +79,7 @@ async function verifyUploadToken(token: string, secret: string): Promise<UploadT
 
 // --- helpers ---------------------------------------------------------------
 
-type ErrorStatus = 400 | 403 | 404 | 409 | 413 | 422 | 423 | 503;
+type ErrorStatus = 400 | 403 | 404 | 409 | 413 | 415 | 422 | 423 | 503;
 
 function fail(c: Context<AppEnv>, status: ErrorStatus, code: string, message: string, details?: Record<string, unknown>) {
   return c.json({ errors: [{ code, message, ...(details ? { details } : {}) }] }, status);
@@ -695,6 +702,88 @@ filesRouter.post('/:id/scan', requireSiteAdmin(), async (c) => {
       file.id,
     );
     return c.json({ data: (await ctx.repo.get(file.id)) ?? file, meta: { outcome } });
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+// --- Caption / subtitle tracks of a video (#871) -----------------------------
+
+function captionService(c: Context<AppEnv>, g: Guarded): CaptionService {
+  if (!g.ctx.captions || !g.ctx.locales) throw new FileAssetError('NOT_FOUND', 'Captions are not available here.', 404);
+  return new CaptionService({
+    repo: g.ctx.repo,
+    captions: g.ctx.captions,
+    locales: g.ctx.locales,
+    // A caller may only attach a caption file it can see.
+    canUseFile: (file) => canActOnFile(g.access, file, g.folders),
+  });
+}
+
+/** Version-pinned (immutable) delivery URL of a caption file, for `<track src>`. */
+function captionSrc(c: Context<AppEnv>) {
+  return (fileId: string, version: number) => `${deliveryUrl(c, fileId)}?v=${version}`;
+}
+
+async function presentCaptions(c: Context<AppEnv>, g: Guarded, rows: CaptionRecord[]) {
+  const files = await g.ctx.repo.getMany([...new Set(rows.map((r) => r.captionFileId))]);
+  const byId = new Map(files.map((f) => [f.id, f]));
+  return rows.map((r) => {
+    const f = byId.get(r.captionFileId) ?? null;
+    // A track whose file the caller cannot see is listed without its URL.
+    return presentCaption(r, f && canActOnFile(g.access, f, g.folders) ? f : null, captionSrc(c));
+  });
+}
+
+/** Tracks of a video, ready for `<track kind srclang label src default>`. */
+filesRouter.get('/:id/captions', async (c) => {
+  const g = await guard(c, 'read');
+  if (g instanceof Response) return g;
+  try {
+    const video = await loadFile(g, c.req.param('id'));
+    return c.json({ data: await presentCaptions(c, g, await captionService(c, g).list(video)) });
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+/** Attach a WebVTT file from the library as a track (files `update` on the video). */
+filesRouter.post('/:id/captions', async (c) => {
+  const g = await guard(c, 'update');
+  if (g instanceof Response) return g;
+  try {
+    const video = await loadFile(g, c.req.param('id'));
+    const input = captionCreateSchema.parse(await readJson(c));
+    const row = await captionService(c, g).add(video, input, c.get('auth')?.userId ?? null);
+    const [presented] = await presentCaptions(c, g, [row]);
+    return c.json({ data: presented }, 201);
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+filesRouter.patch('/:id/captions/:captionId', async (c) => {
+  const g = await guard(c, 'update');
+  if (g instanceof Response) return g;
+  try {
+    const video = await loadFile(g, c.req.param('id'));
+    const patch = captionPatchSchema.parse(await readJson(c));
+    const row = await captionService(c, g).update(video, c.req.param('captionId'), patch);
+    const [presented] = await presentCaptions(c, g, [row]);
+    return c.json({ data: presented });
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+/** Detach a track. The WebVTT file itself stays in the library. */
+filesRouter.delete('/:id/captions/:captionId', async (c) => {
+  const g = await guard(c, 'update');
+  if (g instanceof Response) return g;
+  try {
+    const video = await loadFile(g, c.req.param('id'));
+    await captionService(c, g).remove(video, c.req.param('captionId'));
+    return c.json({ data: null });
   } catch (err) {
     return handleError(c, err);
   }

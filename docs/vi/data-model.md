@@ -1,13 +1,13 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 27
+lastUpdated: 2026-11-19T04:50:59.253Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 52465604769f9c24
+sourceHash: 5bba5e24c582fa3e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+codeVerified: 2026-11-19T04:50:59.253Z
+codeVerifiedHash: 5bba5e24c582fa3e
 codeVerifiedClaims: 22
 ---
 
@@ -34,7 +34,7 @@ Các file schema được chia theo domain:
 | `core.ts` | `lumibase_organizations`, `lumibase_organization_members`, `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
-| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_file_captions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
@@ -300,6 +300,10 @@ Khi seed local/staging/prod, phải seed permission cho system collection một 
 
 ### `folders`
 - `id`, `siteId`, `name`, `parent`. Path, cây con và kiểm tra vòng lặp được suy ra trong `apps/cms/src/services/files/folder-tree.ts`.
+
+### `file_captions`
+- `id`, `siteId`, `fileId` (video, FK cascade), `captionFileId` (file WebVTT, FK cascade), `locale`, `kind` (`subtitles`/`captions`/`descriptions`/`chapters`), `label`, `isDefault`, `createdBy`, `createdAt`, `updatedAt`.
+- Các track phụ đề/caption của một video (#871); duy nhất theo `(siteId, fileId, locale, kind)`. Migration `0044_file_captions`. Xem [Quản lý tài sản số](./features/digital-asset-management.md).
 
 ## 5. UX state (`platform.ts`)
 

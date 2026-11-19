@@ -37,6 +37,9 @@ Nguồn: `.kiro/research/competitor-features-2026-07.md` (D01–D08). Doc ngư�
 - [x] D07 #707 — `modules/malware-scan` (HTTP adapter, job quét, audit),
   gate `423` khi phân phối, `POST /files/:id/scan`, profile compose `malware-scan`.
 - [ ] D04 #704 — upload resumable (TUS / R2 multipart). **Chưa làm** — backlog B220.
+- [ ] #871 video pipeline. Phần 2 (PR này): track phụ đề/caption WebVTT gắn
+  locale (`lumibase_file_captions`, `/files/:id/captions`, loại upload `text/vtt`).
+  Phần 1 (transcode, PR #937) và phần 3 (Studio) là PR riêng.
 
 ## Theo dõi sau
 

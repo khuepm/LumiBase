@@ -30,6 +30,20 @@ components:
       schema: { type: string }
       description: Active tenant id. Required for every authenticated endpoint.
   schemas:
+    CaptionTrack:
+      type: object
+      properties:
+        id: { type: string }
+        fileId: { type: string }
+        captionFileId: { type: string }
+        locale: { type: string }
+        kind: { type: string, enum: [subtitles, captions, descriptions, chapters] }
+        label: { type: string }
+        isDefault: { type: boolean }
+        src: { type: string, format: uri, nullable: true, description: 'Version-pinned delivery URL of the WebVTT file; null when the caller cannot see it' }
+        captionVersion: { type: integer, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     OpenApiConfig:
       type: object
       additionalProperties: false
@@ -2749,6 +2763,82 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /files/{id}/captions:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string }, description: The video file }
+    get:
+      summary: Caption / subtitle tracks of a video (#871)
+      responses:
+        '200':
+          description: Tracks, ready for `<track kind srclang label src default>`
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/CaptionTrack' } }
+        '404': { description: Video not found or outside the caller's folder scope }
+    post:
+      summary: Attach a WebVTT file from the library as a track (files update on the video)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [captionFileId, locale]
+              additionalProperties: false
+              properties:
+                captionFileId: { type: string }
+                locale: { type: string, description: 'BCP 47 tag; must be one of the site locales' }
+                kind: { type: string, enum: [subtitles, captions, descriptions, chapters], default: subtitles }
+                label: { type: string, nullable: true, maxLength: 100 }
+                isDefault: { type: boolean, default: false }
+      responses:
+        '201':
+          description: Track created
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: '#/components/schemas/CaptionTrack' } } }
+        '404': { description: CAPTION_FILE_NOT_FOUND (missing or not visible to the caller) }
+        '409': { description: CAPTION_EXISTS (one track per video, locale and kind) }
+        '415': { description: CAPTION_NOT_VTT }
+        '422': { description: NOT_A_VIDEO or LOCALE_NOT_ENABLED }
+  /files/{id}/captions/{captionId}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: captionId, in: path, required: true, schema: { type: string } }
+    patch:
+      summary: Edit a track (setting isDefault clears the other defaults of that kind)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                captionFileId: { type: string }
+                locale: { type: string }
+                kind: { type: string, enum: [subtitles, captions, descriptions, chapters] }
+                label: { type: string, nullable: true, maxLength: 100 }
+                isDefault: { type: boolean }
+      responses:
+        '200':
+          description: Updated track
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: '#/components/schemas/CaptionTrack' } } }
+        '404': { description: Track or caption file not found }
+        '409': { description: CAPTION_EXISTS }
+    delete:
+      summary: Detach a track (the WebVTT file stays in the library)
+      responses:
+        '200': { description: '`{ data: null }`' }
+        '404': { description: Track not found }
   /imports:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'
