@@ -981,11 +981,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       description: 'List the named version branches of an item (with a mainChanged flag per branch).',
       requiredCapabilities: ['items:read'],
       service: 'items',
-      inputSchema: {
-        type: 'object',
-        properties: { collection: { type: 'string' }, itemId: { type: 'string' } },
-        required: ['collection', 'itemId'],
-      },
+      // Advertised schema: the canonical one in `@lumibase/contracts` (B204).
       handler: async (args) => {
         const svc = contentVersionService();
         if (!svc) return { versions: [] };
@@ -999,15 +995,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       description: 'Compare a version branch against the item’s current main data (returns field-level changes).',
       requiredCapabilities: ['items:read'],
       service: 'items',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          collection: { type: 'string' },
-          itemId: { type: 'string' },
-          key: { type: 'string' },
-        },
-        required: ['collection', 'itemId', 'key'],
-      },
+      // Advertised schema: the canonical one in `@lumibase/contracts` (B204).
       handler: async (args) => {
         const svc = contentVersionService();
         if (!svc) return { main: {}, version: {}, changes: [] };
@@ -1460,13 +1448,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       description: 'Generate page and component specs from selected collections',
       requiredCapabilities: ['schema:read', 'items:read'],
       service: 'ai',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          collections: { type: 'array', items: { type: 'string' } },
-          targetApp: { type: 'string' },
-        },
-      },
+      // Advertised schema: the canonical one in `@lumibase/contracts` (B204).
       handler: async (args) => {
         const collections = Array.isArray(args['collections'])
           ? (args['collections'] as unknown[]).filter((entry): entry is string => typeof entry === 'string')
@@ -2946,9 +2928,8 @@ export class AISecureHarness {
    * tool-result message. `deleteItem {}` parked an approval row that could never
    * execute. Both are input defects that must be refused at the boundary.
    *
-   * Fail-open for unlisted skills is deliberate: only write-capable skills have
-   * schemas today (see `AgentToolSchemas`), so reads keep their current
-   * behaviour instead of breaking on a contract that has not been written yet.
+   * Every core skill has a canonical schema (B204); fail-open remains only for
+   * a name with none (a skill added later without one), by design.
    *
    * @returns `null` when the input is acceptable, otherwise a human-readable
    * message naming the offending field(s).
@@ -3121,6 +3102,23 @@ export class AISecureHarness {
         siteId: this.siteId,
       }).effectiveCapabilities(envelope.agentRole, userCapabilities);
     }
+    // A site's narrowing `agent_tools` override is what `tools/list` advertises
+    // for this site, so it is enforced too (B205), on top of the canonical
+    // contract already checked above. Refused before anything has run.
+    if (tool.enforcedOverrideSchema) {
+      const issue = validateExternalActionInput(tool.enforcedOverrideSchema, args);
+      if (issue) {
+        const message = `Input validation error for "${skillName}": ${issue}`;
+        await this.runService.finishToolCall(toolCallId, {
+          status: 'denied',
+          error: message,
+          latencyMs: Date.now() - startedAt,
+        });
+        await this.runService.failRun(run.runId, message, { stopReason: 'invalid_input' });
+        return { status: 'denied', code: 'VALIDATION', message, ...run, toolCallId };
+      }
+    }
+
     if (!this.checkCapabilities(tool, effectiveCapabilities)) {
       const message = 'Insufficient capabilities';
       await this.runService.finishToolCall(toolCallId, {

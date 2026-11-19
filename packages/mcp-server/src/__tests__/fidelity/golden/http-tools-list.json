@@ -59,7 +59,27 @@
       "name": "aiSuggestField",
       "description": "Suggest field definitions based on collection description + RAG context",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "maxSuggestions": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          }
+        },
+        "required": [
+          "collection",
+          "description"
+        ],
+        "additionalProperties": false
       }
     },
     {
@@ -163,20 +183,24 @@
         "type": "object",
         "properties": {
           "collection": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "itemId": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "key": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
           "collection",
           "itemId",
           "key"
-        ]
+        ],
+        "additionalProperties": false
       }
     },
     {
@@ -1202,7 +1226,17 @@
       "name": "generateApiDocs",
       "description": "Generate API documentation artifact from schema and permissions",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "collections": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "additionalProperties": false
       }
     },
     {
@@ -1214,34 +1248,72 @@
           "collections": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1
             }
           },
           "targetApp": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
-        }
+        },
+        "additionalProperties": false
       }
     },
     {
       "name": "generateSeedData",
       "description": "Generate seed data artifact for selected collections",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          }
+        },
+        "required": [
+          "collection"
+        ],
+        "additionalProperties": false
       }
     },
     {
       "name": "getCdcSubscriptionStatus",
       "description": "Get one change-feed subscription (status, checkpoint cursor, lag).",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "subscriptionId"
+        ],
+        "additionalProperties": false
       }
     },
     {
       "name": "getDeploymentStatus",
       "description": "Get the current status and details of a single deployment by id.",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "deploymentId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "deploymentId"
+        ],
+        "additionalProperties": false
       }
     },
     {
@@ -1348,112 +1420,193 @@
       "name": "listApiKeys",
       "description": "List API keys for the current site (token values are never returned).",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       }
     },
     {
       "name": "listCdcSubscriptions",
       "description": "List the change-feed subscriptions for the site with their status and lag.",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       }
     },
     {
       "name": "listCollections",
       "description": "List all collections in the current site",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       }
     },
     {
       "name": "listDeployments",
       "description": "List recent deployments, optionally filtered by target or status.",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "targetId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "building",
+              "ready",
+              "error",
+              "canceled"
+            ]
+          }
+        },
+        "additionalProperties": false
       }
     },
     {
       "name": "listDeploymentTargets",
       "description": "List the configured deployment targets (Vercel/Netlify) for the site.",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       }
     },
     {
       "name": "listExtensions",
       "description": "List extensions installed on the current site.",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       }
     },
     {
       "name": "listFlows",
       "description": "List automation flows for the current site.",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       }
     },
     {
       "name": "listIntents",
       "description": "List content intents (SLOs) for the current site.",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       }
     },
     {
       "name": "listItems",
       "description": "List items in a collection with optional filtering",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Collection to read."
+          },
+          "limit": {
+            "description": "Page size (default 25, at most 200).",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "collection"
+        ],
+        "additionalProperties": false
       }
     },
     {
       "name": "listPolicies",
       "description": "List reusable access policies for the current site.",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       }
     },
     {
       "name": "listRelations",
       "description": "List all relations configured in the schema.",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       }
     },
     {
       "name": "listRoles",
       "description": "List RBAC roles for the current site.",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       }
     },
     {
       "name": "listSettings",
       "description": "List site settings, optionally filtered by scope.",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
       }
     },
     {
       "name": "listTeams",
       "description": "List teams in the current site.",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       }
     },
     {
       "name": "listTranslations",
       "description": "List i18n translation strings, optionally filtered by namespace/language.",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "namespace": {
+            "type": "string",
+            "minLength": 1
+          },
+          "language": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
       }
     },
     {
       "name": "listUsers",
       "description": "List users belonging to the current site.",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       }
     },
     {
@@ -1463,23 +1616,28 @@
         "type": "object",
         "properties": {
           "collection": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "itemId": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
           "collection",
           "itemId"
-        ]
+        ],
+        "additionalProperties": false
       }
     },
     {
       "name": "listWebhooks",
       "description": "List outbound webhooks for the current site.",
       "inputSchema": {
-        "type": "object"
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       }
     },
     {
