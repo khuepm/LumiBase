@@ -1,0 +1,38 @@
+{
+  "title": "Release flags",
+  "intro": "Features that ship dark are switched on per deployment by LumiBase (a signed manifest) or by the operator, then per site by a site admin. A site can never switch on a feature that is not released.",
+  "memberIntro": "Released features and whether they are on for this site. Ask a site admin to change them.",
+  "loading": "Loading release flags…",
+  "error": "Could not load the release flags.",
+  "empty": "No release flags are declared.",
+  "memberEmpty": "No released features to show.",
+  "columns": {
+    "flag": "Flag",
+    "stage": "Stage",
+    "release": "Released on this deployment",
+    "site": "On for this site",
+    "owner": "Owner",
+    "removeBy": "Remove by"
+  },
+  "stage": { "dark": "Dark", "beta": "Beta", "ga": "Generally available" },
+  "released": { "yes": "Released", "no": "Not released" },
+  "releasedBy": {
+    "env": "by the operator (LUMIBASE_RELEASE_FLAGS)",
+    "manifest": "by the LumiBase release manifest",
+    "stage": "by its stage default"
+  },
+  "enabled": { "on": "On", "off": "Off" },
+  "enabledBy": {
+    "release": "follows the release",
+    "site": "chosen for this site",
+    "site-default": "site default"
+  },
+  "toggle": "Turn {{key}} on for this site",
+  "useDefault": "Use default ({{value}})",
+  "notSwitchable": "Not switchable per site.",
+  "gateClosed": "Not released on this deployment, so it cannot be turned on for a site.",
+  "saving": "Saving…",
+  "saved": "Saved.",
+  "saveError": "Could not save the change.",
+  "forbidden": "Only site admins can change release flags."
+}
