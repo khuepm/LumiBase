@@ -1,11 +1,11 @@
 ---
-version: 62
-lastUpdated: 2026-11-19T04:16:54.638Z
+version: 63
+lastUpdated: 2026-11-19T08:07:39.173Z
 sourceLang: en
-contentHash: f819700b5caafc36
-codeVerified: 2026-11-19T04:16:54.638Z
-codeVerifiedHash: f819700b5caafc36
-codeVerifiedClaims: 654
+contentHash: ff94ae93873f0943
+codeVerified: 2026-11-19T08:07:39.173Z
+codeVerifiedHash: ff94ae93873f0943
+codeVerifiedClaims: 658
 ---
 
 # Hono API Specification — LumiBase
@@ -1751,6 +1751,23 @@ identifiers.
 (count|sum|avg|min|max), field?, groupBy?, filter? (condition rule), dateRange?,
 limit? }`. `field` is required for non-`count` aggregates. A field outside the
 collection whitelist returns `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
+
+### Studio home dashboard layout
+
+The widget grid of the Studio home page (`/dashboard`). A layout is
+`{ version: 1, widgets: [{ id, type, x, y, w, h, title?, config? }] }` on a
+12-column grid (`x + w ≤ 12`, at most 40 widgets, `config` ≤ 4 KB, unique
+`id`s); `type` is a built-in widget name or `extension:<name>` for a `panel` UI
+extension. An invalid layout returns `400 { errors: [{ code: 'VALIDATION' }] }`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/dashboard/layout` | Effective layout for the caller → `{ data: { layout, source } }`, `source` one of `user`, `site`, `default` (`layout: null` means the built-in default). |
+| `PUT` | `/api/v1/dashboard/layout` | Save the caller's own layout `{ layout }`. Needs a signed-in user (`403 USER_REQUIRED` for an API key). |
+| `DELETE` | `/api/v1/dashboard/layout` | Drop the caller's layout; returns the effective layout it falls back to. |
+| `GET` | `/api/v1/dashboard/layout/site-default` | The site default layout. Site admins only. |
+| `PUT` | `/api/v1/dashboard/layout/site-default` | Set the site default `{ layout }`. Site admins only; audited as `dashboard_default_set`. |
+| `DELETE` | `/api/v1/dashboard/layout/site-default` | Clear the site default. Site admins only; audited as `dashboard_default_cleared`. |
 
 ### Activation milestones
 

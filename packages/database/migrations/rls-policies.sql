@@ -122,6 +122,8 @@ DECLARE
     -- Background collection imports (#726). Requests read/write their own site;
     -- the resume tick claims jobs across sites on the system connection.
     'lumibase_import_jobs', 'lumibase_import_chunks',
+    -- Studio home dashboard layouts (#691).
+    'lumibase_dashboard_layouts',
     -- Locale generator (#714): jobs + review queue. Requests read/write their
     -- own site; the resume tick claims jobs across sites on the system connection.
     'lumibase_locale_generation_jobs', 'lumibase_translation_suggestions',

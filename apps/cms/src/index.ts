@@ -63,6 +63,7 @@ import { handleGraphQL } from './graphql';
 import { permissionsRouter } from './routes/permissions';
 import { policiesRouter } from './routes/policies';
 import { presetsRouter } from './routes/presets';
+import { dashboardLayoutRouter } from './routes/dashboard-layout';
 import { pushRouter } from './routes/push';
 import { realtimeRouter } from './routes/realtime';
 import { relationsRouter } from './routes/relations';
@@ -341,6 +342,8 @@ api.route('/transform-presets', transformPresetsRouter);
 api.route('/uploads', uploadsRouter);
 // Future routers: presets, translations, ...
 api.route('/presets', presetsRouter);
+// Studio home dashboard layouts (#691): per user + site default.
+api.route('/dashboard', dashboardLayoutRouter);
 api.route('/translations', translationsRouter);
 api.route('/settings', settingsRouter);
 api.route('/site', siteRouter);
