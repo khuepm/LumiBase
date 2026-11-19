@@ -15,6 +15,7 @@ import { scopedDbFor } from '../middleware/db';
 import { isSiteAdmin } from '../middleware/site-admin';
 import { BackendTemplatePlanner, PlanError } from '../services/backend-templates/planner';
 import { BackendTemplateInstaller, InstallError } from '../services/backend-templates/installer';
+import { createSeedWriter } from '../services/backend-templates/seed-writer';
 
 /**
  * `/api/v1/backend-templates` — the site's private template catalog (#902,
@@ -290,7 +291,21 @@ export function installerFor(c: Context<AppEnv>): BackendTemplateInstaller {
     // Authorization is checked again under the install lock: an admin
     // demoted between plan and apply is refused before any write.
     authorize: () => isSiteAdmin(c),
-    // Seed packs are written by #905 (BT05); until then a seeded plan is refused.
+    // Seed packs (#905): written through the CALLER's ItemService bound to the
+    // install transaction — their item permissions and validation apply —
+    // with every outward effect off until commit (no queue → no flows or
+    // webhooks, no search, realtime, cache or extension hooks).
+    seed: createSeedWriter((tx) => itemServiceForRequest(c, {
+      db: tx,
+      cache: undefined,
+      edgeCache: undefined,
+      search: undefined,
+      queue: undefined,
+      realtime: undefined,
+      realtimeNamespace: undefined,
+      extensionEnv: undefined,
+      suppressExtensionHooks: true,
+    })),
     requestId: c.get('requestId') ?? null,
   });
 }
