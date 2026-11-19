@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-11-19T06:25:17.557Z
+version: 3
+lastUpdated: 2026-11-19T07:00:47.020Z
 sourceLang: en
-contentHash: 2319a08fd162980b
-codeVerified: 2026-11-19T06:25:17.557Z
-codeVerifiedHash: 2319a08fd162980b
-codeVerifiedClaims: 8
+contentHash: 33eb1abdf2a3d397
+codeVerified: 2026-11-19T07:00:47.020Z
+codeVerifiedHash: 33eb1abdf2a3d397
+codeVerifiedClaims: 16
 ---
 
 # Backend templates
@@ -18,9 +18,10 @@ same model into another site from it. Epic #900; specification
 
 > **Status.** Available now: the template **format** and its validator in
 > `@lumibase/contracts/backend-templates` (#901), and each site's private
-> **catalog** (#902): drafts, published revisions and capture. Preview/plan,
-> governed installation, MCP tools and Studio screens are delivered by
-> #903–#909. Until those land, a template cannot be installed.
+> **catalog** (#902): drafts, published revisions and capture, and **plans**
+> (#903), which preview an install without changing anything. Governed
+> installation, MCP tools and Studio screens are delivered by #904–#909. Until
+> those land, a template cannot be installed.
 
 Code: `packages/contracts/src/backend-templates/` (`envelope.ts`, `validate.ts`, `ingest.ts`, `canonical.ts`, `limits.ts`). Tests: `packages/contracts/src/backend-templates/__tests__/backend-template-contract.test.ts`.
 
@@ -197,3 +198,59 @@ into a site. Code: `apps/cms/src/services/backend-templates/catalog-service.ts`.
 Creating, capturing and publishing are written to the audit log
 (`backend_template_created`, `backend_template_captured`,
 `backend_template_published`).
+
+## Plan (preview)
+
+`POST /api/v1/backend-templates/plans` previews installing one exact template
+revision into the site of the request. It changes no schema and no content.
+The only thing written is the plan row (`lumibase_backend_template_plans`,
+scoped to the target site), and it expires after 15 minutes. Code:
+`apps/cms/src/services/backend-templates/planner.ts`.
+
+```json
+{
+  "template": { "source": "site", "sourceSiteId": "site_a", "slug": "blog", "version": "1.0.0" },
+  "targetSiteId": "site_b",
+  "namespace": { "prefix": "blog_" },
+  "seedPack": null
+}
+```
+
+- **Explicit target.** `targetSiteId` is required, and it must be the site of
+  the request. A missing value is `400 MISSING_INPUT`; a different site is
+  `400 SITE_MISMATCH`.
+- **Exact template.** `source` is `official` (bundled) or `site` (a private
+  catalog, `sourceSiteId` defaulting to the target). Name the template with
+  `slug` plus `version`, or with `displayName` plus `version`. If a display name
+  matches more than one template, across both catalogs, the request fails with
+  `409 AMBIGUOUS_TEMPLATE` and lists the candidates. `digest` optionally pins
+  the exact revision.
+- **Separate authorization.** Reading another site's private catalog needs
+  site admin on that source site as well; being admin of the target is not
+  enough. Without it the template is reported as not found.
+- **Namespace.** `prefix` is prepended to every collection name, and `map`
+  renames individual collections. Only structural references are rewritten:
+  collection names in collections, fields, relations, junctions and seed
+  records. Descriptions, notes, options, display templates and seed values keep
+  their text.
+- **Create-only.** A target collection with the same name is
+  `409 NAME_CONFLICT`, even when its schema is identical, and the response
+  lists the conflicts. Templates never merge into, or replace, existing
+  collections; choose a namespace instead. Unrelated collections are left
+  alone.
+- **Prerequisites.** The storage modes, the CMS version range
+  (`compatibility.cmsVersionRange`) and a transactional runtime are checked
+  before a plan is issued. A failure is `422 INCOMPATIBLE_RUNTIME`. When the
+  CMS version is not stamped, the plan carries a warning instead.
+- **Seed.** `seedPack` defaults to none, and an unknown pack is
+  `422 INVALID_TEMPLATE`.
+
+The response (`201`) has the plan `id`, `expiresAt`, the target schema
+`targetFingerprint` and a `report`. The report lists the collections,
+relations and counts, the seed choice, the storage prerequisites, the conflicts
+and the number of unrelated collections. `GET /plans/:id` reads a plan.
+`POST /plans/:id/verify` checks it again: an expired plan is closed as
+`expired`, a plan whose target schema changed since planning is closed as
+`invalidated`, and both answer `409 STALE_PLAN`, after which you plan again.
+The plan keeps a snapshot of the revision, so later edits to the source catalog
+do not change it.

@@ -1,13 +1,13 @@
 ---
-version: 27
-lastUpdated: 2026-11-19T06:25:19.665Z
+version: 28
+lastUpdated: 2026-11-19T07:00:53.421Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 58bc3cc627363bc2
+sourceHash: 44356d966b6ff6c5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T06:25:19.665Z
-codeVerifiedHash: 58bc3cc627363bc2
+codeVerified: 2026-11-19T07:00:53.421Z
+codeVerifiedHash: 44356d966b6ff6c5
 codeVerifiedClaims: 22
 ---
 
@@ -596,13 +596,15 @@ buộc vào `{ siteId, integrationId, field }`); plaintext không bao giờ đư
 
 ## 11e. Backend templates (`backend-templates.ts`)
 
-Catalog template riêng của mỗi site (#902, epic #900). Cả hai bảng đều có
-`site_id` (cascade) và được đăng ký cho RLS. Migration `0044_backend_templates`.
+Catalog template riêng của mỗi site (#902, epic #900) và plan cài đặt (#903).
+Mọi bảng đều có `site_id` (cascade) và được đăng ký cho RLS. Migration
+`0044_backend_templates`, `0045_backend_template_plans`.
 
 | Bảng (vật lý) | Mục đích | Cột chính |
 |-------|---------|-------------|
 | `lumibase_backend_templates` | Mỗi `(site, slug)` một draft có thể sửa | `slug`, `display_name`, `draft` (jsonb), `draft_revision` (bộ đếm optimistic), `created_by` |
 | `lumibase_backend_template_revisions` | Revision đã publish, bất biến | unique `(site_id, template_id, template_version)`; `digest` (`sha256:`), `document` (jsonb canonical), `published_by` |
+| `lumibase_backend_template_plans` | Plan cài đặt có hạn dùng (#903); `site_id` = site đích | `source_kind`, `source_site_id`, `slug`, `template_version`, `digest`, `snapshot` (jsonb), `namespace_map`, `seed_pack`, `target_fingerprint`, `inventory`, `status`, `expires_at` |
 
 ## 12. Indexing & RLS
 

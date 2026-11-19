@@ -1,14 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-11-19T06:25:17.557Z
+version: 3
+lastUpdated: 2026-11-19T07:00:47.020Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2319a08fd162980b
+sourceHash: 33eb1abdf2a3d397
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T06:25:17.557Z
-codeVerifiedHash: 2319a08fd162980b
-codeVerifiedClaims: 8
+codeVerified: 2026-11-19T07:00:47.020Z
+codeVerifiedHash: 33eb1abdf2a3d397
+codeVerifiedClaims: 16
 ---
 
 # Backend templates
@@ -21,9 +21,10 @@ cùng model đó vào một site khác. Epic #900; đặc tả
 
 > **Trạng thái.** Hiện đã có: **định dạng** template và bộ validator trong
 > `@lumibase/contracts/backend-templates` (#901), và **catalog** riêng của mỗi
-> site (#902): draft, revision đã publish và capture. Preview/plan, cài đặt có
-> governance, MCP tool và màn hình Studio do #903–#909 đảm nhận. Cho tới khi
-> chúng xong, chưa thể cài một template.
+> site (#902): draft, revision đã publish và capture, và **plan** (#903), dùng
+> để xem trước một lần cài mà không thay đổi gì. Cài đặt có governance, MCP tool
+> và màn hình Studio do #904–#909 đảm nhận. Cho tới khi chúng xong, chưa thể cài
+> một template.
 
 Code: `packages/contracts/src/backend-templates/` (`envelope.ts`, `validate.ts`, `ingest.ts`, `canonical.ts`, `limits.ts`). Test: `packages/contracts/src/backend-templates/__tests__/backend-template-contract.test.ts`.
 
@@ -198,3 +199,55 @@ site. Code: `apps/cms/src/services/backend-templates/catalog-service.ts`.
 Việc tạo, capture và publish được ghi vào audit log
 (`backend_template_created`, `backend_template_captured`,
 `backend_template_published`).
+
+## Plan (xem trước)
+
+`POST /api/v1/backend-templates/plans` xem trước việc cài một revision template
+cụ thể vào site của request. Nó không thay đổi schema hay content nào. Thứ duy
+nhất được ghi là dòng plan (`lumibase_backend_template_plans`, gắn với site
+đích), và nó hết hạn sau 15 phút. Code:
+`apps/cms/src/services/backend-templates/planner.ts`.
+
+```json
+{
+  "template": { "source": "site", "sourceSiteId": "site_a", "slug": "blog", "version": "1.0.0" },
+  "targetSiteId": "site_b",
+  "namespace": { "prefix": "blog_" },
+  "seedPack": null
+}
+```
+
+- **Đích rõ ràng.** `targetSiteId` là bắt buộc, và phải là site của request.
+  Thiếu thì trả `400 MISSING_INPUT`; site khác thì trả `400 SITE_MISMATCH`.
+- **Template chính xác.** `source` là `official` (đi kèm CMS) hoặc `site`
+  (catalog riêng, `sourceSiteId` mặc định là site đích). Gọi template bằng
+  `slug` cộng `version`, hoặc `displayName` cộng `version`. Nếu một display name
+  khớp nhiều hơn một template, trên cả hai catalog, request fail với
+  `409 AMBIGUOUS_TEMPLATE` và liệt kê các ứng viên. `digest` (tuỳ chọn) ghim
+  đúng revision.
+- **Phân quyền riêng.** Đọc catalog riêng của site khác cũng cần quyền site
+  admin trên site nguồn đó; là admin của site đích là chưa đủ. Không có quyền
+  thì template được báo là không tìm thấy.
+- **Namespace.** `prefix` được thêm vào trước mọi tên collection, và `map` đổi
+  tên từng collection. Chỉ các tham chiếu cấu trúc được viết lại: tên collection
+  trong collection, field, relation, junction và seed record. Mô tả, ghi chú,
+  options, display template và giá trị seed giữ nguyên văn bản.
+- **Chỉ tạo mới.** Collection đích cùng tên là `409 NAME_CONFLICT`, kể cả khi
+  schema giống hệt, và response liệt kê các xung đột. Template không bao giờ gộp
+  vào, hay thay thế, collection có sẵn; hãy chọn một namespace. Các collection
+  không liên quan được giữ nguyên.
+- **Điều kiện tiên quyết.** Storage mode, khoảng phiên bản CMS
+  (`compatibility.cmsVersionRange`) và runtime có transaction được kiểm tra
+  trước khi phát hành plan. Không đạt thì trả `422 INCOMPATIBLE_RUNTIME`. Khi
+  phiên bản CMS không được gắn, plan kèm một cảnh báo thay vào đó.
+- **Seed.** `seedPack` mặc định là không có, và pack không tồn tại là
+  `422 INVALID_TEMPLATE`.
+
+Response (`201`) có `id` của plan, `expiresAt`, `targetFingerprint` của schema
+đích và một `report`. Report liệt kê các collection, relation và số lượng, lựa
+chọn seed, điều kiện lưu trữ, các xung đột và số collection không liên quan.
+`GET /plans/:id` đọc một plan. `POST /plans/:id/verify` kiểm tra lại: plan hết
+hạn bị đóng là `expired`, plan có schema đích đã thay đổi kể từ lúc lập bị đóng
+là `invalidated`, và cả hai trả `409 STALE_PLAN`, sau đó bạn lập plan lại. Plan
+giữ một bản chụp của revision, nên các sửa đổi sau này ở catalog nguồn không
+làm thay đổi nó.

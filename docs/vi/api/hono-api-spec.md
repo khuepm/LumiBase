@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 61
-lastUpdated: 2026-11-19T06:25:17.748Z
+version: 62
+lastUpdated: 2026-11-19T07:00:50.095Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 45985e8972bb42c6
+sourceHash: 8e9d8e0be4284b9f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T06:25:17.748Z
-codeVerifiedHash: 45985e8972bb42c6
-codeVerifiedClaims: 666
+codeVerified: 2026-11-19T07:00:50.095Z
+codeVerifiedHash: 8e9d8e0be4284b9f
+codeVerifiedClaims: 672
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -1605,6 +1605,9 @@ gắn với site của request. Xem [Backend templates](../features/backend-temp
 | `POST` | `/api/v1/backend-templates/:id/publish` | Publish một revision bất biến (`{ draftRevision? }`) → `201`, hoặc `200` khi publish lại y hệt; `409 IMMUTABLE_REVISION`; `422 INVALID_TEMPLATE` |
 | `GET` | `/api/v1/backend-templates/:id/revisions/:version` | Document canonical đã publish (export) |
 | `POST` | `/api/v1/backend-templates/capture` | Draft từ chính schema của site `{ collections, slug, displayName, templateVersion?, description?, seed? }` → `201`; `422 MISSING_DEPENDENCY` (kèm `missing`); `403` nếu không đọc được item để seed |
+| `POST` | `/api/v1/backend-templates/plans` | Xem trước một lần cài (#903) `{ template: { source, sourceSiteId?, slug \| displayName, version, digest? }, targetSiteId, namespace?, seedPack? }` → `201` plan kèm `report`; `400 MISSING_INPUT` / `SITE_MISMATCH`; `409 AMBIGUOUS_TEMPLATE` / `NAME_CONFLICT`; `422 INCOMPATIBLE_RUNTIME` / `INVALID_TEMPLATE`. Không ghi schema hay content |
+| `GET` | `/api/v1/backend-templates/plans/:planId` | Đọc một plan (chỉ site đích) |
+| `POST` | `/api/v1/backend-templates/plans/:planId/verify` | Kiểm tra lại thời hạn, fingerprint đích và runtime; `409 STALE_PLAN` đóng plan |
 
 ---
 
