@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 56
-lastUpdated: 2026-11-16T15:46:10.249Z
+version: 57
+lastUpdated: 2026-11-17T19:26:03.593Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ae62be6b4f9529f8
+sourceHash: 94c6ed3f2c080f93
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-16T15:46:10.249Z
-codeVerifiedHash: ae62be6b4f9529f8
+codeVerified: 2026-11-17T19:26:03.593Z
+codeVerifiedHash: 94c6ed3f2c080f93
 codeVerifiedClaims: 636
 ---
 
@@ -502,6 +502,8 @@ Mã lỗi organization bổ sung gồm `400 VALIDATION`, `400 SCOPE_NOT_ALLOWED`
 ```
 
 Lỗi: `400 VALIDATION` (thiếu/sai `path`, `cast` không hợp lệ, hoặc thiếu `cast` cho đường dẫn lồng nhau), `404 NOT_FOUND` (collection hoặc trường cấp cao nhất).
+
+Client: `client.schema.indexAdvice(collection, path, cast?)` trong SDK, và tab **Indexes** ở **Data model → collection** trong Studio, hiển thị biểu thức, DDL kèm nút sao chép, và các ghi chú.
 
 ### Fields
 

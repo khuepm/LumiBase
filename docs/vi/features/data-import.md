@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-11-12T21:04:27.226Z
+version: 5
+lastUpdated: 2026-11-16T02:07:11.997Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5644257d82b75cbc
+sourceHash: 8c28b0e47b163455
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T21:04:27.226Z
-codeVerifiedHash: 5644257d82b75cbc
+codeVerified: 2026-11-17T19:25:56.154Z
+codeVerifiedHash: 8c28b0e47b163455
 codeVerifiedClaims: 12
 ---
 
@@ -120,8 +120,12 @@ dòng (đếm từ 1) và job vẫn chạy tiếp; job chỉ `failed` khi mọi 
 dòng đã ghi trước khi huỷ hoặc timeout vẫn được giữ.
 
 Studio có cùng luồng này ở **Content → collection → Import**, với thanh tiến độ,
-nút **Cancel import** và **Download error report**. Studio cũng nhận sự kiện
-realtime `import.progress` cho người đã upload.
+nút **Cancel import** và **Download error report**. Thanh tiến độ đi theo sự kiện
+realtime `import.progress`, mà server gửi cho người đã upload sau mỗi phần và khi
+job kết thúc (chỉ có bộ đếm, không bao giờ có dữ liệu dòng). Polling vẫn bật làm
+dự phòng: mỗi giây khi kết nối realtime bị ngắt, mỗi 10 giây khi đang kết nối.
+Một snapshot cũ hơn không bao giờ kéo bộ đếm lùi lại, và không gì thay thế được
+một job đã kết thúc.
 
 **Cách job chạy.** Request upload khởi động job và xử lý nó trong khoảng
 20 giây. Sau đó một cron mỗi phút (Cron Trigger trên Workers, hoặc scheduler của
