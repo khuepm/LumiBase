@@ -18,6 +18,7 @@ import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpe
 import { AISecureHarness } from '../ai-harness';
 import { AgentRunService } from '../agent-run-service';
 import { AutonomyService } from '../autonomy-service';
+import { ConstitutionService } from '../constitution-service';
 import { EffectiveCapabilityService } from '../effective-capability-service';
 import { itemServiceForPrincipal } from '../item-service-factory';
 import { ItemServiceError } from '../item-service';
@@ -255,6 +256,42 @@ describe.skipIf(!hasDbIntegrationUrl)('#578 impact-aware item risk — DB integr
     const result = await exec('updateItem', { collection: 'posts', id, data: { title: 'v2' }, status: 'published' });
     expect(result.status).toBe('executed');
     expect((await itemRow(id)).status).toBe('published');
+  });
+
+  // ── #991: L4 is earned for content, not for the system's own privileges ──
+
+  it('an L4 publish the constitution blocks parks for approval and stays a draft', async () => {
+    await new AutonomyService({ db, siteId: SITE }).setGrant(AGENT, 'items:update', 4);
+    const constitution = new ConstitutionService({ db, siteId: SITE });
+    const draft = await constitution.createDraft(
+      [{ id: 'no-zip', type: 'rule', blocking: true, rule: { field: 'title', op: 'not_contains', value: '.zip' } }],
+      ADMIN,
+    );
+    await constitution.activate(draft.id, ADMIN);
+    const id = await seedItem('draft');
+    const result = await exec('updateItem', { collection: 'posts', id, data: { title: 'get contract.zip' }, status: 'published' });
+    expect(result.status).toBe('pending_approval');
+    expect(await riskReasonOf(result.toolCallId)).toBe('constitution_blocked');
+    expect((await itemRow(id)).status).toBe('draft');
+  });
+
+  it('an L4 role over its hourly publish budget parks the next publish', async () => {
+    await new AutonomyService({ db, siteId: SITE }).setGrant(AGENT, 'items:update', 4);
+    const first = await seedItem('draft');
+    const second = await seedItem('draft');
+    const budget = { budget: { maxPublishesPerHour: 1 } };
+    const firstResult = await exec('updateItem', { collection: 'posts', id: first, data: { title: 'one' }, status: 'published' }, budget);
+    expect(firstResult.status, JSON.stringify(firstResult)).toBe('executed');
+    const held = await exec('updateItem', { collection: 'posts', id: second, data: { title: 'two' }, status: 'published' }, budget);
+    expect(held.status).toBe('pending_approval');
+    expect(await riskReasonOf(held.toolCallId)).toBe('publish_budget_exceeded');
+    expect((await itemRow(second)).status).toBe('draft');
+  });
+
+  it('an L4 grant never lets an agent mint an API key without a human', async () => {
+    await new AutonomyService({ db, siteId: SITE }).setGrant(AGENT, 'api-keys:create', 4);
+    const result = await exec('createApiKey', { name: 'agent-made' });
+    expect(result.status).toBe('pending_approval');
   });
 
   it('an L3 grant with the veto window stages a live data patch instead of writing it', async () => {
