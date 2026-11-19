@@ -145,7 +145,9 @@ describe.skipIf(!hasDbIntegrationUrl)('#711 chat agent — DB integration', () =
 
   const posted = () => sent.filter((s) => s.url === 'https://slack.com/api/chat.postMessage').map((s) => s.body);
   const responded = () => sent.filter((s) => s.url.startsWith('https://hooks.slack.com/')).map((s) => s.body);
-  const modelCalls = () => sent.filter((s) => s.url.includes('openai.com'));
+  // Match on the parsed host, not a substring of the URL (CodeQL js/incomplete-url-substring-sanitization).
+  const isModelCall = (url: string) => new URL(url).hostname === 'api.openai.com';
+  const modelCalls = () => sent.filter((s) => isModelCall(s.url));
 
   beforeEach(async () => {
     await cleanup();
@@ -175,7 +177,7 @@ describe.skipIf(!hasDbIntegrationUrl)('#711 chat agent — DB integration', () =
     vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       sent.push({ url, body });
-      if (url.includes('openai.com')) {
+      if (isModelCall(url)) {
         const answer = modelAnswers.shift() ?? { choices: [{ message: { content: 'ok' } }] };
         return new Response(JSON.stringify(answer), { status: 200, headers: { 'content-type': 'application/json' } });
       }
