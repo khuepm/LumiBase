@@ -1,14 +1,17 @@
-export type { EdgeCacheProvider } from './edge-cache';
+export type { EdgeCacheProvider, EdgePurgeOutcome } from './edge-cache';
 export type {
   CacheEntry,
   CacheEvent,
   CacheProvider,
   CacheSetOptions,
+  MemberBatch,
+  MemberSetProvider,
   NegativeCacheEnvelope,
   UniqueCounterProvider,
 } from './cache';
 export {
   CounterUnavailableError,
+  hasMemberSet,
   isNegativeCacheEnvelope,
   NEGATIVE_CACHE_ENVELOPE,
 } from './cache';
