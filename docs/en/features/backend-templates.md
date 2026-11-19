@@ -1,11 +1,11 @@
 ---
-version: 3
-lastUpdated: 2026-11-19T07:00:47.020Z
+version: 4
+lastUpdated: 2026-11-19T07:17:00.031Z
 sourceLang: en
-contentHash: 33eb1abdf2a3d397
-codeVerified: 2026-11-19T07:00:47.020Z
-codeVerifiedHash: 33eb1abdf2a3d397
-codeVerifiedClaims: 16
+contentHash: fdc741104b73ea16
+codeVerified: 2026-11-19T07:17:00.031Z
+codeVerifiedHash: fdc741104b73ea16
+codeVerifiedClaims: 22
 ---
 
 # Backend templates
@@ -19,9 +19,10 @@ same model into another site from it. Epic #900; specification
 > **Status.** Available now: the template **format** and its validator in
 > `@lumibase/contracts/backend-templates` (#901), and each site's private
 > **catalog** (#902): drafts, published revisions and capture, and **plans**
-> (#903), which preview an install without changing anything. Governed
-> installation, MCP tools and Studio screens are delivered by #904–#909. Until
-> those land, a template cannot be installed.
+> (#903), which preview an install without changing anything, and the
+> **schema installation** of a plan (#904). Seed packs, MCP tools and Studio
+> screens are delivered by #905–#909; until #905 lands, a plan that selects a
+> seed pack is refused.
 
 Code: `packages/contracts/src/backend-templates/` (`envelope.ts`, `validate.ts`, `ingest.ts`, `canonical.ts`, `limits.ts`). Tests: `packages/contracts/src/backend-templates/__tests__/backend-template-contract.test.ts`.
 
@@ -254,3 +255,37 @@ and the number of unrelated collections. `GET /plans/:id` reads a plan.
 `invalidated`, and both answer `409 STALE_PLAN`, after which you plan again.
 The plan keeps a snapshot of the revision, so later edits to the source catalog
 do not change it.
+
+## Install
+
+`POST /api/v1/backend-templates/installations` with `{ planId, idempotencyKey }`
+applies a plan to the site of the request. Site admins only. Code:
+`apps/cms/src/services/backend-templates/installer.ts`.
+
+- **Atomic.** The collections, fields, relations, the selected seed pack and
+  the installation record (`lumibase_backend_template_installations`) commit
+  together in one database transaction, or none of them does. A runtime
+  without transactions is refused (`422 INCOMPATIBLE_RUNTIME`); there is no
+  partial fallback.
+- **Re-checked under a lock.** A per-site lock serialises installs. Under it,
+  the plan must still be open and unexpired, the target schema must match the
+  plan's fingerprint, and the caller must still be a site admin. Otherwise the
+  request is refused (`409 STALE_PLAN`, `403`) before anything is written. A
+  same-name collection that appeared in the meantime is `409 NAME_CONFLICT`.
+- **Idempotent.** The key is bound to the plan payload: target, plan, digest,
+  namespace and seed pack. Retrying with the same key returns the committed
+  installation (`200`, `meta.replayed: true`) and writes nothing new. Ten
+  concurrent identical requests produce one installation. Using the same key
+  with another plan is `409 IDEMPOTENCY_CONFLICT`. A plan is consumed once.
+- **Effects after commit.** Schema-cache invalidation, the CDC dispatch and the
+  `backend_template_installed` audit run only after commit. Schema change
+  events are outbox rows inside the transaction, so a rollback leaves none. A
+  failed install leaves the target exactly as it was, and is audited
+  separately (`backend_template_install_failed`) without seed values.
+- **Provenance.** The installation records the template identity and digest,
+  the namespace, the seed pack, the installed (namespaced) template as the
+  baseline for a future upgrade, and the created resources. Publishing a new
+  revision never changes an installed backend.
+
+`GET /api/v1/backend-templates/installations/:id` reads an installation of the
+site.

@@ -14,6 +14,7 @@ import { TemplatePlanInputSchema } from '@lumibase/contracts/backend-templates';
 import { scopedDbFor } from '../middleware/db';
 import { isSiteAdmin } from '../middleware/site-admin';
 import { BackendTemplatePlanner, PlanError } from '../services/backend-templates/planner';
+import { BackendTemplateInstaller, InstallError } from '../services/backend-templates/installer';
 
 /**
  * `/api/v1/backend-templates` — the site's private template catalog (#902,
@@ -272,5 +273,53 @@ backendTemplatesRouter.post('/plans/:planId/verify', async (c) => {
     return c.json({ data: { id: plan.id, status: plan.status, fresh: true } });
   } catch (err) {
     return planFail(c, err);
+  }
+});
+
+// ── Installations (#904) ───────────────────────────────────────────────────
+
+export function installerFor(c: Context<AppEnv>): BackendTemplateInstaller {
+  const runtime = c.get('runtime') as Partial<AppEnv['Variables']['runtime']> | undefined;
+  return new BackendTemplateInstaller({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+    userId: c.get('auth').userId ?? null,
+    cache: runtime?.cache,
+    edgeCache: runtime?.edgeCache,
+    queue: runtime?.queue,
+    // Authorization is checked again under the install lock: an admin
+    // demoted between plan and apply is refused before any write.
+    authorize: () => isSiteAdmin(c),
+    // Seed packs are written by #905 (BT05); until then a seeded plan is refused.
+    requestId: c.get('requestId') ?? null,
+  });
+}
+
+function installFail(c: Context<AppEnv>, err: unknown): Response {
+  if (err instanceof InstallError) return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status);
+  return planFail(c, err);
+}
+
+const installSchema = z.object({
+  planId: z.string().min(1).max(64),
+  idempotencyKey: z.string().min(1).max(128),
+}).strict();
+
+backendTemplatesRouter.post('/installations', async (c) => {
+  const parsed = installSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json(validation(parsed.error.issues), 400);
+  try {
+    const { installation, replayed } = await installerFor(c).install(parsed.data);
+    return c.json({ data: installation, meta: { replayed } }, replayed ? 200 : 201);
+  } catch (err) {
+    return installFail(c, err);
+  }
+});
+
+backendTemplatesRouter.get('/installations/:installationId', async (c) => {
+  try {
+    return c.json({ data: await installerFor(c).get(c.req.param('installationId')) });
+  } catch (err) {
+    return installFail(c, err);
   }
 });

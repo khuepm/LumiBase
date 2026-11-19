@@ -1,10 +1,10 @@
 ---
-version: 28
-lastUpdated: 2026-11-19T07:00:53.421Z
+version: 29
+lastUpdated: 2026-11-19T07:17:06.483Z
 sourceLang: en
-contentHash: 44356d966b6ff6c5
-codeVerified: 2026-11-19T07:00:53.421Z
-codeVerifiedHash: 44356d966b6ff6c5
+contentHash: 306ff0358825d150
+codeVerified: 2026-11-19T07:17:06.483Z
+codeVerifiedHash: 306ff0358825d150
 codeVerifiedClaims: 22
 ---
 
@@ -595,13 +595,15 @@ AAD-bound to `{ siteId, integrationId, field }`); plaintext is never stored.
 
 Each site's private template catalog (#902, epic #900) and install plans
 (#903). Every table carries `site_id` (cascade) and is registered for RLS.
-Migrations `0044_backend_templates`, `0045_backend_template_plans`.
+Migrations `0044_backend_templates`, `0045_backend_template_plans`,
+`0046_backend_template_installations`.
 
 | Table (physical) | Purpose | Key columns |
 |-------|---------|-------------|
 | `lumibase_backend_templates` | One editable draft per `(site, slug)` | `slug`, `display_name`, `draft` (jsonb), `draft_revision` (optimistic counter), `created_by` |
 | `lumibase_backend_template_revisions` | Immutable published revisions | unique `(site_id, template_id, template_version)`; `digest` (`sha256:`), `document` (canonical jsonb), `published_by` |
 | `lumibase_backend_template_plans` | Expiring install plans (#903); `site_id` = the target | `source_kind`, `source_site_id`, `slug`, `template_version`, `digest`, `snapshot` (jsonb), `namespace_map`, `seed_pack`, `target_fingerprint`, `inventory`, `status`, `expires_at` |
+| `lumibase_backend_template_installations` | Committed installations (#904), written in the install transaction | unique `(site_id, idempotency_key)` and `(site_id, plan_id)`; `payload_digest`, `digest`, `namespace_map`, `seed_pack`, `baseline`, `resources` |
 
 ## 12. Indexing & RLS
 

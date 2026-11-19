@@ -1,11 +1,11 @@
 ---
-version: 63
-lastUpdated: 2026-11-19T07:00:50.095Z
+version: 64
+lastUpdated: 2026-11-19T07:17:03.229Z
 sourceLang: en
-contentHash: 8e9d8e0be4284b9f
-codeVerified: 2026-11-19T07:00:50.095Z
-codeVerifiedHash: 8e9d8e0be4284b9f
-codeVerifiedClaims: 672
+contentHash: 83452beb535f1abf
+codeVerified: 2026-11-19T07:17:03.229Z
+codeVerifiedHash: 83452beb535f1abf
+codeVerifiedClaims: 676
 ---
 
 # Hono API Specification — LumiBase
@@ -1818,6 +1818,8 @@ scoped to the request's site. See [Backend templates](../features/backend-templa
 | `POST` | `/api/v1/backend-templates/plans` | Preview an install (#903) `{ template: { source, sourceSiteId?, slug \| displayName, version, digest? }, targetSiteId, namespace?, seedPack? }` → `201` plan with `report`; `400 MISSING_INPUT` / `SITE_MISMATCH`; `409 AMBIGUOUS_TEMPLATE` / `NAME_CONFLICT`; `422 INCOMPATIBLE_RUNTIME` / `INVALID_TEMPLATE`. Writes no schema or content |
 | `GET` | `/api/v1/backend-templates/plans/:planId` | Read a plan (target site only) |
 | `POST` | `/api/v1/backend-templates/plans/:planId/verify` | Re-check expiry, target fingerprint and runtime; `409 STALE_PLAN` closes it |
+| `POST` | `/api/v1/backend-templates/installations` | Apply a plan atomically (#904) `{ planId, idempotencyKey }` → `201`, or `200` (`meta.replayed`) for a retry; `409 STALE_PLAN` / `NAME_CONFLICT` / `IDEMPOTENCY_CONFLICT`; `403` if no longer site admin; `422 INCOMPATIBLE_RUNTIME` |
+| `GET` | `/api/v1/backend-templates/installations/:installationId` | Read an installation (identity, digest, namespace, seed pack, baseline, resources) |
 
 ---
 
