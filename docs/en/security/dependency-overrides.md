@@ -1,10 +1,10 @@
 ---
-version: 13
-lastUpdated: 2026-11-15T22:13:05.473Z
+version: 14
+lastUpdated: 2026-11-19T20:14:14.794Z
 sourceLang: en
-contentHash: 2836abfde5e3025a
-codeVerified: 2026-11-15T22:13:05.473Z
-codeVerifiedHash: 2836abfde5e3025a
+contentHash: 06dfc7c670a5651a
+codeVerified: 2026-11-19T20:14:14.794Z
+codeVerifiedHash: 06dfc7c670a5651a
 codeVerifiedClaims: 6
 ---
 
@@ -140,20 +140,6 @@ hand-crafted pattern, not a production DoS.
 
 **Revisit when** nothing resolves `minimatch@3` any more, or upstream backports the length
 cap to a `1.1.17`.
-
-### `glib` 0.18.5 (Rust / Tauri) — GHSA-wrw7-89jp-8q8g
-
-`apps/shell/src-tauri/Cargo.lock` pins `glib@0.18.5`; the advisory (moderate,
-unsoundness in the `Iterator`/`DoubleEndedIterator` impls for `glib::VariantStrIter`)
-wants `>=0.20.0`. `glib` is not a direct dependency — it arrives through the GTK stack
-(`gtk`, `gdk`, `gdkx11`, `gdk-pixbuf`, `atk`, `pango`, `cairo-rs`, `gio`, `soup3`,
-`webkit2gtk`, `javascriptcore-rs`, `libappindicator`), all of which pin `0.18.x`. `cargo
-update -p glib` therefore cannot cross the minor, and this stack is **compiled only into
-Linux builds** — the macOS (WebKit) and Windows (WebView2) targets never link it. Nothing
-in `apps/shell` constructs a `VariantStrIter`.
-
-**Revisit when** Tauri 2's Linux backend moves to the `glib` 0.20 / `gtk` 0.19+ generation.
-Check with `cargo tree -i glib` after a `tauri` bump.
 
 ## Patches registry
 

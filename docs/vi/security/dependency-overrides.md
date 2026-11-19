@@ -1,13 +1,13 @@
 ---
-version: 13
-lastUpdated: 2026-11-15T22:13:05.473Z
+version: 14
+lastUpdated: 2026-11-19T20:14:14.794Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2836abfde5e3025a
+sourceHash: 06dfc7c670a5651a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T22:13:05.473Z
-codeVerifiedHash: 2836abfde5e3025a
+codeVerified: 2026-11-19T20:14:14.794Z
+codeVerifiedHash: 06dfc7c670a5651a
 codeVerifiedClaims: 6
 ---
 
@@ -140,20 +140,6 @@ lint chậm với pattern cố tình dựng, không phải DoS ở production.
 
 **Xem lại khi** không còn gì resolve `minimatch@3`, hoặc upstream backport giới hạn độ dài
 về một bản `1.1.17`.
-
-### `glib` 0.18.5 (Rust / Tauri) — GHSA-wrw7-89jp-8q8g
-
-`apps/shell/src-tauri/Cargo.lock` pin `glib@0.18.5`; advisory (moderate, unsoundness
-trong impl `Iterator`/`DoubleEndedIterator` của `glib::VariantStrIter`) yêu cầu
-`>=0.20.0`. `glib` không phải dependency trực tiếp — nó vào qua stack GTK (`gtk`, `gdk`,
-`gdkx11`, `gdk-pixbuf`, `atk`, `pango`, `cairo-rs`, `gio`, `soup3`, `webkit2gtk`,
-`javascriptcore-rs`, `libappindicator`), tất cả đều pin `0.18.x`. Vì vậy `cargo update -p
-glib` không vượt được minor, và stack này **chỉ được compile vào bản Linux** — target
-macOS (WebKit) và Windows (WebView2) không bao giờ link tới nó. Không chỗ nào trong
-`apps/shell` tạo `VariantStrIter`.
-
-**Xem lại khi** backend Linux của Tauri 2 chuyển sang thế hệ `glib` 0.20 / `gtk` 0.19+.
-Kiểm bằng `cargo tree -i glib` sau khi bump `tauri`.
 
 ## Registry patches
 
