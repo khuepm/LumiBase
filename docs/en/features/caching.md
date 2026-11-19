@@ -1,12 +1,12 @@
 ---
 title: Caching
 description: Edge HTTP cache, application CacheProvider, and cache-penetration defences
-version: 10
-lastUpdated: 2026-11-18T04:25:25.638Z
+version: 11
+lastUpdated: 2026-11-19T06:12:12.364Z
 sourceLang: en
-contentHash: 223bc6999f6ddd0d
-codeVerified: 2026-11-18T04:25:25.638Z
-codeVerifiedHash: 223bc6999f6ddd0d
+contentHash: 6f078a3284a72a6e
+codeVerified: 2026-11-19T06:12:12.364Z
+codeVerifiedHash: 6f078a3284a72a6e
 codeVerifiedClaims: 18
 ---
 
@@ -69,6 +69,17 @@ The store is module-level and bounded (256 entries, 5s TTL). Both matter: a per-
 **What `{principal}` contains.** The principal segment names every identity input the bundle is compiled from: `api_key:{id}`, `user:{id}` and `role:{id}`, joined with `|` when more than one is present (for example `user:{id}|role:{id}` for a capability resolution on the AI paths), and `anon` when none is. Before #583 a context that carried both a user and a role was keyed on the role alone, so two members of one role shared a bundle, including policies granted to one user directly.
 
 **Request-bound policies are not served from the cache.** A policy with an IP allow/deny list or a validity window (`ip_allow`, `ip_deny`, `valid_from`, `valid_until`, or the same keys in `rules`) is active or not depending on the request's ip and clock. When any candidate policy of a principal has such a guard, the cached entry only records that fact, and the bundle is compiled for each request. Unguarded principals keep the cached path. On a local pg17 run of `apps/cms/eval/permission-cache/bench.ts` (500 resolutions, 3 runs, in-process cache), a cached resolution took p95 2.0–2.8 ms, an uncached one 22.8–31.9 ms, and an IP-guarded one 8.1–10.0 ms.
+
+
+### Personalised pages
+
+When a site has audiences ([Personalisation](./personalisation.md)), the
+delivery page route resolves the audience before any layer and keys every
+layer by it: the edge URL gets `__aud=<key>`, the app-cache key and the `ETag`
+include it, and `Vary` lists the headers it depends on. The number of copies
+is bounded by the number of audiences plus one, never by the raw request
+attributes. Audience and variant writes drop the cached audience list and
+purge the site's `deliver:<site>` tag.
 
 ## Media URLs and the `immutable` promise
 

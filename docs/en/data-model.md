@@ -1,10 +1,10 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 27
+lastUpdated: 2026-11-19T06:12:12.023Z
 sourceLang: en
-contentHash: 52465604769f9c24
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+contentHash: c5183f80d77f87d0
+codeVerified: 2026-11-19T06:12:12.023Z
+codeVerifiedHash: c5183f80d77f87d0
 codeVerifiedClaims: 22
 ---
 
@@ -38,6 +38,7 @@ Schema files are split by domain:
 | `imports.ts` | `lumibase_import_jobs` |
 | `locale-generation.ts` | `lumibase_locale_generation_jobs`, `lumibase_translation_suggestions` |
 | `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
+| `personalisation.ts` | `lumibase_audiences`, `lumibase_content_variants`, `lumibase_variant_exposures` |
 
 Migrations live in `packages/database/migrations/` and `packages/database/drizzle/`.
 
@@ -296,6 +297,17 @@ When seeding local/staging/prod, seed system collection permissions explicitly. 
 
 ### `folders`
 - `id`, `siteId`, `name`, `parent`. Paths, sub-trees and cycle checks are derived in `apps/cms/src/services/files/folder-tree.ts`.
+
+## Personalisation (`personalisation.ts`, #762)
+
+### `audiences`
+- `id`, `siteId`, `key` (unique per site), `name`, `description`, `rules jsonb` (`{ match, conditions[] }`), `priority`, `enabled`, `createdAt`, `updatedAt`.
+
+### `content_variants`
+- `id`, `siteId`, `subjectType` (`page`/`item`), `subjectId` (page id or item id), `audienceId` (FK cascade), `overrides jsonb`, `status` (`draft`/`published`), `createdBy`, `createdAt`, `updatedAt`. Unique `(siteId, subjectType, subjectId, audienceId)`.
+
+### `variant_exposures`
+- `id`, `siteId`, `day`, `subjectType`, `subjectId`, `audienceKey` (`_` = default content), `count`, `updatedAt`. Unique `(siteId, day, subjectType, subjectId, audienceKey)`; incremented only with analytics consent, no visitor data. Migration `0044_personalisation`. See [Personalisation](./features/personalisation.md).
 
 ## 5. UX state (`platform.ts`)
 

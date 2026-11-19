@@ -28,3 +28,10 @@ export {
   type LoadGtagOptions,
 } from './gtag';
 export { notifyConsentChanged, revokeAnalyticsStorage, safeLocalStorage } from './browser';
+export {
+  VARIANT_EXPOSURE_EVENT,
+  trackVariantExposure,
+  variantFromHeaders,
+  type GtagFn,
+  type VariantExposure,
+} from './exposure';

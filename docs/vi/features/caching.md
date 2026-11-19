@@ -2,14 +2,14 @@
 title: Caching
 description: HTTP cache ở edge, CacheProvider tầng ứng dụng, và các lớp phòng thủ cache penetration
 translatedFrom: en
-sourceHash: 223bc6999f6ddd0d
-version: 10
-lastUpdated: 2026-11-18T04:25:25.638Z
+sourceHash: 6f078a3284a72a6e
+version: 11
+lastUpdated: 2026-11-19T06:12:12.364Z
 sourceLang: en
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-18T04:25:25.638Z
-codeVerifiedHash: 223bc6999f6ddd0d
+codeVerified: 2026-11-19T06:12:12.364Z
+codeVerifiedHash: 6f078a3284a72a6e
 codeVerifiedClaims: 18
 ---
 
@@ -72,6 +72,16 @@ Store nằm ở cấp module và có chặn trên (256 entry, TTL 5s). Cả hai 
 **`{principal}` gồm những gì.** Segment principal nêu đủ mọi đầu vào định danh mà bundle được compile từ đó: `api_key:{id}`, `user:{id}` và `role:{id}`, nối bằng `|` khi có nhiều hơn một (ví dụ `user:{id}|role:{id}` khi resolve capability trên các đường AI), và là `anon` khi không có cái nào. Trước #583, một context mang cả user lẫn role chỉ được key theo role, nên hai thành viên của cùng một role dùng chung một bundle, kể cả policy cấp trực tiếp cho một user.
 
 **Policy phụ thuộc request không được phục vụ từ cache.** Một policy có danh sách IP allow/deny hoặc khoảng hiệu lực (`ip_allow`, `ip_deny`, `valid_from`, `valid_until`, hoặc cùng các key đó trong `rules`) có hiệu lực hay không tuỳ vào ip và đồng hồ của request. Khi bất kỳ policy ứng viên nào của một principal có guard như vậy, entry trong cache chỉ ghi lại điều đó, và bundle được compile cho từng request. Principal không có guard vẫn đi đường cache. Trên một lần chạy pg17 cục bộ của `apps/cms/eval/permission-cache/bench.ts` (500 lần resolve, 3 lượt, cache in-process), một lần resolve có cache mất p95 2.0–2.8 ms, không cache 22.8–31.9 ms, và principal có IP guard 8.1–10.0 ms.
+
+
+### Trang được cá nhân hoá
+
+Khi site có audience ([Cá nhân hoá](./personalisation.md)), route page của
+delivery xác định audience trước mọi tầng và dùng nó làm key cho mọi tầng: URL
+edge có thêm `__aud=<key>`, app-cache key và `ETag` chứa audience, và `Vary`
+liệt kê các header mà nó phụ thuộc. Số bản cache bị chặn bởi số audience cộng
+một, không bao giờ bởi các thuộc tính thô của request. Ghi audience hoặc biến
+thể sẽ bỏ danh sách audience đang cache và purge tag `deliver:<site>` của site.
 
 ## URL media và lời hứa `immutable`
 
