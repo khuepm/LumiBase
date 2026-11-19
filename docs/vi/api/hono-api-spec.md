@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 62
-lastUpdated: 2026-11-19T07:00:50.095Z
+version: 63
+lastUpdated: 2026-11-19T07:17:03.229Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8e9d8e0be4284b9f
+sourceHash: 83452beb535f1abf
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T07:00:50.095Z
-codeVerifiedHash: 8e9d8e0be4284b9f
-codeVerifiedClaims: 672
+codeVerified: 2026-11-19T07:17:03.229Z
+codeVerifiedHash: 83452beb535f1abf
+codeVerifiedClaims: 676
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -1608,6 +1608,8 @@ gắn với site của request. Xem [Backend templates](../features/backend-temp
 | `POST` | `/api/v1/backend-templates/plans` | Xem trước một lần cài (#903) `{ template: { source, sourceSiteId?, slug \| displayName, version, digest? }, targetSiteId, namespace?, seedPack? }` → `201` plan kèm `report`; `400 MISSING_INPUT` / `SITE_MISMATCH`; `409 AMBIGUOUS_TEMPLATE` / `NAME_CONFLICT`; `422 INCOMPATIBLE_RUNTIME` / `INVALID_TEMPLATE`. Không ghi schema hay content |
 | `GET` | `/api/v1/backend-templates/plans/:planId` | Đọc một plan (chỉ site đích) |
 | `POST` | `/api/v1/backend-templates/plans/:planId/verify` | Kiểm tra lại thời hạn, fingerprint đích và runtime; `409 STALE_PLAN` đóng plan |
+| `POST` | `/api/v1/backend-templates/installations` | Áp dụng một plan một cách nguyên tử (#904) `{ planId, idempotencyKey }` → `201`, hoặc `200` (`meta.replayed`) khi thử lại; `409 STALE_PLAN` / `NAME_CONFLICT` / `IDEMPOTENCY_CONFLICT`; `403` nếu không còn là site admin; `422 INCOMPATIBLE_RUNTIME` |
+| `GET` | `/api/v1/backend-templates/installations/:installationId` | Đọc một bản cài (định danh, digest, namespace, seed pack, baseline, tài nguyên) |
 
 ---
 

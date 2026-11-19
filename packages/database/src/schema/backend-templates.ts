@@ -105,3 +105,41 @@ export const backendTemplatePlans = pgTable(
     siteStatusIdx: index('backend_template_plans_site_status_idx').on(t.siteId, t.status),
   }),
 );
+
+/**
+ * Completed template installations (#904, BT04): provenance of what a plan
+ * created in the target, written in the SAME transaction as the schema (and
+ * seed) it describes — a row exists only if the install committed. Unique per
+ * (site, idempotency key); the payload digest binds the key to one plan.
+ */
+export const backendTemplateInstallations = pgTable(
+  'lumibase_backend_template_installations',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    planId: text('plan_id').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    /** sha256 of (plan, digest, namespace, seed pack): the payload the key is bound to. */
+    payloadDigest: text('payload_digest').notNull(),
+    sourceKind: text('source_kind').notNull(),
+    sourceSiteId: text('source_site_id'),
+    slug: text('slug').notNull(),
+    templateVersion: text('template_version').notNull(),
+    digest: text('digest').notNull(),
+    namespaceMap: jsonb('namespace_map').notNull(),
+    seedPack: text('seed_pack'),
+    /** The installed (namespaced) template: the baseline for a future upgrade (R10). */
+    baseline: jsonb('baseline').notNull(),
+    /** Created collections, field/relation counts, seed logical key → item id. */
+    resources: jsonb('resources').notNull(),
+    status: text('status').default('completed').notNull(),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    keyUnique: uniqueIndex('backend_template_installations_key_unique').on(t.siteId, t.idempotencyKey),
+    planUnique: uniqueIndex('backend_template_installations_plan_unique').on(t.siteId, t.planId),
+  }),
+);

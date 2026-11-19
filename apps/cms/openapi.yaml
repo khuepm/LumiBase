@@ -6389,6 +6389,28 @@ paths:
         '200': { description: Fresh }
         '409': { description: STALE_PLAN }
         '422': { description: INCOMPATIBLE_RUNTIME }
+  /backend-templates/installations:
+    post:
+      tags: [Backend Templates]
+      summary: Apply a plan atomically (#904); idempotent per key and plan payload
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '201': { description: Installed }
+        '200': { description: Replay of a committed installation }
+        '403': { description: Not (or no longer) a site admin }
+        '409': { description: STALE_PLAN, NAME_CONFLICT or IDEMPOTENCY_CONFLICT }
+        '422': { description: INCOMPATIBLE_RUNTIME }
+  /backend-templates/installations/{installationId}:
+    get:
+      tags: [Backend Templates]
+      summary: Read an installation of this site
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: installationId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { description: Not found }
   /integrations/git:
     get:
       tags: [Git Integration]

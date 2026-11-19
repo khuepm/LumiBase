@@ -1,14 +1,14 @@
 ---
-version: 3
-lastUpdated: 2026-11-19T07:00:47.020Z
+version: 4
+lastUpdated: 2026-11-19T07:17:00.031Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 33eb1abdf2a3d397
+sourceHash: fdc741104b73ea16
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T07:00:47.020Z
-codeVerifiedHash: 33eb1abdf2a3d397
-codeVerifiedClaims: 16
+codeVerified: 2026-11-19T07:17:00.031Z
+codeVerifiedHash: fdc741104b73ea16
+codeVerifiedClaims: 22
 ---
 
 # Backend templates
@@ -22,9 +22,9 @@ cùng model đó vào một site khác. Epic #900; đặc tả
 > **Trạng thái.** Hiện đã có: **định dạng** template và bộ validator trong
 > `@lumibase/contracts/backend-templates` (#901), và **catalog** riêng của mỗi
 > site (#902): draft, revision đã publish và capture, và **plan** (#903), dùng
-> để xem trước một lần cài mà không thay đổi gì. Cài đặt có governance, MCP tool
-> và màn hình Studio do #904–#909 đảm nhận. Cho tới khi chúng xong, chưa thể cài
-> một template.
+> để xem trước một lần cài mà không thay đổi gì, và **cài schema** từ một plan
+> (#904). Seed pack, MCP tool và màn hình Studio do #905–#909 đảm nhận; cho tới
+> khi #905 xong, plan chọn seed pack sẽ bị từ chối.
 
 Code: `packages/contracts/src/backend-templates/` (`envelope.ts`, `validate.ts`, `ingest.ts`, `canonical.ts`, `limits.ts`). Test: `packages/contracts/src/backend-templates/__tests__/backend-template-contract.test.ts`.
 
@@ -251,3 +251,36 @@ hạn bị đóng là `expired`, plan có schema đích đã thay đổi kể t�
 là `invalidated`, và cả hai trả `409 STALE_PLAN`, sau đó bạn lập plan lại. Plan
 giữ một bản chụp của revision, nên các sửa đổi sau này ở catalog nguồn không
 làm thay đổi nó.
+
+## Cài đặt
+
+`POST /api/v1/backend-templates/installations` với `{ planId, idempotencyKey }`
+áp dụng một plan vào site của request. Chỉ dành cho site admin. Code:
+`apps/cms/src/services/backend-templates/installer.ts`.
+
+- **Nguyên tử.** Các collection, field, relation, seed pack được chọn và bản ghi
+  cài đặt (`lumibase_backend_template_installations`) commit cùng nhau trong
+  một transaction cơ sở dữ liệu, hoặc không cái nào được commit. Runtime không
+  có transaction bị từ chối (`422 INCOMPATIBLE_RUNTIME`); không có đường lui
+  ghi dở dang.
+- **Kiểm tra lại dưới khoá.** Một khoá theo site xếp tuần tự các lần cài. Dưới
+  khoá đó, plan phải còn mở và chưa hết hạn, schema đích phải khớp fingerprint
+  của plan, và người gọi phải vẫn là site admin. Nếu không, request bị từ chối
+  (`409 STALE_PLAN`, `403`) trước khi ghi bất cứ thứ gì. Một collection cùng tên
+  xuất hiện trong lúc đó là `409 NAME_CONFLICT`.
+- **Idempotent.** Key được gắn với payload của plan: site đích, plan, digest,
+  namespace và seed pack. Thử lại với cùng key trả bản cài đã commit (`200`,
+  `meta.replayed: true`) và không ghi thêm gì. Mười request giống hệt nhau
+  chạy đồng thời chỉ tạo một bản cài. Dùng cùng key cho plan khác là
+  `409 IDEMPOTENCY_CONFLICT`. Một plan chỉ được dùng một lần.
+- **Tác động sau commit.** Việc xoá cache schema, CDC dispatch và audit
+  `backend_template_installed` chỉ chạy sau commit. Sự kiện thay đổi schema là
+  các dòng outbox trong transaction, nên rollback không để lại sự kiện nào.
+  Lần cài thất bại để site đích y như trước, và được audit riêng
+  (`backend_template_install_failed`) mà không kèm giá trị seed.
+- **Provenance.** Bản cài ghi định danh và digest của template, namespace, seed
+  pack, template đã cài (sau namespace) làm baseline cho lần nâng cấp sau, và
+  các tài nguyên đã tạo. Publish một revision mới không bao giờ thay đổi một
+  backend đã cài.
+
+`GET /api/v1/backend-templates/installations/:id` đọc một bản cài của site.
