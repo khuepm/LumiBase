@@ -40,7 +40,10 @@ Nguồn: `.kiro/research/competitor-features-2026-07.md` (D01–D08). Doc ngư�
 - [ ] #871 video pipeline. Phần 1 xong: port provider + adapter Cloudflare
   Stream / Mux, `lumibase_video_assets` (`uploaded → processing → ready/failed`),
   webhook có chữ ký, URL nguồn có chữ ký, phát có chữ ký, sweeper `video-sweep`.
-  Còn lại: caption/phụ đề gắn locale; Studio (trình phát, trạng thái, thử lại).
+  Caption/phụ đề gắn locale: xong ở #938. Còn lại: Studio (trình phát, trạng thái, thử lại).
+- [ ] #871 video pipeline. Phần 2 (PR này): track phụ đề/caption WebVTT gắn
+  locale (`lumibase_file_captions`, `/files/:id/captions`, loại upload `text/vtt`).
+  Phần 1 (transcode, PR #937) và phần 3 (Studio) là PR riêng.
 
 ## Theo dõi sau
 

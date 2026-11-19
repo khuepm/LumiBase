@@ -313,8 +313,15 @@
     {
       "idx": 44,
       "version": "7",
-      "when": 1796112000000,
-      "tag": "0044_video_assets",
+      "when": 1796198400000,
+      "tag": "0044_file_captions",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1796457600000,
+      "tag": "0045_video_assets",
       "breakpoints": true
     }
   ]

@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 61
-lastUpdated: 2026-11-19T04:41:26.385Z
+version: 62
+lastUpdated: 2026-11-19T08:09:30.777Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 82ff971687ad44aa
+sourceHash: bc33a6ab0ea41169
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T04:41:26.385Z
-codeVerifiedHash: 82ff971687ad44aa
-codeVerifiedClaims: 662
+codeVerified: 2026-11-19T08:09:30.777Z
+codeVerifiedHash: bc33a6ab0ea41169
+codeVerifiedClaims: 664
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -889,6 +889,9 @@ Response: `Cache-Control: private, no-store`, `X-Robots-Tag: noindex, nofollow`,
 | `GET` | `/api/v1/files/:id/video/playback` | `{ hls, poster, expiresAt }`, do provider ký và có hạn khi bật `video.signedPlayback`; `409 VIDEO_NOT_READY` |
 | `POST` | `/api/v1/video/webhook/:provider` | **Công khai**, callback của provider được kiểm chữ ký (`cloudflare-stream`, `mux`); `401` khi chữ ký sai |
 | `GET` | `/api/v1/video/source/:token` | **Công khai**, URL có chữ ký sống ngắn để provider kéo bản gốc; một `404` cho mọi lỗi |
+| `GET` | `/api/v1/files/:id/captions` | Các track phụ đề/caption của video dưới dạng dữ liệu `<track>` (`kind`, `locale`, `label`, `isDefault`, `src` ghim version) (#871) |
+| `POST` | `/api/v1/files/:id/captions` | Gắn file WebVTT: `{ captionFileId, locale, kind?, label?, isDefault? }`; `409 CAPTION_EXISTS`, `415 CAPTION_NOT_VTT`, `422 LOCALE_NOT_ENABLED` |
+| `PATCH/DELETE` | `/api/v1/files/:id/captions/:captionId` | Sửa track (một mặc định mỗi kind) / gỡ track (file WebVTT vẫn giữ) |
 | `GET` | `/api/v1/assets/:id` | Phục vụ/biến đổi hình ảnh (tham số query bên dưới) |
 | `POST` | `/api/v1/media/:key` | Upload bytes media thô (RBAC `media:create`; bảo vệ upload áp dụng) |
 | `GET` | `/api/v1/media/:key` | Tải về media (phục vụ dạng `attachment` + `nosniff`); kèm tham số biến đổi → 302 tới file biến đổi |

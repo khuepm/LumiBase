@@ -1,11 +1,11 @@
 ---
-version: 3
+version: 4
 sourceLang: en
-lastUpdated: 2026-11-18T05:19:32.427Z
-contentHash: 9921b44328a9e837
-codeVerified: 2026-11-19T04:41:31.688Z
-codeVerifiedHash: 9921b44328a9e837
-codeVerifiedClaims: 46
+lastUpdated: 2026-11-19T08:09:27.070Z
+contentHash: 0bf6f359e0d65c69
+codeVerified: 2026-11-19T08:09:27.070Z
+codeVerifiedHash: 0bf6f359e0d65c69
+codeVerifiedClaims: 52
 ---
 
 # Digital Asset Management
@@ -269,6 +269,35 @@ The provider is a **deployment** setting:
 Point the provider's webhook at
 `<LUMIBASE_PUBLIC_URL>/api/v1/video/webhook/cloudflare-stream` or
 `…/webhook/mux`.
+## Captions and subtitles (#871)
+
+A caption or subtitle track is a WebVTT file in the library, linked to a
+video for one locale. The track stays an ordinary asset: its own folder
+permissions, versions and replace in place, so fixing a typo in a subtitle
+keeps every link. Upload it like any file. `text/vtt` (`.vtt`) is in the
+upload catalogue but off by default, so enable it under
+**Settings → Uploads**. The upload guard requires the `WEBVTT` signature, so
+an HTML or SVG document cannot pass as captions.
+
+- `GET /api/v1/files/:id/captions` lists the tracks of a video (files `read`).
+  Each track carries what an HTML `<track>` element needs: `kind`, `locale`
+  (`srclang`), `label`, `isDefault` and `src`, a version-pinned, immutable
+  `GET /api/v1/files/<caption>/content?v=<n>` URL. A track whose caption file
+  the caller cannot see is listed with `src: null`.
+- `POST /api/v1/files/:id/captions` attaches a track (files `update` on the
+  video), with body `{ captionFileId, locale, kind?, label?, isDefault? }`:
+  - `kind` is `subtitles` (default), `captions`, `descriptions` or `chapters`;
+  - the video must be `video/*` (`422 NOT_A_VIDEO`);
+  - the track must be a `text/vtt` file the caller can see
+    (`415 CAPTION_NOT_VTT`, `404 CAPTION_FILE_NOT_FOUND`);
+  - the locale must be one of the site's locales
+    (`422 LOCALE_NOT_ENABLED`);
+  - there is one track per video, locale and kind (`409 CAPTION_EXISTS`).
+- `PATCH /api/v1/files/:id/captions/:captionId` changes `captionFileId`,
+  `locale`, `kind`, `label` or `isDefault`. There is at most one default per
+  video and kind, so setting one clears the others.
+- `DELETE /api/v1/files/:id/captions/:captionId` detaches the track. The
+  WebVTT file stays in the library. Deleting either file removes the link.
 
 ## Settings
 
@@ -291,7 +320,8 @@ stored in `settings` under the key `files.dam`:
 ## Multi-tenancy
 
 - **Isolated per site:** `lumibase_files`, `lumibase_folders`,
-  `lumibase_file_versions` and `lumibase_video_assets` all carry `site_id` and are in the RLS
+  `lumibase_file_versions`, `lumibase_file_captions` and
+  `lumibase_video_assets` all carry `site_id` and are in the RLS
   `site_isolation` list. Every repository query is filtered by `site_id`
   (`DrizzleFileRepository`). Archived binaries live under `sites/<site>/…`.
   Cache tags (`file:<site>:<id>`) and the `files.dam` setting are per site.
@@ -315,3 +345,5 @@ stored in `settings` under the key `files.dam`:
   API above is the integration point.
 - Video captions/subtitles as locale-tied related assets, and the Studio
   player, processing status and retry button, are the next slices of #871.
+- Video transcoding (#871 part 1, PR #937) and the Studio caption editor and
+  player are separate slices of #871.

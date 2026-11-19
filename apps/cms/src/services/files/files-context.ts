@@ -20,6 +20,9 @@ import {
   type VideoProvider,
 } from '../../modules/video';
 import { buildRequestPermissionContext, permissionServiceForRequest } from '../item-service-factory';
+import { and, eq } from 'drizzle-orm';
+import { scopeSite, settings as settingsTable, type Database } from '@lumibase/database';
+import { DrizzleCaptionRepository, type CaptionRepository } from './captions';
 import { loadDamSettings, type DamSettings } from './dam-settings';
 import type { FilesAccess, FilesAction } from './file-access';
 import { DrizzleFileRepository, type FileRepository } from './file-repository';
@@ -39,6 +42,10 @@ export interface FilesContext {
     provider: VideoProvider | null;
     sourceUrl: (fileId: string, version: number) => Promise<string | null>;
   };
+  /** Caption/subtitle tracks of videos (#871). */
+  captions?: CaptionRepository;
+  /** The site's locales (`settings.locales.supported`). */
+  locales?: () => Promise<string[]>;
 }
 
 export async function filesContext(c: Context<AppEnv>): Promise<FilesContext> {
@@ -52,6 +59,8 @@ export async function filesContext(c: Context<AppEnv>): Promise<FilesContext> {
     storage: c.get('runtime').storage,
     settings: await loadDamSettings(db, siteId),
     scanner: scannerFromEnv(env),
+    captions: new DrizzleCaptionRepository(db, siteId),
+    locales: () => siteLocales(db, siteId),
     video: {
       assets: new DrizzleVideoAssetRepository(db, siteId),
       provider: videoProviderFromEnv(env),
@@ -68,6 +77,17 @@ export async function filesContext(c: Context<AppEnv>): Promise<FilesContext> {
       });
     },
   };
+}
+
+/** Site locales from the `locales` setting (`value.supported`), as Studio reads them. */
+export async function siteLocales(db: Database, siteId: string): Promise<string[]> {
+  const [row] = await db
+    .select({ value: settingsTable.value })
+    .from(settingsTable)
+    .where(and(eq(settingsTable.key, 'locales'), scopeSite(settingsTable.siteId, siteId)))
+    .limit(1);
+  const supported = (row?.value as { supported?: unknown } | undefined)?.supported;
+  return Array.isArray(supported) ? supported.filter((l): l is string => typeof l === 'string') : ['en', 'vi'];
 }
 
 function requestHeaders(c: Context<AppEnv>): Record<string, string> {

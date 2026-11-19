@@ -1,11 +1,11 @@
 ---
-version: 62
-lastUpdated: 2026-11-19T04:41:26.385Z
+version: 63
+lastUpdated: 2026-11-19T08:09:30.777Z
 sourceLang: en
-contentHash: 82ff971687ad44aa
-codeVerified: 2026-11-19T04:41:26.385Z
-codeVerifiedHash: 82ff971687ad44aa
-codeVerifiedClaims: 662
+contentHash: bc33a6ab0ea41169
+codeVerified: 2026-11-19T08:09:30.777Z
+codeVerifiedHash: bc33a6ab0ea41169
+codeVerifiedClaims: 664
 ---
 
 # Hono API Specification — LumiBase
@@ -1014,6 +1014,9 @@ identical body. Responses: `Cache-Control: private, no-store`,
 | `GET` | `/api/v1/files/:id/video/playback` | `{ hls, poster, expiresAt }`, provider-signed and expiring with `video.signedPlayback`; `409 VIDEO_NOT_READY` |
 | `POST` | `/api/v1/video/webhook/:provider` | **Public**, signature-verified provider callback (`cloudflare-stream`, `mux`); `401` on a bad signature |
 | `GET` | `/api/v1/video/source/:token` | **Public**, short-lived signed URL the provider pulls the original from; one `404` for every failure |
+| `GET` | `/api/v1/files/:id/captions` | Caption/subtitle tracks of a video as `<track>` data (`kind`, `locale`, `label`, `isDefault`, version-pinned `src`) (#871) |
+| `POST` | `/api/v1/files/:id/captions` | Attach a WebVTT file: `{ captionFileId, locale, kind?, label?, isDefault? }`; `409 CAPTION_EXISTS`, `415 CAPTION_NOT_VTT`, `422 LOCALE_NOT_ENABLED` |
+| `PATCH/DELETE` | `/api/v1/files/:id/captions/:captionId` | Edit a track (one default per kind) / detach it (the WebVTT file stays) |
 | `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
 | `POST` | `/api/v1/media/:key` | Upload raw media bytes (RBAC `media:create`; upload guard applies) |
 | `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`); with transform params → 302 to derivative |

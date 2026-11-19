@@ -2,9 +2,10 @@
 -- in packages/database/src/schema/platform.ts. Additive, no backfill,
 -- re-runnable.
 --
--- 0044 on this branch: first number after main's 0043_release_manifest
--- (v2.2.0). Epic order: #935 0044, #936 0045, #937 0046, #938 0047; `when`
--- is already set in that order, so later merges only rename this to 0046.
+-- 0045: follows 0044_file_captions (#938), which merged first on
+-- epic/670-dam. Each open epic PR (#935, #936, #937) carries 0045 with `when`
+-- in epic order; whichever merges next keeps 0045 and the rest move up. Numbers
+-- are reassigned again if main moves before the epic lands.
 --
 -- Rollback: DROP TABLE IF EXISTS lumibase_video_assets;
 CREATE TABLE IF NOT EXISTS "lumibase_video_assets" (

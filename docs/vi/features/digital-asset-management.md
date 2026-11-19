@@ -1,14 +1,14 @@
 ---
-version: 3
+version: 4
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-11-18T05:19:32.427Z
-sourceHash: 9921b44328a9e837
-codeVerified: 2026-11-19T04:41:31.688Z
-codeVerifiedHash: 9921b44328a9e837
-codeVerifiedClaims: 46
+lastUpdated: 2026-11-19T08:09:27.070Z
+sourceHash: 0bf6f359e0d65c69
+codeVerified: 2026-11-19T08:09:27.070Z
+codeVerifiedHash: 0bf6f359e0d65c69
+codeVerifiedClaims: 52
 ---
 
 # Quản lý tài sản số (Digital Asset Management)
@@ -267,6 +267,35 @@ Provider là thiết lập **cấp deployment**:
 Trỏ webhook của provider tới
 `<LUMIBASE_PUBLIC_URL>/api/v1/video/webhook/cloudflare-stream` hoặc
 `…/webhook/mux`.
+## Phụ đề và caption (#871)
+
+Một track phụ đề hoặc caption là một file WebVTT trong thư viện, được gắn với
+một video cho một locale. Track vẫn là một asset bình thường: quyền thư mục,
+phiên bản và thay tại chỗ của riêng nó, nên sửa lỗi chính tả trong phụ đề vẫn
+giữ mọi liên kết. Upload nó như mọi file. `text/vtt` (`.vtt`) có trong
+catalogue upload nhưng tắt mặc định, nên hãy bật nó trong
+**Settings → Uploads**. Bộ bảo vệ upload yêu cầu chữ ký `WEBVTT`, nên một tài
+liệu HTML hay SVG không thể giả làm phụ đề.
+
+- `GET /api/v1/files/:id/captions` liệt kê các track của một video (files
+  `read`). Mỗi track mang những gì phần tử HTML `<track>` cần: `kind`,
+  `locale` (`srclang`), `label`, `isDefault` và `src`, một URL bất biến ghim
+  theo version `GET /api/v1/files/<caption>/content?v=<n>`. Track mà caller
+  không thấy được file phụ đề sẽ được liệt kê với `src: null`.
+- `POST /api/v1/files/:id/captions` gắn một track (files `update` trên
+  video), với body `{ captionFileId, locale, kind?, label?, isDefault? }`:
+  - `kind` là `subtitles` (mặc định), `captions`, `descriptions` hoặc
+    `chapters`;
+  - video phải là `video/*` (`422 NOT_A_VIDEO`);
+  - track phải là file `text/vtt` mà caller thấy được
+    (`415 CAPTION_NOT_VTT`, `404 CAPTION_FILE_NOT_FOUND`);
+  - locale phải là một locale của site (`422 LOCALE_NOT_ENABLED`);
+  - mỗi video, locale và kind chỉ có một track (`409 CAPTION_EXISTS`).
+- `PATCH /api/v1/files/:id/captions/:captionId` đổi `captionFileId`,
+  `locale`, `kind`, `label` hoặc `isDefault`. Mỗi video và kind có tối đa một
+  track mặc định, nên đặt một track làm mặc định sẽ bỏ cờ của các track khác.
+- `DELETE /api/v1/files/:id/captions/:captionId` gỡ track. File WebVTT vẫn ở
+  trong thư viện. Xoá một trong hai file sẽ gỡ liên kết.
 
 ## Thiết lập
 
@@ -289,7 +318,8 @@ Chúng được lưu trong `settings` dưới key `files.dam`:
 ## Multi-tenancy
 
 - **Cô lập theo site:** `lumibase_files`, `lumibase_folders`,
-  `lumibase_file_versions` và `lumibase_video_assets` đều mang `site_id` và nằm trong danh sách RLS
+  `lumibase_file_versions`, `lumibase_file_captions` và
+  `lumibase_video_assets` đều mang `site_id` và nằm trong danh sách RLS
   `site_isolation`. Mọi query của repository được lọc theo `site_id`
   (`DrizzleFileRepository`). Binary lưu trữ nằm dưới `sites/<site>/…`. Cache
   tag (`file:<site>:<id>`) và thiết lập `files.dam` là theo site. Tra cứu
@@ -314,3 +344,5 @@ Chúng được lưu trong `settings` dưới key `files.dam`:
 - Phụ đề/caption video dưới dạng asset liên quan gắn với locale, và trình
   phát, trạng thái xử lý cùng nút thử lại trong Studio, là các phần tiếp theo
   của #871.
+- Transcode video (#871 phần 1, PR #937) cùng trình sửa phụ đề và trình phát
+  trong Studio là các phần riêng của #871.
