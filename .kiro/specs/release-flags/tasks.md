@@ -13,7 +13,7 @@
 - [x] 7. `requireReleaseFlag` / `isReleaseFlagEnabled`, memo theo request; test route 404 → 200 theo site (Req 2.4–2.5)
 - [x] 8. Route `/api/v1/release-flags/*` + test phân quyền (member / site admin / bootstrap / API key)
 - [x] 9. Script `scripts/release-flags/manifest.mjs` + test đồng bộ script ↔ verifier
-- [x] 10. Docs `features/release-flags.md` (EN/VI), API spec, data-model, OpenAPI, CHANGELOG, Setup Impact #288
+- [x] 10. Docs `features/release-flags.md` (EN/VI), API spec, data-model, OpenAPI, CHANGELOG, Setup Impact #314
 
 ## Part 1 — Tiếp theo
 
