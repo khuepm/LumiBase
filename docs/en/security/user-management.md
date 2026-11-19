@@ -1,10 +1,10 @@
 ---
-version: 15
-lastUpdated: 2026-11-17T19:23:30.212Z
+version: 16
+lastUpdated: 2026-11-19T19:39:14.491Z
 sourceLang: en
-contentHash: c4cf5c68f57e9896
-codeVerified: 2026-11-17T19:23:30.212Z
-codeVerifiedHash: c4cf5c68f57e9896
+contentHash: 7e151c873656ca85
+codeVerified: 2026-11-19T19:39:14.491Z
+codeVerifiedHash: 7e151c873656ca85
 codeVerifiedClaims: 122
 ---
 
@@ -498,6 +498,32 @@ the password (`amr: ["pwd","webauthn"]`) or as a passwordless staff sign-in
 `/auth/login` adds `methods` to the `mfa_required` response. Recovery codes are
 shared with TOTP. See [Passkeys](./passkeys.md).
 
+**Where `enforceTfa` applies.** A policy with `enforceTfa: true` requires a
+TFA-verified session for **every** route the session reaches — items, files,
+media, flows, imports, releases, AI and MCP as well as the Studio management
+API — whatever the client (Studio, SDK, script or `curl`). Before #987 the
+check ran only on requests that identified themselves as Studio or hit a
+Studio management prefix, so an un-enrolled user under an `enforceTfa` policy
+could still write content from a non-Studio client. The rules:
+
+- A user who must have 2FA but has not enrolled reaches the enrollment
+  endpoints (`/me/tfa`, `/me/tfa/setup`, `/me/tfa/confirm`, `/me/passkeys`,
+  `/me/passkeys/registration-options`) and nothing else; every other request
+  answers `403 TFA_REQUIRED`.
+- An enrolled user needs a session whose token carries `tfaVerified` (or an
+  `amr` with `totp` / `webauthn`); a password-only session answers
+  `403 TFA_REQUIRED`.
+- API keys are non-interactive credentials and are **not** subject to
+  `enforceTfa`; restrict them with their own policies and expiry. Anonymous
+  (public-role) requests have no session and are not affected either.
+- `appAccess` is unchanged: it is still checked only on the Studio surface.
+
+**Second factor across renewal.** The refresh-token family records the
+login's `amr` (`lumibase_refresh_tokens.amr`, migration `0044`), so
+`/auth/refresh` re-issues `tfaVerified` + `amr` for a session that started
+with TOTP or a passkey. Families minted before `0044` renew without the claim
+— those users sign in again once to start a family that carries it.
+
 ## 5. Staff onboarding (do NOT use self-service)
 
 Staff are created **invite-only**:
@@ -510,7 +536,7 @@ POST /api/v1/users/invite     (requireSiteAdmin)
 This creates/links the user with a Studio role (`appAccess: true`) and
 sends a best-effort invite email. Enforce TFA on admin roles via a policy
 with `enforceTfa: true` (`withStudioAccess` then requires a TFA-verified
-session).
+session on every route, not only in Studio — see §4f).
 
 ---
 

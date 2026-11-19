@@ -1,14 +1,14 @@
 ---
-version: 6
-lastUpdated: 2026-10-17T16:36:21.044Z
+version: 7
+lastUpdated: 2026-11-19T19:39:17.847Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 0a951ac2ef5f147c
+sourceHash: 6e9459c969d4e881
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-17T16:36:21.044Z
-codeVerifiedHash: 0a951ac2ef5f147c
-codeVerifiedClaims: 22
+codeVerified: 2026-11-19T19:39:17.847Z
+codeVerifiedHash: 6e9459c969d4e881
+codeVerifiedClaims: 30
 ---
 
 # Route guards — the `/api/v1` security chain
@@ -54,6 +54,19 @@ Mỗi lớp trả lời một câu hỏi, theo thứ tự:
 4. **Các bề mặt điều phối động (extensions, agent harness, flows) là
    control-plane.** Bất cứ thứ gì nạp và thực thi mã đã lưu hoặc thay đổi
    trạng thái agent đòi hỏi một principal admin trước khi handler chạy.
+5. **Thay đổi admin-plane được audit theo tiền tố (#988).** Mọi POST / PUT /
+   PATCH / DELETE thành công dưới một tiền tố trong `ADMIN_CHANGE_AUDIT_PREFIXES`
+   (`middleware/admin-change-audit.ts`) ghi một dòng audit `admin_change`:
+   người thực hiện, IP, User-Agent, request id, method, path, resource, đoạn id
+   đầu tiên, status, và **tên** các field JSON cấp cao nhất đã gửi — không bao
+   giờ ghi giá trị, không bao giờ ghi query string. Tiền tố control-plane hoặc
+   quản trị Studio mới phải được thêm vào đó hoặc vào
+   `ADMIN_CHANGE_AUDIT_EXCLUSIONS` kèm lý do; skill control-plane do agent thực
+   thi ghi cùng sự kiện với `via: 'agent'` và run id. Lọc tab audit bảo mật của
+   Studio theo `admin_change` để xem lại.
+6. **Bề mặt có tác dụng xuất bản cần permission, không chỉ quyền vào Studio.**
+   `/api/v1/pages` ghi các dòng mà deliver API phát công khai, nên nó kiểm
+   `lumibase_pages::<action>` (#986) thay vì tin vào `appAccess`.
 
 ## Các test tripwire
 
@@ -74,11 +87,20 @@ Các test hành vi đi kèm:
 - `routes/extensions.test.ts` — cổng admin trên quản lý và điều phối động.
 - `routes/__tests__/auth-register.test.ts` — register fail closed khi không có
   principal; ràng buộc id role member đã seed (không bao giờ là một literal role key).
+- `middleware/__tests__/admin-change-audit.test.ts` — mọi tiền tố trong
+  `CONTROL_PLANE_PATHS` và `STUDIO_ACCESS_PATH_PREFIXES` đều được audit hoặc
+  được loại trừ kèm lý do; không giá trị field hay query string nào lọt vào
+  audit trail.
+- `middleware/__tests__/studio-access-session-tfa.test.ts` — `enforceTfa` có
+  hiệu lực trên các route content, file, flow, AI và MCP với mọi client (#987).
+- `routes/__tests__/pages-access.test.ts` — grant `lumibase_pages` và giới hạn
+  phạm vi theo rule dòng trên page builder (#986).
 
 ## Lịch sử sự cố (tại sao các quy tắc này tồn tại)
 
 | Bản sửa | Lỗ hổng |
 | --- | --- |
+| #986 / #987 / #988 | Gia cố sau FBI FLASH CC-111626-MW (chèn nội dung bắt đầu từ credential bị lộ trên WordPress). `/api/v1/pages` nhận ghi từ mọi user Studio, dù trang được phát công khai; `enforceTfa` chỉ được kiểm với request tự nhận là Studio, nên client khác bỏ qua được; và `/auth/refresh` làm rơi `tfaVerified`, nên khi cưỡng chế thì user đã đăng ký bị từ chối sau lần gia hạn đầu tiên. Thay đổi admin-plane (extensions, flows, webhooks, settings, …) không để lại dòng audit nào. |
 | PR #495 | Lớp dự phòng cũng chặn `GET /api/v1/permissions/me`, tức bundle quyền của chính người gọi. Mọi user không có role đúng tên `admin` nhận 403, nên Studio báo "không có quyền read" trên các collection mà role của họ đọc được. Ngoại lệ chỉ áp cho GET và yêu cầu có principal; phần còn lại của `/permissions` vẫn chỉ dành cho admin. |
 | PR #495 (B101) | Lớp dự phòng chỉ nhận admin theo **tên** role. User được mời mang **id** role, nên user có role Administrator bị mọi route control-plane từ chối, dù `requireSiteAdmin` cho phép. Lớp dự phòng nay nhận thêm user đã đăng nhập có bundle quyền của site với `admin`; API key chưa được áp dụng, chờ #472. |
 | PR #184 (đã port) | Không có kiểm tra thành viên giữa `withAuth` và các handler: bất kỳ principal đã xác thực nào cũng có thể chọn một `X-Lumi-Site` tùy ý và thao tác trên một tenant khác. |

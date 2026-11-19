@@ -17,6 +17,7 @@ import { withRuntime } from './middleware/runtime';
 import { requireSetupComplete } from './middleware/setup-required';
 import { withSiteMembership } from './middleware/site-membership';
 import { withStudioAccess } from './middleware/studio-access';
+import { withAdminChangeAudit } from './middleware/admin-change-audit';
 import { withControlPlaneAccessGuard } from './middleware/control-plane-access-guard';
 import { withFileUploadPolicy } from './middleware/file-upload-policy';
 import { apiSurface, withEntitlement } from './middleware/entitlement';
@@ -271,6 +272,11 @@ api.use('*', withTenant(), withDb(), withTenantExists(), withAiIpRateLimit(), wi
 // guards reject is never put to the resolver, and the chain line above stays
 // exactly as the security-guards wiring test pins it.
 api.use('*', withEntitlement({ dimension: ENTITLEMENT_DIMENSIONS.apiRequests, surface: apiSurface }));
+// Admin-plane change audit (#988): one `admin_change` audit row per successful
+// mutation under an admin prefix (extensions, pages, flows, webhooks, settings,
+// schema, access, users, domains, keys, …). After the guard chain, so denied
+// requests never reach it (the guards audit those themselves).
+api.use('*', withAdminChangeAudit());
 // Sub-routers must be attached to their parent BEFORE the parent is mounted
 // on `api`: Hono's `route()` copies the child's routes at call time, so
 // anything registered on `authRouter`/`meRouter` afterwards is invisible to

@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 60
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 61
+lastUpdated: 2026-11-19T19:39:14.967Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1d86bff615c2ba39
+sourceHash: e97fe0e0b26aa752
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
+codeVerified: 2026-11-19T19:39:14.967Z
+codeVerifiedHash: e97fe0e0b26aa752
 codeVerifiedClaims: 652
 ---
 
@@ -618,6 +618,8 @@ CRUD đã xác thực Studio trên `lumibase_pages` (được tiêu thụ bởi 
 | `DELETE` | `/api/v1/pages/:id` | Xóa trang |
 
 Định dạng slug khớp với quy tắc kiểm tra của Delivery (`^[a-z0-9]+(?:[/_-][a-z0-9]+)*$`, ≤200).
+
+**Quyền truy cập (#986).** Trang được phát công khai sau khi deliver, nên mọi route cần permission `lumibase_pages::<action>` (`read` / `create` / `update` / `delete`); site admin được bỏ qua. Thiếu quyền thì route trả `403 FORBIDDEN`. Rule theo dòng của grant được đánh giá trên `{ id, slug, title }` — ví dụ `{ "slug": { "_starts_with": "landing/" } }` giới hạn một editor vào các trang landing. Trang nằm ngoài phạm vi của caller trả `404`, còn thao tác tạo hoặc đổi tên khiến trang rơi ra ngoài phạm vi trả `403`. Field whitelist và preset trên permission `lumibase_pages` không được áp dụng. Mỗi lần ghi tạo một dòng `activity` (collection `lumibase_pages`) với người thực hiện cùng slug, title và SHA-256 của layout trước và sau.
 
 Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tags?: string[], keys?: string[] }` — mọi tag/key phải chứa `siteId` đang hoạt động.
 

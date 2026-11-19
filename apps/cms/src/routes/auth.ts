@@ -28,6 +28,7 @@ import {
   revokeSessionById,
   revokeOtherSessions,
   newSessionId,
+  amrHasSecondFactor,
 } from '../services/auth/refresh-token';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import {
@@ -1779,6 +1780,10 @@ authRouter.post('/refresh', async (c) => {
       tokenVersion: user.tokenVersion ?? 0,
       // Same session across rotation — see the login path.
       sid: outcome.familyId,
+      // A family started by a second-factor login renews TFA-verified (#987).
+      // Without this, `enforceTfa` refused the user as soon as the first
+      // access token expired.
+      ...(amrHasSecondFactor(outcome.amr) ? { tfaVerified: true, amr: outcome.amr } : {}),
     },
     jwtSecret,
     audience,

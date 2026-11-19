@@ -1,13 +1,13 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 27
+lastUpdated: 2026-11-19T19:39:17.514Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 52465604769f9c24
+sourceHash: 5cdf539385b09e64
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+codeVerified: 2026-11-19T19:39:17.514Z
+codeVerifiedHash: 5cdf539385b09e64
 codeVerifiedClaims: 22
 ---
 
@@ -273,8 +273,9 @@ Quá trình sinh SDK dùng manifest này để phát ra interface collection cơ
 - `id`, `siteId`, `policyId`, `collection`, `action` (`create`/`read`/`update`/`delete`/`share`), `permissions jsonb` (DSL rule ở mức row), `validation jsonb`, `presets jsonb`, `fields text[]` (allow list ở mức field, `*` = tất cả).
 
 ### `refresh_tokens` (migration `0005`, vật lý `lumibase_refresh_tokens`)
-- `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — không bao giờ lưu plaintext), `familyId` (chuỗi rotation), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `createdAt`.
+- `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — không bao giờ lưu plaintext), `familyId` (chuỗi rotation), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `amr` (jsonb, nullable — migration `0044`), `createdAt`.
 - Token gia hạn session, có rotation và thu hồi được. Dùng lại một row đã revoke sẽ revoke toàn bộ `familyId` (phát hiện đánh cắp). Được quét dọn bởi cron mỗi giờ sau khi hết hạn. Xem [`security/user-management.md`](./security/user-management.md) §4d.
+- `amr` ghi lại các phương thức xác thực mà lần đăng nhập đã chứng minh (`["pwd","totp"]`, `["webauthn"]`, …) và được chép sang mỗi lần rotation, nên `/auth/refresh` giữ `tfaVerified` cho session có yếu tố thứ hai (#987). NULL với đăng nhập một yếu tố và với family tạo trước `0044`. Xem §4f của cùng tài liệu.
 
 ### `user_passkeys` (migration `0031`, vật lý `lumibase_user_passkeys`)
 - `id` (nanoid), `userId`, `credentialId` (base64url, unique), `publicKey` (khóa công khai COSE), `counter`, `transports`, `aaguid`, `name`, `deviceType`, `backedUp`, `rpId`, `createdAt`, `lastUsedAt`, `updatedAt`.

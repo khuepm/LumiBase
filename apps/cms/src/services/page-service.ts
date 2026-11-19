@@ -4,9 +4,14 @@
  * Closes high-load-cache-readiness backlog **B16**: after create / slug rename,
  * call `forgetNegative(negativePageKey…)` so a prior tombstone does not hide
  * the new page until TTL (Req 19.7 / task 22.6).
+ *
+ * Every write also records an `activity` row (collection `lumibase_pages`) in
+ * the same transaction, with the actor and the slug, title and a SHA-256 of
+ * the layout before and after (#986). Pages are public, so a page that
+ * changed must always be traceable to who changed it.
  */
 
-import { pages, scopeSite, type Database } from '@lumibase/database';
+import { activity, pages, scopeSite, type Database } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import type { CacheProvider } from '@lumibase/runtime';
@@ -42,7 +47,15 @@ export type PageServiceDeps = {
   db: Database;
   siteId: string;
   cache?: CacheProvider;
+  /** `users.id` of the caller, recorded on activity rows; null for API keys. */
+  actorId?: string | null;
 };
+
+/** Collection name recorded on page activity rows (same as the table). */
+export const PAGE_ACTIVITY_COLLECTION = 'lumibase_pages';
+
+/** What an activity row records about one side of a page change. */
+export type PageSnapshot = { slug: string; title: string; layoutSha256: string };
 
 export class PageService {
   constructor(private readonly deps: PageServiceDeps) {}
@@ -71,19 +84,23 @@ export class PageService {
 
     const id = nanoid();
     try {
-      const [row] = await this.deps.db
-        .insert(pages)
-        .values({
-          id,
-          siteId: this.deps.siteId,
-          slug: input.slug,
-          title: input.title.trim(),
-          layoutConfig: input.layoutConfig ?? {},
-        })
-        .returning();
-      if (!row) {
-        throw new PageServiceError('INTERNAL', 'Insert returned no row', 400);
-      }
+      const row = await this.deps.db.transaction(async (tx) => {
+        const [inserted] = await tx
+          .insert(pages)
+          .values({
+            id,
+            siteId: this.deps.siteId,
+            slug: input.slug,
+            title: input.title.trim(),
+            layoutConfig: input.layoutConfig ?? {},
+          })
+          .returning();
+        if (!inserted) {
+          throw new PageServiceError('INTERNAL', 'Insert returned no row', 400);
+        }
+        await this.recordActivity(tx, 'create', inserted.id, { after: await snapshot(inserted) });
+        return inserted;
+      });
       await forgetNegative(this.deps.cache, negativePageKey(this.deps.siteId, row.slug));
       return row;
     } catch (err) {
@@ -105,20 +122,26 @@ export class PageService {
       throw new PageServiceError('VALIDATION', 'title is required');
     }
 
+    // Snapshot before the update: drizzle/mocks may mutate the same row object.
+    const before = await snapshot(existing);
     try {
-      const [row] = await this.deps.db
-        .update(pages)
-        .set({
-          ...(input.slug !== undefined ? { slug: input.slug } : {}),
-          ...(input.title !== undefined ? { title: input.title.trim() } : {}),
-          ...(input.layoutConfig !== undefined ? { layoutConfig: input.layoutConfig } : {}),
-          updatedAt: new Date(),
-        })
-        .where(and(eq(pages.id, id), scopeSite(pages.siteId, this.deps.siteId)))
-        .returning();
-      if (!row) {
-        throw new PageServiceError('NOT_FOUND', 'Page not found.', 404);
-      }
+      const row = await this.deps.db.transaction(async (tx) => {
+        const [updated] = await tx
+          .update(pages)
+          .set({
+            ...(input.slug !== undefined ? { slug: input.slug } : {}),
+            ...(input.title !== undefined ? { title: input.title.trim() } : {}),
+            ...(input.layoutConfig !== undefined ? { layoutConfig: input.layoutConfig } : {}),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(pages.id, id), scopeSite(pages.siteId, this.deps.siteId)))
+          .returning();
+        if (!updated) {
+          throw new PageServiceError('NOT_FOUND', 'Page not found.', 404);
+        }
+        await this.recordActivity(tx, 'update', updated.id, { before, after: await snapshot(updated) });
+        return updated;
+      });
 
       // Forget new slug always; also clear the old slug tombstone on rename.
       // Capture previousSlug before update — drizzle/mocks may mutate the same row object.
@@ -138,10 +161,30 @@ export class PageService {
     if (!existing) {
       throw new PageServiceError('NOT_FOUND', 'Page not found.', 404);
     }
-    await this.deps.db
-      .delete(pages)
-      .where(and(eq(pages.id, id), scopeSite(pages.siteId, this.deps.siteId)));
+    const before = await snapshot(existing);
+    await this.deps.db.transaction(async (tx) => {
+      await tx
+        .delete(pages)
+        .where(and(eq(pages.id, id), scopeSite(pages.siteId, this.deps.siteId)));
+      await this.recordActivity(tx, 'delete', id, { before });
+    });
     // Do not write a tombstone here — deliver miss path owns setNegative.
+  }
+
+  private async recordActivity(
+    tx: Pick<Database, 'insert'>,
+    action: 'create' | 'update' | 'delete',
+    pageId: string,
+    payload: { before?: PageSnapshot; after?: PageSnapshot },
+  ): Promise<void> {
+    await tx.insert(activity).values({
+      siteId: this.deps.siteId,
+      action,
+      userId: this.deps.actorId ?? null,
+      collection: PAGE_ACTIVITY_COLLECTION,
+      itemId: pageId,
+      payload,
+    });
   }
 
   private assertSlug(slug: string): void {
@@ -159,4 +202,30 @@ export class PageService {
       throw new PageServiceError('CONFLICT', 'A page with this slug already exists on the site.', 409);
     }
   }
+}
+
+/** Slug, title and a SHA-256 of the canonical layout JSON. */
+export async function snapshot(row: Pick<PageRow, 'slug' | 'title' | 'layoutConfig'>): Promise<PageSnapshot> {
+  return { slug: row.slug, title: row.title, layoutSha256: await sha256Hex(canonicalJson(row.layoutConfig ?? {})) };
+}
+
+/** JSON with object keys sorted, so equal layouts hash equally. */
+function canonicalJson(value: unknown): string {
+  const sort = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(sort);
+    if (v && typeof v === 'object') {
+      return Object.fromEntries(
+        Object.keys(v as Record<string, unknown>)
+          .sort()
+          .map((k) => [k, sort((v as Record<string, unknown>)[k])]),
+      );
+    }
+    return v;
+  };
+  return JSON.stringify(sort(value));
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }

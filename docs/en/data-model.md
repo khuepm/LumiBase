@@ -1,10 +1,10 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 27
+lastUpdated: 2026-11-19T19:39:17.514Z
 sourceLang: en
-contentHash: 52465604769f9c24
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+contentHash: 5cdf539385b09e64
+codeVerified: 2026-11-19T19:39:17.514Z
+codeVerifiedHash: 5cdf539385b09e64
 codeVerifiedClaims: 22
 ---
 
@@ -269,8 +269,9 @@ SDK generation uses this manifest to emit base collection interfaces and `Collec
 - `id`, `siteId`, `policyId`, `collection`, `action` (`create`/`read`/`update`/`delete`/`share`), `permissions jsonb` (row-level rule DSL), `validation jsonb`, `presets jsonb`, `fields text[]` (field-level allow list, `*` = all).
 
 ### `refresh_tokens` (migration `0005`, physical `lumibase_refresh_tokens`)
-- `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — plaintext never stored), `familyId` (rotation chain), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `createdAt`.
+- `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — plaintext never stored), `familyId` (rotation chain), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `amr` (jsonb, nullable — migration `0044`), `createdAt`.
 - Rotating, revocable session-renewal tokens. Reuse of a revoked row revokes the whole `familyId` (theft detection). Swept on the hourly cron once expired. See [`security/user-management.md`](./security/user-management.md) §4d.
+- `amr` records the authentication methods the login proved (`["pwd","totp"]`, `["webauthn"]`, …) and is copied to every rotation, so `/auth/refresh` keeps `tfaVerified` for a second-factor session (#987). NULL for single-factor logins and for families minted before `0044`. See §4f of the same guide.
 
 ### `user_passkeys` (migration `0031`, physical `lumibase_user_passkeys`)
 - `id` (nanoid), `userId`, `credentialId` (base64url, unique), `publicKey` (COSE public key), `counter`, `transports`, `aaguid`, `name`, `deviceType`, `backedUp`, `rpId`, `createdAt`, `lastUsedAt`, `updatedAt`.

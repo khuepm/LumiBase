@@ -157,6 +157,15 @@ export const AUDIT_EVENTS = [
 export type AuditEventCode = (typeof AUDIT_EVENTS)[number];
 
 /**
+ * Event codes the audit-log API accepts as an `event` filter: the Req 15.1
+ * vocabulary plus `admin_change` (#988) — one row per admin-plane mutation
+ * (extensions, pages, flows, webhooks, settings, schema, access, …), written
+ * by `middleware/admin-change-audit.ts` and by the agent harness. Kept apart
+ * from {@link AUDIT_EVENTS}, which stays the fixed Req 15.1 list.
+ */
+export const FILTERABLE_AUDIT_EVENTS = [...AUDIT_EVENTS, 'admin_change'] as const;
+
+/**
  * An audit event code. The `(string & {})` member keeps literal
  * autocomplete for the 15 known {@link AuditEventCode}s while still
  * accepting arbitrary strings, matching the free-text storage contract

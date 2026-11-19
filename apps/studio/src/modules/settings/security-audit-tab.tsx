@@ -80,9 +80,11 @@ import {
 // ────────────────────────────────────────────────────────────────────────
 
 /**
- * The 15 audit event codes offered in the `event` filter dropdown.
+ * The audit event codes offered in the `event` filter dropdown: the 15
+ * Req 15.1 codes plus `admin_change` (#988 — one row per admin-plane change:
+ * extensions, pages, flows, webhooks, settings, schema, access, …).
  *
- * NOTE: this list MIRRORS the CMS `AUDIT_EVENTS` const in
+ * NOTE: this list MIRRORS the CMS `FILTERABLE_AUDIT_EVENTS` const in
  * `apps/cms/src/modules/audit/logger.ts`. The Studio deliberately does
  * NOT import from the CMS package (no cross-app coupling), so the list
  * is duplicated here. If the CMS vocabulary changes, update this const
@@ -104,6 +106,7 @@ export const AUDIT_EVENT_CODES = [
   'recovery_initiated',
   'recovery_completed',
   'backup_code_used',
+  'admin_change',
 ] as const;
 
 export type AuditEventCode = (typeof AUDIT_EVENT_CODES)[number];

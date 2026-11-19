@@ -1,10 +1,10 @@
 ---
-version: 61
-lastUpdated: 2026-11-19T03:55:04.105Z
+version: 62
+lastUpdated: 2026-11-19T19:39:14.967Z
 sourceLang: en
-contentHash: 1d86bff615c2ba39
-codeVerified: 2026-11-19T03:55:04.105Z
-codeVerifiedHash: 1d86bff615c2ba39
+contentHash: e97fe0e0b26aa752
+codeVerified: 2026-11-19T19:39:14.967Z
+codeVerifiedHash: e97fe0e0b26aa752
 codeVerifiedClaims: 652
 ---
 
@@ -696,6 +696,17 @@ matching negative-cache tombstones immediately.
 | `DELETE` | `/api/v1/pages/:id` | Delete page |
 
 Slug shape matches the Delivery guard (`^[a-z0-9]+(?:[/_-][a-z0-9]+)*$`, ≤200).
+
+**Access (#986).** Pages are public once delivered, so every route needs a
+`lumibase_pages::<action>` permission (`read` / `create` / `update` /
+`delete`); site admins bypass. Without it the route answers
+`403 FORBIDDEN`. The grant's row rule is evaluated against
+`{ id, slug, title }` — e.g. `{ "slug": { "_starts_with": "landing/" } }`
+confines an editor to the landing pages. A page outside the caller's scope
+answers `404`, and a create or rename that would land outside it answers
+`403`. Field whitelists and presets on a `lumibase_pages` permission are not
+applied. Each write records an `activity` row (collection `lumibase_pages`)
+with the actor and the slug, title and layout SHA-256 before and after.
 
 Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` with
 `{ tags?: string[], keys?: string[] }` — every tag/key must include the

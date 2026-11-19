@@ -3601,6 +3601,7 @@ export class AISecureHarness {
           }, TIMEOUT_MS);
         }),
       ]);
+      await this.auditControlPlaneSkill(skillName, skill, args, runContext?.runId ?? null);
       return { success: true, data: result };
     } catch (err: unknown) {
       if (timedOut) {
@@ -3620,6 +3621,42 @@ export class AISecureHarness {
     } finally {
       clearTimeout(timer);
       await this.itemService?.flushCoalescedWrites().catch(() => {});
+    }
+  }
+
+  /**
+   * Admin-plane change audit for agents (#988). A control-plane skill that ran
+   * (installing an extension, creating an API key, webhook or flow, changing a
+   * setting, a schema change, a delete, …) records the same `admin_change`
+   * event the HTTP middleware records for people, with `via: 'agent'` and the
+   * run id that links it to its provenance. Argument NAMES only, never values:
+   * these calls carry secrets. Never throws — auditing must not turn an
+   * executed action into a reported failure.
+   */
+  private async auditControlPlaneSkill(
+    skillName: string,
+    skill: SkillDefinition,
+    args: Record<string, unknown>,
+    runId: string | null,
+  ): Promise<void> {
+    try {
+      if (!isControlPlaneSkill({ dangerous: skill.dangerous, requiredCapabilities: skill.requiredCapabilities ?? [] }, skillName)) return;
+      const { AuditLogger } = await import('../modules/audit/logger');
+      await new AuditLogger({ db: this.db, siteId: this.siteId }).write({
+        event: 'admin_change',
+        actorEmail: null,
+        ip: null,
+        userAgent: null,
+        requestId: null,
+        metadata: {
+          via: 'agent',
+          skill: skillName,
+          runId,
+          changedFields: Object.keys(args ?? {}).slice(0, 50),
+        },
+      });
+    } catch {
+      // The logger already never throws; this guards the import and the predicate.
     }
   }
 

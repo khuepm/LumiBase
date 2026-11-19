@@ -92,6 +92,12 @@ describe('access system collection grouping', () => {
     expect(content?.options[0]).toMatchObject({ name: 'posts', label: 'posts' });
   });
 
+  it('offers the page builder grant in the content group, after project collections (#986)', () => {
+    const content = buildAccessCollectionGroups(['posts', 'articles'], false).find((group) => group.id === 'content');
+    expect(content?.options.map((option) => option.name)).toEqual(['articles', 'posts', 'lumibase_pages']);
+    expect(content?.options.at(-1)).toMatchObject({ label: 'Delivery pages (page builder)', fromSystemContract: true, sensitive: false });
+  });
+
   it('returns the first visible option for dialog defaults', () => {
     expect(firstCollectionOption(buildAccessCollectionGroups(['posts'], false))).toBe('posts');
   });

@@ -1,13 +1,13 @@
 ---
-version: 15
-lastUpdated: 2026-11-17T19:23:30.212Z
+version: 16
+lastUpdated: 2026-11-19T19:39:14.491Z
 sourceLang: en
 translatedFrom: en
-sourceHash: c4cf5c68f57e9896
+sourceHash: 7e151c873656ca85
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T19:23:30.212Z
-codeVerifiedHash: c4cf5c68f57e9896
+codeVerified: 2026-11-19T19:39:14.491Z
+codeVerifiedHash: 7e151c873656ca85
 codeVerifiedClaims: 122
 ---
 
@@ -505,6 +505,31 @@ request, và tháo 2FA thu hồi refresh token của site hiện tại. Các env
 `/auth/login` trả `methods` trong phản hồi `mfa_required`. Mã khôi phục dùng
 chung với TOTP. Xem [Passkey](./passkeys.md).
 
+**`enforceTfa` áp dụng ở đâu.** Một policy có `enforceTfa: true` yêu cầu
+session đã verify TFA trên **mọi** route mà session đó gọi tới — items, files,
+media, flows, imports, releases, AI và MCP cũng như API quản trị Studio — bất
+kể client là gì (Studio, SDK, script hay `curl`). Trước #987, phép kiểm chỉ
+chạy với request tự nhận là Studio hoặc đi vào một prefix quản trị Studio, nên
+một user chưa đăng ký 2FA dưới policy `enforceTfa` vẫn ghi được nội dung từ
+client không phải Studio. Quy tắc:
+
+- User bắt buộc có 2FA nhưng chưa đăng ký chỉ gọi được các endpoint đăng ký
+  (`/me/tfa`, `/me/tfa/setup`, `/me/tfa/confirm`, `/me/passkeys`,
+  `/me/passkeys/registration-options`); mọi request khác trả
+  `403 TFA_REQUIRED`.
+- User đã đăng ký cần một session có token mang `tfaVerified` (hoặc `amr` có
+  `totp` / `webauthn`); session chỉ có mật khẩu trả `403 TFA_REQUIRED`.
+- API key là credential không tương tác và **không** chịu `enforceTfa`; hãy
+  giới hạn chúng bằng policy và thời hạn riêng. Request ẩn danh (role public)
+  không có session nên cũng không bị ảnh hưởng.
+- `appAccess` không đổi: vẫn chỉ được kiểm trên bề mặt Studio.
+
+**Yếu tố thứ hai qua các lần gia hạn.** Family refresh token ghi lại `amr` của
+lần đăng nhập (`lumibase_refresh_tokens.amr`, migration `0044`), nên
+`/auth/refresh` cấp lại `tfaVerified` + `amr` cho session bắt đầu bằng TOTP
+hoặc passkey. Family tạo trước `0044` gia hạn không kèm claim này — những user
+đó đăng nhập lại một lần để bắt đầu family có mang nó.
+
 ## 5. Onboarding staff (KHÔNG dùng tự phục vụ)
 
 Staff được tạo **invite-only**:
@@ -517,7 +542,7 @@ POST /api/v1/users/invite     (requireSiteAdmin)
 Việc này tạo/liên kết user với một role Studio (`appAccess: true`) và gửi một
 email mời best-effort. Cưỡng chế TFA trên các admin role qua một policy với
 `enforceTfa: true` (`withStudioAccess` khi đó yêu cầu một session đã verify
-TFA).
+TFA trên mọi route, không chỉ trong Studio — xem §4f).
 
 ---
 
