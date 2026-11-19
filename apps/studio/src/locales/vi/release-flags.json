@@ -1,0 +1,38 @@
+{
+  "title": "Release flag",
+  "intro": "Các tính năng phát hành ẩn được bật theo deployment bởi LumiBase (manifest có chữ ký) hoặc bởi operator, sau đó theo từng site bởi admin của site. Một site không bao giờ bật được tính năng chưa được phát hành.",
+  "memberIntro": "Các tính năng đã phát hành và trạng thái bật/tắt trên site này. Nhờ admin của site nếu cần thay đổi.",
+  "loading": "Đang tải release flag…",
+  "error": "Không tải được danh sách release flag.",
+  "empty": "Chưa khai báo release flag nào.",
+  "memberEmpty": "Không có tính năng đã phát hành nào để hiển thị.",
+  "columns": {
+    "flag": "Flag",
+    "stage": "Giai đoạn",
+    "release": "Đã phát hành trên deployment này",
+    "site": "Bật cho site này",
+    "owner": "Phụ trách",
+    "removeBy": "Gỡ trước ngày"
+  },
+  "stage": { "dark": "Ẩn", "beta": "Beta", "ga": "Phát hành chung" },
+  "released": { "yes": "Đã phát hành", "no": "Chưa phát hành" },
+  "releasedBy": {
+    "env": "do operator đặt (LUMIBASE_RELEASE_FLAGS)",
+    "manifest": "theo manifest phát hành của LumiBase",
+    "stage": "theo mặc định của giai đoạn"
+  },
+  "enabled": { "on": "Bật", "off": "Tắt" },
+  "enabledBy": {
+    "release": "theo trạng thái phát hành",
+    "site": "đã chọn cho site này",
+    "site-default": "mặc định của site"
+  },
+  "toggle": "Bật {{key}} cho site này",
+  "useDefault": "Dùng mặc định ({{value}})",
+  "notSwitchable": "Không bật/tắt được theo site.",
+  "gateClosed": "Chưa phát hành trên deployment này nên không bật được cho site.",
+  "saving": "Đang lưu…",
+  "saved": "Đã lưu.",
+  "saveError": "Không lưu được thay đổi.",
+  "forbidden": "Chỉ admin của site mới đổi được release flag."
+}

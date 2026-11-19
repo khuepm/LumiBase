@@ -1,11 +1,11 @@
 ---
-version: 4
-lastUpdated: 2026-11-19T04:44:24.422Z
+version: 5
+lastUpdated: 2026-11-19T08:07:58.988Z
 sourceLang: en
-contentHash: 8f8abfae79c767a9
-codeVerified: 2026-11-19T04:44:24.422Z
-codeVerifiedHash: 8f8abfae79c767a9
-codeVerifiedClaims: 42
+contentHash: 5a037c6c803734f1
+codeVerified: 2026-11-19T08:07:58.988Z
+codeVerifiedHash: 5a037c6c803734f1
+codeVerifiedClaims: 44
 ---
 
 # Release Flags
@@ -189,6 +189,27 @@ The manifest endpoints refuse API keys. A rejected manifest answers
 `MANIFEST_REJECTED` with a `reason`: `422` for a bad signature, unknown key,
 expired, not yet valid, wrong audience or malformed payload; `409` for `STALE`
 (older than the accepted one) or when no trusted key is configured.
+
+## Studio
+
+**Settings → System → Release flags** lists the flags for the active site.
+
+- Site admins see every declared flag: description, stage, whether this
+  deployment released it and why (the operator, the LumiBase manifest or the
+  stage default), whether it is on for this site and why (follows the release,
+  chosen for this site, or site default), owner and removal date.
+- A released flag declared `siteToggle` has a switch for the site, and a
+  **Use default** button clears the site's choice (`null`). The switch is
+  disabled with an explanation while the deployment has not released the flag.
+- Members see only the released flags and whether each is on, read-only.
+- Managing the signed manifest stays an API for the bootstrap admin; Studio
+  has no page for it.
+
+Other Studio screens hide the UI of a feature whose flag is off with
+`useReleaseFlag(key)` or `<ReleaseFlagGate flag="…">` from
+`apps/studio/src/lib/release-flags.tsx`. The list is read once per session and
+site; a read error keeps the feature hidden. Hiding is a convenience — the
+server still answers `404` on a gated route.
 
 ## Gating code (developers)
 
