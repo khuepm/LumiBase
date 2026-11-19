@@ -22,6 +22,7 @@ export type FileContentPatch = Partial<
     | 'filesize'
     | 'width'
     | 'height'
+    | 'duration'
     | 'metadata'
     | 'contentHash'
     | 'version'

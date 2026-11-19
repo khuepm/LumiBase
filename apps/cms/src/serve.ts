@@ -195,6 +195,7 @@ async function main() {
   let schedulerTask: ScheduledTask | undefined;
   let retentionTask: ScheduledTask | undefined;
   let revisionRetentionTask: ScheduledTask | undefined;
+  let videoSweepTask: ScheduledTask | undefined;
   let malwareScanSweepTask: ScheduledTask | undefined;
   let deploymentPollTask: ScheduledTask | undefined;
   let flowScheduleTask: ScheduledTask | undefined;
@@ -604,6 +605,24 @@ async function main() {
     ),
   );
 
+  // Video pipeline backstop (#871): submits queued videos (after a scan, a
+  // retryable provider error or a lost background task), polls processing
+  // ones whose webhook never came, and times out the stuck. Idle when no
+  // VIDEO_PROVIDER is configured.
+  const { sweepVideos } = await import('./modules/video/sweeper');
+  videoSweepTask = cron.schedule(
+    '*/5 * * * *',
+    leaderLockedCallback(
+      'video-sweep',
+      270_000,
+      async () => {
+        await sweepVideos({ db: rotatorDb, env: process.env as Record<string, unknown> }).catch((err) => {
+          console.error('[video-sweep] failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
   // Pending-scan sweeper (#707, B222): a malware scan runs after the upload
   // response; if the process died mid-scan the file stays `pending` (never
   // served). Every five minutes, re-scan files pending for over ten minutes.
@@ -804,6 +823,7 @@ async function main() {
     schedulerTask?.stop();
     retentionTask?.stop();
     revisionRetentionTask?.stop();
+    videoSweepTask?.stop();
     malwareScanSweepTask?.stop();
     deploymentPollTask?.stop();
     flowScheduleTask?.stop();

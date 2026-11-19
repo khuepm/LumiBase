@@ -132,6 +132,22 @@ services:
       # #564: refused-decision audit dedup window (s) and /api/v1/ai/* per-IP limit (req/min).
       DECISION_REFUSAL_AUDIT_WINDOW_SECONDS: ${DECISION_REFUSAL_AUDIT_WINDOW_SECONDS:-}
       LUMIBASE_AI_IP_RATE_LIMIT: ${LUMIBASE_AI_IP_RATE_LIMIT:-}
+      # Video pipeline (#871). Unset = no transcoding; videos are stored and
+      # served as uploaded. VIDEO_PROVIDER=cloudflare-stream needs CF_STREAM_*;
+      # VIDEO_PROVIDER=mux needs MUX_* (signing key only for signed playback).
+      # The provider pulls originals from LUMIBASE_PUBLIC_URL, so it must be
+      # reachable from the internet.
+      VIDEO_PROVIDER: ${VIDEO_PROVIDER:-}
+      LUMIBASE_PUBLIC_URL: ${LUMIBASE_PUBLIC_URL:-}
+      CF_STREAM_ACCOUNT_ID: ${CF_STREAM_ACCOUNT_ID:-}
+      CF_STREAM_API_TOKEN: ${CF_STREAM_API_TOKEN:-}
+      CF_STREAM_WEBHOOK_SECRET: ${CF_STREAM_WEBHOOK_SECRET:-}
+      CF_STREAM_CUSTOMER_DOMAIN: ${CF_STREAM_CUSTOMER_DOMAIN:-}
+      MUX_TOKEN_ID: ${MUX_TOKEN_ID:-}
+      MUX_TOKEN_SECRET: ${MUX_TOKEN_SECRET:-}
+      MUX_WEBHOOK_SECRET: ${MUX_WEBHOOK_SECRET:-}
+      MUX_SIGNING_KEY_ID: ${MUX_SIGNING_KEY_ID:-}
+      MUX_SIGNING_KEY_PRIVATE: ${MUX_SIGNING_KEY_PRIVATE:-}
       # Malware scanning for uploads (#707). Unset = no scanner; a site that
       # enables scanning then keeps new files quarantined (fail closed). With
       # the `malware-scan` profile below, either talk to clamd directly

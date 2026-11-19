@@ -3,6 +3,7 @@ import { History, Link2, RefreshCw, Trash2, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { LumiError, type FileReferenceResource, type FileResource } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
+import { VideoPanel } from './video-panel';
 
 interface Props {
   fileId: string;
@@ -26,7 +27,8 @@ function referenceLabel(ref: FileReferenceResource): string {
 /**
  * Asset details (#703, #705, #706): rename + editorial metadata, replace the
  * binary in place, version history with restore, "where used", and a delete
- * that shows the references before it asks to confirm.
+ * that shows the references before it asks to confirm. Videos also get
+ * processing status, a preview player and caption tracks (#871).
  */
 export function FileDetailsDrawer({ fileId, onClose, onChanged }: Props) {
   const client = getApiClient();
@@ -166,6 +168,8 @@ export function FileDetailsDrawer({ fileId, onClose, onChanged }: Props) {
               </dl>
             </section>
           )}
+
+          {file.mime.toLowerCase().startsWith('video/') && <VideoPanel file={file} />}
 
           <section>
             <h3 className="mb-1 flex items-center gap-1 font-medium">
