@@ -24,9 +24,15 @@ import path from 'node:path';
  * this script fails CI when either id column contains a duplicate, so the
  * collision is caught at PR time instead of during a later cleanup.
  *
- * It parses ONLY the table under each file's `## Registry` heading, so numbered
- * prose above it and notes below it never register as rows.
+ * It scans EVERY table row in each file — not just the table under the
+ * `## Registry` heading. An earlier version bounded the scan to that section
+ * (up to the next H2), and rows that parallel PRs appended at the end of the
+ * file — below `## Lưu ý backfill` — were never checked, so duplicate ids
+ * merged unnoticed. Only lines that start with `| <id> |` count as rows, so
+ * numbered prose, blank lines and headings anywhere in the file are ignored.
  */
+
+import { fileURLToPath } from 'node:url';
 
 const repoRoot = process.cwd();
 
@@ -58,69 +64,85 @@ function maxNumeric(tokens) {
   return numbers.length > 0 ? Math.max(...numbers) : 0;
 }
 
-const failures = [];
-const summaries = [];
-
-for (const registry of registries) {
-  const file = path.join(repoRoot, registry.file);
-  const rel = path.relative(repoRoot, file);
-
-  let source;
-  try {
-    source = await readFile(file, 'utf8');
-  } catch (error) {
-    failures.push(`- could not read ${rel}: ${error.message}`);
-    continue;
-  }
-
-  const lines = source.split('\n');
-
-  // Bound the scan to the "## Registry" section (up to the next H2 heading).
-  const start = lines.findIndex((l) => /^##\s+Registry\s*$/.test(l));
-  if (start === -1) {
-    failures.push(`- could not find the "## Registry" heading in ${rel}`);
-    continue;
-  }
-  let end = lines.findIndex((l, i) => i > start && /^##\s+/.test(l));
-  if (end === -1) end = lines.length;
-
-  const seen = new Map(); // token -> [lineNumbers]
-  for (let i = start + 1; i < end; i++) {
-    const m = lines[i].match(registry.row);
-    if (!m) continue;
+/**
+ * Collect every row id in `source`, wherever it sits in the file.
+ * @returns {Map<string, number[]>} id token -> 1-based line numbers
+ */
+export function collectRowIds(source, row) {
+  const seen = new Map();
+  source.split('\n').forEach((line, i) => {
+    const m = line.match(row);
+    if (!m) return;
     const token = m[1];
     if (!seen.has(token)) seen.set(token, []);
     seen.get(token).push(i + 1);
-  }
+  });
+  return seen;
+}
+
+/**
+ * Check one registry file's source text.
+ * @returns {{ok: true, summary: string} | {ok: false, failures: string[]}}
+ */
+export function checkRegistrySource(registry, source, rel = registry.file) {
+  const seen = collectRowIds(source, registry.row);
 
   // A table that suddenly parses as empty means the shape changed and this
   // guard stopped guarding — fail rather than report a cheerful zero.
   if (seen.size === 0) {
-    failures.push(`- parsed 0 rows under "## Registry" in ${rel} — the table shape may have changed`);
-    continue;
+    return { ok: false, failures: [`- parsed 0 rows in ${rel} — the table shape may have changed`] };
   }
 
   const duplicates = [...seen.entries()].filter(([, ls]) => ls.length > 1);
   if (duplicates.length > 0) {
-    failures.push(`- ${registry.label} (${rel}) has duplicate row ids:`);
+    const failures = [`- ${registry.label} (${rel}) has duplicate row ids:`];
     for (const [token, ls] of duplicates) {
-      failures.push(`    ${registry.render(token)} used on lines ${ls.join(', ')}`);
+      failures.push(`    ${registry.render(token)} used ${ls.length} times, on lines ${ls.join(', ')}`);
     }
     failures.push(
       `    Give each colliding row a new id starting at ${registry.next([...seen.keys()])}; ` +
       `keep the occurrence that other rows cite by id so cross-references stay valid.`,
     );
-    continue;
+    return { ok: false, failures };
   }
 
-  summaries.push(`${registry.label}: ${seen.size} rows, all ids unique`);
+  const rows = [...seen.values()].reduce((n, ls) => n + ls.length, 0);
+  return { ok: true, summary: `${registry.label}: ${rows} rows, all ids unique` };
 }
 
-if (failures.length > 0) {
-  console.error('Registry id check failed:');
-  for (const failure of failures) console.error(failure);
-  console.error('\nSee DoD §2 and §6.');
-  process.exit(1);
+export { registries };
+
+async function main() {
+  const failures = [];
+  const summaries = [];
+
+  for (const registry of registries) {
+    const file = path.join(repoRoot, registry.file);
+    const rel = path.relative(repoRoot, file);
+
+    let source;
+    try {
+      source = await readFile(file, 'utf8');
+    } catch (error) {
+      failures.push(`- could not read ${rel}: ${error.message}`);
+      continue;
+    }
+
+    const result = checkRegistrySource(registry, source, rel);
+    if (result.ok) summaries.push(result.summary);
+    else failures.push(...result.failures);
+  }
+
+  if (failures.length > 0) {
+    console.error('Registry id check failed:');
+    for (const failure of failures) console.error(failure);
+    console.error('\nSee DoD §2 and §6.');
+    process.exit(1);
+  }
+
+  console.log(`Registry ids OK — ${summaries.join(' · ')}.`);
 }
 
-console.log(`Registry ids OK — ${summaries.join(' · ')}.`);
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await main();
+}

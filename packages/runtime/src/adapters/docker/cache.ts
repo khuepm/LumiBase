@@ -1,11 +1,34 @@
 import Redis from 'ioredis';
 import { classifyCacheValue, negativeCacheWireValue } from '../../cache-entry';
-import type { CacheEvent, CacheEntry, CacheProvider, CacheSetOptions, UniqueCounterProvider } from '../../interfaces';
+import type {
+  CacheEvent,
+  CacheEntry,
+  CacheProvider,
+  CacheSetOptions,
+  MemberBatch,
+  MemberSetProvider,
+  UniqueCounterProvider,
+} from '../../interfaces';
 
 const TAG_KEY_PREFIX = 'lumi:tag:';
+/** Sorted-set namespace for {@link MemberSetProvider}; never a JSON `get` key. */
+const SET_KEY_PREFIX = 'lumi:set:';
+/**
+ * Remove each member only if its score is still the one that was read, so a
+ * member re-added (re-scored) after the read survives the ack. KEYS[1] is the
+ * set; ARGV holds member/score pairs.
+ */
+const ACK_MEMBERS_SCRIPT = `
+local removed = 0
+for i = 1, #ARGV, 2 do
+  if redis.call('ZSCORE', KEYS[1], ARGV[i]) == ARGV[i + 1] then
+    removed = removed + redis.call('ZREM', KEYS[1], ARGV[i])
+  end
+end
+return removed`;
 const INVALIDATE_CHUNK = 500;
 
-export class RedisCacheProvider implements CacheProvider, UniqueCounterProvider {
+export class RedisCacheProvider implements CacheProvider, UniqueCounterProvider, MemberSetProvider {
   private client: Redis;
 
   onEvent?: (e: CacheEvent) => void;
@@ -170,6 +193,58 @@ export class RedisCacheProvider implements CacheProvider, UniqueCounterProvider 
     return this.client.pfcount(key);
   }
 
+  /**
+   * Member sets are sorted sets scored by insertion time (#864). `ZADD`
+   * commutes, so concurrent adders never drop each other's members, and the
+   * trim + expiry run in the same MULTI so the bound holds atomically.
+   *
+   * Like the counters, these reject on backend failure: the caller decides
+   * whether a lost add matters.
+   */
+  async addMember(key: string, member: string, opts?: { ttl?: number; limit?: number }): Promise<void> {
+    await this.ensureConnected();
+    const setKey = `${SET_KEY_PREFIX}${key}`;
+    const tx = this.client.multi().zadd(setKey, Date.now(), member);
+    if (opts?.limit !== undefined) {
+      // Keep the newest `limit` (highest scores); rank -(limit+1) is the
+      // newest member that falls outside the bound.
+      tx.zremrangebyrank(setKey, 0, -(Math.max(opts.limit, 0) + 1));
+    }
+    if (opts?.ttl) tx.expire(setKey, opts.ttl);
+    throwOnTxError(await tx.exec());
+  }
+
+  async readMembers(key: string, opts?: { limit?: number }): Promise<MemberBatch> {
+    await this.ensureConnected();
+    const setKey = `${SET_KEY_PREFIX}${key}`;
+    if (opts?.limit !== undefined && opts.limit <= 0) return { members: [], ack: async () => undefined };
+    // Newest `limit` by score, oldest first, as a flat [member, score, …] list.
+    const flat = await this.client.zrange(setKey, opts?.limit !== undefined ? -opts.limit : 0, '-1', 'WITHSCORES');
+    const members: string[] = [];
+    const pairs: string[] = [];
+    for (let i = 0; i + 1 < flat.length; i += 2) {
+      const member = flat[i];
+      const score = flat[i + 1];
+      if (typeof member !== 'string' || typeof score !== 'string') continue;
+      members.push(member);
+      pairs.push(member, score);
+    }
+    return {
+      members,
+      ack: async (subset?: readonly string[]) => {
+        const only = subset ? new Set(subset) : null;
+        const acked: string[] = [];
+        for (let i = 0; i + 1 < pairs.length; i += 2) {
+          const member = pairs[i] as string;
+          if (!only || only.has(member)) acked.push(member, pairs[i + 1] as string);
+        }
+        if (acked.length === 0) return;
+        await this.ensureConnected();
+        await this.client.eval(ACK_MEMBERS_SCRIPT, 1, setKey, ...acked);
+      },
+    };
+  }
+
   async close(): Promise<void> {
     try {
       await this.client.quit();
@@ -177,4 +252,15 @@ export class RedisCacheProvider implements CacheProvider, UniqueCounterProvider 
       // ignore
     }
   }
+}
+
+type TxResult = Array<[error: Error | null, result: unknown]>;
+
+/** `exec()` resolves with per-command errors instead of rejecting; surface them. */
+function throwOnTxError(results: TxResult | null): TxResult {
+  if (!results) throw new Error('redis transaction aborted');
+  for (const [error] of results) {
+    if (error) throw error;
+  }
+  return results;
 }
