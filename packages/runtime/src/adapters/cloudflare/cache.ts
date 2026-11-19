@@ -1,5 +1,13 @@
 import { classifyCacheValue, negativeCacheWireValue } from '../../cache-entry';
-import type { CacheEvent, CacheEntry, CacheProvider, CacheSetOptions, UniqueCounterProvider } from '../../interfaces';
+import type {
+  CacheEvent,
+  CacheEntry,
+  CacheProvider,
+  CacheSetOptions,
+  MemberBatch,
+  MemberSetProvider,
+  UniqueCounterProvider,
+} from '../../interfaces';
 import { CounterUnavailableError } from '../../interfaces';
 import type { DurableObjectNamespaceLike } from './realtime';
 
@@ -10,8 +18,56 @@ import type { DurableObjectNamespaceLike } from './realtime';
 export interface KVNamespace {
   get(key: string, type: 'json'): Promise<unknown>;
   get(key: string, type?: 'text'): Promise<string | null>;
-  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
+  put(key: string, value: string, options?: { expirationTtl?: number; metadata?: unknown }): Promise<void>;
   delete(key: string): Promise<void>;
+  /**
+   * Present on every real Workers KV binding; optional here only so test
+   * doubles that never touch member sets need not implement it.
+   */
+  list?(options?: { prefix?: string; limit?: number; cursor?: string }): Promise<KVListResult>;
+}
+
+export interface KVListResult {
+  keys: Array<{ name: string; expiration?: number; metadata?: unknown }>;
+  list_complete: boolean;
+  cursor?: string;
+}
+
+/**
+ * Namespace for {@link MemberSetProvider} keys:
+ * `lumi:set:{key}:{reverse time}:{sha256(member)}`.
+ */
+const SET_KEY_PREFIX = 'lumi:set:';
+/** Per-member pointer to its current ordered key; outside the `list` prefix. */
+const SET_POINTER_PREFIX = 'lumi:setptr:';
+/** Workers KV rejects an `expirationTtl` below 60 seconds. */
+const KV_MIN_TTL_SECONDS = 60;
+/** Upper bound on keys one read scans, to stay inside per-invocation KV limits. */
+const SET_READ_SCAN_LIMIT = 1000;
+/**
+ * `MAX - Date.now()`, zero-padded to 13 digits, sorts newest-first under KV's
+ * lexicographic `list` order. Valid until the year 2286.
+ */
+const REVERSE_TIME_MAX = 9_999_999_999_999;
+
+function reverseTime(t: number): string {
+  return String(Math.max(REVERSE_TIME_MAX - t, 0)).padStart(13, '0');
+}
+
+interface MemberMetadata {
+  m: string;
+  t: number;
+}
+
+function isMemberMetadata(value: unknown): value is MemberMetadata {
+  if (value === null || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.m === 'string' && typeof record.t === 'number';
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -41,7 +97,7 @@ export interface KVNamespace {
 /** Matches `pv:` (views) and `pvu:` (uniques); the DO drains with `LIKE prefix%`. */
 const PAGEVIEW_DRAIN_PREFIX = 'pv';
 
-export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProvider {
+export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProvider, MemberSetProvider {
   onEvent?: (e: CacheEvent) => void;
 
   constructor(
@@ -153,6 +209,86 @@ export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProv
     } catch {
       this.emit({ op: 'invalidateByTag', result: 'error', backend: 'kv' });
     }
+  }
+
+  /**
+   * Member sets (#864). KV has no atomic append, so every add is its own key
+   * — `lumi:set:{key}:{reverse time}:{sha256(member)}` — carrying the member
+   * and its write time in list metadata. Concurrent adds write different keys
+   * and cannot overwrite each other.
+   *
+   * The reverse-time segment makes KV's lexicographic `list` return the
+   * newest adds first, so a read selects the newest `limit` members without
+   * scanning the whole set, however many adds it holds. `limit` cannot be
+   * enforced on write without a read-modify-write; older adds expire through
+   * `ttl`.
+   *
+   * A re-add deletes the member's previous key, found through a per-member
+   * pointer `lumi:setptr:{key}:{sha256(member)}` (outside the list prefix).
+   * Without it, a hot URL re-recorded on every edge miss leaves one key per
+   * add, and those copies can fill the read's scan window so other recent
+   * URLs are not purged. Two concurrent re-adds of the *same* member can each
+   * miss the other's key; the read folds that duplicate and it expires through
+   * `ttl`. Adds of different members never touch each other's keys.
+   */
+  async addMember(key: string, member: string, opts?: { ttl?: number; limit?: number }): Promise<void> {
+    const t = Date.now();
+    const hash = await sha256Hex(member);
+    const memberKey = `${SET_KEY_PREFIX}${key}:${reverseTime(t)}:${hash}`;
+    const pointerKey = `${SET_POINTER_PREFIX}${key}:${hash}`;
+    const metadata: MemberMetadata = { m: member, t };
+    const expiry = opts?.ttl ? { expirationTtl: Math.max(opts.ttl, KV_MIN_TTL_SECONDS) } : {};
+    const previous = await this.kv.get(pointerKey);
+    await this.kv.put(memberKey, member, { metadata, ...expiry });
+    await this.kv.put(pointerKey, memberKey, expiry);
+    if (previous && previous !== memberKey) await this.kv.delete(previous);
+  }
+
+  /**
+   * List newest-first until `limit` distinct members are found (or
+   * {@link SET_READ_SCAN_LIMIT} keys are scanned). Nothing is deleted until
+   * `ack()`, which deletes exactly the keys scanned for the returned members;
+   * a member re-added after the read has a newer key and survives.
+   *
+   * KV `list` is eventually consistent, so a member added moments before the
+   * read may not be listed yet; it stays in the set for the next read.
+   */
+  async readMembers(key: string, opts?: { limit?: number }): Promise<MemberBatch> {
+    if (!this.kv.list) throw new Error('KV binding does not support list()');
+    const limit = opts?.limit;
+    if (limit !== undefined && limit <= 0) return { members: [], ack: async () => undefined };
+    const prefix = `${SET_KEY_PREFIX}${key}:`;
+    // member → every key scanned for it, in newest-first discovery order.
+    const found = new Map<string, string[]>();
+    let scanned = 0;
+    let cursor: string | undefined;
+    scan: do {
+      const page = await this.kv.list({
+        prefix,
+        limit: SET_READ_SCAN_LIMIT - scanned,
+        ...(cursor ? { cursor } : {}),
+      });
+      for (const k of page.keys) {
+        scanned += 1;
+        if (!isMemberMetadata(k.metadata)) continue;
+        const names = found.get(k.metadata.m);
+        if (names) {
+          names.push(k.name);
+        } else {
+          if (limit !== undefined && found.size >= limit) break scan;
+          found.set(k.metadata.m, [k.name]);
+        }
+      }
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor && scanned < SET_READ_SCAN_LIMIT);
+
+    return {
+      members: [...found.keys()].reverse(),
+      ack: async (subset?: readonly string[]) => {
+        const names = (subset ?? [...found.keys()]).flatMap((m) => found.get(m) ?? []);
+        await Promise.all(names.map((name) => this.kv.delete(name)));
+      },
+    };
   }
 
   /**

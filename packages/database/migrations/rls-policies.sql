@@ -121,7 +121,7 @@ DECLARE
     'lumibase_site_skills', 'lumibase_site_skill_versions',
     -- Background collection imports (#726). Requests read/write their own site;
     -- the resume tick claims jobs across sites on the system connection.
-    'lumibase_import_jobs',
+    'lumibase_import_jobs', 'lumibase_import_chunks',
     -- Locale generator (#714): jobs + review queue. Requests read/write their
     -- own site; the resume tick claims jobs across sites on the system connection.
     'lumibase_locale_generation_jobs', 'lumibase_translation_suggestions',

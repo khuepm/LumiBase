@@ -58,6 +58,7 @@ import { DISPLAY_CATALOGUE } from '@/modules/content/displays/registry';
 import { MustacheTemplateEditor } from '@/modules/content/mustache-template-editor';
 import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
 import { FieldOptionControls, fieldOptionIssues } from './field-option-controls';
+import { RichTextOptionControls } from './richtext-option-controls';
 import { ZONED_DATETIME_FIELD_TYPES } from '@lumibase/contracts/field';
 
 const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
@@ -569,6 +570,10 @@ function InterfaceTab({
           options={optionsValue}
           onChange={(next) => onOptionsDraftChange(stringifyJson(next))}
         />
+      )}
+
+      {optionsValue && (form.type === 'richtext' || form.interface === 'richtext') && (
+        <RichTextOptionControls options={optionsValue} onChange={(next) => onOptionsDraftChange(stringifyJson(next))} />
       )}
 
       {ZONED_DATETIME_FIELD_TYPES.includes(form.type) && (

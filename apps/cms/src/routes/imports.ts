@@ -12,6 +12,7 @@ import {
   createImportJob,
   driveImportJob,
   errorReportCsv,
+  importJobColumns,
   requestCancel,
   resolveImportConfig,
   toJobView,
@@ -54,30 +55,83 @@ const listQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
-const fail = (c: Context<AppEnv>, status: 400 | 403 | 404 | 409 | 413, code: string, message: string) =>
+const fail = (c: Context<AppEnv>, status: 400 | 403 | 404 | 409 | 413 | 429, code: string, message: string) =>
   c.json({ errors: [{ code, message }] }, status);
 
-/** Read the upload and infer the format from the file name / content type. */
-async function readUpload(
-  c: Context<AppEnv>,
+/** Room for multipart boundaries and part headers around the file itself. */
+const MULTIPART_OVERHEAD = 64 * 1024;
+
+/**
+ * Pass `body` through, counting bytes, and stop pulling from it once more than
+ * `limit` bytes arrived (#859). The consumer then fails and `exceeded()` says
+ * why, so an oversized upload is never read into memory in full, whether or
+ * not it declared a `Content-Length`.
+ */
+function limitBody(body: ReadableStream<Uint8Array>, limit: number) {
+  let seen = 0;
+  let over = false;
+  const reader = body.getReader();
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        controller.close();
+        return;
+      }
+      seen += value.byteLength;
+      if (seen > limit) {
+        over = true;
+        await reader.cancel().catch(() => undefined);
+        controller.error(new Error('Upload exceeds the size limit.'));
+        return;
+      }
+      controller.enqueue(value);
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+  return { stream, exceeded: () => over };
+}
+
+/**
+ * Read the upload and infer the format from the file name / content type.
+ * The size limit is enforced while the body streams in, so a chunked or
+ * headerless body is cut off at `maxBytes` (plus multipart overhead) with a
+ * 413 instead of being buffered whole first.
+ */
+export async function readUpload(
+  req: Request,
   maxBytes: number,
 ): Promise<{ body: string; format?: 'csv' | 'json' } | { error: string; status: 400 | 413 }> {
-  const declared = Number(c.req.header('content-length') ?? '0');
-  if (Number.isFinite(declared) && declared > maxBytes + 64 * 1024) {
-    return { error: `Import file exceeds the ${maxBytes} byte limit.`, status: 413 };
+  const tooLarge = { error: `Import file exceeds the ${maxBytes} byte limit.`, status: 413 as const };
+  const type = req.headers.get('content-type') ?? '';
+  const multipart = type.includes('multipart/form-data');
+  const limit = multipart ? maxBytes + MULTIPART_OVERHEAD : maxBytes;
+  const declared = Number(req.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declared) && declared > limit) return tooLarge;
+  if (!req.body) return multipart ? { error: 'Multipart upload needs a `file` field.', status: 400 } : { body: '' };
+
+  const { stream, exceeded } = limitBody(req.body, limit);
+  const limited = new Response(stream, { headers: { 'content-type': type } });
+  try {
+    if (multipart) {
+      const form = await limited.formData();
+      const file = form.get('file');
+      if (!file || typeof file === 'string') return { error: 'Multipart upload needs a `file` field.', status: 400 };
+      if (file.size > maxBytes) return tooLarge;
+      const name = file.name?.toLowerCase() ?? '';
+      const format = name.endsWith('.csv') ? 'csv' : name.endsWith('.json') ? 'json' : undefined;
+      return { body: await file.text(), format };
+    }
+    const body = await limited.text();
+    const format = type.includes('csv') ? 'csv' : type.includes('json') ? 'json' : undefined;
+    return { body, format };
+  } catch (err) {
+    if (exceeded()) return tooLarge;
+    if (multipart) return { error: 'Could not read the multipart upload.', status: 400 };
+    throw err;
   }
-  const type = c.req.header('content-type') ?? '';
-  if (type.includes('multipart/form-data')) {
-    const form = await c.req.formData();
-    const file = form.get('file');
-    if (!file || typeof file === 'string') return { error: 'Multipart upload needs a `file` field.', status: 400 };
-    const name = (file as File).name?.toLowerCase() ?? '';
-    const format = name.endsWith('.csv') ? 'csv' : name.endsWith('.json') ? 'json' : undefined;
-    return { body: await (file as File).text(), format };
-  }
-  const body = await c.req.text();
-  const format = type.includes('csv') ? 'csv' : type.includes('json') ? 'json' : undefined;
-  return { body, format };
 }
 
 importsRouter.post('/', async (c) => {
@@ -96,15 +150,19 @@ importsRouter.post('/', async (c) => {
   if (!compiled) return fail(c, 404, 'NOT_FOUND', `Collection "${collection}" not found.`);
 
   // Fail fast on permissions; ItemService re-checks every row while running.
+  // `read` is required too: every worker step reads the collection's schema
+  // through `describeForExport`, so a write-only principal would get a 202 and
+  // then a job failed with FORBIDDEN on its first step (#860).
   const permissions = permissionServiceForRequest(c);
-  for (const action of mode === 'upsert' ? (['create', 'update'] as const) : (['create'] as const)) {
+  const required = mode === 'upsert' ? (['read', 'create', 'update'] as const) : (['read', 'create'] as const);
+  for (const action of required) {
     if (!(await permissions.canAccess(collection, action))) {
       return fail(c, 403, 'FORBIDDEN', `Action "${action}" on "${collection}" is not allowed.`);
     }
   }
 
   const config = resolveImportConfig(envRecord(c));
-  const upload = await readUpload(c, config.maxBytes);
+  const upload = await readUpload(c.req.raw, config.maxBytes);
   if ('error' in upload) return fail(c, upload.status, upload.status === 413 ? 'PAYLOAD_TOO_LARGE' : 'VALIDATION', upload.error);
   const format = parsed.data.format ?? upload.format;
   if (!format) return fail(c, 400, 'VALIDATION', 'Pass `format=csv|json` or upload a .csv / .json file.');
@@ -124,7 +182,7 @@ importsRouter.post('/', async (c) => {
       config,
     });
   } catch (err) {
-    if (err instanceof ImportError) return fail(c, err.status as 400 | 413, err.code, err.message);
+    if (err instanceof ImportError) return fail(c, err.status as 400 | 413 | 429, err.code, err.message);
     console.error('[imports] create failed', formatSafeError(err));
     return c.json({ errors: [{ code: 'INTERNAL', message: 'Could not create the import job.' }] }, 500);
   }
@@ -149,11 +207,15 @@ importsRouter.post('/', async (c) => {
   return c.json({ data: toJobView(job) }, 202);
 });
 
-/** Creator, or a site admin. Returns the row or a response to send. */
+/**
+ * Creator, or a site admin. Returns the row or a response to send. Reads
+ * `importJobColumns`, never the stored `source` (#859): this runs on every
+ * progress poll.
+ */
 async function loadVisibleJob(c: Context<AppEnv>, id: string) {
   const [row] = await c
     .get('db')
-    .select()
+    .select(importJobColumns)
     .from(importJobs)
     .where(and(eq(importJobs.id, id), scopeSite(importJobs.siteId, c.get('siteId'))))
     .limit(1);
@@ -175,7 +237,7 @@ importsRouter.get('/', async (c) => {
   if (!admin && !userId) return c.json({ data: [] });
   const rows = await c
     .get('db')
-    .select()
+    .select(importJobColumns)
     .from(importJobs)
     .where(
       and(

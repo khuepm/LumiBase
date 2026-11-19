@@ -292,15 +292,36 @@
     {
       "idx": 41,
       "version": "7",
-      "when": 1795939200000,
-      "tag": "0041_file_captions",
+      "when": 1795680000000,
+      "tag": "0041_email_normalize_parity",
       "breakpoints": true
     },
     {
       "idx": 42,
       "version": "7",
-      "when": 1796025600000,
-      "tag": "0042_video_assets",
+      "when": 1795766400000,
+      "tag": "0042_import_chunks",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1795852800000,
+      "tag": "0043_release_manifest",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1796112000000,
+      "tag": "0044_video_assets",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1796198400000,
+      "tag": "0045_file_captions",
       "breakpoints": true
     }
   ]

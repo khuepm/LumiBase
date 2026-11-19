@@ -1,10 +1,10 @@
 ---
-version: 22
-lastUpdated: 2026-11-15T15:10:13.708Z
+version: 23
+lastUpdated: 2026-11-16T20:34:21.726Z
 sourceLang: en
-contentHash: 00159aeddfcd4dc0
-codeVerified: 2026-11-15T15:10:13.708Z
-codeVerifiedHash: 00159aeddfcd4dc0
+contentHash: 58d9b567a0d582fc
+codeVerified: 2026-11-16T20:34:21.726Z
+codeVerifiedHash: 58d9b567a0d582fc
 codeVerifiedClaims: 98
 ---
 
@@ -269,6 +269,8 @@ Background collection imports (`POST /api/v1/imports`, see [Data import](../feat
 | `IMPORT_MAX_CONCURRENCY` | ✗ | `20` | Jobs running at once per site. Further jobs stay `queued` until one finishes. |
 | `IMPORT_MAX_BYTES` | ✗ | `52428800` | Largest accepted upload, in bytes (50 MiB). Larger files get `413 PAYLOAD_TOO_LARGE`. |
 | `IMPORT_CHUNK_SIZE` | ✗ | `500` | Rows written per step (max `5000`). Smaller steps react faster to cancel; larger ones finish sooner. |
+| `IMPORT_MAX_PENDING_JOBS` | ✗ | `100` | Jobs a site may have `queued` or `running` at once. Further uploads get `429 LIMIT_EXCEEDED`. |
+| `IMPORT_MAX_PENDING_BYTES` | ✗ | `209715200` | Bytes of uploaded files a site may have `queued` or `running` at once (200 MiB). Never below `IMPORT_MAX_BYTES`. Further uploads get `429 LIMIT_EXCEEDED`. |
 
 ---
 

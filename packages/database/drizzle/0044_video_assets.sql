@@ -2,9 +2,10 @@
 -- in packages/database/src/schema/platform.ts. Additive, no backfill,
 -- re-runnable.
 --
--- Numbered 0042 on this stacked branch (part 3 of #871, after 0041_file_captions);
--- on #937 itself it is 0041. Planned final order in the epic: #935 0041, #936
--- 0042, #937 0043, #938 0044. All are reassigned when the epic merges into main.
+-- 0044 on this stacked branch (#939 = #937 + #938): first number after
+-- main's 0043_release_manifest, then 0045_file_captions. On #937 alone it is
+-- also 0044. Epic order: #935 0044, #936 0045, #937 0046, #938 0047; `when`
+-- is already set in that order.
 --
 -- Rollback: DROP TABLE IF EXISTS lumibase_video_assets;
 CREATE TABLE IF NOT EXISTS "lumibase_video_assets" (
