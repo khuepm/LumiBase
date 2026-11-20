@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 3
-lastUpdated: 2026-11-19T09:11:24.583Z
-contentHash: 078cb60d3e1d3edd
-codeVerified: 2026-11-19T09:11:24.583Z
-codeVerifiedHash: 078cb60d3e1d3edd
+version: 4
+lastUpdated: 2026-11-20T00:00:42.899Z
+contentHash: 95192588b45d999d
+codeVerified: 2026-11-20T00:00:42.899Z
+codeVerifiedHash: 95192588b45d999d
 codeVerifiedClaims: 12
 ---
 
@@ -21,7 +21,7 @@ Two adapters ship, behind one port (`apps/cms/src/modules/commerce/`):
 | Provider | API | Webhook signature |
 |---|---|---|
 | Medusa v2 | Admin REST, secret API key | `X-Lumi-Signature: sha256=<hex HMAC>` |
-| Shopify | Admin GraphQL `2025-01`, app access token | `X-Shopify-Hmac-Sha256` (base64 HMAC) |
+| Shopify | Admin GraphQL `2026-10`, app access token | `X-Shopify-Hmac-Sha256` (base64 HMAC) |
 
 ## 1. Connect a store
 
@@ -79,6 +79,28 @@ full sync runs with the calling admin's own permissions. A webhook has no
 principal, so it writes as the system: the CDC actor is
 `system`/`commerce:<provider>` and the reason is `commerce-sync`. A sync owns its
 rows: an edit made in Studio is overwritten by the next sync.
+
+### Shopify API version
+
+The adapter pins Admin GraphQL **`2026-10`**, the latest stable version on
+2026-11-19, which Shopify supports until 2027-10-16 15:00 UTC.
+
+- **Fall-forward.** Shopify silently serves a request for a retired version
+  with another accessible one, and names that version in
+  `X-Shopify-API-Version`. The adapter refuses such a response with
+  `502 COMMERCE_API_VERSION_MISMATCH` rather than trusting a schema it was not
+  written for. Upgrade LumiBase before the pin's end of support.
+- **Renewal.** A unit test fails 90 days before that date, so the pin is
+  renewed in time.
+- **Contract.** The adapter selects only the fields listed in
+  `SHOPIFY_CONTRACT`. `featuredImage` is deprecated in `2026-10`, so the
+  thumbnail comes from `featuredMedia.preview.image.url`. A unit test checks
+  the contract against the schema captured from the `2026-10` reference.
+- **Live check.** The opt-in live test introspects a real development store
+  and runs every query: `pnpm -F @lumibase/cms test:shopify-contract`, with
+  `SHOPIFY_CONTRACT_SHOP` and `SHOPIFY_CONTRACT_TOKEN`. The weekly
+  `commerce-contract` workflow runs it from repository secrets of the same
+  names, and reports "not run" when they are missing.
 
 ## 3. Keeping it fresh
 
@@ -147,7 +169,7 @@ Errors:
 - `404 COMMERCE_NOT_CONFIGURED`;
 - `422 COMMERCE_CREDENTIALS_REJECTED`;
 - `429 COMMERCE_RATE_LIMITED`;
-- `502 COMMERCE_UNAVAILABLE` and `COMMERCE_UNREACHABLE`.
+- `502 COMMERCE_UNAVAILABLE`, `COMMERCE_UNREACHABLE` and `COMMERCE_API_VERSION_MISMATCH`.
 
 ## Multi-tenancy
 

@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 3
-lastUpdated: 2026-11-19T09:11:24.583Z
+version: 4
+lastUpdated: 2026-11-20T00:00:42.899Z
 translatedFrom: en
-sourceHash: 078cb60d3e1d3edd
+sourceHash: 95192588b45d999d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T09:11:24.583Z
-codeVerifiedHash: 078cb60d3e1d3edd
+codeVerified: 2026-11-20T00:00:42.899Z
+codeVerifiedHash: 95192588b45d999d
 codeVerifiedClaims: 12
 ---
 
@@ -24,7 +24,7 @@ Có hai adapter, sau cùng một port (`apps/cms/src/modules/commerce/`):
 | Nhà cung cấp | API | Chữ ký webhook |
 |---|---|---|
 | Medusa v2 | Admin REST, secret API key | `X-Lumi-Signature: sha256=<hex HMAC>` |
-| Shopify | Admin GraphQL `2025-01`, app access token | `X-Shopify-Hmac-Sha256` (HMAC base64) |
+| Shopify | Admin GraphQL `2026-10`, app access token | `X-Shopify-Hmac-Sha256` (HMAC base64) |
 
 ## 1. Kết nối cửa hàng
 
@@ -83,6 +83,28 @@ principal nên ghi với tư cách hệ thống: CDC actor là
 `system`/`commerce:<provider>` và reason là `commerce-sync`.
 Đồng bộ sở hữu các dòng của nó: một chỉnh sửa trong Studio sẽ bị ghi đè ở lần
 đồng bộ sau.
+
+### Phiên bản API của Shopify
+
+Adapter ghim Admin GraphQL **`2026-10`**, phiên bản stable mới nhất vào ngày
+2026-11-19, được Shopify hỗ trợ tới 2027-10-16 15:00 UTC.
+
+- **Fall-forward.** Shopify âm thầm phục vụ request gửi tới một phiên bản đã
+  ngừng bằng một phiên bản khác còn truy cập được, và ghi phiên bản đó trong
+  `X-Shopify-API-Version`. Adapter từ chối response như vậy với
+  `502 COMMERCE_API_VERSION_MISMATCH` thay vì tin một schema nó không được
+  viết cho. Hãy nâng cấp LumiBase trước khi phiên bản được ghim hết hỗ trợ.
+- **Gia hạn.** Một unit test sẽ fail 90 ngày trước mốc đó, để phiên bản ghim
+  được gia hạn kịp.
+- **Hợp đồng.** Adapter chỉ chọn các field liệt kê trong `SHOPIFY_CONTRACT`.
+  `featuredImage` đã deprecated trong `2026-10`, nên thumbnail lấy từ
+  `featuredMedia.preview.image.url`. Một unit test đối chiếu hợp đồng này với
+  schema ghi lại từ tài liệu tham chiếu `2026-10`.
+- **Kiểm tra thật.** Test live tuỳ chọn introspect một development store
+  thật và chạy mọi query: `pnpm -F @lumibase/cms test:shopify-contract`, với
+  `SHOPIFY_CONTRACT_SHOP` và `SHOPIFY_CONTRACT_TOKEN`. Workflow
+  `commerce-contract` chạy hằng tuần từ các repository secret cùng tên, và báo
+  "không chạy" khi thiếu chúng.
 
 ## 3. Giữ dữ liệu luôn mới
 
@@ -151,7 +173,7 @@ Lỗi:
 - `404 COMMERCE_NOT_CONFIGURED`;
 - `422 COMMERCE_CREDENTIALS_REJECTED`;
 - `429 COMMERCE_RATE_LIMITED`;
-- `502 COMMERCE_UNAVAILABLE` và `COMMERCE_UNREACHABLE`.
+- `502 COMMERCE_UNAVAILABLE`, `COMMERCE_UNREACHABLE` và `COMMERCE_API_VERSION_MISMATCH`.
 
 ## Multi-tenancy
 

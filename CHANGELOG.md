@@ -11,7 +11,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Added
 - **Commerce content adapters: Medusa and Shopify (#764, epic #678).** A site admin connects a store with `PUT /api/v1/integrations/commerce/:provider`:
-  - Medusa v2 Admin REST with a secret API key; Shopify Admin GraphQL `2025-01` with an app token.
+  - Medusa v2 Admin REST with a secret API key; Shopify Admin GraphQL `2026-10` (supported until 2027-10-16) with an app token. A response served by another version (Shopify's fall-forward from a retired version) is refused with `COMMERCE_API_VERSION_MISMATCH`, a unit test fails 90 days before the pin's end of support, and the weekly `commerce-contract` workflow introspects a real development store (`SHOPIFY_CONTRACT_SHOP` / `SHOPIFY_CONTRACT_TOKEN` secrets).
   - The credentials are checked first and stored as one encrypted site tool secret, never returned.
   - A Medusa URL that is private, loopback or a metadata address is refused (SSRF guard, also after DNS resolution); Shopify calls only go to `<store>.myshopify.com`.
 

@@ -3,7 +3,7 @@ import { MedusaAdapter, mapMedusaProduct } from '../medusa';
 import { ShopifyAdapter } from '../shopify';
 import { hmacBase64, hmacHex, timingSafeEqual } from '../signature';
 import { priceFrom, type FetchLike } from '../types';
-import { MEDUSA_PRODUCT, MEDUSA_PROMOTION, SHOPIFY_DISCOUNTS, SHOPIFY_PRODUCT, json, medusaProduct } from './fixtures';
+import { MEDUSA_PRODUCT, MEDUSA_PROMOTION, SHOPIFY_DISCOUNTS, SHOPIFY_PRODUCT, json, medusaProduct, shopifyJson } from './fixtures';
 
 const medusa = (fetch: unknown) =>
   new MedusaAdapter({ apiUrl: 'https://medusa.example/', apiKey: 'sk_test_123456', webhookSecret: 'whsec_medusa_123' }, fetch as FetchLike);
@@ -68,9 +68,9 @@ describe('Shopify adapter', () => {
 
   it('reads the shop currency once and maps products with compare-at prices', async () => {
     const fetch = vi.fn()
-      .mockResolvedValueOnce(json({ data: { shop: { currencyCode: 'USD' } } }))
-      .mockResolvedValueOnce(json({ data: { products: { pageInfo: { hasNextPage: true, endCursor: 'c1' }, nodes: [SHOPIFY_PRODUCT] } } }))
-      .mockResolvedValueOnce(json({ data: { product: SHOPIFY_PRODUCT } }));
+      .mockResolvedValueOnce(shopifyJson({ data: { shop: { currencyCode: 'USD' } } }))
+      .mockResolvedValueOnce(shopifyJson({ data: { products: { pageInfo: { hasNextPage: true, endCursor: 'c1' }, nodes: [SHOPIFY_PRODUCT] } } }))
+      .mockResolvedValueOnce(shopifyJson({ data: { product: SHOPIFY_PRODUCT } }));
     const a = shopify(fetch);
     const page = await a.listProducts(null);
     expect(page.next).toBe('c1');
@@ -84,15 +84,20 @@ describe('Shopify adapter', () => {
     await a.getProduct('gid://shopify/Product/1001');
     expect(fetch).toHaveBeenCalledTimes(3);
     const [url, init] = fetch.mock.calls[1]!;
-    expect(url).toBe('https://acme.myshopify.com/admin/api/2025-01/graphql.json');
+    expect(url).toBe('https://acme.myshopify.com/admin/api/2026-10/graphql.json');
     expect((init.headers as Record<string, string>)['X-Shopify-Access-Token']).toBe('shpat_123456789');
   });
 
   it('maps basic discounts and skips other discount types', async () => {
-    const fetch = vi.fn().mockResolvedValue(json({ data: SHOPIFY_DISCOUNTS }));
+    const fetch = vi.fn().mockResolvedValue(shopifyJson({ data: SHOPIFY_DISCOUNTS }));
     expect(await shopify(fetch).listPromotions()).toEqual([
       { externalId: 'gid://shopify/DiscountCodeNode/1', title: 'Ten off', code: 'TEN', kind: 'percentage', value: 10, currency: null, active: true, startsAt: '2026-11-01T00:00:00Z', endsAt: null },
     ]);
+  });
+
+  it('refuses a response served by another API version (fall-forward from a retired pin)', async () => {
+    const fetch = vi.fn().mockResolvedValue(shopifyJson({ data: SHOPIFY_DISCOUNTS }, '2027-01'));
+    await expect(shopify(fetch).listPromotions()).rejects.toMatchObject({ code: 'COMMERCE_API_VERSION_MISMATCH', status: 502 });
   });
 
   it('maps GraphQL throttling and errors', async () => {

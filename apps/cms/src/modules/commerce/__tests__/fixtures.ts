@@ -1,4 +1,8 @@
-/** Provider fixtures for #764 tests (shapes taken from the Medusa v2 Admin API and Shopify Admin GraphQL 2025-01). */
+/**
+ * Provider fixtures for #764 tests: Medusa v2 Admin API shapes, and Shopify
+ * Admin GraphQL 2026-10 shapes (see shopify-schema-evidence.ts). Shopify
+ * responses carry `X-Shopify-API-Version` like the real API.
+ */
 
 export const MEDUSA_PRODUCT = {
   id: 'prod_01',
@@ -41,7 +45,7 @@ export const SHOPIFY_PRODUCT = {
   description: 'Ceramic.',
   status: 'ACTIVE',
   updatedAt: '2026-11-19T08:00:00Z',
-  featuredImage: { url: 'https://cdn.shopify.example/mug.png' },
+  featuredMedia: { preview: { image: { url: 'https://cdn.shopify.example/mug.png' } } },
   variants: { nodes: [{ id: 'gid://shopify/ProductVariant/2001', title: 'Default Title', sku: '', price: '12.50', compareAtPrice: '15.00' }] },
 };
 
@@ -65,4 +69,8 @@ export const SHOPIFY_DISCOUNTS = {
   },
 };
 
-export const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+export const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
+
+/** A Shopify Admin GraphQL response served by the pinned version. */
+export const shopifyJson = (body: unknown, version = '2026-10') => json(body, 200, { 'X-Shopify-API-Version': version });

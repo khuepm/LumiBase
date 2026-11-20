@@ -36,6 +36,7 @@
     "pilot:report": "tsx scripts/jev-pilot-report.ts",
     "lint": "echo \"(lint not configured)\" && exit 0",
     "test": "vitest --run",
+    "test:shopify-contract": "vitest --run src/modules/commerce/__tests__/shopify.contract.test.ts",
     "k6:login-brute": "k6 run k6/login-brute-force.js",
     "clean": "rm -rf .turbo .wrangler dist",
     "eval:ai": "tsx scripts/ai-audit.ts",

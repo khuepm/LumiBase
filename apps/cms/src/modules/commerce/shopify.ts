@@ -6,6 +6,18 @@
  *
  * Variant prices carry `compareAtPrice`; Shopify quantity price breaks exist
  * only on B2B catalogs, so each variant has a single tier here.
+ *
+ * API version. Shopify releases a version each quarter and supports each for
+ * at least 12 months; a request for a retired version is silently served by an
+ * older-or-newer accessible one ("fall forward"), so the schema these queries
+ * were written against is no longer what answers. The adapter therefore:
+ * - pins {@link SHOPIFY_API_VERSION} (a currently supported stable version),
+ *   with its end of support in {@link SHOPIFY_API_VERSION_SUPPORTED_UNTIL};
+ *   a unit test fails 90 days before that date so the pin is renewed in time;
+ * - refuses a response whose `X-Shopify-API-Version` differs from the pin
+ *   (`COMMERCE_API_VERSION_MISMATCH`) instead of trusting a fallback schema;
+ * - selects only the fields listed in {@link SHOPIFY_CONTRACT}, which the
+ *   captured-schema test and the live contract test check against Shopify.
  */
 import { hmacBase64, timingSafeEqual } from './signature';
 import {
@@ -19,7 +31,38 @@ import {
   type WebhookIntent,
 } from './types';
 
-export const SHOPIFY_API_VERSION = '2025-01';
+export const SHOPIFY_API_VERSION = '2026-10';
+/** End of support for the pinned version, from shopify.dev/docs/api/usage/versioning. */
+export const SHOPIFY_API_VERSION_SUPPORTED_UNTIL = '2027-10-16T15:00:00Z';
+
+/**
+ * Every Admin GraphQL field the adapter selects, by type. The queries below
+ * use exactly these; `shopify-schema.test.ts` checks them against the schema
+ * captured from the 2026-10 reference, and `shopify.contract.test.ts`
+ * introspects a real store (none may be missing or deprecated).
+ */
+export const SHOPIFY_CONTRACT = {
+  QueryRoot: ['shop', 'products', 'product', 'discountNodes'],
+  Shop: ['currencyCode'],
+  ProductConnection: ['pageInfo', 'nodes'],
+  PageInfo: ['hasNextPage', 'endCursor'],
+  Product: ['id', 'title', 'handle', 'description', 'status', 'updatedAt', 'featuredMedia', 'variants'],
+  Media: ['preview'],
+  MediaPreviewImage: ['image'],
+  Image: ['url'],
+  ProductVariantConnection: ['nodes'],
+  ProductVariant: ['id', 'title', 'sku', 'price', 'compareAtPrice'],
+  DiscountNodeConnection: ['nodes'],
+  DiscountNode: ['id', 'discount'],
+  DiscountCodeBasic: ['title', 'status', 'startsAt', 'endsAt', 'codes', 'customerGets'],
+  DiscountAutomaticBasic: ['title', 'status', 'startsAt', 'endsAt', 'customerGets'],
+  DiscountRedeemCodeConnection: ['nodes'],
+  DiscountRedeemCode: ['code'],
+  DiscountCustomerGets: ['value'],
+  DiscountPercentage: ['percentage'],
+  DiscountAmount: ['amount'],
+  MoneyV2: ['amount', 'currencyCode'],
+} as const;
 /** `<store>.myshopify.com` only: the adapter never calls an arbitrary host. */
 export const SHOPIFY_DOMAIN_RE = /^[a-z0-9][a-z0-9-]{0,62}\.myshopify\.com$/;
 
@@ -30,7 +73,8 @@ export interface ShopifyConfig {
   webhookSecret: string;
 }
 
-const PRODUCT_FIELDS = `id title handle description status updatedAt featuredImage { url }
+// `featuredImage` is deprecated in 2026-10; the featured media's preview image replaces it.
+const PRODUCT_FIELDS = `id title handle description status updatedAt featuredMedia { preview { image { url } } }
   variants(first: 100) { nodes { id title sku price compareAtPrice } }`;
 
 interface ShopifyProduct {
@@ -40,7 +84,7 @@ interface ShopifyProduct {
   description?: string | null;
   status?: string;
   updatedAt?: string | null;
-  featuredImage?: { url?: string | null } | null;
+  featuredMedia?: { preview?: { image?: { url?: string | null } | null } | null } | null;
   variants?: { nodes?: Array<{ id: string; title?: string | null; sku?: string | null; price?: string | null; compareAtPrice?: string | null }> };
 }
 
@@ -51,7 +95,7 @@ export function mapShopifyProduct(p: ShopifyProduct, currency: string): Commerce
     handle: p.handle,
     description: p.description ?? null,
     published: p.status === 'ACTIVE',
-    thumbnail: p.featuredImage?.url ?? null,
+    thumbnail: p.featuredMedia?.preview?.image?.url ?? null,
     updatedAt: p.updatedAt ?? null,
     variants: (p.variants?.nodes ?? []).map((v) => ({
       externalId: v.id,
@@ -91,7 +135,7 @@ export function mapShopifyDiscount(id: string, d: ShopifyDiscount): CommerceProm
     title: d.title ?? id,
     code: d.codes?.nodes?.[0]?.code ?? null,
     kind: pct ? 'percentage' : 'fixed',
-    // Shopify reports 0.1 for 10 %.
+    // `percentage` is 0.00–1.00 (0.1 = 10 %; DiscountCustomerGetsValueInput, 2026-10).
     value: pct ? Math.round(value.percentage! * 10_000) / 100 : Number(value.amount?.amount ?? 0),
     currency: pct ? null : (value.amount?.currencyCode ?? null),
     active: d.status === 'ACTIVE',
@@ -102,6 +146,16 @@ export function mapShopifyDiscount(id: string, d: ShopifyDiscount): CommerceProm
 
 const DISCOUNT_FIELDS = `title status startsAt endsAt
   customerGets { value { ... on DiscountPercentage { percentage } ... on DiscountAmount { amount { amount currencyCode } } } }`;
+
+/** Every query the adapter sends; checked against SHOPIFY_CONTRACT in tests. */
+export const SHOPIFY_QUERIES = {
+  shop: '{ shop { currencyCode } }',
+  products: `query($after: String) { products(first: 50, after: $after) { pageInfo { hasNextPage endCursor } nodes { ${PRODUCT_FIELDS} } } }`,
+  product: `query($id: ID!) { product(id: $id) { ${PRODUCT_FIELDS} } }`,
+  discounts: `{ discountNodes(first: 100) { nodes { id discount { __typename
+          ... on DiscountCodeBasic { ${DISCOUNT_FIELDS} codes(first: 1) { nodes { code } } }
+          ... on DiscountAutomaticBasic { ${DISCOUNT_FIELDS} } } } } }`,
+} as const;
 
 export class ShopifyAdapter implements CommerceAdapter {
   readonly name = 'shopify' as const;
@@ -123,6 +177,14 @@ export class ShopifyAdapter implements CommerceAdapter {
       body: JSON.stringify({ query, variables }),
     });
     if (!res.ok) throw upstreamError('shopify', res.status);
+    const served = res.headers.get('x-shopify-api-version');
+    if (served && served !== SHOPIFY_API_VERSION) {
+      throw new CommerceError(
+        'COMMERCE_API_VERSION_MISMATCH',
+        `shopify served API version ${served}, not the pinned ${SHOPIFY_API_VERSION}: the pinned version is no longer accessible. Upgrade LumiBase.`,
+        502,
+      );
+    }
     const body = (await res.json()) as { data?: T; errors?: Array<{ message?: string; extensions?: { code?: string } }> };
     if (body.errors?.length) {
       if (body.errors.some((e) => e.extensions?.code === 'THROTTLED')) throw upstreamError('shopify', 429);
@@ -133,7 +195,7 @@ export class ShopifyAdapter implements CommerceAdapter {
 
   private async shopCurrency(): Promise<string> {
     if (!this.currency) {
-      const data = await this.gql<{ shop: { currencyCode: string } }>('{ shop { currencyCode } }');
+      const data = await this.gql<{ shop: { currencyCode: string } }>(SHOPIFY_QUERIES.shop);
       this.currency = data.shop.currencyCode;
     }
     return this.currency;
@@ -142,7 +204,7 @@ export class ShopifyAdapter implements CommerceAdapter {
   async listProducts(cursor: string | null): Promise<ProductPage> {
     const currency = await this.shopCurrency();
     const data = await this.gql<{ products: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: ShopifyProduct[] } }>(
-      `query($after: String) { products(first: 50, after: $after) { pageInfo { hasNextPage endCursor } nodes { ${PRODUCT_FIELDS} } } }`,
+      SHOPIFY_QUERIES.products,
       { after: cursor },
     );
     return {
@@ -153,15 +215,13 @@ export class ShopifyAdapter implements CommerceAdapter {
 
   async getProduct(externalId: string): Promise<CommerceProduct | null> {
     const currency = await this.shopCurrency();
-    const data = await this.gql<{ product: ShopifyProduct | null }>(`query($id: ID!) { product(id: $id) { ${PRODUCT_FIELDS} } }`, { id: externalId });
+    const data = await this.gql<{ product: ShopifyProduct | null }>(SHOPIFY_QUERIES.product, { id: externalId });
     return data.product ? mapShopifyProduct(data.product, currency) : null;
   }
 
   async listPromotions(): Promise<CommercePromotion[]> {
     const data = await this.gql<{ discountNodes: { nodes: Array<{ id: string; discount: ShopifyDiscount }> } }>(
-      `{ discountNodes(first: 100) { nodes { id discount { __typename
-          ... on DiscountCodeBasic { ${DISCOUNT_FIELDS} codes(first: 1) { nodes { code } } }
-          ... on DiscountAutomaticBasic { ${DISCOUNT_FIELDS} } } } } }`,
+      SHOPIFY_QUERIES.discounts,
     );
     return data.discountNodes.nodes
       .filter((n) => n.discount.__typename === 'DiscountCodeBasic' || n.discount.__typename === 'DiscountAutomaticBasic')

@@ -6,7 +6,7 @@ import { MemoryCacheProvider, type KeyProvider } from '@lumibase/runtime';
 import type { AppEnv } from '../env';
 import { connectDbIntegration, hasDbIntegrationUrl } from './helpers/db-harness';
 import { hmacBase64, hmacHex } from '../modules/commerce/signature';
-import { MEDUSA_PROMOTION, SHOPIFY_PRODUCT, json, medusaProduct } from '../modules/commerce/__tests__/fixtures';
+import { MEDUSA_PROMOTION, SHOPIFY_PRODUCT, json, medusaProduct, shopifyJson } from '../modules/commerce/__tests__/fixtures';
 
 vi.mock('../middleware/site-admin', () => ({
   requireSiteAdmin: () => async (_c: unknown, next: () => Promise<void>) => next(),
@@ -60,10 +60,10 @@ const providerFetch = async (url: string, init?: RequestInit): Promise<Response>
   }
   if (u.host === 'acme.myshopify.com') {
     const body = JSON.parse(String(init?.body ?? '{}')) as { query: string };
-    if (body.query.includes('shop {')) return json({ data: { shop: { currencyCode: 'USD' } } });
-    if (body.query.includes('product(id')) return json({ data: { product: shopifyProduct } });
-    if (body.query.includes('products(first')) return json({ data: { products: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: shopifyProduct ? [shopifyProduct] : [] } } });
-    if (body.query.includes('discountNodes')) return json({ data: { discountNodes: { nodes: [] } } });
+    if (body.query.includes('shop {')) return shopifyJson({ data: { shop: { currencyCode: 'USD' } } });
+    if (body.query.includes('product(id')) return shopifyJson({ data: { product: shopifyProduct } });
+    if (body.query.includes('products(first')) return shopifyJson({ data: { products: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: shopifyProduct ? [shopifyProduct] : [] } } });
+    if (body.query.includes('discountNodes')) return shopifyJson({ data: { discountNodes: { nodes: [] } } });
   }
   return new Response('', { status: 500 });
 };
