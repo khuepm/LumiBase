@@ -197,6 +197,11 @@ describe('security rules', () => {
     expect(ids(runSecurityChecks(envOf({})), 'info')).toContain('setup-token-off');
   });
 
+  it('flags the uncatalogued upload type opt-out (#993)', () => {
+    expect(ids(runSecurityChecks(envOf({ ...PROD_OK, FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME: 'true' })), 'warning')).toContain('upload-uncatalogued-mime');
+    expect(ids(runSecurityChecks(envOf({ ...PROD_OK })))).not.toContain('upload-uncatalogued-mime');
+  });
+
   it('skips Node-only rules on the Cloudflare runtime', () => {
     const r = runSecurityChecks(
       envOf({ NODE_ENV: 'production', JWT_SECRET: STRONG_JWT, ENCRYPTION_KEY: STRONG_AES, CORS_ALLOWED_ORIGINS: 'https://a.com' }, 'cloudflare'),

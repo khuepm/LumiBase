@@ -1,7 +1,6 @@
 import { patchSchema } from '../utils/patch-schema';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import { SignJWT, jwtVerify } from 'jose';
 import type { AppEnv, Bindings } from '../env';
 import { requireSiteAdmin } from '../middleware/site-admin';
 import { validateUploadFilename } from '@lumibase/contracts/schemas';
@@ -25,6 +24,16 @@ import { filesContext, resolveFilesAccess, type FilesContext } from '../services
 import { buildFolderTree, checkFolderMove, descendantIds, type FolderRow } from '../services/files/folder-tree';
 import { stripGpsMetadata } from '../services/files/media-metadata';
 import { isServable, runFileScan } from '../modules/malware-scan';
+import {
+  filesKeyPrefix,
+  getUploadJwtSecret,
+  isSiteStorageKey,
+  signUploadToken,
+  verifyUploadToken,
+  type UploadTokenPayload,
+} from '../services/files/upload-token';
+
+export { filesKeyPrefix, isSiteStorageKey };
 
 /**
  * /files — the digital asset library (#670).
@@ -37,38 +46,6 @@ import { isServable, runFileScan } from '../modules/malware-scan';
  * `/files/upload/*` is authorised by its token, not by a session.
  */
 export const filesRouter = new Hono<AppEnv>();
-
-const uploadTokenPayloadSchema = z.object({
-  key: z.string().min(1),
-  siteId: z.string().min(1),
-});
-
-type UploadTokenPayload = z.infer<typeof uploadTokenPayloadSchema>;
-
-function getUploadJwtSecret(env: Bindings): string | null {
-  return env.JWT_SECRET || process.env.JWT_SECRET || null;
-}
-
-// Helper to sign upload token
-async function signUploadToken(payload: UploadTokenPayload, secret: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const secretKey = encoder.encode(secret);
-  return new SignJWT(payload)
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('15m')
-    .sign(secretKey);
-}
-
-// Helper to verify upload token
-async function verifyUploadToken(token: string, secret: string): Promise<UploadTokenPayload> {
-  const encoder = new TextEncoder();
-  const secretKey = encoder.encode(secret);
-  const { payload } = await jwtVerify(token, secretKey, {
-    algorithms: ['HS256'],
-  });
-  return uploadTokenPayloadSchema.parse(payload);
-}
 
 // --- helpers ---------------------------------------------------------------
 
@@ -217,7 +194,8 @@ filesRouter.post('/presigned-url', async (c) => {
     );
   }
 
-  const key = `${Date.now()}_${filename}`;
+  // Site-scoped key (#993): the bucket is shared, so the key carries its site.
+  const key = `${filesKeyPrefix(siteId)}${Date.now()}_${filename}`;
   const token = await signUploadToken({ key, siteId }, jwtSecret);
 
   const urlObj = new URL(c.req.url);
@@ -249,13 +227,18 @@ filesRouter.put('/upload/:key', async (c) => {
     );
   }
 
+  let payload: UploadTokenPayload;
   try {
-    const payload = await verifyUploadToken(token, jwtSecret);
-    if (payload.key !== key) {
-      return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Invalid upload token parameters.' }] }, 403);
-    }
-  } catch (err) {
+    payload = await verifyUploadToken(token, jwtSecret);
+  } catch {
     return c.json({ errors: [{ code: 'UNAUTHORIZED', message: 'Expired or invalid upload token.' }] }, 401);
+  }
+  // The token is the only authority on this path (it is exempt from
+  // `withTenant`): it binds one key AND one site, and the key must lie in that
+  // site's storage namespace (#993), so bytes can never land in another
+  // tenant's objects.
+  if (payload.key !== key || !key.startsWith(filesKeyPrefix(payload.siteId))) {
+    return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Invalid upload token parameters.' }] }, 403);
   }
 
   const runtime = c.get('runtime');
@@ -474,6 +457,13 @@ filesRouter.post('/', async (c) => {
   if (g instanceof Response) return g;
   try {
     const input = fileCreateSchema.parse(await readJson(c));
+    // A record may only point at this site's own storage (#993). The bucket is
+    // shared between tenants: without this, a member could register another
+    // site's object key and then read, replace or delete those bytes through
+    // `/files/:id/content`.
+    if (!isSiteStorageKey(g.ctx.siteId, input.filenameDisk)) {
+      return fail(c, 400, 'FILENAME_DISK_OUT_OF_SCOPE', 'filenameDisk must be a key issued for this site (use POST /files/presigned-url).');
+    }
     const userId = c.get('auth')?.userId ?? null;
     const folder = input.folder ?? null;
     if (folder && !(await g.ctx.repo.listFolders()).some((f) => f.id === folder)) {

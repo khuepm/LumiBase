@@ -351,10 +351,11 @@ describe('GET /files/:id/content — delivery (#705, #707)', () => {
 describe('POST /files with scanning on (#707)', () => {
   it('registers as pending, then the background scan marks it clean', async () => {
     A.settings = { ...A.settings, scan: { enabled: true, provider: 'http', onError: 'quarantine' } };
-    A.storage.objects.set('1800_new.jpg', { bytes: buildJpeg({ iptc: true }), metadata: {} });
+    // Keys are site-scoped since #993.
+    A.storage.objects.set('sites/site_a/files/1800_new.jpg', { bytes: buildJpeg({ iptc: true }), metadata: {} });
     const res = await app().request('/api/v1/files', {
       method: 'POST',
-      body: JSON.stringify({ filenameDisk: '1800_new.jpg', filenameDownload: 'new.jpg', mime: 'image/jpeg', filesize: 10, folder: 'mkt' }),
+      body: JSON.stringify({ filenameDisk: 'sites/site_a/files/1800_new.jpg', filenameDownload: 'new.jpg', mime: 'image/jpeg', filesize: 10, folder: 'mkt' }),
     });
     expect(res.status).toBe(200);
     const body = await json(res);
@@ -362,6 +363,22 @@ describe('POST /files with scanning on (#707)', () => {
     expect(created.contentHash).toMatch(/^[0-9a-f]{64}$/);
     expect(body.meta).toEqual({ duplicates: [] });
     await vi.waitFor(async () => expect((await A.repo.get(created.id))!.scanStatus).toBe('clean'));
+  });
+});
+
+describe('POST /files keeps records inside the site’s storage (#993)', () => {
+  it.each([
+    ['another site’s files', 'sites/site_b/files/1800_secret.pdf'],
+    ['another site’s media', 'sites/site_b/media/logo.png'],
+    ['an unscoped legacy key', '1800_new.jpg'],
+    ['a traversal', 'sites/site_a/files/../../site_b/files/x.pdf'],
+  ])('refuses %s', async (_label, filenameDisk) => {
+    const res = await app().request('/api/v1/files', {
+      method: 'POST',
+      body: JSON.stringify({ filenameDisk, filenameDownload: 'x', mime: 'application/pdf', filesize: 10 }),
+    });
+    expect(res.status).toBe(400);
+    expect((await json(res)).errors![0]!.code).toBe('FILENAME_DISK_OUT_OF_SCOPE');
   });
 });
 

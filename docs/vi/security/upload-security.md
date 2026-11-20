@@ -1,13 +1,13 @@
 ---
-version: 3
+version: 4
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-11-15T19:51:31.763Z
-sourceHash: 0cecb3b0be52686a
-codeVerified: 2026-11-15T19:51:31.763Z
-codeVerifiedHash: 0cecb3b0be52686a
+lastUpdated: 2026-11-20T06:00:17.786Z
+sourceHash: f9f1da0558c36442
+codeVerified: 2026-11-20T06:00:17.786Z
+codeVerifiedHash: f9f1da0558c36442
 codeVerifiedClaims: 16
 ---
 
@@ -46,6 +46,22 @@ Upload presigned **không** đi thẳng vào storage: bytes vẫn chảy qua b�
 CMS, nên guard thấy trọn file trước `storage.put`.
 `POST /api/v1/files/presigned-url` còn từ chối cấp URL upload cho tên file
 không an toàn.
+
+**Storage theo từng site (#993).** Bucket dùng chung cho mọi tenant, nên key
+mang theo site của nó: key presigned có dạng `sites/<siteId>/files/<ts>_<name>`
+(media vốn đã dùng `sites/<siteId>/media/`). Token upload ràng buộc một key và
+một site, bộ nhận từ chối key nằm ngoài namespace của site đó, và guard áp chính
+sách upload của site đã cấp token (đường này không có tenant context riêng).
+`POST /api/v1/files` từ chối `filenameDisk` nằm ngoài site của người gọi với
+`400 FILENAME_DISK_OUT_OF_SCOPE` — trước đây, một thành viên có thể đăng ký key
+object của site khác rồi đọc, thay thế hoặc xoá bytes của nó qua
+`/files/:id/content`. Bản ghi tạo trước đó giữ nguyên key.
+
+**Allowlist từ env bị giới hạn theo catalogue (#993).** Các mục trong
+`FILE_UPLOAD_ALLOWED_MIME_TYPES` nằm ngoài catalogue loại upload — kể cả
+wildcard — bị bỏ qua kèm cảnh báo, như API quản trị vốn đã làm;
+`FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME=true` khôi phục hành vi cũ, và
+`lumibase doctor --security` báo cáo việc đó.
 
 Các helper thuần nằm trong `apps/cms/src/services/upload-security/`:
 

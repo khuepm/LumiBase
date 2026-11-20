@@ -104,10 +104,11 @@ describe('files upload token validation', () => {
   it('accepts a valid signed upload token without relying on tenant context for the upload request', async () => {
     const writes: StoredWrite[] = [];
     const app = buildApp(writes);
-    const token = await signUploadPayload({ key: 'asset.txt', siteId: 'site-1' });
+    const key = 'sites/site-1/files/asset.txt';
+    const token = await signUploadPayload({ key, siteId: 'site-1' });
 
     const response = await app.request(
-      `/files/upload/asset.txt?token=${encodeURIComponent(token)}`,
+      `/files/upload/${encodeURIComponent(key)}?token=${encodeURIComponent(token)}`,
       {
         method: 'PUT',
         headers: { 'content-type': 'text/plain' },
@@ -117,13 +118,30 @@ describe('files upload token validation', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ data: { success: true, key: 'asset.txt' } });
+    expect(await response.json()).toEqual({ data: { success: true, key } });
     expect(writes).toEqual([
       {
-        key: 'asset.txt',
+        key,
         body: 'LEGITIMATE_UPLOAD',
         metadata: { 'content-type': 'text/plain' },
       },
     ]);
+  });
+
+  it.each([
+    ['an unscoped key', 'owned.txt'],
+    ['another site’s namespace', 'sites/site-2/files/owned.txt'],
+    ['another site’s media', 'sites/site-2/media/logo.png'],
+  ])('refuses a validly signed token for %s (#993)', async (_label, key) => {
+    const writes: StoredWrite[] = [];
+    const app = buildApp(writes);
+    const token = await signUploadPayload({ key, siteId: 'site-1' });
+    const response = await app.request(
+      `/files/upload/${encodeURIComponent(key)}?token=${encodeURIComponent(token)}`,
+      { method: 'PUT', body: 'BYTES' },
+      { JWT_SECRET },
+    );
+    expect(response.status).toBe(403);
+    expect(writes).toEqual([]);
   });
 });

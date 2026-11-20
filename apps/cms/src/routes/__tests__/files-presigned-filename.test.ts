@@ -47,7 +47,8 @@ describe('POST /files/presigned-url filename hygiene (#740)', () => {
     );
     expect(res.status).toBe(200);
     const { data } = (await res.json()) as { data: { url: string; key: string } };
-    expect(data.key).toMatch(/^\d+_my photo\.png$/);
+    // Site-scoped key (#993).
+    expect(data.key).toMatch(/^sites\/site_1\/files\/\d+_my photo\.png$/);
     expect(data.url).toContain(`/api/v1/files/upload/${encodeURIComponent(data.key)}?token=`);
   });
 });

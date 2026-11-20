@@ -350,6 +350,18 @@ export function runSecurityChecks(env: ProjectEnv, options: SecurityCheckOptions
     });
   }
 
+  // ── Upload type allowlist (#993) ───────────────────────────────────────
+  if (isTrue(val('FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME'))) {
+    add({
+      id: 'upload-uncatalogued-mime',
+      severity: prodOr('warning', 'info'),
+      rule: 'Uploads should be limited to the catalogued types, which are content-sniffed and extension-checked.',
+      message: 'FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME is on: FILE_UPLOAD_ALLOWED_MIME_TYPES may admit archives, HTML or scripts without content sniffing.',
+      fix: 'Remove FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME and keep FILE_UPLOAD_ALLOWED_MIME_TYPES to catalogued types.',
+      keys: ['FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME', 'FILE_UPLOAD_ALLOWED_MIME_TYPES'],
+    });
+  }
+
   // ── Row-level security ─────────────────────────────────────────────────
   const rlsRaw = val('LUMIBASE_DB_RLS')?.toLowerCase();
   if (rlsRaw && rlsRaw !== 'off' && rlsRaw !== 'enforce') {

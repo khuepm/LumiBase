@@ -1,10 +1,10 @@
 ---
-version: 3
+version: 4
 sourceLang: en
-lastUpdated: 2026-11-15T19:51:31.763Z
-contentHash: 0cecb3b0be52686a
-codeVerified: 2026-11-15T19:51:31.763Z
-codeVerifiedHash: 0cecb3b0be52686a
+lastUpdated: 2026-11-20T06:00:17.786Z
+contentHash: f9f1da0558c36442
+codeVerified: 2026-11-20T06:00:17.786Z
+codeVerifiedHash: f9f1da0558c36442
 codeVerifiedClaims: 16
 ---
 
@@ -43,6 +43,22 @@ The presigned upload is **not** direct-to-storage: the bytes still stream
 through the CMS receiver, so the guard sees the whole file before
 `storage.put`. `POST /api/v1/files/presigned-url` additionally refuses to mint
 an upload URL for an unsafe filename.
+
+**Storage is per site (#993).** The bucket is shared by every tenant, so keys
+carry their site: presigned keys are `sites/<siteId>/files/<ts>_<name>` (media
+already used `sites/<siteId>/media/`). The upload token binds one key and one
+site, the receiver refuses a key outside that site's namespace, and the guard
+applies the issuing site's upload policy (the path has no tenant context of its
+own). `POST /api/v1/files` refuses a `filenameDisk` outside the caller's site
+with `400 FILENAME_DISK_OUT_OF_SCOPE` — before this, a member could register
+another site's object key and read, replace or delete its bytes through
+`/files/:id/content`. Records created earlier keep their keys.
+
+**The env allowlist is held to the catalogue (#993).**
+`FILE_UPLOAD_ALLOWED_MIME_TYPES` entries outside the upload type catalogue —
+wildcards included — are dropped with a warning, as the admin API already did;
+`FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME=true` restores the old behaviour, and
+`lumibase doctor --security` reports it.
 
 The pure helpers are in `apps/cms/src/services/upload-security/`:
 
