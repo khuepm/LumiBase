@@ -30,6 +30,12 @@ components:
       schema: { type: string }
       description: Active tenant id. Required for every authenticated endpoint.
   schemas:
+    CommerceSyncCounts:
+      type: object
+      properties:
+        created: { type: integer }
+        updated: { type: integer }
+        deleted: { type: integer }
     AudienceRules:
       type: object
       required: [conditions]
@@ -2795,6 +2801,89 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /integrations/commerce:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    get:
+      summary: Commerce providers and connection state (#764, site admin)
+      description: Never returns a secret; `webhookUrl` is the URL to register at the provider.
+      responses:
+        '200': { description: '`{ data: { providers: [{ provider, connected, apiUrl? | shopDomain?, webhookUrl }], collections } }`' }
+  /integrations/commerce/{provider}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: provider, in: path, required: true, schema: { type: string, enum: [medusa, shopify] } }
+    put:
+      summary: Connect a commerce provider (credentials stored encrypted, checked first)
+      parameters:
+        - { name: verify, in: query, schema: { type: string, enum: ['false'] }, description: Skip the credential check }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  title: Medusa
+                  required: [apiUrl, apiKey, webhookSecret]
+                  additionalProperties: false
+                  properties: { apiUrl: { type: string, format: uri }, apiKey: { type: string, minLength: 8 }, webhookSecret: { type: string, minLength: 8 } }
+                - type: object
+                  title: Shopify
+                  required: [shopDomain, accessToken, webhookSecret]
+                  additionalProperties: false
+                  properties: { shopDomain: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}\.myshopify\.com$' }, accessToken: { type: string, minLength: 8 }, webhookSecret: { type: string, minLength: 8 } }
+      responses:
+        '200': { description: Connected; `createdCollections` lists the synced collections and block templates created on first connect }
+        '400': { description: VALIDATION, COMMERCE_CONFIG_INVALID }
+        '404': { description: Unknown provider }
+        '422': { description: COMMERCE_CREDENTIALS_REJECTED }
+        '502': { description: COMMERCE_UNAVAILABLE, COMMERCE_UNREACHABLE (incl. private / loopback / metadata URLs) }
+    delete:
+      summary: Disconnect a commerce provider
+      responses:
+        '200': { description: '`{ data: { provider, connected: false } }`' }
+  /integrations/commerce/{provider}/sync:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: provider, in: path, required: true, schema: { type: string, enum: [medusa, shopify] } }
+    post:
+      summary: Full sync of products and promotions; prunes rows the provider no longer has
+      responses:
+        '200':
+          description: Counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      products: { $ref: '#/components/schemas/CommerceSyncCounts' }
+                      promotions: { $ref: '#/components/schemas/CommerceSyncCounts' }
+                      truncated: { type: boolean }
+        '404': { description: COMMERCE_NOT_CONFIGURED }
+        '422': { description: COMMERCE_CREDENTIALS_REJECTED }
+        '429': { description: COMMERCE_RATE_LIMITED }
+        '502': { description: COMMERCE_UNAVAILABLE, COMMERCE_UNREACHABLE }
+  /commerce-webhooks/{site_id}/{provider}:
+    post:
+      summary: Provider webhook (#764) — public, signed
+      description: >-
+        Medusa: `X-Lumi-Signature: sha256=<hex HMAC-SHA256 of the raw body>` and
+        `{ event, data: { id } }`. Shopify: `X-Shopify-Hmac-Sha256` (base64) and
+        `X-Shopify-Topic` `products/create|update|delete`. The event only names
+        the product; it is re-read from the provider. Rate-limited.
+      security: []
+      parameters:
+        - { name: site_id, in: path, required: true, schema: { type: string } }
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [medusa, shopify] } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        '200': { description: '`{ data: { product, result } }` (created / updated / deleted / missing), `{ data: { promotions } }`, or `{ data: { ignored } }`' }
+        '401': { description: INVALID_SIGNATURE }
+        '404': { description: Unknown site or provider, or the provider is not connected }
   /personalisation/audiences:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'

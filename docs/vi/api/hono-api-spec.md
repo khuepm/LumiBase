@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 61
-lastUpdated: 2026-11-19T06:12:10.009Z
+version: 62
+lastUpdated: 2026-11-19T08:59:51.572Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3158d8912c4d6a37
+sourceHash: 4332c321ef301d10
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T06:12:10.009Z
-codeVerifiedHash: 3158d8912c4d6a37
-codeVerifiedClaims: 654
+codeVerified: 2026-11-19T08:59:51.572Z
+codeVerifiedHash: 4332c321ef301d10
+codeVerifiedClaims: 662
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -1586,6 +1586,22 @@ Public (không có phiên làm việc; xác minh chữ ký hoặc trạng thái 
 | `POST` | `/api/v1/integrations/git/webhook/:provider/:siteId/:integrationId` | Bộ nhận webhook — GitHub HMAC-SHA256 (`X-Hub-Signature-256`) / GitLab token (`X-Gitlab-Token`); idempotent theo delivery id |
 
 Môi trường xem trước là opt-in cho từng tích hợp (`sync_config.preview = true`): khi PR mở/đồng bộ, LumiBase khởi tạo một site tạm thời (`${siteId}__pr-${number}`) được phục vụ tại `/api/v1/deliver/page/${ephemeralSiteId}/...`; khi đóng/gộp PR nó sẽ bị hủy. Thất bại CI ghi lại một `agent_incident` (role `git-sync`) + một mục audit `git_ci_failed`.
+
+---
+
+## 12e. Commerce adapters (#764)
+
+Site admin kết nối Medusa hoặc Shopify; sản phẩm và khuyến mãi được đồng bộ
+vào các collection `commerce_products` / `commerce_promotions`. Xem
+[Nội dung thương mại](../features/commerce.md).
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `GET` | `/api/v1/integrations/commerce` | Các nhà cung cấp kèm `connected`, `apiUrl` / `shopDomain` và `webhookUrl` (không bao giờ trả secret) |
+| `PUT` | `/api/v1/integrations/commerce/:provider` | Kết nối `medusa` `{ apiUrl, apiKey, webhookSecret }` hoặc `shopify` `{ shopDomain, accessToken, webhookSecret }`; thông tin xác thực được kiểm tra trước (`?verify=false` bỏ qua); `422 COMMERCE_CREDENTIALS_REJECTED`, `502 COMMERCE_UNREACHABLE` |
+| `DELETE` | `/api/v1/integrations/commerce/:provider` | Ngắt kết nối |
+| `POST` | `/api/v1/integrations/commerce/:provider/sync` | Đồng bộ toàn bộ → `{ products, promotions, truncated }` (số lượng created / updated / deleted) |
+| `POST` | `/api/v1/commerce-webhooks/:site_id/:provider` | Webhook **công khai** có chữ ký của nhà cung cấp (`X-Lumi-Signature` cho Medusa, `X-Shopify-Hmac-Sha256` cho Shopify); `401` sai chữ ký, `404` chưa kết nối |
 
 ---
 

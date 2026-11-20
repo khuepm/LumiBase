@@ -52,6 +52,8 @@ import { dataExportRouter } from './routes/data-export';
 import { restrictionRouter } from './routes/restriction';
 import { retentionRouter } from './routes/retention';
 import { personalisationRouter } from './modules/personalisation/routes';
+import { commerceRouter } from './modules/commerce/routes';
+import { commerceWebhookRouter } from './modules/commerce/webhook';
 import { emailPublicRouter } from './routes/email-public';
 import { deliverRouter } from './routes/deliver';
 import { deploymentsRouter, deploymentsWebhookRouter } from './routes/deployments';
@@ -307,6 +309,8 @@ api.route('/me/automated-decisions', automatedDecisionsRouter);
 api.route('/retention', retentionRouter);
 // Audience rules + content variants (#762), site admin.
 api.route('/personalisation', personalisationRouter);
+// Commerce adapters (#764): Medusa / Shopify connection + sync, site admin.
+api.route('/integrations/commerce', commerceRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/pages', pagesRouter);
@@ -502,6 +506,10 @@ app.route('/api/v1/deliver', deliverRouter);
 // `/api/v1/pageviews/stats` (mounted on `api` below) doesn't run it twice.
 app.use('/api/v1/pageviews/:site_id/hit', withDb(), withRateLimit());
 app.route('/api/v1/pageviews', pageviewsPublicRouter);
+
+// Commerce provider webhooks (#764) — signed, unauthenticated, site in the URL.
+app.use('/api/v1/commerce-webhooks/:site_id/:provider', withDb(), withRateLimit());
+app.route('/api/v1/commerce-webhooks', commerceWebhookRouter);
 
 // RFC 9728 Protected Resource Metadata for the MCP endpoint (#346). Public
 // (discovery precedes the token) but tenant-resolved: the issuer list is per site.

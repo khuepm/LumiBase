@@ -1,11 +1,11 @@
 ---
-version: 62
-lastUpdated: 2026-11-19T06:12:10.009Z
+version: 63
+lastUpdated: 2026-11-19T08:59:51.572Z
 sourceLang: en
-contentHash: 3158d8912c4d6a37
-codeVerified: 2026-11-19T06:12:10.009Z
-codeVerifiedHash: 3158d8912c4d6a37
-codeVerifiedClaims: 654
+contentHash: 4332c321ef301d10
+codeVerified: 2026-11-19T08:59:51.572Z
+codeVerifiedHash: 4332c321ef301d10
+codeVerifiedClaims: 662
 ---
 
 # Hono API Specification — LumiBase
@@ -1796,6 +1796,22 @@ on PR open/sync LumiBase seeds an ephemeral site (`${siteId}__pr-${number}`)
 served at `/api/v1/deliver/page/${ephemeralSiteId}/...`; on close/merge it is
 torn down. CI failure records an `agent_incident` (role `git-sync`) + a
 `git_ci_failed` audit entry.
+
+---
+
+## 12e. Commerce adapters (#764)
+
+Site admins connect Medusa or Shopify; products and promotions sync into the
+`commerce_products` / `commerce_promotions` collections. See
+[Commerce content](../features/commerce.md).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/integrations/commerce` | Providers with `connected`, `apiUrl` / `shopDomain` and `webhookUrl` (never a secret) |
+| `PUT` | `/api/v1/integrations/commerce/:provider` | Connect `medusa` `{ apiUrl, apiKey, webhookSecret }` or `shopify` `{ shopDomain, accessToken, webhookSecret }`; credentials are checked first (`?verify=false` skips); `422 COMMERCE_CREDENTIALS_REJECTED`, `502 COMMERCE_UNREACHABLE` |
+| `DELETE` | `/api/v1/integrations/commerce/:provider` | Disconnect |
+| `POST` | `/api/v1/integrations/commerce/:provider/sync` | Full sync → `{ products, promotions, truncated }` (created / updated / deleted counts) |
+| `POST` | `/api/v1/commerce-webhooks/:site_id/:provider` | **Public**, signed provider webhook (`X-Lumi-Signature` for Medusa, `X-Shopify-Hmac-Sha256` for Shopify); `401` bad signature, `404` not connected |
 
 ---
 

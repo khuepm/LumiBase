@@ -72,6 +72,7 @@
           "features/locale-generator",
           "features/visual-editing",
           "features/personalisation",
+          "features/commerce",
           "features/external-action-tools",
           "features/draft-review",
           "features/studio-rtl-layout",

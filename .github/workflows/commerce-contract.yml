@@ -1,0 +1,44 @@
+name: Commerce provider contract
+# Live Shopify Admin GraphQL contract for the commerce adapters (#764): the
+# pinned API version answers as itself (no fall-forward), every field the
+# adapter selects exists and is not deprecated, and every adapter query runs.
+# Mocked responses in CI cannot prove provider compatibility; this can.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 4 * * 1'
+  pull_request:
+    paths:
+      - 'apps/cms/src/modules/commerce/**'
+      - '.github/workflows/commerce-contract.yml'
+permissions:
+  contents: read
+jobs:
+  shopify:
+    name: Shopify live contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SHOPIFY_CONTRACT_SHOP: ${{ secrets.SHOPIFY_CONTRACT_SHOP }}
+      SHOPIFY_CONTRACT_TOKEN: ${{ secrets.SHOPIFY_CONTRACT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+      - name: Require a development store
+        run: |
+          if [ -z "$SHOPIFY_CONTRACT_SHOP" ] || [ -z "$SHOPIFY_CONTRACT_TOKEN" ]; then
+            echo 'Shopify contract NOT run: set the SHOPIFY_CONTRACT_SHOP and SHOPIFY_CONTRACT_TOKEN repository secrets (development store, read_products + read_discounts). No compatibility is claimed.' >> "$GITHUB_STEP_SUMMARY"
+            if [ "${{ github.event_name }}" = "pull_request" ]; then exit 0; fi
+            exit 1
+          fi
+      - run: pnpm install --frozen-lockfile
+        if: env.SHOPIFY_CONTRACT_SHOP != '' && env.SHOPIFY_CONTRACT_TOKEN != ''
+      - name: Run the live contract
+        if: env.SHOPIFY_CONTRACT_SHOP != '' && env.SHOPIFY_CONTRACT_TOKEN != ''
+        run: pnpm -F @lumibase/cms test:shopify-contract
