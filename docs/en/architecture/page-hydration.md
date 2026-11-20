@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:02:08.528Z
+version: 3
+lastUpdated: 2026-11-20T05:35:06.536Z
 sourceLang: en
-contentHash: f0f9348fb05a5190
-codeVerified: 2026-08-02T19:02:08.528Z
-codeVerifiedHash: f0f9348fb05a5190
-codeVerifiedClaims: 2
+contentHash: b9fec6046c5c723e
+codeVerified: 2026-11-20T05:35:06.536Z
+codeVerifiedHash: b9fec6046c5c723e
+codeVerifiedClaims: 6
 ---
 
 # Page Hydration API Contract
@@ -35,10 +35,17 @@ Sections can declare a data source:
 }
 ```
 
-The delivery resolver scopes the query by `site_id`, defaults to
-`status: "published"` for public delivery, clamps `limit` to 50 items, and
-merges the hydrated rows into `data.items`. Set `source.status` only when a
-public page intentionally needs a different item status.
+The delivery resolver scopes the query by `site_id`, serves published items
+only (`source.status` is ignored), clamps `limit` to 50 items, and merges the
+hydrated rows into `data.items`. Encrypted fields and fields classified `pii`
+or `phi` are left out of every item: a page is public, so delivery has no
+caller to decrypt for.
+
+A page writer can only bind a `source` to a collection they can read in full:
+a read permission on every field with no row filter. `POST /api/v1/pages` and
+`PATCH /api/v1/pages/:id` answer `403 SOURCE_FORBIDDEN` otherwise. Bindings a
+page already has are not re-checked, so an editor can still change a page an
+administrator bound to a collection.
 
 ### Expected JSON Response Structure:
 ```json
