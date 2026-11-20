@@ -1,10 +1,10 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 27
+lastUpdated: 2026-11-19T04:10:30.311Z
 sourceLang: en
-contentHash: 52465604769f9c24
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+contentHash: 95e22e5091a7c4eb
+codeVerified: 2026-11-19T04:10:30.311Z
+codeVerifiedHash: 95e22e5091a7c4eb
 codeVerifiedClaims: 22
 ---
 
@@ -79,7 +79,7 @@ Unique indexes: `users_external_id_unique`, `users_is_bootstrap_unique` (partial
 
 **Email identity policy (migration `0027`).** The instance tier lives in `system_state.email_identity_mode` (`exact` | `root`, default `exact`; existing instances are backfilled to `exact`, so nothing changes on upgrade). Every writer — routes, SCIM, setup, seeds, an older app version — gets the same derived columns because triggers compute them: `lumibase_users_email_identity()` on `users` (reads the singleton `FOR SHARE`), `lumibase_user_sites_identity_key()` on `user_sites` (reads the site `FOR SHARE`) and `lumibase_users_rekey_memberships()` after an email change. The guarded change endpoint holds `FOR UPDATE` on the same rows, so a row is never keyed under a stale policy. See [User management](./security/user-management.md) and `/api/v1/admin/email-identity` in the API spec.
 
-**Release manifest (migration `0041`).** `release_manifests` is a singleton table (`id = 'current'`, CHECK-enforced) with `issued_at_ms` (bigint) and `manifest` (jsonb: the envelope as received, the verified `flags`, `issuedAt`, `acceptedAt`, `source` `push` | `pull`, `acceptedBy`). It holds the last signed release manifest the deployment accepted, written only after Ed25519 verification by an upsert that applies only when `issued_at_ms` is strictly greater. It has no `site_id`: release gates belong to the deployment. It is a separate table rather than a `system_state` column because Drizzle lists every declared column in an INSERT, so a new `system_state` column would break the startup INSERT of an image running on the previous schema. Per-site choices live in `settings` under key `release.flags`. See [Release flags](./features/release-flags.md).
+**Release manifest (migration `0043`).** `release_manifests` is a singleton table (`id = 'current'`, CHECK-enforced) with `issued_at_ms` (bigint) and `manifest` (jsonb: the envelope as received, the verified `flags`, `issuedAt`, `acceptedAt`, `source` `push` | `pull`, `acceptedBy`). It holds the last signed release manifest the deployment accepted, written only after Ed25519 verification by an upsert that applies only when `issued_at_ms` is strictly greater. It has no `site_id`: release gates belong to the deployment. It is a separate table rather than a `system_state` column because Drizzle lists every declared column in an INSERT, so a new `system_state` column would break the startup INSERT of an image running on the previous schema. Per-site choices live in `settings` under key `release.flags`. See [Release flags](./features/release-flags.md).
 
 ### `teams` / `team_members`
 - `teams`: `id`, `siteId`, `name`, `description`.

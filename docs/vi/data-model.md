@@ -1,13 +1,13 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 27
+lastUpdated: 2026-11-19T04:10:30.311Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 52465604769f9c24
+sourceHash: 95e22e5091a7c4eb
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+codeVerified: 2026-11-19T04:10:30.311Z
+codeVerifiedHash: 95e22e5091a7c4eb
 codeVerifiedClaims: 22
 ---
 
@@ -83,7 +83,7 @@ Unique index: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, 
 
 **Chính sách định danh email (migration `0027`).** Tầng instance nằm ở `system_state.email_identity_mode` (`exact` | `root`, mặc định `exact`; instance hiện có được backfill thành `exact`, nên nâng cấp không đổi hành vi). Mọi writer — route, SCIM, setup, seed, bản app cũ — đều có cùng giá trị cột dẫn xuất vì trigger tính chúng: `lumibase_users_email_identity()` trên `users` (đọc singleton `FOR SHARE`), `lumibase_user_sites_identity_key()` trên `user_sites` (đọc site `FOR SHARE`) và `lumibase_users_rekey_memberships()` sau khi đổi email. Endpoint đổi policy giữ `FOR UPDATE` trên cùng các hàng đó, nên không hàng nào bị gán khoá theo policy cũ. Xem [Quản lý người dùng](./security/user-management.md) và `/api/v1/admin/email-identity` trong API spec.
 
-**Release manifest (migration `0041`).** `release_manifests` là bảng một dòng (`id = 'current'`, ép bằng CHECK) với `issued_at_ms` (bigint) và `manifest` (jsonb: envelope như khi nhận, `flags` đã xác minh, `issuedAt`, `acceptedAt`, `source` `push` | `pull`, `acceptedBy`). Bảng giữ manifest phát hành có chữ ký gần nhất mà deployment đã chấp nhận, chỉ được ghi sau khi xác minh Ed25519 bằng một câu upsert chỉ cập nhật khi `issued_at_ms` lớn hơn hẳn. Bảng không có `site_id`: cổng phát hành thuộc về deployment. Đây là bảng riêng chứ không phải một cột của `system_state` vì Drizzle liệt kê mọi cột đã khai báo trong câu INSERT, nên thêm cột vào `system_state` sẽ làm hỏng câu INSERT lúc khởi động của image chạy trên schema trước đó. Lựa chọn theo site nằm trong `settings` với key `release.flags`. Xem [Release flags](./features/release-flags.md).
+**Release manifest (migration `0043`).** `release_manifests` là bảng một dòng (`id = 'current'`, ép bằng CHECK) với `issued_at_ms` (bigint) và `manifest` (jsonb: envelope như khi nhận, `flags` đã xác minh, `issuedAt`, `acceptedAt`, `source` `push` | `pull`, `acceptedBy`). Bảng giữ manifest phát hành có chữ ký gần nhất mà deployment đã chấp nhận, chỉ được ghi sau khi xác minh Ed25519 bằng một câu upsert chỉ cập nhật khi `issued_at_ms` lớn hơn hẳn. Bảng không có `site_id`: cổng phát hành thuộc về deployment. Đây là bảng riêng chứ không phải một cột của `system_state` vì Drizzle liệt kê mọi cột đã khai báo trong câu INSERT, nên thêm cột vào `system_state` sẽ làm hỏng câu INSERT lúc khởi động của image chạy trên schema trước đó. Lựa chọn theo site nằm trong `settings` với key `release.flags`. Xem [Release flags](./features/release-flags.md).
 
 ### `teams` / `team_members`
 - `teams`: `id`, `siteId`, `name`, `description`.
