@@ -39,4 +39,10 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
-        run: node scripts/check-release-freeze.mjs
+        run: |
+          # The PR that introduces the freeze runs against a base without it.
+          if [ ! -f scripts/check-release-freeze.mjs ] || [ ! -f .github/release-freeze.json ]; then
+            echo "release-freeze: base branch has no freeze config yet — nothing to enforce"
+            exit 0
+          fi
+          node scripts/check-release-freeze.mjs
