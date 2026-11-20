@@ -65,6 +65,9 @@ import {
 import { evaluateExternalActionPolicy, type ExternalActionPolicyVerdict } from './external-action-policy';
 import { ToolSecretError, ToolSecretService } from './tool-secret-service';
 import { VetoService } from './veto-service';
+import { ExperimentRepository } from '../modules/experiments/repo';
+import { promoteWinner } from '../modules/experiments/promote';
+import { buildReport } from '../modules/experiments/stats';
 import {
   AgentQuestionService,
   ASK_USER_SKILL,
@@ -1970,6 +1973,41 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           scope: args['scope'] as string | undefined,
         });
         return { upserted: true, setting };
+      },
+    },
+
+    analyzeExperiment: {
+      name: 'analyzeExperiment',
+      description:
+        'Report an A/B experiment (#763): exposures, conversions, rate per arm, uplift and significance against control, and the recommended winner (null when the data does not support one yet).',
+      requiredCapabilities: ['items:read'],
+      service: 'items',
+      handler: async (args) => {
+        if (!db || !siteId) throw new Error('SITE_DB_NOT_CONFIGURED: analyzeExperiment needs the site database');
+        const repo = new ExperimentRepository(db, siteId);
+        const experiment = await repo.get(String(args['experimentId'] ?? ''));
+        if (!experiment) throw new Error('NOT_FOUND: experiment not found');
+        const counts = await repo.totals(experiment.id, experiment.arms.map((a) => a.key));
+        return {
+          experiment: { id: experiment.id, key: experiment.key, name: experiment.name, status: experiment.status, goal: experiment.goal, subjectType: experiment.subjectType, subjectId: experiment.subjectId },
+          report: buildReport(counts, { minSampleSize: experiment.minSampleSize }),
+        };
+      },
+    },
+
+    promoteExperimentWinner: {
+      name: 'promoteExperimentWinner',
+      description:
+        "Promote an A/B experiment's winning arm (#763): its overrides become the published page / item and the experiment completes. Changes live content, so it always waits for approval.",
+      requiredCapabilities: ['items:write'],
+      service: 'items',
+      dangerous: true,
+      handler: async (args) => {
+        if (!db || !siteId) throw new Error('SITE_DB_NOT_CONFIGURED: promoteExperimentWinner needs the site database');
+        return promoteWinner(
+          { db, siteId, cache: services.cache, itemService },
+          { experimentId: String(args['experimentId'] ?? ''), arm: String(args['arm'] ?? '') },
+        );
       },
     },
 

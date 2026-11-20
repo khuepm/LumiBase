@@ -1,13 +1,13 @@
 ---
-version: 27
-lastUpdated: 2026-11-19T06:12:12.023Z
+version: 29
+lastUpdated: 2026-11-20T06:20:41.603Z
 sourceLang: en
 translatedFrom: en
-sourceHash: c5183f80d77f87d0
+sourceHash: 2d2ce47a1211bd24
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T06:12:12.023Z
-codeVerifiedHash: c5183f80d77f87d0
+codeVerified: 2026-11-20T06:20:41.603Z
+codeVerifiedHash: 2d2ce47a1211bd24
 codeVerifiedClaims: 22
 ---
 
@@ -43,6 +43,7 @@ Các file schema được chia theo domain:
 | `locale-generation.ts` | `lumibase_locale_generation_jobs`, `lumibase_translation_suggestions` |
 | `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
 | `personalisation.ts` | `lumibase_audiences`, `lumibase_content_variants`, `lumibase_variant_exposures` |
+| `experiments.ts` | `lumibase_experiments`, `lumibase_experiment_arms`, `lumibase_experiment_participants` |
 
 Migration nằm ở `packages/database/migrations/` và `packages/database/drizzle/`.
 
@@ -312,6 +313,17 @@ Khi seed local/staging/prod, phải seed permission cho system collection một 
 
 ### `variant_exposures`
 - `id`, `siteId`, `day`, `subjectType`, `subjectId`, `audienceKey` (`_` = nội dung mặc định), `count`, `updatedAt`. Duy nhất theo `(siteId, day, subjectType, subjectId, audienceKey)`; chỉ tăng khi có consent phân tích, không lưu dữ liệu khách. Migration `0044_personalisation`. Xem [Cá nhân hoá](./features/personalisation.md).
+
+## Thử nghiệm A/B (`experiments.ts`, #763)
+
+### `experiments`
+- `id`, `siteId`, `key` (duy nhất theo site), `name`, `hypothesis`, `subjectType` (`page`/`item`), `subjectId`, `goal`, `status` (`draft`/`running`/`stopped`/`completed`), `minSampleSize`, `startedAt`, `endedAt`, `winnerArm`, `createdBy`, `createdAt`, `updatedAt`.
+
+### `experiment_arms`
+- `id`, `siteId`, `experimentId` (FK cascade), `key` (`control` hoặc key khác), `name`, `weight`, `overrides jsonb`, `createdAt`, `updatedAt`. Duy nhất theo `(siteId, experimentId, key)`.
+
+### `experiment_participants`
+- `id`, `siteId`, `experimentId` (FK cascade), `visitorHash` (SHA-256 của `<experiment id>:<visitor id>`; bản thân id khách không bao giờ được lưu), `armKey`, `exposedAt`, `convertedAt`. Duy nhất theo `(siteId, experimentId, visitorHash)`: một exposure mỗi khách, và tối đa một chuyển đổi, chỉ được ghi trên một exposure có sẵn của cùng arm. Chỉ ghi khi có consent phân tích. Migration `0045_experiments`. Xem [Thử nghiệm A/B](./features/experiments.md).
 
 ## 5. UX state (`platform.ts`)
 

@@ -47,6 +47,8 @@ const HARNESS_CALL_SITES = [
   'services/agent-run-worker.ts',
   // Jev automation live proposals (#518): the flow run's principal is the requester.
   'services/ai-automation-ops.ts',
+  // A/B experiments (#763): `POST /experiments/:id/promote` parks the winner's promotion.
+  'modules/experiments/routes.ts',
 ] as const;
 
 function read(relative: string): string {
