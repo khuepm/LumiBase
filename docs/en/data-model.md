@@ -1,10 +1,10 @@
 ---
-version: 28
-lastUpdated: 2026-11-19T07:25:45.989Z
+version: 29
+lastUpdated: 2026-11-20T06:20:41.603Z
 sourceLang: en
-contentHash: a2155b9f0be59292
-codeVerified: 2026-11-19T07:25:45.989Z
-codeVerifiedHash: a2155b9f0be59292
+contentHash: 2d2ce47a1211bd24
+codeVerified: 2026-11-20T06:20:41.603Z
+codeVerifiedHash: 2d2ce47a1211bd24
 codeVerifiedClaims: 22
 ---
 
@@ -39,7 +39,7 @@ Schema files are split by domain:
 | `locale-generation.ts` | `lumibase_locale_generation_jobs`, `lumibase_translation_suggestions` |
 | `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
 | `personalisation.ts` | `lumibase_audiences`, `lumibase_content_variants`, `lumibase_variant_exposures` |
-| `experiments.ts` | `lumibase_experiments`, `lumibase_experiment_arms`, `lumibase_experiment_events` |
+| `experiments.ts` | `lumibase_experiments`, `lumibase_experiment_arms`, `lumibase_experiment_participants` |
 
 Migrations live in `packages/database/migrations/` and `packages/database/drizzle/`.
 
@@ -318,8 +318,8 @@ When seeding local/staging/prod, seed system collection permissions explicitly. 
 ### `experiment_arms`
 - `id`, `siteId`, `experimentId` (FK cascade), `key` (`control` or another key), `name`, `weight`, `overrides jsonb`, `createdAt`, `updatedAt`. Unique `(siteId, experimentId, key)`.
 
-### `experiment_events`
-- `id`, `siteId`, `experimentId` (FK cascade), `armKey`, `day`, `kind` (`exposure`/`conversion`), `count`, `updatedAt`. Unique `(siteId, experimentId, armKey, day, kind)`; written only with analytics consent, no visitor data. Migration `0045_experiments`. See [A/B experiments](./features/experiments.md).
+### `experiment_participants`
+- `id`, `siteId`, `experimentId` (FK cascade), `visitorHash` (SHA-256 of `<experiment id>:<visitor id>`; the visitor id itself is never stored), `armKey`, `exposedAt`, `convertedAt`. Unique `(siteId, experimentId, visitorHash)`: one exposure per visitor, and at most one conversion, set only on an existing exposure of the same arm. Written only with analytics consent. Migration `0045_experiments`. See [A/B experiments](./features/experiments.md).
 
 ## 5. UX state (`platform.ts`)
 

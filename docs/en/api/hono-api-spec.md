@@ -1,10 +1,10 @@
 ---
-version: 63
-lastUpdated: 2026-11-19T07:25:43.944Z
+version: 64
+lastUpdated: 2026-11-20T06:20:36.728Z
 sourceLang: en
-contentHash: d4ce1615e0f67e96
-codeVerified: 2026-11-19T07:25:43.944Z
-codeVerifiedHash: d4ce1615e0f67e96
+contentHash: f0be6a5a2ccc98f5
+codeVerified: 2026-11-20T06:20:36.728Z
+codeVerifiedHash: f0be6a5a2ccc98f5
 codeVerifiedClaims: 664
 ---
 
@@ -1764,7 +1764,7 @@ arms; a winner is promoted only through an approval. See
 | `POST` | `/api/v1/experiments/:id/stop` | `running` → `stopped` |
 | `GET` | `/api/v1/experiments/:id/report` | `{ experiment, report: { arms[], totals, sampleReached, recommendation }, daily[] }` |
 | `POST` | `/api/v1/experiments/:id/promote` | `{ arm, rationale? }` → `202` with a parked `promoteExperimentWinner` approval; never promotes directly |
-| `POST` | `/api/v1/experiment-events/:site_id` | Public beacon `{ events: [{ experiment, arm, kind, goal? }] }` (≤ 10), needs `X-Lumi-Consent: analytics`; always `204` except `400` for a malformed body |
+| `POST` | `/api/v1/experiment-events/:site_id` | Public beacon `{ events: [{ experiment, arm, kind, goal? }] }` (≤ 10), needs `X-Lumi-Consent: analytics` and `X-Lumi-Visitor`. Per visitor: one exposure, in the arm assignment gives them, and at most one conversion after it, which must carry the experiment's `goal`. Always `204`, except `400` for a conversion without `goal`, a missing or malformed `X-Lumi-Visitor`, or a malformed body |
 
 Arms: 2–4, one `control` (no overrides). Per arm the report gives exposures,
 conversions, `rate`, `uplift`, `z`, `pValue` (two-proportion z-test against

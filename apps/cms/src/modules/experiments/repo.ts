@@ -2,8 +2,8 @@
  * Site-scoped persistence for A/B experiments (#763). Every query carries
  * `site_id`; routes, delivery and the agent skills only use this port.
  */
-import { and, asc, eq, gte, inArray, lte, sql, type SQL } from 'drizzle-orm';
-import { experimentArms, experimentEvents, experiments, pages, type Database } from '@lumibase/database';
+import { and, asc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { experimentArms, experimentParticipants, experiments, pages, type Database } from '@lumibase/database';
 import type { ArmCounts } from './stats';
 
 export type ExperimentRecord = typeof experiments.$inferSelect;
@@ -158,51 +158,88 @@ export class ExperimentRepository {
     }));
   }
 
-  /** Running experiment by key with its arm keys (event beacon). */
-  async runningByKey(key: string): Promise<{ id: string; arms: string[]; goal: string } | null> {
+  /** Running experiment by key, with its arms and weights (event beacon). */
+  async runningByKey(key: string): Promise<{ id: string; key: string; goal: string; arms: Array<{ key: string; weight: number }> } | null> {
     const [row] = await this.db
-      .select({ id: experiments.id, goal: experiments.goal })
+      .select({ id: experiments.id, key: experiments.key, goal: experiments.goal })
       .from(experiments)
       .where(and(eq(experiments.siteId, this.siteId), eq(experiments.key, key), eq(experiments.status, 'running')))
       .limit(1);
     if (!row) return null;
-    return { id: row.id, goal: row.goal, arms: (await this.arms(row.id)).map((a) => a.key) };
+    return { ...row, arms: (await this.arms(row.id)).map((a) => ({ key: a.key, weight: a.weight })) };
   }
 
-  async recordEvent(experimentId: string, armKey: string, kind: EventKind, day: string, by = 1): Promise<void> {
-    await this.db
-      .insert(experimentEvents)
-      .values({ siteId: this.siteId, experimentId, armKey, kind, day, count: by })
-      .onConflictDoUpdate({
-        target: [experimentEvents.siteId, experimentEvents.experimentId, experimentEvents.armKey, experimentEvents.day, experimentEvents.kind],
-        set: { count: sql`${experimentEvents.count} + ${by}`, updatedAt: new Date() },
-      });
+  /**
+   * Record that a visitor saw an arm. Once per visitor and experiment: a
+   * replay, or a later exposure to another arm, changes nothing. Returns
+   * whether a participant was added.
+   */
+  async recordExposure(experimentId: string, visitorHash: string, armKey: string): Promise<boolean> {
+    const rows = await this.db
+      .insert(experimentParticipants)
+      .values({ siteId: this.siteId, experimentId, visitorHash, armKey })
+      .onConflictDoNothing({ target: [experimentParticipants.siteId, experimentParticipants.experimentId, experimentParticipants.visitorHash] })
+      .returning({ id: experimentParticipants.id });
+    return rows.length > 0;
   }
 
-  /** Exposure / conversion totals per arm (every arm listed, zero when silent). */
+  /**
+   * Record a conversion: only for a visitor already exposed to this arm, and
+   * only once. Returns whether it counted. This is what keeps conversions a
+   * subset of exposures.
+   */
+  async recordConversion(experimentId: string, visitorHash: string, armKey: string): Promise<boolean> {
+    const rows = await this.db
+      .update(experimentParticipants)
+      .set({ convertedAt: new Date() })
+      .where(
+        and(
+          eq(experimentParticipants.siteId, this.siteId),
+          eq(experimentParticipants.experimentId, experimentId),
+          eq(experimentParticipants.visitorHash, visitorHash),
+          eq(experimentParticipants.armKey, armKey),
+          isNull(experimentParticipants.convertedAt),
+        ),
+      )
+      .returning({ id: experimentParticipants.id });
+    return rows.length > 0;
+  }
+
+  /** Visitors exposed and converted per arm (every arm listed, zero when silent). */
   async totals(experimentId: string, armKeys: string[]): Promise<ArmCounts[]> {
     const rows = await this.db
-      .select({ armKey: experimentEvents.armKey, kind: experimentEvents.kind, n: sql<string>`sum(${experimentEvents.count})` })
-      .from(experimentEvents)
-      .where(and(eq(experimentEvents.siteId, this.siteId), eq(experimentEvents.experimentId, experimentId)))
-      .groupBy(experimentEvents.armKey, experimentEvents.kind);
-    return armKeys.map((key) => ({
-      key,
-      exposures: Number(rows.find((r) => r.armKey === key && r.kind === 'exposure')?.n ?? 0),
-      conversions: Number(rows.find((r) => r.armKey === key && r.kind === 'conversion')?.n ?? 0),
-    }));
+      .select({
+        armKey: experimentParticipants.armKey,
+        exposures: sql<string>`count(*)`,
+        conversions: sql<string>`count(${experimentParticipants.convertedAt})`,
+      })
+      .from(experimentParticipants)
+      .where(and(eq(experimentParticipants.siteId, this.siteId), eq(experimentParticipants.experimentId, experimentId)))
+      .groupBy(experimentParticipants.armKey);
+    return armKeys.map((key) => {
+      const r = rows.find((x) => x.armKey === key);
+      return { key, exposures: Number(r?.exposures ?? 0), conversions: Number(r?.conversions ?? 0) };
+    });
   }
 
-  async daily(experimentId: string, range: { from?: string; to?: string } = {}): Promise<DailyEventRow[]> {
-    const conds: SQL[] = [eq(experimentEvents.siteId, this.siteId), eq(experimentEvents.experimentId, experimentId)];
-    if (range.from) conds.push(gte(experimentEvents.day, range.from));
-    if (range.to) conds.push(lte(experimentEvents.day, range.to));
-    const rows = await this.db
-      .select({ day: experimentEvents.day, armKey: experimentEvents.armKey, kind: experimentEvents.kind, count: experimentEvents.count })
-      .from(experimentEvents)
-      .where(and(...conds))
-      .orderBy(asc(experimentEvents.day), asc(experimentEvents.armKey), asc(experimentEvents.kind));
-    return rows.map((r) => ({ day: String(r.day), armKey: r.armKey, kind: r.kind as EventKind, count: Number(r.count) }));
+  /** New participants (exposures) and conversions per UTC day and arm. */
+  async daily(experimentId: string): Promise<DailyEventRow[]> {
+    const where = and(eq(experimentParticipants.siteId, this.siteId), eq(experimentParticipants.experimentId, experimentId));
+    const exposed = await this.db
+      .select({ day: sql<string>`to_char(${experimentParticipants.exposedAt}, 'YYYY-MM-DD')`, armKey: experimentParticipants.armKey, n: sql<string>`count(*)` })
+      .from(experimentParticipants)
+      .where(where)
+      .groupBy(sql`1`, experimentParticipants.armKey);
+    const converted = await this.db
+      .select({ day: sql<string>`to_char(${experimentParticipants.convertedAt}, 'YYYY-MM-DD')`, armKey: experimentParticipants.armKey, n: sql<string>`count(*)` })
+      .from(experimentParticipants)
+      .where(and(where, sql`${experimentParticipants.convertedAt} is not null`))
+      .groupBy(sql`1`, experimentParticipants.armKey);
+    const rows: DailyEventRow[] = [
+      ...exposed.map((r) => ({ day: r.day, armKey: r.armKey, kind: 'exposure' as const, count: Number(r.n) })),
+      ...converted.map((r) => ({ day: r.day, armKey: r.armKey, kind: 'conversion' as const, count: Number(r.n) })),
+    ];
+    return rows.sort((a, b) => a.day.localeCompare(b.day) || a.armKey.localeCompare(b.armKey) || a.kind.localeCompare(b.kind));
   }
 
   /** Last change to any experiment or arm of the site (feeds the delivery ETag). */

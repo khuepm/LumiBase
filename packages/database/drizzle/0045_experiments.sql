@@ -1,10 +1,11 @@
--- A/B experiments (#763, epic #678): experiments, their arms and the daily
--- exposure / conversion rollup; see packages/database/src/schema/experiments.ts.
+-- A/B experiments (#763, epic #678): experiments, their arms and one
+-- participation row per visitor (salted one-way hash, exposure once, at most
+-- one conversion); see packages/database/src/schema/experiments.ts.
 -- Additive, no backfill, re-runnable.
 --
 -- 0045: follows 0044_personalisation (#762) on epic/678-personalisation.
 --
--- Rollback: DROP TABLE IF EXISTS lumibase_experiment_events,
+-- Rollback: DROP TABLE IF EXISTS lumibase_experiment_participants,
 --   lumibase_experiment_arms, lumibase_experiments;
 CREATE TABLE IF NOT EXISTS "lumibase_experiments" (
 	"id" text PRIMARY KEY NOT NULL,
@@ -35,15 +36,14 @@ CREATE TABLE IF NOT EXISTS "lumibase_experiment_arms" (
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );--> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "lumibase_experiment_events" (
+CREATE TABLE IF NOT EXISTS "lumibase_experiment_participants" (
 	"id" text PRIMARY KEY NOT NULL,
 	"site_id" text NOT NULL,
 	"experiment_id" text NOT NULL,
+	"visitor_hash" text NOT NULL,
 	"arm_key" text NOT NULL,
-	"day" date NOT NULL,
-	"kind" text NOT NULL,
-	"count" bigint DEFAULT 0 NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"exposed_at" timestamp DEFAULT now() NOT NULL,
+	"converted_at" timestamp
 );--> statement-breakpoint
 DO $$ BEGIN
  ALTER TABLE "lumibase_experiments" ADD CONSTRAINT "lumibase_experiments_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;
@@ -64,13 +64,13 @@ EXCEPTION
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
- ALTER TABLE "lumibase_experiment_events" ADD CONSTRAINT "lumibase_experiment_events_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;
+ ALTER TABLE "lumibase_experiment_participants" ADD CONSTRAINT "lumibase_experiment_participants_site_id_lumibase_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."lumibase_sites"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
- ALTER TABLE "lumibase_experiment_events" ADD CONSTRAINT "lumibase_experiment_events_experiment_id_lumibase_experiments_id_fk" FOREIGN KEY ("experiment_id") REFERENCES "public"."lumibase_experiments"("id") ON DELETE cascade ON UPDATE no action;
+ ALTER TABLE "lumibase_experiment_participants" ADD CONSTRAINT "lumibase_experiment_participants_experiment_id_lumibase_experiments_id_fk" FOREIGN KEY ("experiment_id") REFERENCES "public"."lumibase_experiments"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
@@ -81,4 +81,6 @@ CREATE INDEX IF NOT EXISTS "experiments_site_status_idx" ON "lumibase_experiment
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "experiment_arms_key_idx" ON "lumibase_experiment_arms" USING btree ("site_id","experiment_id","key");
 --> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "experiment_events_rollup_idx" ON "lumibase_experiment_events" USING btree ("site_id","experiment_id","arm_key","day","kind");
+CREATE UNIQUE INDEX IF NOT EXISTS "experiment_participants_visitor_idx" ON "lumibase_experiment_participants" USING btree ("site_id","experiment_id","visitor_hash");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "experiment_participants_arm_idx" ON "lumibase_experiment_participants" USING btree ("site_id","experiment_id","arm_key");

@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 2
-lastUpdated: 2026-11-19T07:25:43.754Z
-contentHash: a6771f677c539ad8
-codeVerified: 2026-11-19T07:25:43.754Z
-codeVerifiedHash: a6771f677c539ad8
+version: 3
+lastUpdated: 2026-11-20T06:20:32.124Z
+contentHash: 41a7d799fc101f91
+codeVerified: 2026-11-20T06:20:32.124Z
+codeVerifiedHash: 41a7d799fc101f91
 codeVerifiedClaims: 16
 ---
 
@@ -94,11 +94,13 @@ A page under a two-arm test has at most three copies: `b`, `control`, and
 
 ## 3. Report exposures and conversions
 
-The frontend reports what it showed and what converted to the public beacon:
+The frontend reports what it showed and what converted to the public beacon,
+with the same visitor id the page was delivered with:
 
 ```http
 POST /api/v1/experiment-events/:site_id
 X-Lumi-Consent: analytics
+X-Lumi-Visitor: <the site's visitor id>
 
 { "events": [
   { "experiment": "hero", "arm": "b", "kind": "exposure" },
@@ -106,24 +108,41 @@ X-Lumi-Consent: analytics
 ] }
 ```
 
-It answers `204` and counts only what it can trust:
+The metric is **per visitor**, which is what the report's statistics assume:
+each visitor is one trial that converts or not.
 
-- events need analytics consent and are dropped for bots, `DNT` and `Sec-GPC`;
-- only arms of a running experiment count;
-- a conversion whose `goal` differs from the experiment's goal is ignored;
-- at most 10 events per call, and the route is rate-limited like the
-  pageview beacon.
+- **Once per visitor.** A visitor counts once per experiment, in the arm
+  deterministic assignment gives them. An event for another arm is not
+  counted, so a client cannot credit an arm it was not shown.
+- **Exposure.** An exposure is counted the first time. Replays change nothing.
+- **Conversion.** A conversion must name the experiment's `goal`. It counts
+  only after an exposure of the same visitor to the same arm, and only once.
+  Conversions therefore never exceed exposures.
 
-Counts are a daily rollup per experiment, arm and kind, with no visitor
-identifier. `@lumibase/analytics-consent` has the helpers:
+The beacon answers `204` whether or not an event counted. It answers `400`
+only for a malformed request:
+
+- a conversion without `goal`;
+- a missing or malformed `X-Lumi-Visitor`;
+- an invalid body.
+
+Events are dropped for bots and without analytics consent; `DNT` and
+`Sec-GPC` withdraw consent. At most 10 events are accepted per call, and the
+route is rate-limited like the pageview beacon.
+
+The visitor id is never stored. Each participant is kept as SHA-256 of
+`<experiment id>:<visitor id>`: one-way, and salted per experiment so it cannot
+be linked across experiments. Participants are deleted with their experiment.
+
+`@lumibase/analytics-consent` has the helpers:
 
 ```ts
 import { experimentsFromHeaders, exposuresFor, conversionsFor, sendExperimentEvents } from '@lumibase/analytics-consent';
 
 const arms = experimentsFromHeaders(res.headers);
-await sendExperimentEvents(consent, exposuresFor(arms), { cmsUrl, siteId });
+await sendExperimentEvents(consent, exposuresFor(arms), { cmsUrl, siteId, visitor });
 // later, on sign-up:
-await sendExperimentEvents(consent, conversionsFor(arms, 'signup'), { cmsUrl, siteId });
+await sendExperimentEvents(consent, conversionsFor(arms, 'signup'), { cmsUrl, siteId, visitor });
 ```
 
 ## 4. The report (Insights)
@@ -135,6 +154,10 @@ await sendExperimentEvents(consent, conversionsFor(arms, 'signup'), { cmsUrl, si
 - `z` and `pValue` from a two-proportion z-test against control;
 - `significant`: true when `pValue` is under 0.05, divided by the number of
   challenger arms (Bonferroni).
+
+Exposures and conversions are visitors. If an arm's counts were ever not a
+valid per-visitor sample (conversions above exposures, say), it is listed in
+`invalidArms`, and no significance or recommendation is computed.
 
 It also returns `sampleReached`, the daily series, and a `recommendation`:
 
@@ -175,8 +198,8 @@ row-level security:
 
 - `lumibase_experiments`;
 - `lumibase_experiment_arms`;
-- `lumibase_experiment_events`, the daily rollup per experiment, arm and
-  kind.
+- `lumibase_experiment_participants`: one row per visitor, holding the
+  hashed visitor, the arm, `exposed_at` and `converted_at`.
 
 Every query filters by site. Delivery and the beacon take the site from the
 URL. The running list is cached per site for 60 seconds and dropped on every

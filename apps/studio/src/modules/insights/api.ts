@@ -126,6 +126,8 @@ export interface ExperimentReport {
   totals: { exposures: number; conversions: number };
   sampleReached: boolean;
   recommendation: { arm: string; reason: string } | null;
+  /** Arms whose counts are not a valid per-visitor sample (no significance computed). */
+  invalidArms: string[];
 }
 
 export interface Experiment {

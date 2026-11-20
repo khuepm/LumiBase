@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 2
-lastUpdated: 2026-11-19T07:25:43.754Z
+version: 3
+lastUpdated: 2026-11-20T06:20:32.124Z
 translatedFrom: en
-sourceHash: a6771f677c539ad8
+sourceHash: 41a7d799fc101f91
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T07:25:43.754Z
-codeVerifiedHash: a6771f677c539ad8
+codeVerified: 2026-11-20T06:20:32.124Z
+codeVerifiedHash: 41a7d799fc101f91
 codeVerifiedClaims: 16
 ---
 
@@ -98,11 +98,12 @@ experiment".
 ## 3. Báo exposure và chuyển đổi
 
 Frontend báo những gì nó đã hiển thị và những gì đã chuyển đổi về beacon công
-khai:
+khai, kèm đúng id khách mà trang đã được phục vụ:
 
 ```http
 POST /api/v1/experiment-events/:site_id
 X-Lumi-Consent: analytics
+X-Lumi-Visitor: <the site's visitor id>
 
 { "events": [
   { "experiment": "hero", "arm": "b", "kind": "exposure" },
@@ -110,24 +111,42 @@ X-Lumi-Consent: analytics
 ] }
 ```
 
-Nó trả `204` và chỉ đếm những gì tin được:
+Số liệu được tính **theo khách**, đúng như phần thống kê của báo cáo giả định:
+mỗi khách là một lần thử, chuyển đổi hoặc không.
 
-- sự kiện cần consent analytics và bị bỏ với bot, `DNT` và `Sec-GPC`;
-- chỉ arm của experiment đang chạy được đếm;
-- một chuyển đổi có `goal` khác goal của experiment bị bỏ qua;
-- tối đa 10 sự kiện mỗi lần gọi, và route bị giới hạn tốc độ như beacon
-  pageview.
+- **Một lần mỗi khách.** Mỗi khách được đếm một lần cho mỗi experiment, ở arm
+  mà phép gán tất định dành cho họ. Sự kiện cho arm khác không được đếm, nên
+  client không thể ghi công cho một arm nó không được hiển thị.
+- **Exposure.** Exposure được đếm ở lần đầu. Gửi lại không thay đổi gì.
+- **Chuyển đổi.** Chuyển đổi phải nêu `goal` của experiment. Nó chỉ được đếm
+  sau một exposure của cùng khách vào cùng arm, và chỉ một lần. Vì vậy số
+  chuyển đổi không bao giờ vượt quá số exposure.
 
-Số đếm là rollup theo ngày cho từng experiment, arm và loại, không có định
-danh khách. `@lumibase/analytics-consent` có sẵn helper:
+Beacon trả `204` dù sự kiện có được đếm hay không. Nó chỉ trả `400` khi request
+sai dạng:
+
+- chuyển đổi không có `goal`;
+- thiếu hoặc sai dạng `X-Lumi-Visitor`;
+- body không hợp lệ.
+
+Sự kiện bị bỏ với bot và khi không có consent analytics; `DNT` và `Sec-GPC`
+rút consent. Mỗi lần gọi nhận tối đa 10 sự kiện, và route bị giới hạn tốc độ
+như beacon pageview.
+
+Id khách không bao giờ được lưu. Mỗi người tham gia được giữ dưới dạng SHA-256
+của `<experiment id>:<visitor id>`: một chiều, và có salt theo experiment nên
+không thể liên kết giữa các experiment. Người tham gia bị xoá cùng experiment
+của họ.
+
+`@lumibase/analytics-consent` có sẵn helper:
 
 ```ts
 import { experimentsFromHeaders, exposuresFor, conversionsFor, sendExperimentEvents } from '@lumibase/analytics-consent';
 
 const arms = experimentsFromHeaders(res.headers);
-await sendExperimentEvents(consent, exposuresFor(arms), { cmsUrl, siteId });
+await sendExperimentEvents(consent, exposuresFor(arms), { cmsUrl, siteId, visitor });
 // later, on sign-up:
-await sendExperimentEvents(consent, conversionsFor(arms, 'signup'), { cmsUrl, siteId });
+await sendExperimentEvents(consent, conversionsFor(arms, 'signup'), { cmsUrl, siteId, visitor });
 ```
 
 ## 4. Báo cáo (Insights)
@@ -139,6 +158,11 @@ await sendExperimentEvents(consent, conversionsFor(arms, 'signup'), { cmsUrl, si
 - `z` và `pValue` từ kiểm định z hai tỉ lệ so với control;
 - `significant`: true khi `pValue` dưới 0.05 chia cho số arm thách thức
   (Bonferroni).
+
+Exposure và chuyển đổi được tính theo khách. Nếu số liệu của một arm không còn
+là mẫu hợp lệ theo khách (chẳng hạn chuyển đổi nhiều hơn exposure), arm đó
+được liệt kê trong `invalidArms`, và không có significance hay đề xuất nào
+được tính.
 
 Nó cũng trả `sampleReached`, chuỗi số liệu theo ngày, và một `recommendation`:
 
@@ -178,8 +202,8 @@ row-level security:
 
 - `lumibase_experiments`;
 - `lumibase_experiment_arms`;
-- `lumibase_experiment_events`, rollup theo ngày cho từng experiment, arm và
-  loại.
+- `lumibase_experiment_participants`: mỗi khách một dòng, giữ khách đã băm,
+  arm, `exposed_at` và `converted_at`.
 
 Mọi query đều lọc theo site. Delivery và beacon lấy site từ URL. Danh sách
 experiment đang chạy được cache theo site trong 60 giây và bị xoá mỗi khi có

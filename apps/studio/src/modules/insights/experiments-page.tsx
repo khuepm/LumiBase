@@ -108,7 +108,11 @@ function ReportView({ data, onChanged }: { data: ExperimentReportResponse; onCha
       </div>
 
       <div className="rounded-md bg-muted/50 p-3 text-sm">
-        {report.recommendation ? (
+        {report.invalidArms.length > 0 ? (
+          <p className="text-destructive">
+            The counts of {report.invalidArms.join(', ')} are not a valid per-visitor sample, so no significance or recommendation is computed.
+          </p>
+        ) : report.recommendation ? (
           <p>
             <span className="font-medium">Recommended: {report.recommendation.arm}.</span> {report.recommendation.reason}
           </p>

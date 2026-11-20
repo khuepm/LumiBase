@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 62
-lastUpdated: 2026-11-19T07:25:43.944Z
+version: 63
+lastUpdated: 2026-11-20T06:20:36.728Z
 sourceLang: en
 translatedFrom: en
-sourceHash: d4ce1615e0f67e96
+sourceHash: f0be6a5a2ccc98f5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T07:25:43.944Z
-codeVerifiedHash: d4ce1615e0f67e96
+codeVerified: 2026-11-20T06:20:36.728Z
+codeVerifiedHash: f0be6a5a2ccc98f5
 codeVerifiedClaims: 664
 ---
 
@@ -1561,7 +1561,7 @@ các arm; arm thắng chỉ được promote qua phê duyệt. Xem
 | `POST` | `/api/v1/experiments/:id/stop` | `running` → `stopped` |
 | `GET` | `/api/v1/experiments/:id/report` | `{ experiment, report: { arms[], totals, sampleReached, recommendation }, daily[] }` |
 | `POST` | `/api/v1/experiments/:id/promote` | `{ arm, rationale? }` → `202` kèm một approval `promoteExperimentWinner` đang chờ; không bao giờ promote trực tiếp |
-| `POST` | `/api/v1/experiment-events/:site_id` | Beacon công khai `{ events: [{ experiment, arm, kind, goal? }] }` (≤ 10), cần `X-Lumi-Consent: analytics`; luôn `204`, trừ `400` khi body sai dạng |
+| `POST` | `/api/v1/experiment-events/:site_id` | Beacon công khai `{ events: [{ experiment, arm, kind, goal? }] }` (≤ 10), cần `X-Lumi-Consent: analytics` và `X-Lumi-Visitor`. Theo khách: một exposure, ở arm mà phép gán dành cho họ, và tối đa một chuyển đổi sau đó, phải mang `goal` của experiment. Luôn `204`, trừ `400` khi chuyển đổi không có `goal`, thiếu hoặc sai dạng `X-Lumi-Visitor`, hoặc body sai dạng |
 
 Arm: 2–4, một arm `control` (không ghi đè). Với mỗi arm, báo cáo cho exposure,
 chuyển đổi, `rate`, `uplift`, `z`, `pValue` (kiểm định z hai tỉ lệ so với

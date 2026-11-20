@@ -7,8 +7,10 @@
  * `POST /api/v1/experiment-events/:site_id`, under the same rule as the tag:
  * nothing is sent without an explicit analytics grant.
  *
- * The visitor id that `X-Lumi-Visitor` carries is the site's own opaque,
- * first-party id; this package does not create or store one.
+ * The visitor id is the site's own opaque, first-party id (the same one it
+ * sends as `X-Lumi-Visitor` to the delivery API); this package does not create
+ * or store one. The CMS counts each visitor once per experiment: one exposure,
+ * at most one conversion (with the experiment's goal) after it.
  */
 import type { ConsentDecision } from './consent';
 
@@ -42,6 +44,8 @@ export interface SendExperimentEventsOptions {
   /** CMS origin, e.g. `https://cms.example.com`. */
   cmsUrl: string;
   siteId: string;
+  /** The visitor id the page was delivered with (`X-Lumi-Visitor`), 8–128 URL-safe characters. */
+  visitor: string;
   /** Defaults to `globalThis.fetch`. */
   fetch?: typeof fetch;
 }
@@ -55,7 +59,7 @@ export async function sendExperimentEvents(
   events: readonly ExperimentEvent[],
   opts: SendExperimentEventsOptions,
 ): Promise<boolean> {
-  if (consent !== 'granted' || events.length === 0) return false;
+  if (consent !== 'granted' || events.length === 0 || !/^[A-Za-z0-9_-]{8,128}$/.test(opts.visitor)) return false;
   const doFetch = opts.fetch ?? globalThis.fetch;
   if (typeof doFetch !== 'function') return false;
   const url = `${opts.cmsUrl.replace(/\/+$/, '')}/api/v1/experiment-events/${encodeURIComponent(opts.siteId)}`;
@@ -71,7 +75,7 @@ export async function sendExperimentEvents(
     const res = await doFetch(url, {
       method: 'POST',
       keepalive: true,
-      headers: { 'Content-Type': 'application/json', 'X-Lumi-Consent': 'analytics' },
+      headers: { 'Content-Type': 'application/json', 'X-Lumi-Consent': 'analytics', 'X-Lumi-Visitor': opts.visitor },
       body: JSON.stringify(body),
     });
     return res.ok;

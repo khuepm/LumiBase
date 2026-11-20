@@ -25,7 +25,17 @@ export const EDGE_EXPERIMENTS_PARAM = '__exp';
 /** Token for "in no experiment, control content". */
 export const UNASSIGNED = '_';
 /** The visitor id is opaque, but bounded and URL-safe. */
-const VISITOR_RE = /^[A-Za-z0-9_-]{8,128}$/;
+export const VISITOR_RE = /^[A-Za-z0-9_-]{8,128}$/;
+
+/**
+ * The stored form of a visitor id: SHA-256 of `<experiment id>:<visitor id>`,
+ * hex. One-way and salted per experiment (an unguessable nanoid), so it
+ * neither reveals the site's id nor links a visitor across experiments.
+ */
+export async function visitorHash(experimentId: string, visitorId: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${experimentId}:${visitorId}`));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 export function runningCacheKey(siteId: string): string {
   return `experiments:running:${siteId}`;

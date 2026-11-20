@@ -139,8 +139,8 @@ DECLARE
     'lumibase_preview_secrets',
     -- Personalisation (#762): audiences, variants and the exposure rollup.
     'lumibase_audiences', 'lumibase_content_variants', 'lumibase_variant_exposures',
-    -- A/B experiments (#763): experiments, arms and the event rollup.
-    'lumibase_experiments', 'lumibase_experiment_arms', 'lumibase_experiment_events'
+    -- A/B experiments (#763): experiments, arms and per-visitor participation.
+    'lumibase_experiments', 'lumibase_experiment_arms', 'lumibase_experiment_participants'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

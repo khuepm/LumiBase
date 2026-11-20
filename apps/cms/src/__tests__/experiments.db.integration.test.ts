@@ -8,6 +8,7 @@ import { AISecureHarness } from '../services/ai-harness';
 import { ItemService } from '../services/item-service';
 import { connectDbIntegration, hasDbIntegrationUrl } from './helpers/db-harness';
 import { assignArm } from '../modules/experiments/stats';
+import { experimentParticipants } from '@lumibase/database';
 
 vi.mock('../middleware/site-admin', () => ({
   requireSiteAdmin: () => async (_c: unknown, next: () => Promise<void>) => next(),
@@ -70,6 +71,9 @@ function visitorsFor(key: string, arms: Array<{ key: string; weight: number }>) 
   return out;
 }
 
+/** One visitor per arm of the 50/50 `hero` experiment. */
+const HERO_VISITORS = visitorsFor('hero', [{ key: 'b', weight: 50 }, { key: 'control', weight: 50 }]);
+
 describe.skipIf(!hasDbIntegrationUrl)('experiments (real PostgreSQL)', () => {
   const edgeCache = edge();
   let pageId = '';
@@ -98,7 +102,7 @@ describe.skipIf(!hasDbIntegrationUrl)('experiments (real PostgreSQL)', () => {
     });
   const deliver = (headers: Record<string, string> = {}) =>
     app().request(`https://cms.example/api/v1/deliver/page/${SITE}/home`, { headers });
-  const beacon = (events: unknown[], headers: Record<string, string> = { 'X-Lumi-Consent': 'analytics' }) =>
+  const beacon = (events: unknown[], headers: Record<string, string> = { 'X-Lumi-Consent': 'analytics', 'X-Lumi-Visitor': HERO_VISITORS.b! }) =>
     app().request(`/api/v1/experiment-events/${SITE}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) Firefox/130.0', ...headers },
@@ -192,40 +196,100 @@ describe.skipIf(!hasDbIntegrationUrl)('experiments (real PostgreSQL)', () => {
     expect((await admin(`/${cta.id}`, 'DELETE')).status).toBe(200);
   });
 
-  it('the beacon counts exposures and conversions only with analytics consent, for running arms and the goal', async () => {
-    const ok = await beacon([
-      { experiment: 'hero', arm: 'b', kind: 'exposure' },
-      { experiment: 'hero', arm: 'b', kind: 'conversion', goal: 'signup' },
-      { experiment: 'hero', arm: 'control', kind: 'exposure' },
-      { experiment: 'hero', arm: 'zzz', kind: 'exposure' }, // unknown arm
-      { experiment: 'nope', arm: 'b', kind: 'exposure' }, // unknown experiment
-      { experiment: 'hero', arm: 'b', kind: 'conversion', goal: 'other' }, // wrong goal
-    ]);
-    expect(ok.status).toBe(204);
-    expect((await beacon([{ experiment: 'hero', arm: 'b', kind: 'exposure' }], {})).status).toBe(204); // no consent: dropped
-    expect((await beacon([{ experiment: 'hero', arm: 'b', kind: 'exposure' }], { 'X-Lumi-Consent': 'analytics', 'Sec-GPC': '1' })).status).toBe(204);
-    expect((await beacon([{ experiment: 'hero', arm: 'b', kind: 'bounce' }])).status).toBe(400);
+  type ReportBody = { data: { report: { arms: Array<{ key: string; exposures: number; conversions: number }>; invalidArms: string[] }; daily: Array<{ armKey: string; kind: string; count: number }> } };
+  const counts = async () => {
+    const r = (await (await admin(`/${expId}/report`, 'GET')).json()) as ReportBody;
+    return Object.fromEntries(r.data.report.arms.map((a) => [a.key, { exposures: a.exposures, conversions: a.conversions }]));
+  };
+  const asVisitor = (visitor: string, extra: Record<string, string> = {}) => ({ 'X-Lumi-Consent': 'analytics', 'X-Lumi-Visitor': visitor, ...extra });
 
-    const report = (await (await admin(`/${expId}/report`, 'GET')).json()) as {
-      data: { report: { arms: Array<{ key: string; exposures: number; conversions: number }> }; daily: Array<{ armKey: string; kind: string; count: number }> };
-    };
-    expect(report.data.report.arms).toEqual([
-      expect.objectContaining({ key: 'b', exposures: 1, conversions: 1 }),
-      expect.objectContaining({ key: 'control', exposures: 1, conversions: 0 }),
-    ]);
-    expect(report.data.daily).toHaveLength(3);
+  it('the beacon refuses malformed requests: a conversion without goal, no visitor id, a bad body', async () => {
+    const missingGoal = await beacon([{ experiment: 'hero', arm: 'b', kind: 'conversion' }]);
+    expect(missingGoal.status).toBe(400);
+    expect(JSON.stringify(await missingGoal.json())).toContain('goal');
+    expect((await beacon([{ experiment: 'hero', arm: 'b', kind: 'exposure' }], { 'X-Lumi-Consent': 'analytics' })).status).toBe(400); // no X-Lumi-Visitor
+    expect((await beacon([{ experiment: 'hero', arm: 'b', kind: 'exposure' }], asVisitor('x'))).status).toBe(400); // malformed visitor
+    expect((await beacon([{ experiment: 'hero', arm: 'b', kind: 'bounce' }])).status).toBe(400);
+    expect(await counts()).toEqual({ b: { exposures: 0, conversions: 0 }, control: { exposures: 0, conversions: 0 } });
+  });
+
+  it('counts one exposure and at most one conversion per visitor: replays change nothing', async () => {
+    const b = HERO_VISITORS.b!;
+    const c = HERO_VISITORS.control!;
+    const exposeB = [{ experiment: 'hero', arm: 'b', kind: 'exposure' }];
+    const convertB = [{ experiment: 'hero', arm: 'b', kind: 'conversion', goal: 'signup' }];
+    for (let i = 0; i < 3; i += 1) expect((await beacon(exposeB, asVisitor(b))).status).toBe(204);
+    for (let i = 0; i < 5; i += 1) expect((await beacon(convertB, asVisitor(b))).status).toBe(204);
+    // Exposure and conversion in one batch, in either order, still attribute.
+    expect((await beacon([{ experiment: 'hero', arm: 'control', kind: 'conversion', goal: 'signup' }, { experiment: 'hero', arm: 'control', kind: 'exposure' }], asVisitor(c))).status).toBe(204);
+    expect(await counts()).toEqual({ b: { exposures: 1, conversions: 1 }, control: { exposures: 1, conversions: 1 } });
+  });
+
+  it('never lets conversions exceed exposures: no conversion without an exposure, wrong goal or wrong arm', async () => {
+    const before = await counts();
+    // A fresh visitor converting with no exposure is not counted.
+    const fresh = Object.values(visitorsFor('hero', [{ key: 'b', weight: 50 }, { key: 'control', weight: 50 }])).map((v) => `${v}-fresh`);
+    for (const v of fresh) {
+      const arm = assignArm('hero', v, [{ key: 'b', weight: 50 }, { key: 'control', weight: 50 }])!;
+      await beacon([{ experiment: 'hero', arm, kind: 'conversion', goal: 'signup' }], asVisitor(v));
+    }
+    // A goal that is not the experiment's is not counted.
+    const other = `${HERO_VISITORS.b}-other`;
+    const otherArm = assignArm('hero', other, [{ key: 'b', weight: 50 }, { key: 'control', weight: 50 }])!;
+    await beacon([{ experiment: 'hero', arm: otherArm, kind: 'exposure' }, { experiment: 'hero', arm: otherArm, kind: 'conversion', goal: 'purchase' }], asVisitor(other));
+    // Crediting the arm a visitor was NOT assigned is not counted.
+    const liar = `${HERO_VISITORS.control}-liar`;
+    const notMine = assignArm('hero', liar, [{ key: 'b', weight: 50 }, { key: 'control', weight: 50 }]) === 'b' ? 'control' : 'b';
+    await beacon([{ experiment: 'hero', arm: notMine, kind: 'exposure' }, { experiment: 'hero', arm: notMine, kind: 'conversion', goal: 'signup' }], asVisitor(liar));
+    // Unknown experiment or arm, no consent, GPC: dropped.
+    await beacon([{ experiment: 'nope', arm: 'b', kind: 'exposure' }, { experiment: 'hero', arm: 'zzz', kind: 'exposure' }], asVisitor(`${HERO_VISITORS.b}-x`));
+    await beacon([{ experiment: 'hero', arm: 'b', kind: 'exposure' }], { 'X-Lumi-Visitor': `${HERO_VISITORS.b}-y` });
+    await beacon([{ experiment: 'hero', arm: 'b', kind: 'exposure' }], asVisitor(`${HERO_VISITORS.b}-z`, { 'Sec-GPC': '1' }));
+
+    const after = await counts();
+    expect(after[otherArm]!.exposures).toBe(before[otherArm]!.exposures + 1);
+    expect(after.b!.conversions).toBe(before.b!.conversions);
+    expect(after.control!.conversions).toBe(before.control!.conversions);
+    for (const arm of Object.values(after)) expect(arm.conversions).toBeLessThanOrEqual(arm.exposures);
+
+    // The visitor id is never stored: only a per-experiment SHA-256.
+    const rows = await db.select().from(experimentParticipants).where(eq(experimentParticipants.experimentId, expId));
+    expect(rows.every((r) => /^[0-9a-f]{64}$/.test(r.visitorHash))).toBe(true);
+    expect(JSON.stringify(rows)).not.toContain(HERO_VISITORS.b!);
+  });
+
+  it('refuses to compute significance on counts that are not a per-visitor sample', async () => {
+    const { buildReport } = await import('../modules/experiments/stats');
+    const bad = buildReport(
+      [
+        { key: 'control', exposures: 1000, conversions: 100 },
+        { key: 'b', exposures: 1000, conversions: 1500 },
+      ],
+      { minSampleSize: 10 },
+    );
+    expect(bad.invalidArms).toEqual(['b']);
+    expect(bad.recommendation).toBeNull();
+    expect(bad.arms.find((a) => a.key === 'b')).toMatchObject({ pValue: null, significant: false });
   });
 
   it('reports a winner once the data supports it, and promotion goes through approval', async () => {
     const [exp] = await db.execute<{ id: string }>(sql`select id from lumibase_experiments where id = ${expId}`).then((r) => (Array.isArray(r) ? r : (r as unknown as { rows: Array<{ id: string }> }).rows));
     expect(exp).toBeTruthy();
-    // 400 exposures each; b converts at 20%, control at 10%.
-    const { ExperimentRepository } = await import('../modules/experiments/repo');
-    const repo = new ExperimentRepository(db, SITE);
-    await repo.recordEvent(expId, 'b', 'exposure', '2026-11-18', 399);
-    await repo.recordEvent(expId, 'b', 'conversion', '2026-11-18', 79);
-    await repo.recordEvent(expId, 'control', 'exposure', '2026-11-18', 399);
-    await repo.recordEvent(expId, 'control', 'conversion', '2026-11-18', 40);
+    // Top up to 400 visitors per arm; b converts at 20%, control at 10%.
+    const now = await counts();
+    const seed = (arm: string, visitors: number, converted: number) =>
+      Array.from({ length: visitors }, (_, i) => ({
+        siteId: SITE,
+        experimentId: expId,
+        visitorHash: `seed-${arm}-${String(i).padStart(6, '0')}`,
+        armKey: arm,
+        convertedAt: i < converted ? new Date() : null,
+      }));
+    await db.insert(experimentParticipants).values([
+      ...seed('b', 400 - now.b!.exposures, 80 - now.b!.conversions),
+      ...seed('control', 400 - now.control!.exposures, 40 - now.control!.conversions),
+    ]);
+    expect(await counts()).toEqual({ b: { exposures: 400, conversions: 80 }, control: { exposures: 400, conversions: 40 } });
 
     const analysis = (await harness().execute('analyzeExperiment', { experimentId: expId }, ['items:read'])) as { status: string; data: { report: { recommendation: { arm: string } | null; sampleReached: boolean } } };
     expect(analysis.status).toBe('executed');

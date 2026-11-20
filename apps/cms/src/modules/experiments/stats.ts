@@ -72,6 +72,8 @@ export interface ExperimentReport {
   sampleReached: boolean;
   /** The arm a reviewer should promote, or null when the data does not support one. */
   recommendation: { arm: string; reason: string } | null;
+  /** Arms whose counts are not a valid per-visitor sample; no significance or recommendation is computed. */
+  invalidArms: string[];
 }
 
 /** Standard normal CDF (Abramowitz–Stegun 7.1.26 erf approximation, |error| < 1.5e-7). */
@@ -82,9 +84,18 @@ export function normalCdf(x: number): number {
   return x >= 0 ? (1 + erf) / 2 : (1 - erf) / 2;
 }
 
+/**
+ * Counts a binomial test can use: whole, non-negative visitors, with
+ * conversions a subset of exposures. The participation table guarantees it;
+ * this refuses to compute significance if anything ever breaks that.
+ */
+export function validCounts(c: ArmCounts): boolean {
+  return Number.isInteger(c.exposures) && Number.isInteger(c.conversions) && c.exposures >= 0 && c.conversions >= 0 && c.conversions <= c.exposures;
+}
+
 /** Two-proportion pooled z-test. Returns null when either side has no exposures or the pooled variance is zero. */
 export function twoProportionZ(a: ArmCounts, b: ArmCounts): { z: number; pValue: number } | null {
-  if (a.exposures <= 0 || b.exposures <= 0) return null;
+  if (!validCounts(a) || !validCounts(b) || a.exposures <= 0 || b.exposures <= 0) return null;
   const p1 = a.conversions / a.exposures;
   const p2 = b.conversions / b.exposures;
   const pooled = (a.conversions + b.conversions) / (a.exposures + b.exposures);
@@ -97,7 +108,8 @@ export function twoProportionZ(a: ArmCounts, b: ArmCounts): { z: number; pValue:
 const round = (v: number, d = 4) => Math.round(v * 10 ** d) / 10 ** d;
 
 /**
- * Per-arm rates against control and a recommendation:
+ * Per-arm rates against control and a recommendation. Counts are visitors
+ * (one Bernoulli trial each); invalid counts yield no recommendation:
  * - nothing before every arm has `minSampleSize` exposures;
  * - the best challenger when it beats control with p < alpha (Bonferroni-
  *   corrected for the number of challengers);
@@ -130,9 +142,10 @@ export function buildReport(
   });
   const totals = counts.reduce((t, c) => ({ exposures: t.exposures + c.exposures, conversions: t.conversions + c.conversions }), { exposures: 0, conversions: 0 });
   const sampleReached = counts.length > 1 && counts.every((c) => c.exposures >= opts.minSampleSize);
+  const invalidArms = counts.filter((c) => !validCounts(c)).map((c) => c.key);
 
   let recommendation: ExperimentReport['recommendation'] = null;
-  if (control && sampleReached) {
+  if (control && sampleReached && invalidArms.length === 0) {
     const better = arms.filter((a) => a.key !== CONTROL_ARM && a.significant && (a.z ?? 0) > 0).sort((x, y) => y.rate - x.rate);
     const worse = arms.filter((a) => a.key !== CONTROL_ARM).every((a) => a.significant && (a.z ?? 0) < 0);
     if (better[0]) {
@@ -145,5 +158,5 @@ export function buildReport(
       recommendation = { arm: CONTROL_ARM, reason: 'Every challenger converts significantly worse than control.' };
     }
   }
-  return { arms, totals, sampleReached, recommendation };
+  return { arms, totals, sampleReached, recommendation, invalidArms };
 }

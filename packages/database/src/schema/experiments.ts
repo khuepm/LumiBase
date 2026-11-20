@@ -1,4 +1,4 @@
-import { bigint, date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
 import { sites } from './core';
 
@@ -9,8 +9,8 @@ import { sites } from './core';
  *   published content; every other arm overrides it like a content variant
  *   (page: `{ title?, layoutConfig? }`, item: partial `data`).
  * - Assignment is deterministic per visitor id, so no assignment is stored.
- * - Exposures and conversions are a daily rollup per arm, written only with
- *   analytics consent. No visitor identifier is stored.
+ * - Participation is recorded once per visitor (a salted one-way hash of the
+ *   visitor id, with analytics consent): see `experimentParticipants`.
  * - The winner is promoted only through an approval (HITL).
  */
 
@@ -75,8 +75,21 @@ export const experimentArms = pgTable(
   }),
 );
 
-export const experimentEvents = pgTable(
-  'lumibase_experiment_events',
+/**
+ * One row per visitor in an experiment: the per-visitor metric the report's
+ * two-proportion test assumes (each visitor is one Bernoulli trial).
+ *
+ * - `visitor_hash` is SHA-256 of `<experiment id>:<visitor id>`: one-way and
+ *   salted per experiment, so it cannot be joined across experiments or back to
+ *   the site's own id. Written only with analytics consent; deleted with the
+ *   experiment.
+ * - An exposure inserts the row once (replays are no-ops); a conversion sets
+ *   `converted_at` once, and only on an existing exposure of the same arm. So a
+ *   visitor counts at most once per arm, and conversions never exceed
+ *   exposures.
+ */
+export const experimentParticipants = pgTable(
+  'lumibase_experiment_participants',
   {
     id: id(),
     siteId: text('site_id')
@@ -85,14 +98,13 @@ export const experimentEvents = pgTable(
     experimentId: text('experiment_id')
       .notNull()
       .references(() => experiments.id, { onDelete: 'cascade' }),
+    visitorHash: text('visitor_hash').notNull(),
     armKey: text('arm_key').notNull(),
-    day: date('day').notNull(),
-    /** `exposure` | `conversion`. */
-    kind: text('kind').notNull(),
-    count: bigint('count', { mode: 'number' }).default(0).notNull(),
-    updatedAt: updatedAt(),
+    exposedAt: timestamp('exposed_at').defaultNow().notNull(),
+    convertedAt: timestamp('converted_at'),
   },
   (t) => ({
-    rollupIdx: uniqueIndex('experiment_events_rollup_idx').on(t.siteId, t.experimentId, t.armKey, t.day, t.kind),
+    visitorIdx: uniqueIndex('experiment_participants_visitor_idx').on(t.siteId, t.experimentId, t.visitorHash),
+    armIdx: index('experiment_participants_arm_idx').on(t.siteId, t.experimentId, t.armKey),
   }),
 );

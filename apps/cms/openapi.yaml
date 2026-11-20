@@ -3061,11 +3061,19 @@ paths:
   /experiment-events/{site_id}:
     post:
       summary: Public beacon — report experiment exposures and conversions (#763)
-      description: Unauthenticated, rate-limited. Needs `X-Lumi-Consent analytics`; bots, DNT and Sec-GPC are dropped. Only arms of a running experiment count, and a conversion only for the experiment's goal. Counted as a daily rollup without visitor data.
+      description: >-
+        Unauthenticated, rate-limited. Needs `X-Lumi-Consent analytics` and the
+        `X-Lumi-Visitor` the page was delivered with; bots, DNT and Sec-GPC are
+        dropped. Counted per visitor (stored as SHA-256 of experiment id + visitor
+        id): one exposure, only in the arm deterministic assignment gives the
+        visitor (replays are no-ops), and at most one conversion, which must carry
+        the experiment's goal and follow an exposure of the same arm, so
+        conversions never exceed exposures.
       security: []
       parameters:
         - { name: site_id, in: path, required: true, schema: { type: string } }
         - { name: X-Lumi-Consent, in: header, schema: { type: string }, description: Must include `analytics` }
+        - { name: X-Lumi-Visitor, in: header, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{8,128}$' } }
       requestBody:
         required: true
         content:
@@ -3087,10 +3095,10 @@ paths:
                       experiment: { type: string }
                       arm: { type: string }
                       kind: { type: string, enum: [exposure, conversion] }
-                      goal: { type: string }
+                      goal: { type: string, description: Required when `kind` is `conversion`; must equal the experiment's goal to count }
       responses:
-        '204': { description: Accepted (also when dropped) }
-        '400': { description: INVALID_BODY }
+        '204': { description: Accepted (also when not counted) }
+        '400': { description: 'INVALID_BODY (incl. a conversion without `goal`), VISITOR_REQUIRED' }
   /personalisation/exposures:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'
