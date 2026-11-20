@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 24
-lastUpdated: 2026-11-19T20:13:26.698Z
+version: 25
+lastUpdated: 2026-11-20T06:00:20.157Z
 sourceLang: en
 translatedFrom: en
-sourceHash: faf274bfe2cfb795
+sourceHash: 75d93ea567aa7414
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T20:13:26.698Z
-codeVerifiedHash: faf274bfe2cfb795
+codeVerified: 2026-11-20T06:00:20.157Z
+codeVerifiedHash: 75d93ea567aa7414
 codeVerifiedClaims: 100
 ---
 
@@ -53,6 +53,9 @@ trong build artifact.
 | Biến | Bắt buộc | Mặc định | Mô tả |
 |------|----------|----------|-------|
 | `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ | **bật ở production**, tắt ở nơi khác | Khiến `POST /api/v1/setup/complete` đòi một setup token dùng một lần. `true` / `1` / `yes` bật, `false` / `0` / `no` tắt có chủ đích (provisioning tự động). Khi không đặt, cổng bật nếu `LUMIBASE_ENV` hoặc `NODE_ENV` là `production` (#992) hoặc khi `LUMIBASE_SETUP_TOKEN` được đặt — nếu không, ai chạm tới cổng trước sẽ tạo được tài khoản admin. Node/Docker sinh token lúc khởi động và in một lần dạng `[lumibase-cms] SETUP_TOKEN=…`. |
+| `PASSWORD_PBKDF2_ITERATIONS` | ✗ (Node/Docker) | `100000` | Mức chi phí PBKDF2 cho hash mật khẩu mới, 100.000–2.000.000; khi đăng nhập, mật khẩu cũ được băm lại lên mức này (#994). Bị bỏ qua trên Cloudflare Workers (Web Crypto giới hạn ở 100.000) — đừng nâng nếu database sau này có thể được phục vụ bởi Workers. |
+| `API_KEY_DEFAULT_TTL_DAYS` | ✗ | `90` | Thời hạn của API key tạo mà không có `expiresAt` (#994). `0` khôi phục mặc định cũ là không bao giờ hết hạn; `"expiresAt": null` tường minh luôn tạo key không hết hạn. |
+| `FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME` | ✗ | tắt | `true` cho phép `FILE_UPLOAD_ALLOWED_MIME_TYPES` nhận các loại ngoài catalogue upload, vốn được nhận mà không dò nội dung (#993). `lumibase doctor --security` sẽ báo cáo. |
 | `LUMIBASE_SETUP_TOKEN` | ✗ (secret) | — | Setup token do bạn tự đặt, tối thiểu 24 ký tự (`openssl rand -base64 32`); giá trị ngắn hơn bị bỏ qua. Bắt buộc để hoàn tất setup trên **Cloudflare Workers** ở production (`wrangler secret put LUMIBASE_SETUP_TOKEN`), vì Workers không có bước khởi động để sinh token. Trên Node/Docker nó thay cho token được sinh. Xoá nó sau khi setup xong. |
 
 Khi cờ bật, mọi tiến trình phục vụ HTTP (`LUMIBASE_PROCESS_ROLE` là `web` hoặc

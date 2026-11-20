@@ -1,10 +1,10 @@
 ---
-version: 16
-lastUpdated: 2026-11-19T19:39:14.491Z
+version: 17
+lastUpdated: 2026-11-20T06:00:19.858Z
 sourceLang: en
-contentHash: 7e151c873656ca85
-codeVerified: 2026-11-19T19:39:14.491Z
-codeVerifiedHash: 7e151c873656ca85
+contentHash: 7fc825daaf3681e3
+codeVerified: 2026-11-20T06:00:19.858Z
+codeVerifiedHash: 7fc825daaf3681e3
 codeVerifiedClaims: 122
 ---
 
@@ -239,7 +239,7 @@ Visitor (Next.js)            CMS                              Email
 
 | Endpoint | Auth | Notes |
 |----------|------|-------|
-| `POST /api/v1/auth/register` | public | Creates `subscriber`, `status=invited`. Per-IP rate-limited. Returns generic `202` (no enumeration). |
+| `POST /api/v1/auth/register` | public | Creates `subscriber`, `status=invited`. Per-IP rate-limited. Returns generic `202` (no enumeration). A site that sets `auth.registration` to `{ "enabled": false }` answers `403 REGISTRATION_DISABLED` before any other work (#994). |
 | `POST /api/v1/auth/verify-email` | public | Body `{token}` (or `?token=`). Flips `invited`→`active`. Idempotent (`already_verified`). |
 | `POST /api/v1/auth/login` | public | Issues `frontend`/`studio` JWT. Gated on `status='active'`, LoginGuard, anomaly detector. |
 | `POST /api/v1/auth/resend-verification` | public | Body `{email}`. Per-IP rate-limited. Generic `202`; re-emails the activation link only for a not-yet-active, password-based account (lost-email recovery). |
@@ -247,6 +247,14 @@ Visitor (Next.js)            CMS                              Email
 | `POST /api/v1/auth/reset-password` | public | Body `{token,password}`. Consumes a stateless `password-reset` token (1h TTL), sets the new password hash, and revokes all refresh tokens. |
 | `POST /api/v1/auth/refresh` | public | Rotates the presented refresh token (cookie or body `{refreshToken}`) → fresh access JWT + rotated refresh token. Reuse of a revoked token revokes the whole family. |
 | `POST /api/v1/auth/logout` | public | Revokes the presented refresh token's family and clears the cookie. Idempotent. |
+
+**Password work factor (#994).** Passwords are PBKDF2-SHA256, 100,000
+iterations by default. `PASSWORD_PBKDF2_ITERATIONS` raises the work factor of
+new hashes on Node/Docker (100,000–2,000,000), and a successful login re-hashes
+a password stored below it; the "unknown email" path uses a dummy hash of the
+same cost so login timing does not reveal which emails exist. Cloudflare
+Workers stay at 100,000 because their Web Crypto refuses more — do not raise
+it on a Docker deployment whose database may later be served by Workers.
 | `POST /api/v1/me/change-password` | bearer | Body `{currentPassword,newPassword}`. Verifies current password, sets new hash, revokes all refresh tokens. |
 | `GET /api/v1/me/sessions` | bearer | The caller's active sessions (live refresh tokens), redacted. |
 | `DELETE /api/v1/me/sessions/:id` | bearer | Revoke one of the caller's own sessions (`:id` = `sessionId`); effective immediately. |

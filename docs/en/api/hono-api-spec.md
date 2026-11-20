@@ -1,11 +1,11 @@
 ---
-version: 62
-lastUpdated: 2026-11-19T19:39:14.967Z
+version: 63
+lastUpdated: 2026-11-20T06:00:17.957Z
 sourceLang: en
-contentHash: e97fe0e0b26aa752
-codeVerified: 2026-11-19T19:39:14.967Z
-codeVerifiedHash: e97fe0e0b26aa752
-codeVerifiedClaims: 652
+contentHash: 39d4b1e6b3f8e1a5
+codeVerified: 2026-11-20T06:00:17.957Z
+codeVerifiedHash: 39d4b1e6b3f8e1a5
+codeVerifiedClaims: 654
 ---
 
 # Hono API Specification — LumiBase
@@ -494,6 +494,10 @@ HS*/`none` algorithm), `ISSUER_ALREADY_EXISTS` (409), `NOT_FOUND` (404).
 
 > For long-lived server-to-server access, create an API key
 > (`POST /api/v1/api-keys`, token prefix `lbk_`) instead of using a login token.
+> A key created without `expiresAt` expires after `API_KEY_DEFAULT_TTL_DAYS`
+> (default 90); send `"expiresAt": null` for a key that never expires (#994).
+> `GET /api/v1/api-keys/unused?days=90` lists live keys not used for that many
+> days, or never — the ones to review and revoke.
 
 ---
 
@@ -1054,7 +1058,11 @@ its true byte length; the declared MIME must be in the allowlist and match the
 filename extension; raw bytes are content-sniffed (magic bytes) and executables /
 active-content SVGs are rejected; raster images are scanned for an embedded
 script/executable payload (polyglot) and rejected. The allowlist + cap resolve
-`per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*) → default`. See
+`per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*, held to the
+upload type catalogue unless FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME=true) → default`;
+the signed upload path uses the token's site. Presigned keys are site-scoped
+(`sites/<siteId>/files/…`) and `POST /api/v1/files` refuses a `filenameDisk`
+outside the caller's site (`400 FILENAME_DISK_OUT_OF_SCOPE`, #993). See
 the feature spec `.kiro/specs/upload-file-controls/` and
 `docs/en/security/runtime-security-guards-plan.md` §3 for the full guarantees.
 

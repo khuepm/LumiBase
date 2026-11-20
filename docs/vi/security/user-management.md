@@ -1,13 +1,13 @@
 ---
-version: 16
-lastUpdated: 2026-11-19T19:39:14.491Z
+version: 17
+lastUpdated: 2026-11-20T06:00:19.858Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 7e151c873656ca85
+sourceHash: 7fc825daaf3681e3
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T19:39:14.491Z
-codeVerifiedHash: 7e151c873656ca85
+codeVerified: 2026-11-20T06:00:19.858Z
+codeVerifiedHash: 7fc825daaf3681e3
 codeVerifiedClaims: 122
 ---
 
@@ -243,7 +243,7 @@ Visitor (Next.js)            CMS                              Email
 
 | Endpoint | Auth | Ghi chú |
 |----------|------|-------|
-| `POST /api/v1/auth/register` | public | Tạo `subscriber`, `status=invited`. Rate-limit theo IP. Trả về `202` chung (không enumeration). |
+| `POST /api/v1/auth/register` | public | Tạo `subscriber`, `status=invited`. Rate-limit theo IP. Trả về `202` chung (không enumeration). Site đặt `auth.registration` là `{ "enabled": false }` sẽ trả `403 REGISTRATION_DISABLED` trước mọi xử lý khác (#994). |
 | `POST /api/v1/auth/verify-email` | public | Body `{token}` (hoặc `?token=`). Lật `invited`→`active`. Idempotent (`already_verified`). |
 | `POST /api/v1/auth/login` | public | Phát JWT `frontend`/`studio`. Bị gate bởi `status='active'`, LoginGuard, bộ dò bất thường. |
 | `POST /api/v1/auth/resend-verification` | public | Body `{email}`. Rate-limit theo IP. `202` chung; chỉ gửi lại link kích hoạt cho một tài khoản dựa-trên-mật-khẩu chưa active (khôi phục khi mất email). |
@@ -251,6 +251,14 @@ Visitor (Next.js)            CMS                              Email
 | `POST /api/v1/auth/reset-password` | public | Body `{token,password}`. Tiêu thụ một token `password-reset` stateless (TTL 1h), đặt hash mật khẩu mới, và revoke tất cả refresh token. |
 | `POST /api/v1/auth/refresh` | public | Xoay refresh token được trình ra (cookie hoặc body `{refreshToken}`) → access JWT mới + refresh token đã xoay. Việc dùng lại một token đã revoke sẽ revoke toàn bộ family. |
 | `POST /api/v1/auth/logout` | public | Revoke family của refresh token được trình ra và xóa cookie. Idempotent. |
+
+**Mức chi phí băm mật khẩu (#994).** Mật khẩu dùng PBKDF2-SHA256, mặc định
+100.000 vòng. `PASSWORD_PBKDF2_ITERATIONS` nâng mức chi phí cho hash mới trên
+Node/Docker (100.000–2.000.000), và một lần đăng nhập thành công sẽ băm lại mật
+khẩu đang lưu ở mức thấp hơn; nhánh "email không tồn tại" dùng một hash giả cùng
+chi phí để thời gian đăng nhập không lộ email nào có thật. Cloudflare Workers
+giữ ở 100.000 vì Web Crypto của nó từ chối mức cao hơn — đừng nâng giá trị này
+trên bản Docker nếu database sau này có thể được phục vụ bởi Workers.
 | `POST /api/v1/me/change-password` | bearer | Body `{currentPassword,newPassword}`. Xác minh mật khẩu hiện tại, đặt hash mới, revoke tất cả refresh token. |
 | `GET /api/v1/me/sessions` | bearer | Các session đang hoạt động của caller (refresh token còn sống), đã redact. |
 | `DELETE /api/v1/me/sessions/:id` | bearer | Revoke một trong các session của chính caller (`:id` = `sessionId`); có hiệu lực ngay. |

@@ -1,10 +1,10 @@
 ---
-version: 24
-lastUpdated: 2026-11-19T20:13:26.698Z
+version: 25
+lastUpdated: 2026-11-20T06:00:20.157Z
 sourceLang: en
-contentHash: faf274bfe2cfb795
-codeVerified: 2026-11-19T20:13:26.698Z
-codeVerifiedHash: faf274bfe2cfb795
+contentHash: 75d93ea567aa7414
+codeVerified: 2026-11-20T06:00:20.157Z
+codeVerifiedHash: 75d93ea567aa7414
 codeVerifiedClaims: 100
 ---
 
@@ -49,6 +49,9 @@ public/setup routes to it in production. See
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ | **on in production**, off elsewhere | Makes `POST /api/v1/setup/complete` demand a one-time setup token. `true` / `1` / `yes` turns it on, `false` / `0` / `no` turns it off on purpose (automated provisioning). Unset, it is on when `LUMIBASE_ENV` or `NODE_ENV` is `production` (#992) or when `LUMIBASE_SETUP_TOKEN` is set — otherwise whoever reaches the port first creates the admin account. Node/Docker mints the token at startup and prints it once as `[lumibase-cms] SETUP_TOKEN=…`. |
+| `PASSWORD_PBKDF2_ITERATIONS` | ✗ (Node/Docker) | `100000` | PBKDF2 work factor for new password hashes, 100,000–2,000,000; logins re-hash older passwords up to it (#994). Ignored on Cloudflare Workers (capped at 100,000 by Web Crypto) — do not raise it if the database may later be served by Workers. |
+| `API_KEY_DEFAULT_TTL_DAYS` | ✗ | `90` | Lifetime of an API key created without `expiresAt` (#994). `0` restores the old never-expires default; an explicit `"expiresAt": null` always creates a non-expiring key. |
+| `FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME` | ✗ | off | `true` lets `FILE_UPLOAD_ALLOWED_MIME_TYPES` admit types outside the upload catalogue, which are accepted without content sniffing (#993). Reported by `lumibase doctor --security`. |
 | `LUMIBASE_SETUP_TOKEN` | ✗ (secret) | — | Your own setup token, at least 24 characters (`openssl rand -base64 32`); a shorter value is ignored. Required to complete setup on **Cloudflare Workers** in production (`wrangler secret put LUMIBASE_SETUP_TOKEN`), which have no startup step to mint one. On Node/Docker it replaces the minted token. Remove it once setup is done. |
 
 With the flag on, every process that serves HTTP (`LUMIBASE_PROCESS_ROLE` `web` or

@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 61
-lastUpdated: 2026-11-19T19:39:14.967Z
+version: 62
+lastUpdated: 2026-11-20T06:00:17.957Z
 sourceLang: en
 translatedFrom: en
-sourceHash: e97fe0e0b26aa752
+sourceHash: 39d4b1e6b3f8e1a5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T19:39:14.967Z
-codeVerifiedHash: e97fe0e0b26aa752
-codeVerifiedClaims: 652
+codeVerified: 2026-11-20T06:00:17.957Z
+codeVerifiedHash: 39d4b1e6b3f8e1a5
+codeVerifiedClaims: 654
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -442,7 +442,7 @@ CRUD quản trị cho các nhà phát hành tin tưởng (chỉ admin):
 }
 ```
 
-> Cho việc truy cập server-to-server dài hạn, hãy tạo một API key (`POST /api/v1/api-keys`, tiền tố token `lbk_`) thay vì dùng token đăng nhập.
+> Cho việc truy cập server-to-server dài hạn, hãy tạo một API key (`POST /api/v1/api-keys`, tiền tố token `lbk_`) thay vì dùng token đăng nhập. Key tạo mà không có `expiresAt` sẽ hết hạn sau `API_KEY_DEFAULT_TTL_DAYS` (mặc định 90); gửi `"expiresAt": null` để có key không bao giờ hết hạn (#994). `GET /api/v1/api-keys/unused?days=90` liệt kê các key còn hiệu lực nhưng không được dùng trong số ngày đó, hoặc chưa từng được dùng — đó là những key cần xem lại và thu hồi.
 
 ---
 
@@ -906,7 +906,7 @@ Tại `/media/:key`, các tham số biến đổi được xác thực đối v�
 
 **Quyền truy cập `/api/v1/files`.** Site admin có toàn quyền; thành viên khác cần một policy permission `files` mà rule của nó được đánh giá trên từng file theo `folder`, `folder_path`, `uploaded_by`, `mime` và `id` (phân quyền theo thư mục). Xem `docs/en/features/digital-asset-management.md` (epic #670).
 
-**Chính sách upload (`/api/v1/uploads/config`).** Được thực thi bởi bộ bảo vệ `file-upload-policy` trên mọi bề mặt upload (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`, `PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`): role public không thể upload; body bị giới hạn dung lượng trên độ dài byte thực tế; MIME được khai báo phải nằm trong danh sách cho phép và khớp với đuôi file; bytes thô được kiểm tra nội dung (magic bytes) và các file thực thi / SVG nội dung hoạt động bị từ chối; hình ảnh raster được quét payload script/executable chèn vào (polyglot) và bị từ chối. Danh sách cho phép + giới hạn giải quyết `per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*) → default`. Xem spec tính năng `.kiro/specs/upload-file-controls/` và `docs/en/security/runtime-security-guards-plan.md` §3 để biết các đảm bảo đầy đủ.
+**Chính sách upload (`/api/v1/uploads/config`).** Được thực thi bởi bộ bảo vệ `file-upload-policy` trên mọi bề mặt upload (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`, `PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`): role public không thể upload; body bị giới hạn dung lượng trên độ dài byte thực tế; MIME được khai báo phải nằm trong danh sách cho phép và khớp với đuôi file; bytes thô được kiểm tra nội dung (magic bytes) và các file thực thi / SVG nội dung hoạt động bị từ chối; hình ảnh raster được quét payload script/executable chèn vào (polyglot) và bị từ chối. Danh sách cho phép + giới hạn giải quyết `per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*, bị giới hạn theo catalogue loại upload trừ khi FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME=true) → default`; đường upload ký sẵn dùng site của token. Key presigned gắn theo site (`sites/<siteId>/files/…`) và `POST /api/v1/files` từ chối `filenameDisk` nằm ngoài site của người gọi (`400 FILENAME_DISK_OUT_OF_SCOPE`, #993). Xem spec tính năng `.kiro/specs/upload-file-controls/` và `docs/en/security/runtime-security-guards-plan.md` §3 để biết các đảm bảo đầy đủ.
 
 ```
 GET  /api/v1/uploads/config
