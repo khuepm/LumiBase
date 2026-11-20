@@ -148,3 +148,18 @@ describe('issuesBySection', () => {
     expect(mapped.general.map((i) => i.field)).toEqual(['regions', 'sections.9.data']);
   });
 });
+
+describe('#684 review fixes', () => {
+  it('lists the keys a v1 layout cannot carry', () => {
+    const { dropped, converted } = toComposerLayout({ theme: 'dark', seo: {}, sections: [{ id: 'a', component: 'hero', analyticsKey: 'x' }] });
+    expect(converted).toBe(true);
+    expect(dropped).toEqual(['theme', 'seo', 'sections.0.analyticsKey']);
+    expect(toComposerLayout({ version: 1, sections: [] }).dropped).toEqual([]);
+  });
+
+  it('adds to the default region when the target region is not declared', () => {
+    const layout = toComposerLayout({ version: 1, regions: [{ key: 'main' }], sections: [] }).layout;
+    const added = addSection(layout, 'hero', 'gone');
+    expect(added.layout.sections[0]!.styleConfig.region).toBeUndefined();
+  });
+});

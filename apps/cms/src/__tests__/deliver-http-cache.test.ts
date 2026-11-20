@@ -197,6 +197,24 @@ describe('GET /deliver/page — HTTP caching', () => {
     expect((stored as Response).status).toBe(200);
   });
 
+  /** #684 — the composer preview must show a save at once and never seed the shared copy. */
+  it('neither reads nor writes the edge for ?preview=true and answers no-store', async () => {
+    const db = fakeDb([[PAGE_ROW], [COLLECTION_ROW], [ITEM_ROW]]);
+    const put = vi.fn(async (_req: Request, _response: Response) => undefined);
+    const match = vi.fn(async (_req: Request) => new Response('stale', { status: 200 }));
+    const purge = vi.fn(async (_target: { urls: string[]; tags?: string[] }) => 0);
+    const edgeCache: EdgeCacheProvider = { match, put, purge };
+
+    const res = await appWith(db, edgeCache).request(`${URL}?preview=true`);
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).not.toBe('stale');
+    expect(match).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(res.headers.get('etag')).toBeNull();
+  });
+
   /** URL-keyed store — request headers are not part of the key, as with the Cache API. */
   function urlKeyedEdge() {
     const store = new Map<string, Response>();

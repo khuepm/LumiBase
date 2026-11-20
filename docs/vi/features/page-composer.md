@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-11-18T06:29:07.740Z
+version: 3
+lastUpdated: 2026-11-20T01:40:56.111Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3022e13b07860d9c
+sourceHash: 99c1393a2a14232d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-18T06:29:07.740Z
-codeVerifiedHash: 3022e13b07860d9c
+codeVerified: 2026-11-20T01:40:56.111Z
+codeVerifiedHash: 99c1393a2a14232d
 codeVerifiedClaims: 12
 ---
 
@@ -58,8 +58,14 @@ layout composer rỗng. Mở một trang để dựng nó:
   section kèm field liên quan.
 - **Preview** mở trang cạnh composer (xem §5). Trang tải lại sau mỗi lần lưu.
 
-Trang được tạo không qua composer sẽ mở với các section được nạp nguyên trạng.
-Khi lưu, chúng được lưu thành layout của composer và được kiểm tra.
+Trang được tạo không qua composer sẽ mở với `id`, `component`, `data`,
+`styleConfig` và `source` của từng section. Khi lưu, chúng được lưu thành layout
+của composer và được kiểm tra. Định dạng v1 là strict, nên mọi key khác (một
+`theme` ở cấp trên cùng, `analyticsKey` của một section) không giữ lại được:
+composer liệt kê các key đó trước lần lưu đầu, để bạn chuyển chúng vào field
+của block trước. Dữ liệu section mà block không định nghĩa (field đã bị xoá,
+hoặc key cũ) được liệt kê dưới **Not part of this block** kèm nút **Remove**, vì
+server sẽ từ chối nó.
 
 ## 3. Định dạng layout (v1)
 
@@ -126,8 +132,12 @@ Section không có `styleConfig.region` thuộc `main`; section không có
 Đặt **Settings → Preview → Page URL** (`pageUrl`, ví dụ
 `https://www.example.com/{slug}`, hoặc `PUT /api/v1/preview/settings`) để
 composer mở được trang ngay cạnh trình soạn. Trang là công khai nên không cần
-preview token. Vì delivery có cache trang, hãy để frontend gọi
-`/api/v1/deliver/page/...?preview=true` khi nó render bên trong frame của
-Studio, để layout vừa lưu hiện ra ngay. Template theo cùng quy tắc với
-[Preview URL](./visual-editing.md) của collection: `http(s)` tuyệt đối, chỉ
-placeholder đã biết.
+preview token. `{slug}` giữ nguyên dấu `/` của slug lồng nhau (`about/team`).
+
+Lưu một trang sẽ xoá các payload trang đã cache của site (app cache và edge),
+nhưng một CDN đặt trước frontend của bạn vẫn có thể giữ trang cũ. Hãy để
+frontend gọi `/api/v1/deliver/page/...?preview=true` khi nó render bên trong
+frame của Studio: các lượt đọc preview bỏ qua mọi cache và trả
+`Cache-Control: no-store`, nên layout vừa lưu hiện ra ngay. Template theo cùng
+quy tắc với [Preview URL](./visual-editing.md) của collection: `http(s)` tuyệt
+đối, chỉ placeholder đã biết.

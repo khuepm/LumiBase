@@ -10,9 +10,10 @@ import { collections, pages, scopeSite, type Database } from '@lumibase/database
 import { isComposerLayout, PageLayoutSchema, type PageLayout } from '@lumibase/contracts';
 import { and, eq, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import type { CacheProvider } from '@lumibase/runtime';
+import type { CacheProvider, EdgeCacheProvider } from '@lumibase/runtime';
 import { hasBlocksFields, resolveBlockTemplates } from './blocks';
 import { isValidSlug } from './identifier-guard';
+import { invalidateDeliverTag } from './content-invalidation';
 import { forgetNegative, negativePageKey } from './negative-cache';
 import { SchemaService, type CompiledField } from './schema-service';
 import { validateItem, type ValidationIssue } from './validation';
@@ -70,6 +71,7 @@ export type PageServiceDeps = {
   db: Database;
   siteId: string;
   cache?: CacheProvider;
+  edgeCache?: EdgeCacheProvider | null;
 };
 
 export class PageService {
@@ -247,6 +249,7 @@ export class PageService {
         throw new PageServiceError('INTERNAL', 'Insert returned no row', 400);
       }
       await forgetNegative(this.deps.cache, negativePageKey(this.deps.siteId, row.slug));
+      await this.purgeDelivery();
       return row;
     } catch (err) {
       this.rethrowUnique(err);
@@ -289,6 +292,7 @@ export class PageService {
       if (previousSlug !== nextSlug) {
         await forgetNegative(this.deps.cache, negativePageKey(this.deps.siteId, previousSlug));
       }
+      await this.purgeDelivery();
       return row;
     } catch (err) {
       this.rethrowUnique(err);
@@ -305,6 +309,20 @@ export class PageService {
       .delete(pages)
       .where(and(eq(pages.id, id), scopeSite(pages.siteId, this.deps.siteId)));
     // Do not write a tombstone here — deliver miss path owns setNegative.
+    await this.purgeDelivery();
+  }
+
+  /**
+   * Drop this site's cached page payloads (app cache and edge) after a page
+   * write, so `/deliver/page` serves the new layout instead of the cached one
+   * for up to its TTL. Best-effort, like every other delivery purge.
+   */
+  private async purgeDelivery(): Promise<void> {
+    try {
+      await invalidateDeliverTag(this.deps.cache, this.deps.siteId, this.deps.edgeCache);
+    } catch {
+      // never fail the write over a cache purge
+    }
   }
 
   private assertSlug(slug: string): void {

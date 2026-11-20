@@ -141,4 +141,67 @@ describe('PageComposer', () => {
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts allow-same-origin allow-forms allow-popups');
     expect(frame.getAttribute('referrerpolicy')).toBe('no-referrer');
   });
+
+  it('keeps server errors on the submitted section after the editor reorders or deletes', async () => {
+    setup(
+      {
+        version: 1,
+        sections: [
+          { id: 's1', component: 'cta', data: {} },
+          { id: 's2', component: 'hero', data: {} },
+        ],
+      },
+      { saveError: Object.assign(new Error('400'), { body: { errors: [{ code: 'VALIDATION', message: 'Required', field: 'sections.1.data.title' }] } }) },
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Move Hero up' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByText('The page was not saved.');
+    const hero = () => document.querySelector('[data-section="s2"]')!;
+    const cta = () => document.querySelector('[data-section="s1"]')!;
+    // Hero moved up before the save, so the submitted sections.1 is the CTA.
+    expect(cta().textContent).toContain('1 problem(s)');
+    expect(hero().textContent).not.toContain('problem');
+    // Moving sections around afterwards must not move the marker.
+    fireEvent.click(screen.getByRole('button', { name: 'Move Hero down' }));
+    expect(cta().textContent).toContain('1 problem(s)');
+    expect(hero().textContent).not.toContain('problem');
+    // Deleting the failing section keeps the banner honest about it.
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Call to action' }));
+    expect(screen.getByText('The page was not saved.').parentElement!.textContent).toContain('(removed since)');
+  });
+
+  it('adds to the main region after the selected target region is removed', async () => {
+    setup({ version: 1, regions: [{ key: 'main' }], sections: [] });
+    fireEvent.change(await screen.findByLabelText('New region'), { target: { value: 'sidebar' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.change(screen.getByLabelText('Add to region'), { target: { value: 'sidebar' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove region' }));
+    expect((screen.getByLabelText('Add to region') as HTMLSelectElement).value).toBe('main');
+    fireEvent.click(screen.getByRole('button', { name: /Hero/ }));
+    expect(document.querySelector('[data-region="main"] [data-section]')).not.toBeNull();
+  });
+
+  it('names the keys a pre-composer layout loses on save', async () => {
+    setup({ theme: 'dark', sections: [{ id: 'old', component: 'hero', data: {}, analyticsKey: 'h1' }] });
+    const notice = await screen.findByText(/saving removes them/);
+    expect(notice.textContent).toContain('theme');
+    expect(notice.textContent).toContain('sections.0.analyticsKey');
+  });
+
+  it('lets the editor remove data the block does not define', async () => {
+    setup({ version: 1, sections: [{ id: 's1', component: 'hero', data: { title: 'Hi', subtitle: 'legacy' } }] });
+    fireEvent.click(await screen.findByRole('button', { name: /^Hero/, pressed: false }));
+    const inspector = screen.getByRole('complementary', { name: 'Section settings' });
+    fireEvent.click(await within(inspector).findByRole('button', { name: 'Remove subtitle' }));
+    expect(within(inspector).queryByRole('button', { name: 'Remove subtitle' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(patchBody().layoutConfig.sections[0]!.data).toEqual({ title: 'Hi' }));
+  });
+
+  it('keeps the slashes of a nested slug in the preview URL', async () => {
+    const { buildPageUrl } = await import('../page-preview');
+    expect(buildPageUrl('https://www.example.com/{slug}', 'about/team')).toBe('https://www.example.com/about/team');
+    expect(buildPageUrl('https://www.example.com/p?s={slug}', 'a b')).toBe('https://www.example.com/p?s=a%20b');
+    expect(buildPageUrl('javascript:alert(1)//{slug}', 'x')).toBeNull();
+  });
 });
