@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 61
-lastUpdated: 2026-11-19T06:34:04.915Z
+version: 62
+lastUpdated: 2026-11-20T23:57:50.352Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5da6eaa5ddc0177f
+sourceHash: 4f5d324d9a05d62f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T06:34:04.915Z
-codeVerifiedHash: 5da6eaa5ddc0177f
+codeVerified: 2026-11-20T23:57:50.352Z
+codeVerifiedHash: 4f5d324d9a05d62f
 codeVerifiedClaims: 658
 ---
 
@@ -612,9 +612,9 @@ CRUD đã xác thực Studio trên `lumibase_pages` (được tiêu thụ bởi 
 | Phương thức | Đường dẫn | Mô tả |
 |--------|------|-------------|
 | `GET` | `/api/v1/pages` | Liệt kê các trang của site đang hoạt động |
-| `POST` | `/api/v1/pages` | Tạo `{ slug, title, layoutConfig? }` |
+| `POST` | `/api/v1/pages` | Tạo `{ slug, title, layoutConfig? }`. `403 SOURCE_FORBIDDEN` khi một `source` của section trỏ tới collection mà người gọi không đọc được toàn bộ (mọi field, không có bộ lọc dòng) |
 | `GET` | `/api/v1/pages/:id` | Lấy chi tiết một trang |
-| `PATCH` | `/api/v1/pages/:id` | Cập nhật một phần (`slug` / `title` / `layoutConfig`) |
+| `PATCH` | `/api/v1/pages/:id` | Cập nhật một phần (`slug` / `title` / `layoutConfig`). `403 SOURCE_FORBIDDEN` khi layout mới thêm `source` trên collection mà người gọi không đọc được toàn bộ; các source trang đã có thì không kiểm tra lại |
 | `DELETE` | `/api/v1/pages/:id` | Xóa trang |
 
 Định dạng slug khớp với quy tắc kiểm tra của Delivery (`^[a-z0-9]+(?:[/_-][a-z0-9]+)*$`, ≤200).
