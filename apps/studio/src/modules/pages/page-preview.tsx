@@ -16,6 +16,17 @@ import { decideFrame, DEVICE_PRESETS, type DevicePresetId } from '@/modules/cont
 
 const ICONS: Record<DevicePresetId, typeof Monitor> = { desktop: Monitor, tablet: Tablet, mobile: Smartphone };
 
+/**
+ * `buildPreviewUrl` encodes every value as one URL component, which turns a
+ * nested slug (`about/team`) into `about%2Fteam`. A page slug is a path, so
+ * `{slug}` is filled in segment by segment and keeps its `/` separators; the
+ * result still goes through `buildPreviewUrl` for the http(s) check.
+ */
+export function buildPageUrl(template: string, slug: string): string | null {
+  const path = slug.split('/').map(encodeURIComponent).join('/');
+  return buildPreviewUrl(template.split('{slug}').join(path), {});
+}
+
 export function PagePreview({ slug, savedMarker, onClose }: { slug: string; savedMarker: string; onClose: () => void }) {
   const client = getApiClient();
   const [device, setDevice] = useState<DevicePresetId>('desktop');
@@ -31,7 +42,7 @@ export function PagePreview({ slug, savedMarker, onClose }: { slug: string; save
   }, [savedMarker]);
 
   const template = settings.data?.pageUrl ?? null;
-  const url = template ? buildPreviewUrl(template, { slug }) : null;
+  const url = template ? buildPageUrl(template, slug) : null;
   const decision =
     template && url
       ? decideFrame({ url, template, allowedOrigins: settings.data?.allowedOrigins ?? [], studioOrigin: window.location.origin })

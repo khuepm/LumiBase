@@ -2,14 +2,14 @@
 title: Caching
 description: HTTP cache ở edge, CacheProvider tầng ứng dụng, và các lớp phòng thủ cache penetration
 translatedFrom: en
-sourceHash: 223bc6999f6ddd0d
-version: 10
-lastUpdated: 2026-11-18T04:25:25.638Z
+sourceHash: 5884540bb6ab67a0
+version: 11
+lastUpdated: 2026-11-20T01:41:18.319Z
 sourceLang: en
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-18T04:25:25.638Z
-codeVerifiedHash: 223bc6999f6ddd0d
+codeVerified: 2026-11-20T01:41:18.319Z
+codeVerifiedHash: 5884540bb6ab67a0
 codeVerifiedClaims: 18
 ---
 
@@ -43,7 +43,7 @@ Purge theo tag là một lời gọi bất kể bao nhiêu URL bị ảnh hưở
 
 Chính cơ chế lùi này là lý do index URL tồn tại. Ở nơi purge theo tag chạy được, index là thừa; ở nơi không chạy được, nó là toàn bộ cơ chế.
 
-URL được ghi vào đó là key edge **chuẩn hoá**, không phải URL thô của request: chỉ giữ `locale`, `lang`, `provenance=true` và `preview=true` (hoặc `draft=true`, lưu thành `preview=true`), theo đúng thứ tự đó. Mọi query parameter khác bị bỏ trước `edgeCache.match/put`, nên `?utm_source=…` hay `?r=<random>` không tạo thêm bản edge mới và không đẩy URL trang thật ra khỏi index 200 entry.
+URL được ghi vào đó là key edge **chuẩn hoá**, không phải URL thô của request: chỉ giữ `locale`, `lang`, `provenance=true` và `preview=true` (hoặc `draft=true`, lưu thành `preview=true`), theo đúng thứ tự đó. Mọi query parameter khác bị bỏ trước `edgeCache.match/put`, nên `?utm_source=…` hay `?r=<random>` không tạo thêm bản edge mới và không đẩy URL trang thật ra khỏi index 200 entry. Một lượt đọc preview (`preview=true` hoặc `draft=true`) không bao giờ chạm tới edge: nó bỏ qua `edgeCache.match/put` và application cache, trả `Cache-Control: no-store`, nên trang vừa lưu hiện ra ngay và response preview không bao giờ thành bản dùng chung.
 
 `304 Not Modified` không bao giờ được ghi vào edge. Nó chỉ trả lời request có điều kiện của một client, mà key edge không mang header nào của request, nên một 304 đã lưu sẽ bị trả với body rỗng cho client kế tiếp chưa có bản cache nào. Khi hit edge, route tự trả lời `If-None-Match` bằng cách so với `ETag` của bản đã lưu.
 

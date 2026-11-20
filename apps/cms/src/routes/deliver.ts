@@ -499,6 +499,9 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
   // One key per real variant, shared by match/put and the purge index (#622 B2).
   const edgeUrl = canonicalDeliverEdgeUrl(c.req.url);
   const edgeRequest = new Request(edgeUrl, { method: 'GET' });
+  // Preview reads (`?preview=true`, `?draft=true`) bypass every shared cache in
+  // both directions: they must show a save at once, and their response must
+  // not become the copy the next visitor gets.
   const useDeliverCache = policy.cacheable && !isPreview;
   const appCache = useDeliverCache ? runtime?.cache : undefined;
   const variantHash = await deliveryVariantHash({
@@ -536,7 +539,7 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
   };
 
   // Tier 1b — HTTP edge cache (Req 1.6): only for cacheable public traffic.
-  if (policy.cacheable && edgeCache) {
+  if (useDeliverCache && edgeCache) {
     const cached = await edgeCache.match(edgeRequest);
     if (cached) {
       // The edge key carries no request headers, so revalidation is answered
@@ -611,6 +614,11 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
 
   if (!policy.cacheable) {
     c.header('Cache-Control', policy.cacheControl);
+    return c.json(await buildPagePayload(db, siteId, page, withProvenance));
+  }
+
+  if (isPreview) {
+    c.header('Cache-Control', 'no-store');
     return c.json(await buildPagePayload(db, siteId, page, withProvenance));
   }
 

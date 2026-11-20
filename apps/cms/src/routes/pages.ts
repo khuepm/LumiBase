@@ -39,6 +39,7 @@ function buildService(c: Context<AppEnv>) {
     db: c.get('db'),
     siteId: c.get('siteId'),
     cache: c.get('runtime').cache,
+    edgeCache: c.get('runtime').edgeCache,
   });
 }
 

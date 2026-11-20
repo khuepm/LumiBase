@@ -210,7 +210,9 @@ export function AppShell({ children }: AppShellProps) {
               ? 'users'
               : appPath.startsWith('/files')
                 ? 'files'
-                : 'content';
+                : appPath.startsWith('/pages')
+                  ? 'pages'
+                  : 'content';
 
   const handleLogout = () => {
     // Revoke server-side (best-effort), clear local tokens, then redirect.

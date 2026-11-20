@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-11-18T06:29:07.740Z
+version: 3
+lastUpdated: 2026-11-20T01:40:56.111Z
 sourceLang: en
-contentHash: 3022e13b07860d9c
-codeVerified: 2026-11-18T06:29:07.740Z
-codeVerifiedHash: 3022e13b07860d9c
+contentHash: 99c1393a2a14232d
+codeVerified: 2026-11-20T01:40:56.111Z
+codeVerifiedHash: 99c1393a2a14232d
 codeVerifiedClaims: 12
 ---
 
@@ -57,8 +57,14 @@ empty composer layout. Open a page to compose it:
 - **Preview** opens the page beside the composer (see §5). It reloads after
   each save.
 
-A page created without the composer opens with its sections loaded as-is.
-Saving it stores them as a composer layout, which is then validated.
+A page created without the composer opens with each section's `id`,
+`component`, `data`, `styleConfig` and `source`. Saving it stores them as a
+composer layout, which is then validated. The v1 format is strict, so any other
+key (a top-level `theme`, a section's `analyticsKey`) cannot be kept: the
+composer lists those keys before the first save, so you can move them into a
+block's fields first. Section data the block does not define (a field deleted
+since, or a legacy key) is listed under **Not part of this block** with a
+**Remove** button, because the server refuses it.
 
 ## 3. Layout format (v1)
 
@@ -126,8 +132,12 @@ A section without `styleConfig.region` belongs to `main`; one without
 Set **Settings → Preview → Page URL** (`pageUrl`, for example
 `https://www.example.com/{slug}`, or `PUT /api/v1/preview/settings`) so the
 composer can open the page beside the editor. Pages are public, so no preview
-token is involved. Because delivery caches pages, have your frontend fetch
-`/api/v1/deliver/page/...?preview=true` when it renders inside the Studio
-frame, so a just-saved layout shows at once. The template follows the same rules as a collection's
-[Preview URL](./visual-editing.md): absolute `http(s)`, known placeholders
-only.
+token is involved. `{slug}` keeps the `/` separators of a nested slug (`about/team`).
+
+Saving a page drops the site's cached page payloads (app cache and edge), but
+a CDN in front of your own frontend may still hold the old page. Have your
+frontend fetch `/api/v1/deliver/page/...?preview=true` when it renders inside
+the Studio frame: preview reads skip every cache and answer
+`Cache-Control: no-store`, so a just-saved layout shows at once. The template
+follows the same rules as a collection's [Preview URL](./visual-editing.md):
+absolute `http(s)`, known placeholders only.

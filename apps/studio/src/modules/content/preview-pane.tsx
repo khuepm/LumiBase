@@ -49,6 +49,11 @@ const ICONS: Record<DevicePresetId, typeof Monitor> = { desktop: Monitor, tablet
 
 export interface PreviewSplitProps {
   editor: ReactNode;
+  /**
+   * `null` closes the preview: the editor takes the full width but keeps its
+   * place in the tree, so toggling the preview never remounts it (and never
+   * throws away field interfaces' local state).
+   */
   preview: ReactNode;
 }
 
@@ -76,35 +81,44 @@ export function PreviewSplit({ editor, preview }: PreviewSplitProps) {
     };
   }, []);
 
+  const open = preview !== null && preview !== undefined && preview !== false;
   return (
-    <div ref={containerRef} className="flex min-h-[70vh] w-full items-stretch gap-0" data-testid="preview-split">
-      <div className="min-w-0 overflow-auto pe-2" style={{ width: `${split}%` }}>
+    <div
+      ref={containerRef}
+      className={open ? 'flex min-h-[70vh] w-full items-stretch gap-0' : 'flex w-full items-stretch gap-0'}
+      data-testid="preview-split"
+    >
+      <div className={open ? 'min-w-0 overflow-auto pe-2' : 'min-w-0'} style={{ width: open ? `${split}%` : '100%' }}>
         {editor}
       </div>
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize preview"
-        aria-valuemin={SPLIT_MIN}
-        aria-valuemax={SPLIT_MAX}
-        aria-valuenow={split}
-        tabIndex={0}
-        onPointerDown={(event) => {
-          dragging.current = true;
-          event.preventDefault();
-        }}
-        onKeyDown={(event) => {
-          const rtl = containerRef.current ? getComputedStyle(containerRef.current).direction === 'rtl' : false;
-          const next = splitFromKey(event.key, split, rtl);
-          if (next === null) return;
-          event.preventDefault();
-          setSplit(next);
-        }}
-        className="w-1.5 shrink-0 cursor-col-resize rounded bg-border hover:bg-primary/40 focus:bg-primary focus:outline-none"
-      />
-      <div className="min-w-0 flex-1 ps-2" style={{ width: `${clampSplit(100 - split)}%` }}>
-        {preview}
-      </div>
+      {open && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize preview"
+          aria-valuemin={SPLIT_MIN}
+          aria-valuemax={SPLIT_MAX}
+          aria-valuenow={split}
+          tabIndex={0}
+          onPointerDown={(event) => {
+            dragging.current = true;
+            event.preventDefault();
+          }}
+          onKeyDown={(event) => {
+            const rtl = containerRef.current ? getComputedStyle(containerRef.current).direction === 'rtl' : false;
+            const next = splitFromKey(event.key, split, rtl);
+            if (next === null) return;
+            event.preventDefault();
+            setSplit(next);
+          }}
+          className="w-1.5 shrink-0 cursor-col-resize rounded bg-border hover:bg-primary/40 focus:bg-primary focus:outline-none"
+        />
+      )}
+      {open && (
+        <div className="min-w-0 flex-1 ps-2" style={{ width: `${clampSplit(100 - split)}%` }}>
+          {preview}
+        </div>
+      )}
     </div>
   );
 }

@@ -24,14 +24,32 @@ export function regionOf(section: PageSection): string {
   return typeof region === 'string' ? region : PAGE_LAYOUT_DEFAULT_REGION;
 }
 
+/** Keys a v1 layout and a v1 section may carry (`PageLayoutSchema` is strict). */
+const LAYOUT_KEYS = new Set(['version', 'regions', 'sections']);
+const SECTION_KEYS = new Set(['id', 'component', 'data', 'styleConfig', 'source']);
+
 /**
  * Turn whatever is stored in `layoutConfig` into an editable v1 layout.
- * A v1 layout is taken as-is; an older free-form layout keeps its sections
- * (id, component, data, styleConfig, source) so nothing is lost when an
- * editor starts composing an existing page. `converted` tells the UI.
+ *
+ * A v1 layout is taken as-is. An older free-form layout keeps each section's
+ * `id`, `component`, `data`, `styleConfig` and `source`, but the v1 schema is
+ * strict, so any other top-level key (`theme`, `seo`, …) or section key cannot
+ * be saved. Those are listed in `dropped` (as `theme`, `sections.2.analyticsKey`)
+ * so the UI can say what the first save removes. `converted` tells the UI.
  */
-export function toComposerLayout(stored: unknown): { layout: ComposerLayout; converted: boolean } {
+export function toComposerLayout(stored: unknown): {
+  layout: ComposerLayout;
+  converted: boolean;
+  dropped: string[];
+} {
   const raw = isRecord(stored) ? stored : {};
+  const dropped: string[] = Object.keys(raw).filter((key) => !LAYOUT_KEYS.has(key));
+  if (Array.isArray(raw.sections)) {
+    raw.sections.forEach((s, index) => {
+      if (!isRecord(s)) return;
+      for (const key of Object.keys(s)) if (!SECTION_KEYS.has(key)) dropped.push(`sections.${index}.${key}`);
+    });
+  }
   const regions: PageRegion[] = Array.isArray(raw.regions)
     ? raw.regions
         .filter(isRecord)
@@ -54,9 +72,11 @@ export function toComposerLayout(stored: unknown): { layout: ComposerLayout; con
     const region = regionOf(s);
     if (!regions.some((r) => r.key === region)) regions.push({ key: region });
   }
+  const converted = raw.version !== PAGE_LAYOUT_VERSION && (sections.length > 0 || dropped.length > 0);
   return {
     layout: { version: PAGE_LAYOUT_VERSION, regions, sections },
-    converted: raw.version !== PAGE_LAYOUT_VERSION && sections.length > 0,
+    converted,
+    dropped: converted ? dropped : [],
   };
 }
 
@@ -71,10 +91,15 @@ function withRegion(section: PageSection, region: string): PageSection {
   return { ...section, styleConfig };
 }
 
-/** Add a block at the end of a region. Returns the new layout and section id. */
+/**
+ * Add a block at the end of a region. Returns the new layout and section id.
+ * A region the layout does not declare falls back to the default one, so a
+ * stale target (a region removed meanwhile) never yields an invisible section.
+ */
 export function addSection(layout: ComposerLayout, component: string, region: string): { layout: ComposerLayout; id: string } {
   const id = newBlockId();
-  const section = withRegion({ id, component, data: {}, styleConfig: {} }, region);
+  const declared = (layout.regions ?? [{ key: PAGE_LAYOUT_DEFAULT_REGION }]).some((r) => r.key === region);
+  const section = withRegion({ id, component, data: {}, styleConfig: {} }, declared ? region : PAGE_LAYOUT_DEFAULT_REGION);
   return { layout: { ...layout, sections: [...layout.sections, section] }, id };
 }
 
@@ -170,6 +195,9 @@ export interface ServerIssue {
 /**
  * Map server validation errors (`field: "sections.2.data.title"`) onto
  * section ids, so the composer can flag the right card and field.
+ *
+ * Pass the layout that was *submitted*: the indexes refer to it. Mapping
+ * against a layout edited since would put the errors on other sections.
  */
 export function issuesBySection(
   layout: ComposerLayout,

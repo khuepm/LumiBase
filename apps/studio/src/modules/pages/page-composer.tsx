@@ -95,12 +95,16 @@ export function PageComposer({ id }: { id: string }) {
 
   const [layout, setLayout] = useState<ComposerLayout | null>(null);
   const [converted, setConverted] = useState(false);
+  const [dropped, setDropped] = useState<string[]>([]);
   const [dirty, setDirty] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [targetRegion, setTargetRegion] = useState('main');
   const [newRegion, setNewRegion] = useState('');
   const [regionError, setRegionError] = useState<string | null>(null);
-  const [issues, setIssues] = useState<ServerIssue[]>([]);
+  // Server errors are indexed against the layout that was submitted, so that
+  // layout is kept with them; mapping against the live layout would move the
+  // markers onto other sections as soon as the editor reorders or deletes.
+  const [failure, setFailure] = useState<{ issues: ServerIssue[]; submitted: ComposerLayout } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [announcement, setAnnouncement] = useState('');
 
@@ -109,6 +113,7 @@ export function PageComposer({ id }: { id: string }) {
     const next = toComposerLayout(page.data.layoutConfig);
     setLayout(next.layout);
     setConverted(next.converted);
+    setDropped(next.dropped);
   }, [page.data, layout]);
 
   const change = (next: ComposerLayout) => {
@@ -125,13 +130,14 @@ export function PageComposer({ id }: { id: string }) {
         })
       ).data,
     onSuccess: (row) => {
-      setIssues([]);
+      setFailure(null);
       setDirty(false);
       setConverted(false);
+      setDropped([]);
       queryClient.setQueryData(['page', id], row);
       setAnnouncement('Page saved.');
     },
-    onError: (err) => setIssues(errorIssues(err)),
+    onError: (err, submitted) => setFailure({ issues: errorIssues(err), submitted }),
   });
 
   const sensors = useSensors(
@@ -139,7 +145,7 @@ export function PageComposer({ id }: { id: string }) {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  const mapped = useMemo(() => (layout ? issuesBySection(layout, issues) : null), [layout, issues]);
+  const mapped = useMemo(() => (failure ? issuesBySection(failure.submitted, failure.issues) : null), [failure]);
 
   if (page.isLoading || !layout) {
     return <p className="text-sm text-muted-foreground">{page.error ? 'Failed to load the page.' : 'Loading page…'}</p>;
@@ -261,7 +267,9 @@ export function PageComposer({ id }: { id: string }) {
                     type="button"
                     onClick={() => {
                       const next = removeRegion(layout, region.key);
-                      if (next) change(next);
+                      if (!next) return;
+                      change(next);
+                      if (targetRegion === region.key) setTargetRegion('main');
                     }}
                     className="text-xs text-muted-foreground hover:text-destructive"
                   >
@@ -366,10 +374,19 @@ export function PageComposer({ id }: { id: string }) {
         {announcement}
       </p>
       {converted && (
-        <p role="status" className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
-          This page was built without the composer. Its sections are loaded as-is; saving stores them as a composer layout,
-          which the server validates against your registered blocks.
-        </p>
+        <div role="status" className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+          <p>
+            This page was built without the composer. Its sections keep their component, data, style and data source;
+            saving stores them as a composer layout, which the server validates against your registered blocks.
+          </p>
+          {dropped.length > 0 && (
+            <p className="mt-1">
+              The composer layout has no place for these keys, so saving removes them:{' '}
+              <span className="font-mono">{dropped.join(', ')}</span>. If your frontend reads them, move them into a
+              block's fields before saving.
+            </p>
+          )}
+        </div>
       )}
       {mapped && (mapped.general.length > 0 || mapped.bySection.size > 0) && (
         <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
@@ -379,10 +396,12 @@ export function PageComposer({ id }: { id: string }) {
               <li key={`g${n}`}>{i.message}</li>
             ))}
             {[...mapped.bySection.entries()].map(([sectionId, list]) => {
-              const section = layout.sections.find((s) => s.id === sectionId);
+              const section = failure?.submitted.sections.find((s) => s.id === sectionId);
+              const removed = !layout.sections.some((s) => s.id === sectionId);
               return (
                 <li key={sectionId}>
-                  {blockLabel(section?.component ?? '')}: {list.map((i) => (i.field ? `${i.field} — ${i.message}` : i.message)).join('; ')}
+                  {blockLabel(section?.component ?? '')}
+                  {removed ? ' (removed since)' : ''}: {list.map((i) => (i.field ? `${i.field} — ${i.message}` : i.message)).join('; ')}
                 </li>
               );
             })}
@@ -390,16 +409,14 @@ export function PageComposer({ id }: { id: string }) {
         </div>
       )}
 
-      {previewOpen ? (
-        <PreviewSplit
-          editor={composer}
-          preview={
+      <PreviewSplit
+        editor={composer}
+        preview={
+          previewOpen ? (
             <PagePreview slug={page.data.slug} savedMarker={String(page.data.updatedAt)} onClose={() => setPreviewOpen(false)} />
-          }
-        />
-      ) : (
-        composer
-      )}
+          ) : null
+        }
+      />
     </div>
   );
 }
@@ -501,6 +518,11 @@ function SectionInspector(props: {
     .filter((f) => !f.hidden && !f.system && f.type !== 'alias' && !f.encrypted)
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   const issueFor = (name: string) => props.issues.find((i) => i.field === `data.${name}` || i.field?.startsWith(`data.${name}.`));
+  // Keys the block does not define (a legacy layout, or a field deleted since)
+  // have no control of their own, and the server refuses them (UNKNOWN_FIELD).
+  // List them so they can be removed without deleting the whole section.
+  const known = new Set((fields.data ?? []).map((f) => f.name));
+  const unknown = fields.isSuccess ? Object.keys(section.data).filter((key) => !known.has(key)) : [];
   const visible = Array.isArray(section.styleConfig.locales) ? section.styleConfig.locales : [];
 
   return (
@@ -525,6 +547,37 @@ function SectionInspector(props: {
           </div>
         );
       })}
+
+      {unknown.length > 0 && (
+        <fieldset className="space-y-1 border-t pt-2" aria-label="Data the block does not define">
+          <legend className="text-xs font-medium text-muted-foreground">Not part of this block</legend>
+          <p className="text-xs text-muted-foreground">
+            The server refuses data the block does not define. Remove these keys to save.
+          </p>
+          <ul className="space-y-1">
+            {unknown.map((key) => {
+              const issue = issueFor(key);
+              return (
+                <li key={key} data-unknown-field={key} className="flex items-center justify-between gap-2 text-xs">
+                  <span className={cn('font-mono', issue && 'text-destructive')}>{key}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${key}`}
+                    onClick={() => {
+                      const data = { ...section.data };
+                      delete data[key];
+                      props.onChange({ data });
+                    }}
+                    className="rounded border px-1.5 py-0.5 hover:bg-muted"
+                  >
+                    Remove
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </fieldset>
+      )}
 
       {props.locales.length > 1 && (
         <fieldset className="space-y-1 border-t pt-2">
