@@ -16,6 +16,7 @@ import type { AppEnv } from '../env';
 import { SLUG_MAX_LENGTH } from '../services/identifier-guard';
 import { PageService, PageServiceError, type PageRow } from '../services/page-service';
 import { canActOnPage, resolvePagesAccess, type PagesAccess, type PagesAction } from '../services/page-access';
+import { permissionServiceForRequest } from '../services/item-service-factory';
 import { formatSafeError } from '@lumibase/contracts/utils';
 
 export const pagesRouter = new Hono<AppEnv>();
@@ -46,6 +47,7 @@ function buildService(c: Context<AppEnv>) {
     siteId: c.get('siteId'),
     cache: c.get('runtime').cache,
     actorId: c.get('auth')?.userId ?? null,
+    permissions: permissionServiceForRequest(c),
   });
 }
 
