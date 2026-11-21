@@ -1,11 +1,11 @@
 ---
-version: 62
-lastUpdated: 2026-11-20T05:35:06.709Z
+version: 63
+lastUpdated: 2026-11-21T01:11:21.227Z
 sourceLang: en
-contentHash: a752c28a3a48bf3d
-codeVerified: 2026-11-20T05:35:06.709Z
-codeVerifiedHash: a752c28a3a48bf3d
-codeVerifiedClaims: 652
+contentHash: 534f59731902827a
+codeVerified: 2026-11-21T01:11:21.227Z
+codeVerifiedHash: 534f59731902827a
+codeVerifiedClaims: 684
 ---
 
 # Hono API Specification — LumiBase
@@ -1635,6 +1635,55 @@ Site-admin scope (`requireSiteAdmin`). Backed by the shared EmailService
 exactly one of `templateKey` or `inline: { subject, html?, text? }` `}`.
 Returns `502 DELIVERY_FAILED`, `404 NOT_FOUND` (template), or
 `503 EMAIL_NOT_CONFIGURED` (degraded mode).
+
+### Memberships & newsletters (epic #672)
+
+Guide: [features/memberships.md](../features/memberships.md). Admin routes are site-admin only (`requireSiteAdmin`) and sit on the Studio plane; Portal routes are public or need a `frontend` member session.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/PATCH` | `/api/v1/members/settings` | Portal switch, `allowSelfSignup`, `redirectUris` (exact-match magic-link landings), `defaultNewsletterIds`, `signupCopy` per locale, `senderName` |
+| `GET/POST` | `/api/v1/members` | List (`?limit&offset&search&segmentId&filter&sort`, `{ data, meta: { total, limit, offset } }`) / create `{ email, name?, status, tierId?, tierExpiresAt?, labels?, note?, newsletterIds? }`. `409 MEMBER_EXISTS`, `400 TIER_REQUIRED` / `TIER_STATUS_MISMATCH` |
+| `GET/PATCH/DELETE` | `/api/v1/members/:id` | One member; a status/tier change re-syncs the tier policy on the member's account and bumps the permission version |
+| `PUT` | `/api/v1/members/:id/newsletters/:newsletterId` | `{ subscribed }` toggle |
+| `GET/POST` | `/api/v1/members/tiers` | Tiers (`memberCount`) / create `{ key, name, kind, prices?, currency?, benefits?, externalIds? }`; each tier gets a `member-tier:<key>` policy |
+| `PATCH/DELETE` | `/api/v1/members/tiers/:id` | Update (key and kind are immutable); delete only without members (`409 TIER_IN_USE`) |
+| `GET/PUT` | `/api/v1/members/tiers/:id/access` | Read grants of the tier policy / grant `{ collection, publishedOnly?, fields? }` (read only) |
+| `DELETE` | `/api/v1/members/tiers/:id/access/:collection` | Revoke |
+| `GET/POST` | `/api/v1/members/segments` | Saved segments with a live `count` / create `{ name, description?, filter }` |
+| `POST` | `/api/v1/members/segments/preview` | `{ filter, limit? }` → `{ count, sample }` without saving |
+| `GET/PATCH/DELETE` | `/api/v1/members/segments/:id` | One segment |
+| `GET/POST` | `/api/v1/members/newsletters` | Newsletters (`subscriberCount`) / create `{ key, name, senderEmail?, audience, subscribeOnSignup, trackOpens, trackClicks, layoutKey? }` |
+| `PATCH/DELETE` | `/api/v1/members/newsletters/:id` | Update; delete archives a newsletter that has sends |
+| `GET` | `/api/v1/members/newsletters/:id/audience` | `?segmentId` → `{ count }` |
+| `GET/POST` | `/api/v1/members/newsletters/:id/sends` | Issues / send an item `{ collection, itemId, segmentId?, publish?, compose? }` → `202`. `409 ALREADY_SENT` / `SENDER_DOMAIN_UNVERIFIED` / `NEWSLETTER_ARCHIVED`, `503 EMAIL_NOT_CONFIGURED` |
+| `GET` | `/api/v1/members/sends/:id` | Status and counters (`recipients, sent, failed, skipped, opened, clicked`) |
+| `POST` | `/api/v1/members/sends/:id/cancel` | Cancel a queued or sending issue |
+| `GET` | `/api/v1/members/sequences/templates` | `welcome`, `onboarding`, `win-back` |
+| `POST` | `/api/v1/members/sequences/from-template` | `{ template, key?, segmentId?, fromEmail?, fromName? }` → a draft sequence |
+| `GET/POST` | `/api/v1/members/sequences` | Sequences with enrolment counts / create `{ key, name, trigger, triggerOptions, steps[], status }` |
+| `GET/PATCH/DELETE` | `/api/v1/members/sequences/:id` | One sequence |
+| `GET` | `/api/v1/members/sequences/:id/enrollments` | Enrolments (`stepIndex`, `status`, `nextRunAt`, `stoppedReason`) |
+| `POST` | `/api/v1/members/sequences/:id/enroll` | `{ memberId }`; `409 SEQUENCE_NOT_ACTIVE` |
+| `POST` | `/api/v1/members/signup-card/install` | Install the `signup_card` block template (idempotent) |
+| `GET/POST` | `/api/v1/email/sending-domains` | Domains with DNS records + status / add `{ domain }` (2048-bit DKIM) |
+| `GET/DELETE` | `/api/v1/email/sending-domains/:id` | One domain |
+| `POST` | `/api/v1/email/sending-domains/:id/check` | Look up SPF / DKIM / DMARC (alignment) now |
+| `POST` | `/api/v1/email/sending-domains/:id/rotate` | Start a DKIM rotation; `409 ROTATION_IN_PROGRESS` |
+
+Member Portal (`404 PORTAL_DISABLED` until enabled):
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/portal/config?locale=` | public | Newsletters, active tiers, resolved signup copy |
+| `GET` | `/api/v1/portal/signup-card?locale=` | public | Resolved signup-card copy |
+| `POST` | `/api/v1/portal/magic-link` | public | `{ email, name?, newsletters?, redirectUri?, intent, locale? }` → `202` (anti-enumeration); `400 REDIRECT_NOT_ALLOWED`, `429 RATE_LIMITED` |
+| `POST` | `/api/v1/portal/magic-link/verify` | public | `{ token }` → `frontend` session (same shape as `/auth/login`); `400 MAGIC_LINK_INVALID`, `409 PASSWORD_LOGIN_REQUIRED` for a staff account |
+| `GET/PATCH/DELETE` | `/api/v1/portal/me` | member | Profile; `{ name?, newsletters?: { [id]: boolean }, unsubscribeAll? }`; leave |
+| `POST` | `/api/v1/portal/me/tier` | member | `{ tier, interval?, returnUrl? }` → `{ status: 'switched' }` (free tier) or `{ status: 'checkout', checkoutUrl }`; `402 PAYMENT_PROVIDER_NOT_CONFIGURED` |
+| `GET/POST` | `/api/v1/portal/email/unsubscribe?token=` | public | Member unsubscribe. `GET` only renders a confirmation form and changes nothing (mail scanners prefetch links); `POST` is the only mutation: RFC 8058 one-click (`List-Unsubscribe=One-Click` → `200`, empty) or the form (→ confirmation page) |
+| `GET` | `/api/v1/portal/email/o?t=` | public | Open pixel (opt-in tracking) |
+| `GET` | `/api/v1/portal/email/c?t=` | public | Click redirect to the signed URL only |
 
 ---
 

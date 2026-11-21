@@ -1,10 +1,10 @@
 ---
-version: 14
-lastUpdated: 2026-11-19T05:19:35.652Z
+version: 15
+lastUpdated: 2026-11-21T01:11:17.333Z
 sourceLang: vi
-contentHash: d2cc106e6be514ec
-codeVerified: 2026-11-19T05:19:35.652Z
-codeVerifiedHash: d2cc106e6be514ec
+contentHash: 4ed8e8738107a7cb
+codeVerified: 2026-11-21T01:11:17.333Z
+codeVerifiedHash: 4ed8e8738107a7cb
 codeVerifiedClaims: 4
 ---
 
@@ -79,6 +79,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [site-skills.md](./features/site-skills.md) — Site Skills: playbook có phiên bản được chèn vào agent run, CLI skills-as-code, MCP prompts.
   - [agent-receipts.md](./features/agent-receipts.md) — Agent receipts: run, approval, lần bác bỏ, chi phí, drift và autonomy trong một cửa sổ; ngưỡng cảnh báo và xuất CSV.
   - [locale-generator.md](./features/locale-generator.md) — Locale generator: thêm locale trong một bước; bản dịch máy chờ trong hàng đợi review.
+  - [memberships.md](./features/memberships.md) — Memberships & newsletters: member theo tier, Portal magic link, segment tự cập nhật, newsletter, email sequence, sending domain có DKIM.
   - [external-action-tools.md](./features/external-action-tools.md) — Tool của agent có tác động ngoài CMS, được quản trị: rủi ro khai báo, approval chỉ dành cho người, bí mật theo site.
   - [runtime-abstraction.md](./features/runtime-abstraction.md) — Lớp `@lumibase/runtime` cho phép chạy trên Cloudflare và Docker.
   - [flows-automation.md](./features/flows-automation.md) — Flows / Operations engine (workflow automation).

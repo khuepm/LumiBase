@@ -6666,3 +6666,215 @@ paths:
         '403': { description: Not the bootstrap admin, or an API key }
         '409': { description: '`PULL_NOT_CONFIGURED`' }
         '502': { description: '`PULL_FAILED` with the reason; the accepted manifest stays in force' }
+
+  # ── Memberships & newsletters (epic #672) ────────────────────────────────
+  /members:
+    get:
+      tags: [Members]
+      summary: List members (#717)
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: limit, in: query, schema: { type: integer, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: segmentId, in: query, schema: { type: string } }
+        - { name: filter, in: query, description: Segment filter as JSON, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string, enum: [created_at, -created_at, email, -last_seen_at] } }
+      responses:
+        '200': { description: '{ data, meta: { total, limit, offset } }' }
+        '403': { description: Not a site administrator }
+    post:
+      tags: [Members]
+      summary: Create a member (#717)
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+                name: { type: [string, 'null'] }
+                status: { type: string, enum: [free, paid, comped], default: free }
+                tierId: { type: [string, 'null'] }
+                tierExpiresAt: { type: [string, 'null'], format: date-time }
+                labels: { type: array, items: { type: string } }
+                note: { type: [string, 'null'] }
+                newsletterIds: { type: array, items: { type: string } }
+      responses:
+        '201': { description: Created }
+        '400': { description: VALIDATION, TIER_REQUIRED or TIER_STATUS_MISMATCH }
+        '409': { description: MEMBER_EXISTS }
+  /members/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get: { tags: [Members], summary: Read a member, responses: { '200': { description: OK }, '404': { description: Not found } } }
+    patch: { tags: [Members], summary: Update a member (status/tier change re-syncs the tier policy), responses: { '200': { description: OK } } }
+    delete: { tags: [Members], summary: Delete a member, responses: { '200': { description: Deleted } } }
+  /members/tiers:
+    get: { tags: [Members], summary: List tiers, parameters: [{ $ref: '#/components/parameters/SiteHeader' }], responses: { '200': { description: OK } } }
+    post: { tags: [Members], summary: Create a tier (provisions its member-tier policy), parameters: [{ $ref: '#/components/parameters/SiteHeader' }], responses: { '201': { description: Created }, '409': { description: TIER_KEY_TAKEN } } }
+  /members/tiers/{id}/access:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get: { tags: [Members], summary: Read grants of the tier policy, responses: { '200': { description: OK } } }
+    put: { tags: [Members], summary: Grant read on a collection to the tier, responses: { '200': { description: OK } } }
+  /members/segments:
+    get: { tags: [Members], summary: Saved segments with live counts (#723), parameters: [{ $ref: '#/components/parameters/SiteHeader' }], responses: { '200': { description: OK } } }
+    post: { tags: [Members], summary: Save a segment, parameters: [{ $ref: '#/components/parameters/SiteHeader' }], responses: { '201': { description: Created }, '400': { description: Invalid filter } } }
+  /members/segments/preview:
+    post: { tags: [Members], summary: Count and sample an unsaved filter, parameters: [{ $ref: '#/components/parameters/SiteHeader' }], responses: { '200': { description: '{ count, sample }' } } }
+  /members/newsletters:
+    get: { tags: [Members], summary: List newsletters (#719), parameters: [{ $ref: '#/components/parameters/SiteHeader' }], responses: { '200': { description: OK } } }
+    post: { tags: [Members], summary: Create a newsletter, parameters: [{ $ref: '#/components/parameters/SiteHeader' }], responses: { '201': { description: Created } } }
+  /members/newsletters/{id}/sends:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get: { tags: [Members], summary: Issues of a newsletter, responses: { '200': { description: OK } } }
+    post:
+      tags: [Members]
+      summary: Send an item as a newsletter issue (Publish & send)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [collection, itemId]
+              properties:
+                collection: { type: string }
+                itemId: { type: string }
+                segmentId: { type: [string, 'null'] }
+                publish: { type: boolean, default: false }
+                compose:
+                  type: object
+                  properties:
+                    subjectField: { type: string, default: title }
+                    bodyField: { type: string, default: content }
+                    excerptField: { type: string }
+                    locale: { type: string }
+                    subject: { type: string }
+      responses:
+        '202': { description: Send queued; the first batches run in the background }
+        '409': { description: ALREADY_SENT, SENDER_DOMAIN_UNVERIFIED or NEWSLETTER_ARCHIVED }
+        '503': { description: EMAIL_NOT_CONFIGURED }
+  /members/sends/{id}:
+    get:
+      tags: [Members]
+      summary: Send status and counters
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses: { '200': { description: OK } }
+  /members/sequences:
+    get: { tags: [Members], summary: Email sequences (#720), parameters: [{ $ref: '#/components/parameters/SiteHeader' }], responses: { '200': { description: OK } } }
+    post: { tags: [Members], summary: Create a sequence, parameters: [{ $ref: '#/components/parameters/SiteHeader' }], responses: { '201': { description: Created } } }
+  /members/sequences/from-template:
+    post: { tags: [Members], summary: Create a draft sequence from welcome / onboarding / win-back, parameters: [{ $ref: '#/components/parameters/SiteHeader' }], responses: { '201': { description: Created } } }
+  /members/signup-card/install:
+    post: { tags: [Members], summary: Install the signup_card block template (#721), parameters: [{ $ref: '#/components/parameters/SiteHeader' }], responses: { '200': { description: Already installed }, '201': { description: Installed } } }
+  /email/sending-domains:
+    get: { tags: [Members], summary: Custom sending domains with DNS records and status (#722), parameters: [{ $ref: '#/components/parameters/SiteHeader' }], responses: { '200': { description: OK } } }
+    post: { tags: [Members], summary: Add a sending domain (generates a 2048-bit DKIM key), parameters: [{ $ref: '#/components/parameters/SiteHeader' }], responses: { '201': { description: Created }, '409': { description: DOMAIN_EXISTS } } }
+  /email/sending-domains/{id}/check:
+    post:
+      tags: [Members]
+      summary: Look up SPF, DKIM and DMARC (alignment) now
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses: { '200': { description: OK } }
+  /email/sending-domains/{id}/rotate:
+    post:
+      tags: [Members]
+      summary: Start a zero-downtime DKIM rotation
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses: { '200': { description: OK }, '409': { description: ROTATION_IN_PROGRESS } }
+  /portal/config:
+    get:
+      tags: [Member Portal]
+      summary: Portal catalog and localized signup copy (public)
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: locale, in: query, schema: { type: string } }
+      responses: { '200': { description: OK }, '404': { description: PORTAL_DISABLED } }
+  /portal/signup-card:
+    get:
+      tags: [Member Portal]
+      summary: Resolved signup-card copy (public)
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: locale, in: query, schema: { type: string } }
+      responses: { '200': { description: OK } }
+  /portal/magic-link:
+    post:
+      tags: [Member Portal]
+      summary: Request a sign-up / sign-in magic link (public, anti-enumeration)
+      security: []
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+                name: { type: string }
+                newsletters: { type: array, items: { type: string } }
+                redirectUri: { type: string, description: Must be a registered landing URL (exact match) }
+                intent: { type: string, enum: [signup, signin], default: signup }
+                locale: { type: string }
+      responses:
+        '202': { description: Same answer whether or not the address is a member }
+        '400': { description: VALIDATION or REDIRECT_NOT_ALLOWED }
+        '429': { description: RATE_LIMITED }
+  /portal/magic-link/verify:
+    post:
+      tags: [Member Portal]
+      summary: Redeem a magic link for a frontend session (public, single use)
+      security: []
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [token], properties: { token: { type: string } } }
+      responses:
+        '200': { description: Session (same shape as /auth/login) }
+        '400': { description: MAGIC_LINK_INVALID }
+        '409': { description: PASSWORD_LOGIN_REQUIRED (staff account) }
+  /portal/me:
+    parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+    get: { tags: [Member Portal], summary: The signed-in member's profile, responses: { '200': { description: OK }, '401': { description: UNAUTHENTICATED }, '404': { description: MEMBER_NOT_FOUND } } }
+    patch: { tags: [Member Portal], summary: 'Update name, toggle newsletters, unsubscribe from everything', responses: { '200': { description: OK } } }
+    delete: { tags: [Member Portal], summary: Leave (delete the member profile), responses: { '200': { description: OK } } }
+  /portal/me/tier:
+    post:
+      tags: [Member Portal]
+      summary: Switch to a free tier or get a checkout URL for a paid tier
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      responses: { '200': { description: switched or checkout }, '402': { description: PAYMENT_PROVIDER_NOT_CONFIGURED } }
+  /portal/email/unsubscribe:
+    get:
+      tags: [Member Portal]
+      summary: Member unsubscribe confirmation page (public, signed token)
+      security: []
+      parameters: [{ name: token, in: query, required: true, schema: { type: string } }]
+      responses: { '200': { description: HTML }, '400': { description: Invalid token } }
+    post:
+      tags: [Member Portal]
+      summary: RFC 8058 one-click unsubscribe (public, signed token)
+      security: []
+      parameters: [{ name: token, in: query, required: true, schema: { type: string } }]
+      responses: { '200': { description: Unsubscribed }, '400': { description: Invalid token } }

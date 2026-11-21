@@ -109,6 +109,10 @@ import { mcpRouter } from './routes/mcp';
 import { protectedResourceRouter } from './routes/oauth-protected-resource';
 import { withMcpAuthChallenge } from './middleware/mcp-oauth';
 import { emailRouter } from './modules/email/routes';
+import { membersRouter } from './modules/members/routes';
+import { portalRouter } from './modules/members/portal-routes';
+import { memberEmailPublicRouter } from './modules/members/email-public-routes';
+import { sendingDomainsRouter } from './modules/members/sending-domain-routes';
 import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
@@ -353,7 +357,18 @@ api.route('/teams', teamsRouter);
 api.route('/files', filesRouter);
 api.route('/webhooks', webhooksRouter);
 api.route('/deployments', deploymentsRouter);
+// Custom sending domains (epic #672 N06) inherit the email module's
+// `requireSiteAdmin()`; attached before `emailRouter` is mounted (Hono copies
+// routes at mount time).
+emailRouter.route('/sending-domains', sendingDomainsRouter);
 api.route('/email', emailRouter);
+// Members, tiers, segments, newsletters, sequences (epic #672) — Studio
+// plane, site-admin only (prefix listed in STUDIO_ACCESS_PATH_PREFIXES).
+api.route('/members', membersRouter);
+// Member Portal (epic #672 N01/N02): public sign-up / magic link + the
+// member's own profile under a `frontend` session. Public leaf paths are
+// exact-matched in `isPortalPublicPath` (withAuth bypass).
+api.route('/portal', portalRouter);
 api.route('/activity', activityRouter);
 api.route('/realtime', realtimeRouter);
 api.route('/push', pushRouter);
@@ -469,6 +484,14 @@ app.route('/api/v1/shares', sharePublicRouter);
 // paths fall through to the authenticated `emailRouter`.
 app.use('/api/v1/email/unsubscribe', withDb());
 app.route('/api/v1/email', emailPublicRouter);
+
+// Member mail links (epic #672 N03): one-click unsubscribe (RFC 8058), open
+// pixel, click redirect. Public for the same reason as the CAN-SPAM route
+// above: the signed token names the site and each handler scopes its DB
+// handle with `scopedDbFor` (B130). Registered before the `api` mount so these
+// leaf paths win over `/api/v1/portal/*` of the authenticated chain.
+app.use('/api/v1/portal/email/*', withDb());
+app.route('/api/v1/portal/email', memberEmailPublicRouter);
 
 // Delivery (public) routes — tenancy is encoded in the URL. MUST be mounted
 // BEFORE `app.route('/api/v1', api)`: the authenticated sub-app's `use('*')`

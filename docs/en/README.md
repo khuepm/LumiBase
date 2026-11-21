@@ -1,13 +1,13 @@
 ---
-version: 15
-lastUpdated: 2026-11-19T05:19:35.652Z
+version: 16
+lastUpdated: 2026-11-21T01:11:17.333Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: d2cc106e6be514ec
+sourceHash: 4ed8e8738107a7cb
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T05:19:35.652Z
-codeVerifiedHash: d2cc106e6be514ec
+codeVerified: 2026-11-21T01:11:17.333Z
+codeVerifiedHash: 4ed8e8738107a7cb
 codeVerifiedClaims: 4
 ---
 
@@ -82,6 +82,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
   - [site-skills.md](./features/site-skills.md) — Site Skills: versioned playbooks injected into agent runs, skills-as-code CLI, MCP prompts.
   - [agent-receipts.md](./features/agent-receipts.md) — Agent receipts: runs, approvals, overrides, cost, drift and autonomy over a window; alert thresholds and CSV export.
   - [locale-generator.md](./features/locale-generator.md) — Locale generator: add a locale in one step; machine translations wait in a review queue.
+  - [memberships.md](./features/memberships.md) — Memberships & newsletters: tiered members, magic-link Portal, self-updating segments, newsletters, email sequences, DKIM sending domains.
   - [external-action-tools.md](./features/external-action-tools.md) — Governed agent tools whose effect lands outside the CMS: declared risk, human-only approval, per-site secrets.
   - [runtime-abstraction.md](./features/runtime-abstraction.md) — The `@lumibase/runtime` layer that allows running on Cloudflare and Docker.
   - [flows-automation.md](./features/flows-automation.md) — The Flows / Operations engine (workflow automation).

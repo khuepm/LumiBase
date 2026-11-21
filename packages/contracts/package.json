@@ -37,7 +37,8 @@
     "./version": "./src/version.ts",
     "./utils": "./src/utils/logger.ts",
     "./richtext": "./src/richtext/index.ts",
-    "./migrate": "./src/migrate/index.ts"
+    "./migrate": "./src/migrate/index.ts",
+    "./members": "./src/members/index.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -104,6 +105,11 @@
         "types": "./dist/migrate/index.d.ts",
         "import": "./dist/migrate/index.js",
         "require": "./dist/migrate/index.cjs"
+      },
+      "./members": {
+        "types": "./dist/members/index.d.ts",
+        "import": "./dist/members/index.js",
+        "require": "./dist/members/index.cjs"
       }
     }
   },
