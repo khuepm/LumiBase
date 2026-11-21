@@ -122,6 +122,38 @@ interface IssueArgs {
   familyId?: string;
   ip?: string | null;
   userAgent?: string | null;
+  /**
+   * Authentication methods the login proved (#987). Stored on the row and
+   * copied on every rotation so `/refresh` can keep `tfaVerified`.
+   */
+  amr?: readonly string[] | null;
+}
+
+/**
+ * Second-factor methods that make a session TFA-verified. Kept in step with
+ * `isSessionTfaVerified` in `middleware/studio-access.ts`.
+ */
+const SECOND_FACTOR_METHODS = new Set(['mfa', 'otp', 'totp', 'webauthn']);
+
+/**
+ * Normalise an `amr` list for storage: strings only, de-duplicated, capped.
+ * Returns `null` for an empty or missing list so single-factor families keep
+ * the column NULL.
+ */
+export function normalizeAmr(amr: unknown): string[] | null {
+  if (!Array.isArray(amr)) return null;
+  const out: string[] = [];
+  for (const value of amr) {
+    if (typeof value !== 'string' || value.length === 0 || value.length > 32) continue;
+    if (!out.includes(value)) out.push(value);
+    if (out.length >= 8) break;
+  }
+  return out.length > 0 ? out : null;
+}
+
+/** True when `amr` records a second factor (TOTP, OTP, WebAuthn, MFA). */
+export function amrHasSecondFactor(amr: unknown): boolean {
+  return Array.isArray(amr) && amr.some((value) => SECOND_FACTOR_METHODS.has(String(value)));
 }
 
 /**
@@ -150,6 +182,7 @@ export async function issueRefreshToken(
       expiresAt,
       lastIp: args.ip ?? null,
       lastUserAgent: args.userAgent ?? null,
+      amr: normalizeAmr(args.amr),
     })
     .returning({ id: refreshTokens.id });
 
@@ -186,6 +219,8 @@ export type RefreshOutcome =
       expiresAt: Date;
       /** Session (rotation family) id — carried as the access JWT's `sid`. */
       familyId: string;
+      /** Authentication methods recorded on the family (#987); `null` if none. */
+      amr: string[] | null;
     }
   | {
       ok: false;
@@ -257,6 +292,7 @@ export async function rotateRefreshToken(
         familyId: row.familyId,
         ip: args.ip,
         userAgent: args.userAgent,
+        amr: row.amr ?? null,
       },
       env,
     );
@@ -273,6 +309,7 @@ export async function rotateRefreshToken(
       token: next.token,
       expiresAt: next.expiresAt,
       familyId: row.familyId,
+      amr: normalizeAmr(row.amr),
     } as const;
   });
 }

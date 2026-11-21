@@ -88,6 +88,11 @@ describe('LUMIBASE_REQUIRE_SETUP_TOKEN has one parser', () => {
 
   it('the request path and the startup step both use isSetupTokenRequired', () => {
     expect(read('modules/setup/routes.ts')).toMatch(/isSetupTokenRequired\(/);
-    expect(read('modules/setup/startup.ts')).toMatch(/isSetupTokenRequired\(deps\.env\)/);
+    // Startup mints only when the gate is on and no operator token is set
+    // (#992); `shouldMintSetupToken` is defined on top of the same parser.
+    expect(read('modules/setup/startup.ts')).toMatch(/shouldMintSetupToken\(deps\.env\)/);
+    expect(read('modules/setup/setup-token.ts')).toMatch(
+      /export function shouldMintSetupToken\([^)]*\)[^{]*\{\s*return isSetupTokenRequired\(env\)/,
+    );
   });
 });

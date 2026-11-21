@@ -1,9 +1,9 @@
 ---
-version: 3
-lastUpdated: 2026-11-15T19:48:31.851Z
+version: 5
+lastUpdated: 2026-11-21T00:28:04.489Z
 sourceLang: en
 translatedFrom: en
-sourceHash: e613099bcc5af049
+sourceHash: b0d5b41e59619a84
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -30,6 +30,7 @@ LumiBase tuân theo [mẫu ADR](https://adr.github.io/) để ghi lại các quy
 | [ADR-012](./adr-012-remove-cdc-cache-invalidator.md) | Loại bỏ CDC CacheInvalidator (thay thế bằng xả tag tại đường dẫn ghi API) | Accepted |
 | [ADR-013](./adr-013-organization-plane.md) | Organization plane (phân cấp tenant và credential phân loại theo phạm vi) | Proposed |
 | [ADR-014](./adr-014-preview-bridge-threat-model.md) | Cầu nối live preview — preview token, nhúng frame và threat model của postMessage | Accepted |
+| [ADR-015](./adr-015-extension-isolation.md) | Cách ly mã của extension (host ngoài process trên Node; Workers vẫn chạy trong process) | Accepted |
 
 ## Template
 

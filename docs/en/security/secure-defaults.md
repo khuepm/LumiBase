@@ -1,11 +1,11 @@
 ---
 title: Secure defaults and lumibase doctor --security
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-14T02:04:01.435Z
-contentHash: 23ef15e31d018d14
-codeVerified: 2026-11-14T02:04:01.435Z
-codeVerifiedHash: 23ef15e31d018d14
+version: 2
+lastUpdated: 2026-11-19T20:13:27.009Z
+contentHash: e7dbd2e5d6aabffd
+codeVerified: 2026-11-19T20:13:27.009Z
+codeVerifiedHash: e7dbd2e5d6aabffd
 codeVerifiedClaims: 34
 ---
 
@@ -72,7 +72,7 @@ Production rules apply when `NODE_ENV` or `LUMIBASE_ENV` is `production`, or whe
 | `cors-insecure-origin` | — / warning | `http://` or loopback origins in production |
 | `cookie-insecure` | info / critical | `REFRESH_COOKIE_SECURE=false` |
 | `cookie-samesite-none` / `cookie-samesite-invalid` | info / warning; warning | `REFRESH_COOKIE_SAMESITE` is `None`, or an unknown value |
-| `setup-token-off` | info / warning | `LUMIBASE_REQUIRE_SETUP_TOKEN` is not on (Node/Docker only) |
+| `setup-token-off` | info / warning | The setup gate is off: `LUMIBASE_REQUIRE_SETUP_TOKEN=false`, or not production and no `LUMIBASE_SETUP_TOKEN` (Node/Docker only; on by default in production since #992) |
 | `rls-invalid` | critical / critical | `LUMIBASE_DB_RLS` is not `off` or `enforce` (the CMS fails closed) |
 | `rls-no-system-url` | critical / critical | `enforce` without `DATABASE_SYSTEM_URL` (startup error) |
 | `rls-off` | info / warning | RLS not enforced (Node/Docker only) |

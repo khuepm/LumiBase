@@ -1,6 +1,6 @@
 import type { RuntimeContext } from '@lumibase/runtime';
 import type { AppEnv } from '../../env';
-import { provisionSite, finalizeSiteProvisioning } from '../../services/site-provisioning';
+import { ensureAdministratorMfaPolicy, finalizeSiteProvisioning, provisionSite, shouldRequireAdminMfa } from '../../services/site-provisioning';
 /**
  * SetupService — implements the three public surfaces of the Setup
  * Wizard backend (design §6.5):
@@ -51,7 +51,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import { nanoid } from 'nanoid';
-import { hashPassword } from '../../services/auth/password';
+import { targetPbkdf2Iterations, hashPassword } from '../../services/auth/password';
 import { ROLE_LIBRARY } from '../../services/agent-role-service';
 import { AUTONOMY_LEVELS } from '../../services/autonomy-service';
 import {
@@ -71,7 +71,7 @@ import {
   normalizeAdminPath,
   validateAdminPath,
 } from './path-validator';
-import { verifySetupToken } from './setup-token';
+import { hashSetupToken, verifySetupToken } from './setup-token';
 import { canonicalEmail, type EmailIdentityMode } from '../email-identity/normalize';
 import { isEmailIdentityConflict, userEmailCondition } from '../email-identity/service';
 
@@ -289,6 +289,11 @@ export interface SetupServiceDeps {
   readonly env?: AppEnv['Bindings'];
   readonly runtime?: RuntimeContext;
   readonly requireSetupToken: boolean;
+  /**
+   * Operator-provided setup token (`LUMIBASE_SETUP_TOKEN`, #992). Accepted
+   * alongside a minted one; the only token source on Cloudflare Workers.
+   */
+  readonly operatorSetupToken?: string | null;
   readonly smtpAvailable: boolean;
   readonly encryptionAvailable: boolean;
   readonly geoipProbe?: GeoipProbe;
@@ -565,16 +570,20 @@ export class SetupService {
         if (this.deps.requireSetupToken) {
           // Checked before the caller's input: with no stored hash, no token
           // can ever verify, and saying so is the only actionable answer.
-          if (!locked.setupTokenHash) {
+          const operatorToken = this.deps.operatorSetupToken ?? null;
+          if (!locked.setupTokenHash && !operatorToken) {
             throw new SetupAbort({ code: 'SETUP_TOKEN_NOT_ISSUED' });
           }
           if (!input.setupToken) {
             throw new SetupAbort({ code: 'SETUP_TOKEN_REQUIRED' });
           }
-          const ok = await verifySetupToken(
-            input.setupToken,
-            locked.setupTokenHash,
-          );
+          // Both checks always run when both sources exist, so timing does
+          // not reveal which one a guess was closer to.
+          const mintedOk = await verifySetupToken(input.setupToken, locked.setupTokenHash);
+          const operatorOk = operatorToken
+            ? await verifySetupToken(input.setupToken, await hashSetupToken(operatorToken))
+            : false;
+          const ok = mintedOk || operatorOk;
           if (!ok) {
             throw new SetupAbort({ code: 'SETUP_TOKEN_INVALID' });
           }
@@ -605,7 +614,10 @@ export class SetupService {
         //       setup-token gate have succeeded. PBKDF2 100k is intentionally
         //       expensive, so invalid public setup requests must be rejected
         //       before reaching this point.
-        const passwordHash = await hashPassword(input.account.password);
+        const passwordHash = await hashPassword(
+          input.account.password,
+          targetPbkdf2Iterations(this.deps.env as unknown as Record<string, unknown> | undefined),
+        );
         const plainBackupCodes: string[] = [];
         for (let i = 0; i < BACKUP_CODE_COUNT; i++) {
           plainBackupCodes.push(generateBackupCode());
@@ -651,6 +663,13 @@ export class SetupService {
           siteUrl: projectValue.siteUrl, defaultLanguage: projectValue.defaultLanguage,
           allowExisting: true,
         });
+
+        // ── 8a. Administrator MFA (#987): in production, with encryption
+        //        configured, the first admin enrols a second factor before
+        //        the Studio opens. `LUMIBASE_ADMIN_REQUIRE_MFA` overrides.
+        if (shouldRequireAdminMfa(this.adminMfaEnv(), this.deps.encryptionAvailable)) {
+          await ensureAdministratorMfaPolicy(tx, DEFAULT_SITE_ID, provisioned.administratorRoleId);
+        }
 
         // ── 8b. Seed the agent role library (Setup Impact Registry #1;
         //        content-os Req 10.3). Without this, `agent_roles` stays
@@ -1070,6 +1089,13 @@ export class SetupService {
    * through the secret-masking, budget-bounded, never-throwing logger
    * (task 11.1).
    */
+  /** Bindings on Workers; `process.env` on Node, where `deps.env` may be absent. */
+  private adminMfaEnv(): Readonly<Record<string, unknown>> {
+    const bindings = (this.deps.env ?? {}) as unknown as Record<string, unknown>;
+    const proc = typeof process !== 'undefined' ? (process.env as Record<string, unknown>) : {};
+    return { ...proc, ...bindings };
+  }
+
   private resolveAuditLogger(): AuditLoggerLike {
     return this.deps.audit ?? new AuditLogger({ db: this.deps.db });
   }

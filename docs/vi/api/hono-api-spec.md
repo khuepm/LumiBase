@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 62
-lastUpdated: 2026-11-21T00:04:47.900Z
+version: 65
+lastUpdated: 2026-11-21T11:04:16.006Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 261ed610e9f3df64
+sourceHash: 49608a0a77208a74
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-21T00:04:47.900Z
-codeVerifiedHash: 261ed610e9f3df64
-codeVerifiedClaims: 654
+codeVerified: 2026-11-21T11:04:16.006Z
+codeVerifiedHash: 49608a0a77208a74
+codeVerifiedClaims: 656
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -442,7 +442,7 @@ CRUD quản trị cho các nhà phát hành tin tưởng (chỉ admin):
 }
 ```
 
-> Cho việc truy cập server-to-server dài hạn, hãy tạo một API key (`POST /api/v1/api-keys`, tiền tố token `lbk_`) thay vì dùng token đăng nhập.
+> Cho việc truy cập server-to-server dài hạn, hãy tạo một API key (`POST /api/v1/api-keys`, tiền tố token `lbk_`) thay vì dùng token đăng nhập. Key tạo mà không có `expiresAt` sẽ hết hạn sau `API_KEY_DEFAULT_TTL_DAYS` (mặc định 90); gửi `"expiresAt": null` để có key không bao giờ hết hạn (#994). `GET /api/v1/api-keys/unused?days=90` liệt kê các key còn hiệu lực nhưng không được dùng trong số ngày đó, hoặc chưa từng được dùng — đó là những key cần xem lại và thu hồi.
 
 ---
 
@@ -618,6 +618,8 @@ CRUD đã xác thực Studio trên `lumibase_pages` (được tiêu thụ bởi 
 | `DELETE` | `/api/v1/pages/:id` | Xóa trang |
 
 Định dạng slug khớp với quy tắc kiểm tra của Delivery (`^[a-z0-9]+(?:[/_-][a-z0-9]+)*$`, ≤200).
+
+**Quyền truy cập (#986).** Trang được phát công khai sau khi deliver, nên mọi route cần permission `lumibase_pages::<action>` (`read` / `create` / `update` / `delete`); site admin được bỏ qua. Thiếu quyền thì route trả `403 FORBIDDEN`. Rule theo dòng của grant được đánh giá trên `{ id, slug, title }` — ví dụ `{ "slug": { "_starts_with": "landing/" } }` giới hạn một editor vào các trang landing. Trang nằm ngoài phạm vi của caller trả `404`, còn thao tác tạo hoặc đổi tên khiến trang rơi ra ngoài phạm vi trả `403`. Field whitelist và preset trên permission `lumibase_pages` không được áp dụng. Mỗi lần ghi tạo một dòng `activity` (collection `lumibase_pages`) với người thực hiện cùng slug, title và SHA-256 của layout trước và sau.
 
 Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tags?: string[], keys?: string[] }` — mọi tag/key phải chứa `siteId` đang hoạt động.
 
@@ -905,7 +907,7 @@ Tại `/media/:key`, các tham số biến đổi được xác thực đối v�
 
 **Quyền truy cập `/api/v1/files`.** Site admin có toàn quyền; thành viên khác cần một policy permission `files` mà rule của nó được đánh giá trên từng file theo `folder`, `folder_path`, `uploaded_by`, `mime` và `id` (phân quyền theo thư mục). Xem `docs/en/features/digital-asset-management.md` (epic #670).
 
-**Chính sách upload (`/api/v1/uploads/config`).** Được thực thi bởi bộ bảo vệ `file-upload-policy` trên mọi bề mặt upload (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`, `PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`): role public không thể upload; body bị giới hạn dung lượng trên độ dài byte thực tế; MIME được khai báo phải nằm trong danh sách cho phép và khớp với đuôi file; bytes thô được kiểm tra nội dung (magic bytes) và các file thực thi / SVG nội dung hoạt động bị từ chối; hình ảnh raster được quét payload script/executable chèn vào (polyglot) và bị từ chối. Danh sách cho phép + giới hạn giải quyết `per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*) → default`. Xem spec tính năng `.kiro/specs/upload-file-controls/` và `docs/en/security/runtime-security-guards-plan.md` §3 để biết các đảm bảo đầy đủ.
+**Chính sách upload (`/api/v1/uploads/config`).** Được thực thi bởi bộ bảo vệ `file-upload-policy` trên mọi bề mặt upload (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`, `PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`): role public không thể upload; body bị giới hạn dung lượng trên độ dài byte thực tế; MIME được khai báo phải nằm trong danh sách cho phép và khớp với đuôi file; bytes thô được kiểm tra nội dung (magic bytes) và các file thực thi / SVG nội dung hoạt động bị từ chối; hình ảnh raster được quét payload script/executable chèn vào (polyglot) và bị từ chối. Danh sách cho phép + giới hạn giải quyết `per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*, bị giới hạn theo catalogue loại upload trừ khi FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME=true) → default`; đường upload ký sẵn dùng site của token. Key presigned gắn theo site (`sites/<siteId>/files/…`) và `POST /api/v1/files` từ chối `filenameDisk` nằm ngoài site của người gọi (`400 FILENAME_DISK_OUT_OF_SCOPE`, #993). Mỗi key presigned được gắn với principal đã xin nó: chỉ principal đó đăng ký được key, một lần và chỉ sau khi bytes đã upload xong (`400 UPLOAD_CLAIM_INVALID`, `409 UPLOAD_NOT_COMPLETE`), và key đã đăng ký từ chối mọi PUT ký sẵn tiếp theo (`409 UPLOAD_ALREADY_REGISTERED`; thay file qua `PUT /api/v1/files/:id/content`). Xem spec tính năng `.kiro/specs/upload-file-controls/` và `docs/en/security/runtime-security-guards-plan.md` §3 để biết các đảm bảo đầy đủ.
 
 ```
 GET  /api/v1/uploads/config

@@ -2,7 +2,8 @@
 /**
  * Guard the duplicated pnpm settings (#295).
  *
- * `pnpm.overrides`, `pnpm.patchedDependencies` and `pnpm.auditConfig` are
+ * `pnpm.overrides`, `pnpm.patchedDependencies`, `pnpm.auditConfig` and
+ * `pnpm.onlyBuiltDependencies` (#995) are
  * declared in **both** `package.json` and `pnpm-workspace.yaml` on purpose:
  *
  *  - pnpm 9 (the pinned version) reads them from `package.json` only.
@@ -152,6 +153,16 @@ if (pkgSorted !== workspaceSorted) {
   problems.push(
     `auditConfig.ignoreGhsas differs — package.json has [${pkgSorted}], ` +
       `pnpm-workspace.yaml has [${workspaceSorted}]`,
+  );
+}
+
+// Build-script allowlist (#995): which dependencies may run lifecycle scripts.
+const pkgBuilt = [...(pkg.pnpm?.onlyBuiltDependencies ?? [])].sort().join(',');
+const workspaceBuilt = [...readSequence(workspaceText, ['onlyBuiltDependencies'])].sort().join(',');
+if (pkgBuilt !== workspaceBuilt) {
+  problems.push(
+    `onlyBuiltDependencies differs — package.json has [${pkgBuilt}], ` +
+      `pnpm-workspace.yaml has [${workspaceBuilt}]`,
   );
 }
 

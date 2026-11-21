@@ -1,11 +1,11 @@
 ---
-version: 63
-lastUpdated: 2026-11-21T00:04:47.900Z
+version: 66
+lastUpdated: 2026-11-21T11:04:16.006Z
 sourceLang: en
-contentHash: 261ed610e9f3df64
-codeVerified: 2026-11-21T00:04:47.900Z
-codeVerifiedHash: 261ed610e9f3df64
-codeVerifiedClaims: 654
+contentHash: 49608a0a77208a74
+codeVerified: 2026-11-21T11:04:16.006Z
+codeVerifiedHash: 49608a0a77208a74
+codeVerifiedClaims: 656
 ---
 
 # Hono API Specification — LumiBase
@@ -494,6 +494,10 @@ HS*/`none` algorithm), `ISSUER_ALREADY_EXISTS` (409), `NOT_FOUND` (404).
 
 > For long-lived server-to-server access, create an API key
 > (`POST /api/v1/api-keys`, token prefix `lbk_`) instead of using a login token.
+> A key created without `expiresAt` expires after `API_KEY_DEFAULT_TTL_DAYS`
+> (default 90); send `"expiresAt": null` for a key that never expires (#994).
+> `GET /api/v1/api-keys/unused?days=90` lists live keys not used for that many
+> days, or never — the ones to review and revoke.
 
 ---
 
@@ -696,6 +700,17 @@ matching negative-cache tombstones immediately.
 | `DELETE` | `/api/v1/pages/:id` | Delete page |
 
 Slug shape matches the Delivery guard (`^[a-z0-9]+(?:[/_-][a-z0-9]+)*$`, ≤200).
+
+**Access (#986).** Pages are public once delivered, so every route needs a
+`lumibase_pages::<action>` permission (`read` / `create` / `update` /
+`delete`); site admins bypass. Without it the route answers
+`403 FORBIDDEN`. The grant's row rule is evaluated against
+`{ id, slug, title }` — e.g. `{ "slug": { "_starts_with": "landing/" } }`
+confines an editor to the landing pages. A page outside the caller's scope
+answers `404`, and a create or rename that would land outside it answers
+`403`. Field whitelists and presets on a `lumibase_pages` permission are not
+applied. Each write records an `activity` row (collection `lumibase_pages`)
+with the actor and the slug, title and layout SHA-256 before and after.
 
 Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` with
 `{ tags?: string[], keys?: string[] }` — every tag/key must include the
@@ -1044,7 +1059,16 @@ its true byte length; the declared MIME must be in the allowlist and match the
 filename extension; raw bytes are content-sniffed (magic bytes) and executables /
 active-content SVGs are rejected; raster images are scanned for an embedded
 script/executable payload (polyglot) and rejected. The allowlist + cap resolve
-`per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*) → default`. See
+`per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*, held to the
+upload type catalogue unless FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME=true) → default`;
+the signed upload path uses the token's site. Presigned keys are site-scoped
+(`sites/<siteId>/files/…`) and `POST /api/v1/files` refuses a `filenameDisk`
+outside the caller's site (`400 FILENAME_DISK_OUT_OF_SCOPE`, #993). Each
+presigned key is claimed by the principal that asked for it: only that
+principal can register it, once and only after its bytes were uploaded
+(`400 UPLOAD_CLAIM_INVALID`, `409 UPLOAD_NOT_COMPLETE`), and a registered key
+refuses further signed PUTs (`409 UPLOAD_ALREADY_REGISTERED`; replace through
+`PUT /api/v1/files/:id/content`). See
 the feature spec `.kiro/specs/upload-file-controls/` and
 `docs/en/security/runtime-security-guards-plan.md` §3 for the full guarantees.
 

@@ -11,7 +11,7 @@ import {
   readAllowedOrigins,
   screenPolicyForPublishableKey,
 } from '../services/api-key-publishable';
-import { createPlaintextToken } from '../services/api-key-token';
+import { apiKeyExpiry, createPlaintextToken } from '../services/api-key-token';
 import { buildAccessConflictReport } from '../services/access-conflict-report';
 import { bumpPermissionVersion } from '../services/permission-invalidation';
 
@@ -306,6 +306,30 @@ apiKeysRouter.get('/', async (c) => {
   return c.json({ data });
 });
 
+/**
+ * `GET /api-keys/unused?days=90` (#994): live keys (not revoked, not expired)
+ * that have not been used for `days` days, or never. A forgotten credential is
+ * the cheapest one to steal; this is the list to review and revoke.
+ */
+apiKeysRouter.get('/unused', async (c) => {
+  const days = Math.min(3650, Math.max(1, Number.parseInt(c.req.query('days') ?? '90', 10) || 90));
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const now = Date.now();
+  const rows = await c
+    .get('db')
+    .select()
+    .from(apiKeys)
+    .where(scopeSite(apiKeys.siteId, c.get('siteId')));
+  const stale = rows.filter(
+    (row) =>
+      !row.revokedAt &&
+      !(row.expiresAt && row.expiresAt.getTime() <= now) &&
+      (!row.lastUsedAt || row.lastUsedAt.getTime() < cutoff.getTime()),
+  );
+  const data = await Promise.all(stale.map((row) => publicApiKey(c, row)));
+  return c.json({ data, meta: { days, cutoff: cutoff.toISOString(), total: data.length } });
+});
+
 apiKeysRouter.post('/', async (c) => {
   const auth = requireUserPrincipal(c);
   if (!auth) {
@@ -348,7 +372,8 @@ apiKeysRouter.post('/', async (c) => {
       prefix: token.prefix,
       tokenHash: token.tokenHash,
       createdBy: auth.userId ?? null,
-      expiresAt: parsed.data.expiresAt ?? null,
+      // Omitted → default lifetime; explicit null → never expires (#994).
+      expiresAt: apiKeyExpiry(parsed.data.expiresAt, c.env as unknown as Record<string, unknown>),
       metadata: withAllowedOrigins(parsed.data.metadata, origins.valid),
     })
     .returning();

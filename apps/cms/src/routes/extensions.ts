@@ -65,18 +65,6 @@ async function requireExtensionPermission(
   );
 }
 
-// Return type is inferred from Hono's own `executionCtx`, which is a narrower
-// shape than the global `ExecutionContext` that @cloudflare/workers-types v5
-// widened (it now requires `tracing`/`abort`). The value only ever flows back
-// into `subApp.fetch()`, which expects exactly Hono's shape.
-function optionalExecutionCtx(c: Context<AppEnv>) {
-  try {
-    return c.executionCtx;
-  } catch {
-    return undefined;
-  }
-}
-
 extensionsRouter.get('/', adminOnly, async (c) => {
   const denied = await requireExtensionPermission(c, 'read');
   if (denied) return denied;
@@ -175,14 +163,52 @@ extensionsRouter.all('/:name/*', adminOnly, async (c) => {
     return c.json({ errors: [{ code: 'HANDLER_ERROR', message: 'Extension handler threw during mount.' }] }, 500);
   }
 
-  // Strip the /extensions/:name prefix so the sub-app sees a clean path.
-  const prefix = `/extensions/${name}`;
-  const originalPath = new URL(c.req.url).pathname;
-  const subPath = originalPath.startsWith(prefix) ? originalPath.slice(prefix.length) || '/' : '/';
-  const subUrl = new URL(subPath + new URL(c.req.url).search, c.req.url);
+  const original = new URL(c.req.url);
+  const subUrl = new URL(extensionSubPath(original.pathname, name) + original.search, original);
 
-  // Do not forward the CMS environment bindings or execution context into
-  // third-party extension handlers; the capability-checked ctx is the only
-  // supported way to expose host resources.
-  return subApp.fetch(new Request(subUrl.toString(), c.req.raw), c.env, optionalExecutionCtx(c));
+  // Do not forward the CMS environment bindings, the execution context, or the
+  // caller's credentials into third-party extension handlers (#990): the
+  // capability-checked ctx is the only supported way to reach host resources.
+  // Before this, `c.env` (every secret binding) and the raw Authorization /
+  // Cookie headers reached the handler despite the comment saying otherwise.
+  return subApp.fetch(extensionRequest(subUrl, c.req.raw), {}, undefined);
 });
+
+/** Headers that carry the caller's credentials; never handed to an extension. */
+const CREDENTIAL_HEADERS = ['authorization', 'cookie', 'proxy-authorization', 'x-lumi-api-key'];
+
+/** A copy of `raw` addressed to `url`, without credential headers. */
+export function extensionRequest(url: URL, raw: Request): Request {
+  const headers = new Headers(raw.headers);
+  for (const header of CREDENTIAL_HEADERS) headers.delete(header);
+  const hasBody = raw.method !== 'GET' && raw.method !== 'HEAD';
+  return new Request(url.toString(), {
+    method: raw.method,
+    headers,
+    ...(hasBody ? { body: raw.body, duplex: 'half' } : {}),
+  } as RequestInit);
+}
+
+/**
+ * The path an endpoint extension sees: everything after `/extensions/<name>`,
+ * wherever the router is mounted (`/api/v1/extensions/<name>/a/b` → `/a/b`).
+ * The old prefix check assumed a mount at `/extensions`, so every handler saw
+ * `/` and multi-route extensions could not be addressed (#990).
+ */
+export function extensionSubPath(pathname: string, name: string): string {
+  const segments = pathname.split('/');
+  for (let i = 0; i < segments.length - 1; i++) {
+    if (segments[i] !== 'extensions') continue;
+    let segment: string;
+    try {
+      segment = decodeURIComponent(segments[i + 1] ?? '');
+    } catch {
+      continue;
+    }
+    if (segment === name) {
+      const rest = segments.slice(i + 2).join('/');
+      return `/${rest}`;
+    }
+  }
+  return '/';
+}

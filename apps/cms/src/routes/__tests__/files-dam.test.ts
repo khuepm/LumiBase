@@ -67,6 +67,14 @@ vi.mock('../../services/content-invalidation', () => ({
   dispatchItemRevalidation: async () => undefined,
 }));
 
+const claimsState = vi.hoisted(() => ({ store: null as unknown }));
+vi.mock('../../services/files/upload-claims', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/files/upload-claims')>();
+  return { ...actual, uploadClaimsFor: () => claimsState.store };
+});
+vi.mock('../../middleware/db', () => ({ systemDbFor: () => ({}) }));
+const { MemoryUploadClaims } = await import('../../services/files/__tests__/memory-upload-claims');
+
 const { filesRouter } = await import('../files');
 
 function site(siteId: string): SiteState {
@@ -106,7 +114,11 @@ const scoped = (rule: unknown): FilesAccess => ({ admin: false, rule: rule as Po
 let A: SiteState;
 let B: SiteState;
 
+let claims: InstanceType<typeof MemoryUploadClaims>;
+
 beforeEach(() => {
+  claims = new MemoryUploadClaims();
+  claimsState.store = claims;
   state.sites.clear();
   state.invalidated = [];
   state.purged = [];
@@ -332,11 +344,12 @@ describe('GET /files/:id/content — delivery (#705, #707)', () => {
 
   it('revalidates by default, is immutable only when pinned to the current version, answers 304', async () => {
     const res = await app().request('/api/v1/files/file_a_logo/content');
-    expect(res.headers.get('cache-control')).toBe('public, max-age=300, must-revalidate');
+    // Authorization-bound bytes are never cacheable by a shared cache (#993).
+    expect(res.headers.get('cache-control')).toBe('private, max-age=300, must-revalidate');
     expect(res.headers.get('cache-tag')).toBe('file:site_a:file_a_logo');
     const etag = res.headers.get('etag')!;
     expect((await app().request('/api/v1/files/file_a_logo/content', { headers: { 'if-none-match': etag } })).status).toBe(304);
-    expect((await app().request('/api/v1/files/file_a_logo/content?v=1')).headers.get('cache-control')).toContain('immutable');
+    expect((await app().request('/api/v1/files/file_a_logo/content?v=1')).headers.get('cache-control')).toBe('private, max-age=31536000, immutable');
     expect((await app().request('/api/v1/files/file_a_logo/content?v=0')).headers.get('cache-control')).toContain('must-revalidate');
   });
 
@@ -351,10 +364,12 @@ describe('GET /files/:id/content — delivery (#705, #707)', () => {
 describe('POST /files with scanning on (#707)', () => {
   it('registers as pending, then the background scan marks it clean', async () => {
     A.settings = { ...A.settings, scan: { enabled: true, provider: 'http', onError: 'quarantine' } };
-    A.storage.objects.set('1800_new.jpg', { bytes: buildJpeg({ iptc: true }), metadata: {} });
+    // Keys are site-scoped since #993.
+    A.storage.objects.set('sites/site_a/files/1800_new.jpg', { bytes: buildJpeg({ iptc: true }), metadata: {} });
+    claims.seedUploaded('site_a', 'sites/site_a/files/1800_new.jpg', 'user:u1');
     const res = await app().request('/api/v1/files', {
       method: 'POST',
-      body: JSON.stringify({ filenameDisk: '1800_new.jpg', filenameDownload: 'new.jpg', mime: 'image/jpeg', filesize: 10, folder: 'mkt' }),
+      body: JSON.stringify({ filenameDisk: 'sites/site_a/files/1800_new.jpg', filenameDownload: 'new.jpg', mime: 'image/jpeg', filesize: 10, folder: 'mkt' }),
     });
     expect(res.status).toBe(200);
     const body = await json(res);
@@ -362,6 +377,90 @@ describe('POST /files with scanning on (#707)', () => {
     expect(created.contentHash).toMatch(/^[0-9a-f]{64}$/);
     expect(body.meta).toEqual({ duplicates: [] });
     await vi.waitFor(async () => expect((await A.repo.get(created.id))!.scanStatus).toBe('clean'));
+  });
+});
+
+describe('POST /files keeps records inside the site’s storage (#993)', () => {
+  it.each([
+    ['another site’s files', 'sites/site_b/files/1800_secret.pdf'],
+    ['another site’s media', 'sites/site_b/media/logo.png'],
+    ['an unscoped legacy key', '1800_new.jpg'],
+    ['a traversal', 'sites/site_a/files/../../site_b/files/x.pdf'],
+  ])('refuses %s', async (_label, filenameDisk) => {
+    const res = await app().request('/api/v1/files', {
+      method: 'POST',
+      body: JSON.stringify({ filenameDisk, filenameDownload: 'x', mime: 'application/pdf', filesize: 10 }),
+    });
+    expect(res.status).toBe(400);
+    expect((await json(res)).errors![0]!.code).toBe('FILENAME_DISK_OUT_OF_SCOPE');
+  });
+});
+
+describe('presigned upload claims (#993)', () => {
+  const register = (filenameDisk: string, folder = 'mkt') =>
+    app().request('/api/v1/files', {
+      method: 'POST',
+      body: JSON.stringify({ filenameDisk, filenameDownload: 'x.pdf', mime: 'application/pdf', filesize: 3, folder }),
+    });
+
+  it('refuses to register a key another file already uses (no alias of a private file)', async () => {
+    // file_a_contract lives in "legal"; the caller may only place files in "mkt".
+    state.access = scoped({ folder: { _eq: 'mkt' } });
+    const res = await register('1700_contract.pdf');
+    expect(res.status).toBe(400);
+    const res2 = await register('sites/site_a/files/1700_contract.pdf');
+    expect(res2.status).toBe(400);
+    expect((await json(res2)).errors![0]!.code).toBe('UPLOAD_CLAIM_INVALID');
+    expect(A.repo.files.size).toBe(2);
+  });
+
+  it("refuses a key issued to someone else, and a key that was never uploaded", async () => {
+    claims.seedUploaded('site_a', 'sites/site_a/files/1900_other.pdf', 'user:someone-else');
+    expect((await json(await register('sites/site_a/files/1900_other.pdf'))).errors![0]!.code).toBe('UPLOAD_CLAIM_INVALID');
+    await claims.issue('site_a', 'sites/site_a/files/1900_mine.pdf', 'user:u1');
+    const notYet = await register('sites/site_a/files/1900_mine.pdf');
+    expect(notYet.status).toBe(409);
+    expect((await json(notYet)).errors![0]!.code).toBe('UPLOAD_NOT_COMPLETE');
+  });
+
+  it('registers a key once: a second registration of the same key is refused', async () => {
+    const key = 'sites/site_a/files/1900_once.pdf';
+    A.storage.objects.set(key, { bytes: new TextEncoder().encode('pdf'), metadata: {} });
+    claims.seedUploaded('site_a', key, 'user:u1');
+    expect((await register(key)).status).toBe(200);
+    const again = await register(key);
+    expect(again.status).toBe(400);
+    expect((await json(again)).errors![0]!.code).toBe('UPLOAD_CLAIM_INVALID');
+  });
+
+  it('presign → upload → register → replayed PUT cannot replace the registered bytes', async () => {
+    const env = { JWT_SECRET: 'test-secret-test-secret-test-secret!' };
+    const appWithStorage = () => {
+      const a = new Hono<AppEnv>();
+      a.use('*', async (c, next) => {
+        c.set('siteId', 'site_a');
+        c.set('auth', { userId: 'u1', roles: ['editor'], raw: {} } as AppEnv['Variables']['auth']);
+        c.set('runtime', {
+          storage: { put: async (k: string, body: ReadableStream) => A.storage.objects.set(k, { bytes: new Uint8Array(await new Response(body).arrayBuffer()), metadata: {} }) },
+          cache: { get: async () => null, delete: async () => undefined },
+          edgeCache: { purge: async () => 1 },
+        } as unknown as AppEnv['Variables']['runtime']);
+        await next();
+      });
+      a.route('/api/v1/files', filesRouter);
+      return a;
+    };
+    const presign = await appWithStorage().request('/api/v1/files/presigned-url', { method: 'POST', body: JSON.stringify({ filename: 'doc.pdf' }) }, env);
+    const { url, key } = ((await presign.json()) as { data: { url: string; key: string } }).data;
+    expect(key).toMatch(/^sites\/site_a\/files\/\d{13}_[A-Za-z0-9_-]{12}_doc\.pdf$/);
+    const path = new URL(url).pathname + new URL(url).search;
+    expect((await appWithStorage().request(path, { method: 'PUT', body: 'clean' }, env)).status).toBe(200);
+    expect((await register(key)).status).toBe(200);
+
+    const replay = await appWithStorage().request(path, { method: 'PUT', body: 'MALWARE' }, env);
+    expect(replay.status).toBe(409);
+    expect(((await replay.json()) as { errors: Array<{ code: string }> }).errors[0]!.code).toBe('UPLOAD_ALREADY_REGISTERED');
+    expect(new TextDecoder().decode(A.storage.objects.get(key)!.bytes)).toBe('clean');
   });
 });
 
