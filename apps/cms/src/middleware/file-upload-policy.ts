@@ -15,6 +15,7 @@ import {
   imageHasEmbeddedActivePayload,
 } from '../services/upload-security/content-sniff';
 import { svgSanitizerFindsActiveContent } from '../services/upload-security/svg-sanitizer';
+import { declarationFrom, parseNonNegativeInt, parseUploadMetadata } from '../services/files/tus/protocol';
 import { auditSecurityGuardDenied } from './security-audit';
 
 /**
@@ -26,6 +27,12 @@ import { auditSecurityGuardDenied } from './security-audit';
  *   - `POST /api/v1/files`            — metadata creation (JSON body)
  *   - `PUT  /api/v1/files/upload/:key`— signed raw-byte upload (JWT-authorized)
  *   - `PUT  /api/v1/files/:id/content`— in-place replace of a file's bytes (#703)
+ *   - `POST /api/v1/files/tus`        — resumable upload creation (TUS, #704): the
+ *                                       declaration (Upload-Length, filename, type)
+ *   - `PATCH /api/v1/files/tus/:id`   — resumable upload chunk: public block here;
+ *                                       the route sniffs the bytes against the
+ *                                       session's declared type (first chunk and
+ *                                       the assembled file)
  *   - `POST /api/v1/media/:key`       — raw-byte media upload (RBAC-authorized)
  *
  * Adding a new byte-accepting upload route without wiring it in here is caught
@@ -38,7 +45,8 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
   const surface = classifyUploadSurface(path, method);
   if (!surface) return next();
 
-  const { isMetadataCreate, isSignedUpload, isMediaUpload, isReplaceUpload } = surface;
+  const { isMetadataCreate, isSignedUpload, isMediaUpload, isReplaceUpload, isResumableCreate, isResumablePatch } = surface;
+  if (isResumableCreate || isResumablePatch) return guardResumable(c, next, isResumableCreate);
   // Raw-byte surfaces carry the file itself in the request body.
   const isRawUpload = isSignedUpload || isMediaUpload || isReplaceUpload;
 
@@ -266,7 +274,7 @@ function decodePathSegment(segment: string): string {
 export function classifyUploadSurface(
   path: string,
   method: string,
-): { isMetadataCreate: boolean; isSignedUpload: boolean; isMediaUpload: boolean; isReplaceUpload: boolean } | null {
+): UploadSurface | null {
   const upper = method.toUpperCase();
   const isMetadataCreate = path === '/api/v1/files' && upper === 'POST';
   const isSignedUpload = path.startsWith('/api/v1/files/upload/') && upper === 'PUT';
@@ -274,8 +282,86 @@ export function classifyUploadSurface(
   // `upload` is the signed-upload prefix, never a file id.
   const isReplaceUpload =
     !isSignedUpload && /^\/api\/v1\/files\/[^/]+\/content\/?$/.test(path) && upper === 'PUT';
-  if (!isMetadataCreate && !isSignedUpload && !isMediaUpload && !isReplaceUpload) return null;
-  return { isMetadataCreate, isSignedUpload, isMediaUpload, isReplaceUpload };
+  const isResumableCreate = /^\/api\/v1\/files\/tus\/?$/.test(path) && upper === 'POST';
+  const isResumablePatch = /^\/api\/v1\/files\/tus\/[^/]+\/?$/.test(path) && upper === 'PATCH';
+  if (!isMetadataCreate && !isSignedUpload && !isMediaUpload && !isReplaceUpload && !isResumableCreate && !isResumablePatch) {
+    return null;
+  }
+  return { isMetadataCreate, isSignedUpload, isMediaUpload, isReplaceUpload, isResumableCreate, isResumablePatch };
+}
+
+export interface UploadSurface {
+  isMetadataCreate: boolean;
+  isSignedUpload: boolean;
+  isMediaUpload: boolean;
+  isReplaceUpload: boolean;
+  isResumableCreate: boolean;
+  isResumablePatch: boolean;
+}
+
+/**
+ * TUS surfaces (#704). Creation carries no bytes, so the policy is applied to
+ * the declaration: total size (`Upload-Length`) against the cap, the declared
+ * type against the allowlist, the file name, and extension ↔ MIME. A chunk
+ * (PATCH) only gets the public block here: its bytes are checked by the route
+ * against the declared type, which lives on the session.
+ */
+async function guardResumable(
+  c: Parameters<MiddlewareHandler<AppEnv>>[0],
+  next: () => Promise<void>,
+  isCreate: boolean,
+): Promise<Response | void> {
+  const path = c.req.path;
+  const method = c.req.method.toUpperCase();
+  const auth = safeGetAuth(c);
+  if (isPublicUploadPrincipal(auth)) {
+    await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
+      path,
+      method,
+      reason: 'public_resumable_upload',
+      roles: auth?.roles ?? [],
+      principalType: auth?.type ?? 'user',
+    });
+    return c.json({ errors: [{ code: 'PUBLIC_UPLOAD_FORBIDDEN', message: 'Public role is not allowed to upload files.' }] }, 403);
+  }
+  if (!isCreate) return next();
+
+  const policy = await resolveUploadPolicy({
+    db: safeGet(c, 'db'),
+    cache: safeGet(c, 'runtime')?.cache,
+    siteId: safeGet(c, 'siteId'),
+    env: c.env as Partial<AppEnv['Bindings']> | undefined,
+  });
+  const length = parseNonNegativeInt(c.req.header('upload-length'));
+  if (length !== null && length > policy.maxBytes) {
+    await auditSecurityGuardDenied(c, 'file_upload_policy_denied', { path, method, reason: 'content_length_exceeded', contentLength: length, maxBytes: policy.maxBytes });
+    return c.json(
+      { errors: [{ code: 'UPLOAD_TOO_LARGE', message: `Upload exceeds the configured ${policy.maxBytes} byte limit.` }] },
+      413,
+    );
+  }
+  const meta = parseUploadMetadata(c.req.header('upload-metadata'));
+  const decl = meta ? declarationFrom(meta) : null;
+  // A missing/garbled declaration is the route's 400; nothing to check here.
+  if (!decl) return next();
+  if (!isFileUploadMimeAllowed(decl.mime, policy.allowedMimeTypes)) {
+    await auditSecurityGuardDenied(c, 'file_upload_policy_denied', { path, method, reason: 'mime_forbidden', mime: decl.mime, allowedMimes: policy.allowedMimeTypes });
+    return c.json({ errors: [{ code: 'UPLOAD_MIME_FORBIDDEN', message: `MIME type "${decl.mime}" is not allowed.` }] }, 415);
+  }
+  const issue = validateUploadFilename(decl.filename);
+  if (issue) {
+    await auditSecurityGuardDenied(c, 'file_upload_policy_denied', { path, method, reason: 'unsafe_filename', issue });
+    return c.json({ errors: [{ code: 'UPLOAD_UNSAFE_FILENAME', message: `File name is not allowed (${issue}).` }] }, 400);
+  }
+  const mime = normalizeMime(decl.mime);
+  if (!isFileExtensionCompatibleWithMime(decl.filename, mime)) {
+    await auditSecurityGuardDenied(c, 'file_upload_policy_denied', { path, method, reason: 'extension_mime_mismatch', fileName: decl.filename, mime });
+    return c.json(
+      { errors: [{ code: 'UPLOAD_EXTENSION_MISMATCH', message: `File extension does not match MIME type "${mime}".` }] },
+      415,
+    );
+  }
+  return next();
 }
 
 export function isPublicUploadPrincipal(auth: AuthPrincipal | undefined): boolean {

@@ -204,7 +204,7 @@ importers:
         version: 10.14.0(jiti@2.7.0)
       eslint-config-next:
         specifier: 16.4.6
-        version: 16.4.6(@typescript-eslint/parser@8.72.2(eslint@10.14.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.14.0(jiti@2.7.0))(typescript@5.9.3)
+        version: 16.4.6(eslint@10.14.0(jiti@2.7.0))(typescript@5.9.3)
       tailwindcss:
         specifier: ^4
         version: 4.3.5
@@ -368,7 +368,7 @@ importers:
         version: 10.14.0(jiti@2.7.0)
       eslint-config-next:
         specifier: ^16.4.6
-        version: 16.4.6(eslint@10.14.0(jiti@2.7.0))(typescript@5.9.3)
+        version: 16.4.6(@typescript-eslint/parser@8.72.2(eslint@10.14.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.14.0(jiti@2.7.0))(typescript@5.9.3)
       postcss:
         specifier: ^8.5.26
         version: 8.5.32
@@ -575,6 +575,9 @@ importers:
       dompurify:
         specifier: ^3.4.17
         version: 3.4.17
+      hls.js:
+        specifier: 1.7.4
+        version: 1.7.4
       i18next:
         specifier: ^27.1.1
         version: 27.1.1(typescript@5.9.3)
@@ -5228,6 +5231,9 @@ packages:
 
   hermes-parser@0.25.1:
     resolution: {integrity: sha512-6pEjquH3rqaI6cYAXYPcz9MS4rY6R4ngRgrgfDshRptUZIc3lw0MCIJIGDj9++mfySOuPTHB4nrSW99BCvOPIA==}
+
+  hls.js@1.7.4:
+    resolution: {integrity: sha512-3GlxGdPvT2YHvQYOt+yOzT/DEior/qJVNIylHA77kgeoBTdQQqi70GwefNEUmHQeNGyjC8U62+bruqW/Tpm+tg==}
 
   hono@4.13.18:
     resolution: {integrity: sha512-H9q/E1XizaWstJxUW881dmLxEj+t/TrGGnyxINkm4+sK0qUwsMtFdo2BWI9Vs3cIS19MU6b6iCijoUoEf4f3DA==}
@@ -11779,6 +11785,8 @@ snapshots:
   hermes-parser@0.25.1:
     dependencies:
       hermes-estree: 0.25.1
+
+  hls.js@1.7.4: {}
 
   hono@4.13.18: {}
 

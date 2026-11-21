@@ -1,11 +1,11 @@
 ---
-version: 62
-lastUpdated: 2026-11-20T05:35:06.709Z
+version: 65
+lastUpdated: 2026-11-21T01:11:20.306Z
 sourceLang: en
-contentHash: a752c28a3a48bf3d
-codeVerified: 2026-11-20T05:35:06.709Z
-codeVerifiedHash: a752c28a3a48bf3d
-codeVerifiedClaims: 652
+contentHash: a4734361d79c3c1d
+codeVerified: 2026-11-21T01:11:20.306Z
+codeVerifiedHash: a4734361d79c3c1d
+codeVerifiedClaims: 668
 ---
 
 # Hono API Specification — LumiBase
@@ -1009,6 +1009,19 @@ identical body. Responses: `Cache-Control: private, no-store`,
 | `GET/PUT` | `/api/v1/files/settings` | DAM settings (`files.dam`); `PUT` site admin |
 | `GET` | `/api/v1/files/folders` · `/folders/tree` | Folders (flat / nested with `path`) |
 | `POST/PATCH/DELETE` | `/api/v1/files/folders[/:id]` | Create / rename+move (`409 FOLDER_CYCLE`) / delete empty (`409 FOLDER_NOT_EMPTY`); site admin |
+| `OPTIONS` | `/api/v1/files/tus` | TUS 1.0 discovery: `Tus-Version`, `Tus-Extension: creation,termination,expiration`, `Tus-Max-Size` |
+| `POST` | `/api/v1/files/tus` | Create a resumable upload: `Upload-Length` + `Upload-Metadata` (`filename`, `filetype`, optional `folder`, `alt`) → `201` with `Location`, `Upload-Expires` |
+| `HEAD` | `/api/v1/files/tus/:id` | Committed `Upload-Offset` / `Upload-Length`; `X-Lumi-File-Id` once complete; `410` when expired |
+| `PATCH` | `/api/v1/files/tus/:id` | Append a chunk at `Upload-Offset` (`application/offset+octet-stream`), all-or-nothing; `409 OFFSET_MISMATCH`; the final chunk creates the file (`X-Lumi-File-Id`) |
+| `DELETE` | `/api/v1/files/tus/:id` | Terminate: abort the multipart upload and drop stored parts |
+| `GET` | `/api/v1/files/:id/captions` | Caption/subtitle tracks of a video as `<track>` data (`kind`, `locale`, `label`, `isDefault`, version-pinned `src`) (#871) |
+| `POST` | `/api/v1/files/:id/captions` | Attach a WebVTT file: `{ captionFileId, locale, kind?, label?, isDefault? }`; `409 CAPTION_EXISTS`, `415 CAPTION_NOT_VTT`, `422 LOCALE_NOT_ENABLED` |
+| `PATCH/DELETE` | `/api/v1/files/:id/captions/:captionId` | Edit a track (one default per kind) / detach it (the WebVTT file stays) |
+| `GET` | `/api/v1/files/:id/video` | Video processing state (`uploaded`/`processing`/`ready`/`failed`); `meta.enabled`, `meta.providerConfigured` (#871) |
+| `POST` | `/api/v1/files/:id/video/retry` | Re-submit a failed or queued video (files `update`); `409 VIDEO_NOT_RETRYABLE`, `503 VIDEO_PROVIDER_NOT_CONFIGURED` |
+| `GET` | `/api/v1/files/:id/video/playback` | `{ hls, poster, expiresAt }`, provider-signed and expiring with `video.signedPlayback`; `409 VIDEO_NOT_READY` |
+| `POST` | `/api/v1/video/webhook/:provider` | **Public**, signature-verified provider callback (`cloudflare-stream`, `mux`); `401` on a bad signature |
+| `GET` | `/api/v1/video/source/:token` | **Public**, short-lived signed URL the provider pulls the original from; one `404` for every failure |
 | `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
 | `POST` | `/api/v1/media/:key` | Upload raw media bytes (RBAC `media:create`; upload guard applies) |
 | `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`); with transform params → 302 to derivative |
@@ -1038,7 +1051,8 @@ image URL (CF Image Resizing / Imgproxy). No params → the original bytes.
 
 **Upload policy (`/api/v1/uploads/config`).** Enforced by the `file-upload-policy`
 guard on every upload surface (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`,
-`PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`): a public role cannot upload; the body is size-capped on
+`PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`, and the TUS creation
+declaration `POST /api/v1/files/tus`): a public role cannot upload; the body is size-capped on
 its true byte length; the declared MIME must be in the allowlist and match the
 filename extension; raw bytes are content-sniffed (magic bytes) and executables /
 active-content SVGs are rejected; raster images are scanned for an embedded

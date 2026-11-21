@@ -30,6 +30,39 @@ components:
       schema: { type: string }
       description: Active tenant id. Required for every authenticated endpoint.
   schemas:
+    CaptionTrack:
+      type: object
+      properties:
+        id: { type: string }
+        fileId: { type: string }
+        captionFileId: { type: string }
+        locale: { type: string }
+        kind: { type: string, enum: [subtitles, captions, descriptions, chapters] }
+        label: { type: string }
+        isDefault: { type: boolean }
+        src: { type: string, format: uri, nullable: true, description: 'Version-pinned delivery URL of the WebVTT file; null when the caller cannot see it' }
+        captionVersion: { type: integer, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    VideoAsset:
+      type: object
+      properties:
+        fileId: { type: string }
+        fileVersion: { type: integer }
+        provider: { type: string }
+        status: { type: string, enum: [uploaded, processing, ready, failed] }
+        error: { type: string, nullable: true }
+        attempts: { type: integer }
+        durationMs: { type: integer, nullable: true }
+        width: { type: integer, nullable: true }
+        height: { type: integer, nullable: true }
+        renditions:
+          type: array
+          items: { type: object, properties: { width: { type: integer }, height: { type: integer }, bitrate: { type: integer } } }
+        signedPlayback: { type: boolean }
+        submittedAt: { type: string, format: date-time, nullable: true }
+        readyAt: { type: string, format: date-time, nullable: true }
+        updatedAt: { type: string, format: date-time }
     OpenApiConfig:
       type: object
       additionalProperties: false
@@ -2730,6 +2763,104 @@ paths:
       summary: Create an item
       requestBody:
         required: true
+  /files/tus:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    options:
+      summary: TUS capability discovery (resumable uploads)
+      description: >-
+        TUS 1.0 resumable uploads (#704). Answers with `Tus-Version`,
+        `Tus-Extension` (`creation,termination,expiration`) and `Tus-Max-Size`
+        (the site's upload policy cap).
+      responses:
+        '204': { description: Capabilities in the response headers }
+    post:
+      summary: Create a resumable upload (TUS creation)
+      description: >-
+        Declares a new upload. `Upload-Metadata` must carry `filename` and
+        `filetype` (base64 values); `folder` and `alt` are optional. The
+        upload guard checks the declared size, MIME allowlist, filename
+        hygiene and extension ↔ MIME before the route runs; `files:create`
+        and folder placement are checked here and again at completion.
+        `Upload-Defer-Length` is not supported. The upload expires 24 h
+        after its last committed chunk.
+      parameters:
+        - { name: Tus-Resumable, in: header, schema: { type: string, enum: ['1.0.0'] } }
+        - { name: Upload-Length, in: header, required: true, schema: { type: integer, minimum: 0 } }
+        - { name: Upload-Metadata, in: header, required: true, schema: { type: string }, description: 'TUS metadata, e.g. `filename cGhvdG8uanBn,filetype aW1hZ2UvanBlZw==`' }
+      responses:
+        '201':
+          description: Upload created; `Location` is the upload URL, `Upload-Expires` its deadline
+          headers:
+            Location: { schema: { type: string } }
+            Upload-Expires: { schema: { type: string } }
+        '400': { description: Missing/invalid Upload-Length or Upload-Metadata, or unsafe filename }
+        '403': { description: Missing files:create or folder placement denied }
+        '412': { description: Unsupported Tus-Resumable version (answers with Tus-Version) }
+        '413': { description: Upload-Length above the site's upload policy }
+        '415': { description: MIME type not allowed, or extension does not match the MIME type }
+        '501': { description: Upload-Defer-Length is not supported }
+  /files/tus/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    head:
+      summary: Upload progress (TUS offset probe)
+      description: >-
+        Returns the committed `Upload-Offset` and `Upload-Length`. Once the
+        upload completed, `X-Lumi-File-Id` names the created file. Only the
+        creator (or a site admin) can see an upload; others get 404.
+      responses:
+        '200':
+          description: 'Progress in the response headers (`Cache-Control: no-store`)'
+          headers:
+            Upload-Offset: { schema: { type: integer } }
+            Upload-Length: { schema: { type: integer } }
+            Upload-Expires: { schema: { type: string } }
+            X-Lumi-File-Id: { schema: { type: string } }
+        '404': { description: Unknown, terminated, or someone else's upload }
+        '410': { description: Upload expired }
+    patch:
+      summary: Append a chunk (TUS core)
+      description: >-
+        Appends the body at `Upload-Offset`. A chunk is committed all or
+        nothing: on a storage failure the answer is 503 and the offset does
+        not move, so the client HEADs and re-sends from the committed offset.
+        The first chunk is sniffed against the declared type. The final chunk
+        completes the upload: permission and placement are re-checked, the
+        assembled file is scanned, the file row is created and its id is
+        returned in `X-Lumi-File-Id`.
+      parameters:
+        - { name: Tus-Resumable, in: header, schema: { type: string, enum: ['1.0.0'] } }
+        - { name: Upload-Offset, in: header, required: true, schema: { type: integer, minimum: 0 } }
+      requestBody:
+        required: true
+        content:
+          application/offset+octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '204':
+          description: Chunk committed
+          headers:
+            Upload-Offset: { schema: { type: integer } }
+            X-Lumi-File-Id: { schema: { type: string }, description: Present on the completing chunk }
+        '403': { description: Permission or placement revoked before completion (the upload is discarded) }
+        '404': { description: Unknown, terminated, or someone else's upload }
+        '409':
+          description: OFFSET_MISMATCH (details.offset is the committed offset) or another writer holds the upload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '410': { description: Upload expired }
+        '413': { description: Chunk would exceed Upload-Length or the per-request cap }
+        '415': { description: Wrong Content-Type, content does not match the declared type, or the assembled file failed the polyglot scan }
+        '503': { description: Storage failure; nothing was committed }
+    delete:
+      summary: Terminate an upload (TUS termination)
+      description: Aborts the multipart upload and deletes stored parts.
+      responses:
+        '204': { description: Terminated }
+        '404': { description: Unknown, terminated, or someone else's upload }
         content:
           application/json:
             schema:
@@ -2749,6 +2880,196 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /files/{id}/video:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Video processing state of a file (#871)
+      description: >-
+        `data` is null for a file that never entered the pipeline. States:
+        `uploaded` (queued, waits for the malware scan), `processing`,
+        `ready`, `failed`.
+      responses:
+        '200':
+          description: State plus whether the pipeline is on for the site and a provider is configured
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    nullable: true
+                    allOf: [{ $ref: '#/components/schemas/VideoAsset' }]
+                  meta:
+                    type: object
+                    properties:
+                      enabled: { type: boolean }
+                      providerConfigured: { type: boolean }
+        '404': { description: File not found or outside the caller's folder scope }
+  /files/{id}/video/retry:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Re-submit a failed or queued video (files update)
+      responses:
+        '200':
+          description: Re-queued; `meta.outcome` is the submit outcome (`submitted`, `waiting_scan`, `retry`, …)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/VideoAsset' }
+                  meta: { type: object, properties: { outcome: { type: string } } }
+        '409': { description: VIDEO_DISABLED for the site, or VIDEO_NOT_RETRYABLE while processing/ready }
+        '422': { description: NOT_A_VIDEO }
+        '503': { description: VIDEO_PROVIDER_NOT_CONFIGURED }
+  /files/{id}/video/playback:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Playback URLs (HLS manifest + poster) for a ready video
+      description: >-
+        With `files.dam.video.signedPlayback` (default) both URLs are signed by
+        the provider and expire after `video.playbackTtlSeconds`. The response
+        is `Cache-Control: private, no-store`.
+      responses:
+        '200':
+          description: Playback URLs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      hls: { type: string, format: uri }
+                      poster: { type: string, format: uri, nullable: true }
+                      expiresAt: { type: string, format: date-time, nullable: true }
+                      durationMs: { type: integer, nullable: true }
+                      width: { type: integer, nullable: true }
+                      height: { type: integer, nullable: true }
+        '409': { description: VIDEO_NOT_READY (current version not ready) or VIDEO_PROVIDER_CHANGED }
+        '503': { description: VIDEO_PROVIDER_NOT_CONFIGURED or VIDEO_PROVIDER_ERROR }
+  /video/webhook/{provider}:
+    post:
+      summary: Video provider webhook (public, signature-verified)
+      description: >-
+        Public on purpose: Cloudflare Stream signs with `Webhook-Signature`
+        (`time=…,sig1=…`), Mux with `Mux-Signature` (`t=…,v1=…`); both are
+        HMAC-SHA256 over `<timestamp>.<body>` with a five-minute replay
+        window. The site comes from the signed passthrough.
+      security: []
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [cloudflare-stream, mux] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200':
+          description: '`{ data: { outcome: applied | ignored } }`'
+        '401': { description: Invalid or stale signature }
+        '404': { description: Not the configured provider }
+        '500': { description: Could not be applied; the provider redelivers }
+  /video/source/{token}:
+    get:
+      summary: Original video bytes for the provider to pull (public, signed token)
+      description: >-
+        The token names the site, file and version and expires after six
+        hours. Every failure (bad signature, expired, other version, not
+        servable) answers the same 404.
+      security: []
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The original
+          content:
+            video/*:
+              schema: { type: string, format: binary }
+        '404': { description: Source not available }
+  /files/{id}/captions:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string }, description: The video file }
+    get:
+      summary: Caption / subtitle tracks of a video (#871)
+      responses:
+        '200':
+          description: Tracks, ready for `<track kind srclang label src default>`
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/CaptionTrack' } }
+        '404': { description: Video not found or outside the caller's folder scope }
+    post:
+      summary: Attach a WebVTT file from the library as a track (files update on the video)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [captionFileId, locale]
+              additionalProperties: false
+              properties:
+                captionFileId: { type: string }
+                locale: { type: string, description: 'BCP 47 tag; must be one of the site locales' }
+                kind: { type: string, enum: [subtitles, captions, descriptions, chapters], default: subtitles }
+                label: { type: string, nullable: true, maxLength: 100 }
+                isDefault: { type: boolean, default: false }
+      responses:
+        '201':
+          description: Track created
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: '#/components/schemas/CaptionTrack' } } }
+        '404': { description: CAPTION_FILE_NOT_FOUND (missing or not visible to the caller) }
+        '409': { description: CAPTION_EXISTS (one track per video, locale and kind) }
+        '415': { description: CAPTION_NOT_VTT }
+        '422': { description: NOT_A_VIDEO or LOCALE_NOT_ENABLED }
+  /files/{id}/captions/{captionId}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: captionId, in: path, required: true, schema: { type: string } }
+    patch:
+      summary: Edit a track (setting isDefault clears the other defaults of that kind)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                captionFileId: { type: string }
+                locale: { type: string }
+                kind: { type: string, enum: [subtitles, captions, descriptions, chapters] }
+                label: { type: string, nullable: true, maxLength: 100 }
+                isDefault: { type: boolean }
+      responses:
+        '200':
+          description: Updated track
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: '#/components/schemas/CaptionTrack' } } }
+        '404': { description: Track or caption file not found }
+        '409': { description: CAPTION_EXISTS }
+    delete:
+      summary: Detach a track (the WebVTT file stays in the library)
+      responses:
+        '200': { description: '`{ data: null }`' }
+        '404': { description: Track not found }
   /imports:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'

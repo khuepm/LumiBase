@@ -55,6 +55,19 @@ export const onPostsChange = defineCdcSubscriber({
 
 Declare capabilities in your extension manifest (e.g. `items:read:posts`, `cdc:subscribe:posts`, `http:fetch:api.example.com`). The host enforces the sandbox — your code only sees what it declared.
 
+## Studio host services
+
+UI extensions (interface, display, layout, panel, module) can open the Studio's media picker, the same one the built-in file fields and editors use:
+
+```ts
+import { getStudioHost } from '@lumibase/extension-sdk';
+
+const assets = await getStudioHost()?.openMediaPicker({ multiple: true, allowedMimeTypes: ['image/*'] });
+// PickedAsset[] (each with a version-pinned `url` and optional `alt`) or null when cancelled
+```
+
+`getStudioHost()` returns `null` outside the Studio (tests, server-side code), so guard the call. Options: `initiallySelected`, `multiple`, `max`, `allowedMimeTypes`, `folder`, `includeSubfolders`, `kind`, `search`, `title`. See [Digital Asset Management](https://docs.lumibase.dev/en/features/digital-asset-management).
+
 ## Docs
 
 - [Extensions system](https://docs.lumibase.dev/en/features/extensions-system) (see repo `docs/features/extensions-system.md`)

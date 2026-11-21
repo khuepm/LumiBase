@@ -73,6 +73,18 @@ vi.mock('@aws-sdk/client-s3', () => ({
   ListObjectsV2Command: vi.fn(function (input: unknown) {
     return { _type: 'ListObjectsV2', input };
   }),
+  CreateMultipartUploadCommand: vi.fn(function (input: unknown) {
+    return { _type: 'CreateMultipartUpload', input };
+  }),
+  UploadPartCommand: vi.fn(function (input: unknown) {
+    return { _type: 'UploadPart', input };
+  }),
+  CompleteMultipartUploadCommand: vi.fn(function (input: unknown) {
+    return { _type: 'CompleteMultipartUpload', input };
+  }),
+  AbortMultipartUploadCommand: vi.fn(function (input: unknown) {
+    return { _type: 'AbortMultipartUpload', input };
+  }),
 }));
 
 // ─── Mock meilisearch ───────────────────────────────────────────────────────
@@ -714,5 +726,46 @@ describe('MeiliSearchProvider', () => {
 
       expect(result).toEqual({ numberOfDocuments: 0 });
     });
+  });
+});
+
+describe('S3StorageProvider multipart (#704)', () => {
+  const provider = new S3StorageProvider({ endpoint: 'http://minio:9000', accessKeyId: 'a', secretAccessKey: 'b', bucket: 'media' });
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it('creates, uploads parts, completes in part order and aborts', async () => {
+    mockS3Send.mockResolvedValueOnce({ UploadId: 'up-1' });
+    expect(await provider.createMultipart('k.mp4', { contentType: 'video/mp4' })).toEqual({ uploadId: 'up-1' });
+    expect(mockS3Send.mock.calls[0]![0]).toEqual({
+      _type: 'CreateMultipartUpload',
+      input: { Bucket: 'media', Key: 'k.mp4', Metadata: { contentType: 'video/mp4' }, ContentType: 'video/mp4' },
+    });
+
+    mockS3Send.mockResolvedValueOnce({ ETag: '"e2"' });
+    const pool = new Uint8Array([9, 9, 1, 2, 3, 9]);
+    const part = await provider.uploadPart('k.mp4', 'up-1', 2, pool.subarray(2, 5));
+    expect(part).toEqual({ partNumber: 2, etag: '"e2"' });
+    const sent = mockS3Send.mock.calls[1]![0] as { input: { Body: Buffer; PartNumber: number; UploadId: string } };
+    // Only the view's bytes are sent, not the whole backing buffer.
+    expect([...sent.input.Body]).toEqual([1, 2, 3]);
+    expect(sent.input).toMatchObject({ PartNumber: 2, UploadId: 'up-1' });
+
+    mockS3Send.mockResolvedValueOnce({});
+    await provider.completeMultipart('k.mp4', 'up-1', [{ partNumber: 2, etag: '"e2"' }, { partNumber: 1, etag: '"e1"' }]);
+    expect((mockS3Send.mock.calls[2]![0] as { input: { MultipartUpload: unknown } }).input.MultipartUpload).toEqual({
+      Parts: [{ PartNumber: 1, ETag: '"e1"' }, { PartNumber: 2, ETag: '"e2"' }],
+    });
+
+    mockS3Send.mockResolvedValueOnce({});
+    await provider.abortMultipart('k.mp4', 'up-1');
+    expect(mockS3Send.mock.calls[3]![0]).toEqual({ _type: 'AbortMultipartUpload', input: { Bucket: 'media', Key: 'k.mp4', UploadId: 'up-1' } });
+  });
+
+  it('refuses a missing UploadId / ETag instead of continuing with undefined', async () => {
+    mockS3Send.mockResolvedValueOnce({});
+    await expect(provider.createMultipart('k')).rejects.toThrow(/UploadId/);
+    mockS3Send.mockResolvedValueOnce({});
+    await expect(provider.uploadPart('k', 'u', 1, new Uint8Array([1]))).rejects.toThrow(/ETag/);
   });
 });

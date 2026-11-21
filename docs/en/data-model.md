@@ -1,10 +1,10 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 30
+lastUpdated: 2026-11-19T09:24:28.613Z
 sourceLang: en
-contentHash: 52465604769f9c24
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+contentHash: 5787aa0c1b489e3b
+codeVerified: 2026-11-19T09:24:28.613Z
+codeVerifiedHash: 5787aa0c1b489e3b
 codeVerifiedClaims: 22
 ---
 
@@ -30,7 +30,7 @@ Schema files are split by domain:
 | `core.ts` | `lumibase_organizations`, `lumibase_organization_members`, `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
-| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_upload_sessions`, `lumibase_file_captions`, `lumibase_video_assets`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
@@ -288,7 +288,7 @@ When seeding local/staging/prod, seed system collection permissions explicitly. 
 
 ### `files`
 - `id`, `siteId`, `storage` (`r2`/`s3`/external), `filenameDisk`, `filenameDownload`, `mime`, `filesize`, `width`, `height`, `duration`, `folder`, `metadata jsonb`, `uploadedBy`, `contentHash`, `version`, `scanStatus`, `createdAt`, `updatedAt`.
-- `contentHash` — full SHA-256 (hex) of the current binary, used for duplicate detection; index `(siteId, contentHash)`. `version` — bumped by every in-place replace (same id and `filenameDisk`). `scanStatus` — `skipped` (default) / `pending` / `clean` / `infected` / `error`; only `skipped` and `clean` are delivered. `metadata.embedded` holds extracted EXIF/IPTC/XMP and `metadata.searchText` the searchable summary. Migration `0038_dam_assets`.
+- `contentHash` — full SHA-256 (hex) of the current binary, used for duplicate detection; index `(siteId, contentHash)`. `version` — bumped by every in-place replace (same id and `filenameDisk`). `scanStatus` — `skipped` (default) / `pending` / `clean` / `infected` / `error`; only `skipped` and `clean` are delivered. `metadata.embedded` holds extracted EXIF/IPTC/XMP and `metadata.searchText` the searchable summary. Migration `0038_dam_assets`. Partial index `files_pending_scan_idx` on `updatedAt` where `scanStatus = 'pending'` serves the malware-scan sweeper (migration `0046_malware_scan_pending_idx`).
 
 ### `file_versions`
 - `id`, `siteId`, `fileId` (FK cascade), `version`, `filenameDisk` (archive key `sites/<site>/file-versions/<id>/v<n>`), `filenameDownload`, `mime`, `filesize`, `width`, `height`, `contentHash`, `metadata jsonb`, `replacedBy`, `createdAt`, `expiresAt`.
@@ -296,6 +296,16 @@ When seeding local/staging/prod, seed system collection permissions explicitly. 
 
 ### `folders`
 - `id`, `siteId`, `name`, `parent`. Paths, sub-trees and cycle checks are derived in `apps/cms/src/services/files/folder-tree.ts`.
+
+### `upload_sessions`
+- `id`, `siteId`, `createdBy`, `filename`, `mime`, `length`, `offset`, `storageKey`, `multipartId`, `parts jsonb`, `tailSize`, `folder`, `metadata jsonb`, `status` (`active`/`completed`/`aborted`), `lockToken`, `lockedUntil`, `fileId`, `expiresAt`, `createdAt`, `updatedAt`.
+- One TUS resumable upload in progress: committed `offset`, the multipart parts written so far and the size of the tail object. `lockToken`/`lockedUntil` is the single-writer lease taken by each `PATCH`; `fileId` is set on completion. Index `(siteId, status)` and a partial index on `expiresAt` for active uploads (expiry sweep). Migration `0047_upload_sessions`. See [Digital Asset Management](./features/digital-asset-management.md).
+### `file_captions`
+- `id`, `siteId`, `fileId` (the video, FK cascade), `captionFileId` (the WebVTT file, FK cascade), `locale`, `kind` (`subtitles`/`captions`/`descriptions`/`chapters`), `label`, `isDefault`, `createdBy`, `createdAt`, `updatedAt`.
+- Caption/subtitle tracks of a video (#871); unique `(siteId, fileId, locale, kind)`. Migration `0045_file_captions`. See [Digital Asset Management](./features/digital-asset-management.md).
+### `video_assets`
+- `id`, `siteId`, `fileId` (FK cascade, unique per site), `fileVersion`, `provider`, `providerAssetId`, `playbackId`, `status` (`uploaded`/`processing`/`ready`/`failed`), `error`, `attempts`, `durationMs`, `width`, `height`, `renditions jsonb`, `signedPlayback`, `submittedAt`, `readyAt`, `createdAt`, `updatedAt`.
+- Video processing state for one file (#871), tied to the `fileVersion` it was submitted for; a replace re-queues the row. Every write is a compare-and-set on status + version. Partial index on `(status, updatedAt)` for queued/processing rows (sweep). Migration `0044_video_assets`. See [Digital Asset Management](./features/digital-asset-management.md).
 
 ## 5. UX state (`platform.ts`)
 

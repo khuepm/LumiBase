@@ -279,7 +279,18 @@ export interface PickedAsset {
   folder: string | null;
   version?: number;
   metadata: Record<string, unknown>;
+  /**
+   * Delivery URL for embedding (`…/api/v1/files/<id>/content?v=<version>`).
+   * Version-pinned, so it is immutable and changes when the file is replaced.
+   * Readers need `files:read` (grant it to the `public` role for a public site).
+   */
+  url: string;
+  /** Editorial alt text (`metadata.alt`), when set. */
+  alt?: string;
 }
+
+/** Coarse type filters the picker offers as chips, narrowed by `allowedMimeTypes`. */
+export type MediaKind = 'image' | 'video' | 'audio' | 'document';
 
 export interface MediaPickerOptions {
   /**
@@ -300,6 +311,10 @@ export interface MediaPickerOptions {
   max?: number;
   /** Dialog title override. */
   title?: string;
+  /** Start with this type filter selected (the editor can change it). */
+  kind?: MediaKind;
+  /** Pre-fill the search box (name, alt, IPTC keywords, credit…). */
+  search?: string;
 }
 
 /**

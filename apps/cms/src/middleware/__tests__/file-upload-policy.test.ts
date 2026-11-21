@@ -45,6 +45,16 @@ describe('file upload policy helpers', () => {
     expect(isFileExtensionCompatibleWithMime('avatar.exe', 'image/jpeg')).toBe(false);
     expect(isFileExtensionCompatibleWithMime('report.pdf', 'application/pdf')).toBe(true);
     expect(isFileExtensionCompatibleWithMime('report.pdf.exe', 'application/pdf')).toBe(false);
+    // WebVTT caption tracks (#871).
+    expect(isFileExtensionCompatibleWithMime('captions.en.vtt', 'text/vtt')).toBe(true);
+    expect(isFileExtensionCompatibleWithMime('captions.srt', 'text/vtt')).toBe(false);
+    expect(isFileExtensionCompatibleWithMime('page.html', 'text/vtt')).toBe(false);
+  });
+
+  it('accepts real WebVTT and refuses HTML declared as captions (#871)', async () => {
+    const req = (body: string) => new Request('http://test', { method: 'POST', body });
+    expect(await isFileContentCompatibleWithMime(req('WEBVTT\n\n00:00.000 --> 00:01.000\nHi\n'), 'text/vtt')).toBe(true);
+    expect(await isFileContentCompatibleWithMime(req('<html><script>x()</script>'), 'text/vtt')).toBe(false);
   });
 
   it('sniffs signed upload content instead of trusting the declared MIME type', async () => {
@@ -92,6 +102,9 @@ describe('file upload policy helpers', () => {
     expect(classifyUploadSurface('/api/v1/files/upload/key.png', 'PUT')).toMatchObject({ isSignedUpload: true });
     expect(classifyUploadSurface('/api/v1/media/key.png', 'POST')).toMatchObject({ isMediaUpload: true });
     expect(classifyUploadSurface('/api/v1/files/abc123/content', 'PUT')).toMatchObject({ isReplaceUpload: true });
+    expect(classifyUploadSurface('/api/v1/files/tus', 'POST')).toMatchObject({ isResumableCreate: true });
+    expect(classifyUploadSurface('/api/v1/files/tus/sess1', 'PATCH')).toMatchObject({ isResumablePatch: true });
+    expect(classifyUploadSurface('/api/v1/files/tus/sess1', 'HEAD')).toBeNull();
     expect(classifyUploadSurface('/api/v1/files/abc123/content', 'GET')).toBeNull();
     expect(classifyUploadSurface('/api/v1/files/upload/content', 'PUT')).toMatchObject({ isSignedUpload: true, isReplaceUpload: false });
     // Non-upload traffic is left untouched.

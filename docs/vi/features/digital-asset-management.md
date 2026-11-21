@@ -1,14 +1,14 @@
 ---
-version: 2
+version: 9
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-11-15T19:50:20.465Z
-sourceHash: efd74f0a8a1ef504
-codeVerified: 2026-11-15T19:50:20.465Z
-codeVerifiedHash: efd74f0a8a1ef504
-codeVerifiedClaims: 30
+lastUpdated: 2026-11-19T09:51:24.735Z
+sourceHash: 12b3a27028fb9941
+codeVerified: 2026-11-19T09:51:24.735Z
+codeVerifiedHash: 12b3a27028fb9941
+codeVerifiedClaims: 58
 ---
 
 # Quản lý tài sản số (Digital Asset Management)
@@ -152,7 +152,8 @@ giữ copyright.
 ## Media picker (D08)
 
 Một picker phục vụ thư viện media, các field `file` / `files` có sẵn
-("Choose from library") và UI extension:
+("Choose from library"), trình soạn rich-text (`wysiwyg`) và `markdown`
+("Insert from library") và UI extension:
 
 ```ts
 import { getStudioHost } from '@lumibase/extension-sdk';
@@ -163,9 +164,25 @@ const assets = await getStudioHost()?.openMediaPicker({
   initiallySelected: ['<fileId or storage key>'],
   allowedMimeTypes: ['image/*'],
   folder: '<folderId>',        // scope; includeSubfolders defaults to true
+  kind: 'image',               // initial type chip: image | video | audio | document
+  search: 'logo',              // pre-filled search
 });
 // → PickedAsset[] | null (cancelled)
 ```
+
+Mỗi `PickedAsset` mang row của file cùng `url`, URL phân phối ghim theo
+version (`…/api/v1/files/<id>/content?v=<version>`), và `alt` khi file có alt
+text. Nhúng `url` vào nội dung: nó bất biến với version đó, và "dùng ở đâu" tìm
+thấy tham chiếu theo id file. Người đọc cần `files:read` (cấp cho role
+`public` với site công khai).
+
+Các chip loại (All types / Images / Video / Audio / Documents) chỉ hiện những
+loại mà `allowedMimeTypes` cho phép, và một chip không bao giờ nới rộng nó. Chọn
+`Images` dưới `allowedMimeTypes: ['image/png', 'application/pdf']` sẽ lọc theo
+`image/png`. Trình soạn rich-text chèn ảnh dưới dạng `<img src alt width
+height>` và file khác dưới dạng link, tại vị trí con trỏ. Trình soạn markdown
+chèn `![alt](url)` / `[name](url)` tại vị trí con trỏ, và bản xem trước của nó
+hiển thị ảnh.
 
 Lọc diễn ra ở server. `GET /api/v1/files` nhận `folder` (`root` cho file nằm
 ngoài mọi thư mục), `subfolders=true`, `search`, `mime` (phân tách bằng dấu
@@ -189,15 +206,201 @@ Scanner là thiết lập của **deployment**, không bao giờ là của tenan
 
 | Biến | Ý nghĩa |
 |---|---|
+| `CLAMD_HOST` | host clamd cho adapter native (chỉ Docker) |
+| `CLAMD_PORT` | port clamd (mặc định `3310`) |
 | `MALWARE_SCAN_URL` | HTTP endpoint nhận upload multipart |
 | `MALWARE_SCAN_TOKEN` | bearer token, tuỳ chọn |
 | `MALWARE_SCAN_FIELD` | tên field multipart (mặc định `file`) |
 
+Có hai adapter. Khi cả hai được cấu hình, clamd được ưu tiên.
+
+- **clamd (Docker).** Daemon ClamAV native được gọi qua TCP bằng
+  `zINSTREAM`. Runtime Docker cung cấp socket client (`runtime.clamd`) khi
+  đặt `CLAMD_HOST`, nên business logic không bao giờ import `node:net`.
+  `stream: OK` là sạch, `stream: <signature> FOUND` là nhiễm, còn reply
+  `ERROR` hoặc daemon không kết nối được thì theo `scan.onError`.
+- **HTTP (cả hai runtime).** Bất kỳ scanner REST nào. Adapter đọc được các
+  dạng response ClamAV REST phổ biến cũng như dạng chung
+  `{ infected, viruses }`. Đây là adapter trên Cloudflare, nơi không có clamd
+  TCP: trỏ nó tới bất kỳ dịch vụ quét HTTPS nào.
+
 Docker: `docker compose -f docker/docker-compose.yml --profile malware-scan up -d`
-khởi động một sidecar ClamAV REST. Đặt `MALWARE_SCAN_URL=http://clamav-rest:3000/api/v1/scan`
-và `MALWARE_SCAN_FIELD=FILES`. Trên Cloudflare, trỏ nó tới bất kỳ dịch vụ
-quét HTTPS nào. Adapter đọc được các dạng response ClamAV REST phổ biến cũng
-như dạng chung `{ infected, viruses }`.
+khởi động clamd (`clamav`) và một REST front (`clamav-rest`). Đặt hoặc
+`CLAMD_HOST=clamav` (native, khuyến nghị) hoặc
+`MALWARE_SCAN_URL=http://clamav-rest:3000/api/v1/scan` cùng
+`MALWARE_SCAN_FIELD=FILES`.
+
+**Sweeper quét lại file pending.** Một lần quét không hoàn tất để file ở
+`pending`, và file ở trạng thái đó không bao giờ được phục vụ. Điều này xảy ra khi
+process chết giữa chừng, hoặc khi lần quét thấy file đã bị thay và bỏ kết
+luận cũ. Cứ năm phút, một sweep quét lại các file đã `pending` quá mười phút,
+tối đa 50 file mỗi lượt, cũ nhất trước. Nó chạy dưới dạng cron có leader lock
+trên Docker và từ Cron Trigger năm phút trên Workers. Mỗi kết luận được ghi
+theo version của file, nên các lượt chạy chồng nhau chỉ chốt một file một lần.
+Kết luận được audit trên site của file với `sweep: true`. Site đã tắt quét
+thì được để nguyên: các file pending của nó vẫn không được phục vụ cho tới khi
+admin quét lại hoặc bật lại quét. Phép tra cứu dùng partial index
+`files_pending_scan_idx`.
+
+## Upload tiếp tục được (TUS, D04)
+
+File lớn có thể được upload bằng giao thức [TUS 1.0](https://tus.io/protocols/resumable-upload)
+(core, `creation`, `termination`, `expiration`) tại `/api/v1/files/tus`.
+Mất kết nối hay tải lại trang không còn bắt upload chạy lại từ đầu: client
+hỏi server đang giữ bao nhiêu byte (`HEAD`) rồi tiếp tục từ đó. Mọi client
+TUS đều dùng được; thư viện media trong Studio tự chuyển sang cách này cho
+file từ 32 MiB trở lên (`apps/studio/src/modules/files/tus-client.ts`, chunk
+16 MiB, URL upload được giữ trong `localStorage` để tải lại trang vẫn tiếp
+tục được).
+
+1. `POST /api/v1/files/tus` với `Upload-Length` và `Upload-Metadata`
+   (`filename`, `filetype`, tuỳ chọn `folder`, `alt`). Bộ bảo vệ upload kiểm
+   tra phần khai báo giống hệt upload trực tiếp: role public bị từ chối,
+   giới hạn dung lượng, danh sách MIME cho phép, vệ sinh tên file và đuôi ↔
+   MIME đều áp dụng. `files:create` và rule đặt vào thư mục cũng được kiểm
+   tra. Kết quả là `201` kèm `Location` và `Upload-Expires`.
+2. `PATCH <Location>` với `Upload-Offset` và body
+   `application/offset+octet-stream`. Mỗi chunk được ghi **tất cả hoặc
+   không**: nếu storage lỗi thì trả `503` và offset không đổi. Offset sai
+   trả `409 OFFSET_MISMATCH` kèm offset đang lưu. Chunk đầu tiên được kiểm
+   tra nội dung so với kiểu đã khai báo.
+3. Chunk chạm tới `Upload-Length` hoàn tất upload. Quyền và vị trí thư mục
+   được **kiểm tra lại** (upload của người đã bị thu hồi quyền bị huỷ), file
+   đã ghép được quét polyglot, dòng file được tạo, metadata được trích xuất
+   và lượt quét mã độc được lên lịch y như upload trực tiếp. Response mang
+   `X-Lumi-File-Id`.
+4. `DELETE <Location>` huỷ upload và xoá các phần đã lưu.
+
+**Chạy trên cả hai runtime như thế nào.** Byte đi thẳng vào một multipart
+upload trên R2 (Workers) hoặc S3/MinIO (Docker) qua port `MultipartStorage`
+của runtime (`packages/runtime/src/interfaces/storage.ts`), nên không runtime
+nào giữ cả file trong bộ nhớ. Các phần multipart phải cùng kích thước, nên
+server cắt luồng thành phần 8 MiB và giữ phần dư trong một object đuôi nhỏ
+cho tới khi chunk tiếp theo tới. Tiến độ nằm trong bảng
+`lumibase_upload_sessions`. Mỗi `PATCH` giữ một lease ngắn bằng update có
+điều kiện, nên hai writer đồng thời không thể cùng nối; lease bị bỏ lại bởi
+một request sập sẽ hết hạn sau năm phút.
+
+**Quyền sở hữu và hết hạn.** Chỉ người tạo (hoặc site admin) xem hoặc ghi
+được một upload; người khác nhận `404`. Upload hết hạn 24 giờ sau chunk cuối
+cùng được ghi (sau đó trả `410`). Một lượt quét mỗi giờ, `upload-expiry`,
+abort các multipart upload đã hết hạn và xoá object đuôi của chúng (cron
+Docker có leader lock và cron giờ của Workers).
+## Pipeline video (#871)
+
+Video không transcode được trong Worker, nên CMS giao chúng cho một **video
+provider** bên ngoài qua một port (`apps/cms/src/modules/video/provider.ts`).
+Có sẵn hai adapter: **Cloudflare Stream** và **Mux**. Cả hai chỉ dùng HTTP,
+nên pipeline chạy như nhau trên Workers và Docker. Business logic không bao
+giờ gọi tên provider.
+
+Tắt theo mặc định. Khi một site bật `video.enabled` và deployment có
+provider, mọi file `video/*` mới hoặc được thay có một dòng trong
+`lumibase_video_assets` và đi qua các trạng thái sau:
+
+| Trạng thái | Ý nghĩa |
+|---|---|
+| `uploaded` | đang xếp hàng; chờ quét mã độc (#707) đánh dấu file phân phối được |
+| `processing` | đã gửi; provider đang dựng renditions, manifest HLS và poster |
+| `ready` | phát được; thời lượng và kích thước được chép sang file (`duration` tính bằng giây, `width`, `height`) |
+| `failed` | provider từ chối, năm lần gửi thất bại, hoặc xử lý quá 24 giờ |
+
+1. **Gửi.** Sau response upload (`waitUntil` trên Workers, một tác vụ tách
+   rời trên Node), CMS gửi cho provider một URL có chữ ký, sống ngắn,
+   `GET /api/v1/video/source/<token>`. Token ghi site, file và version, hết
+   hạn sau sáu giờ, và khoá của nó được dẫn xuất từ `JWT_SECRET`. Provider
+   kéo bản gốc từ URL đó. File còn đang được quét sẽ được gửi khi kết quả
+   quét là sạch.
+2. **Webhook.** Provider gọi `POST /api/v1/video/webhook/<provider>`. Chữ ký
+   được kiểm theo webhook secret của deployment, với cửa sổ chống replay năm
+   phút. Site, file và version lấy từ passthrough CMS gắn lúc gửi. Sự kiện
+   cho version cũ hơn hoặc asset khác bị bỏ qua.
+3. **Quét định kỳ.** Mỗi năm phút (cron Docker có leader lock, trigger năm
+   phút của Workers), `video-sweep`:
+   - gửi các dòng đang xếp hàng, kể cả lỗi thử lại được (tối đa năm lần);
+   - hỏi trạng thái các dòng đang xử lý mà webhook không tới;
+   - xếp hàng lại một lần gửi bị ngắt giữa chừng;
+   - đánh dấu thất bại mọi thứ xử lý quá 24 giờ.
+
+Thay file sẽ xếp hàng lại và xoá asset provider của version trước. Xoá file
+cũng xoá asset provider của nó.
+
+**Endpoint.**
+
+- `GET /api/v1/files/:id/video` trả trạng thái (`meta.enabled`,
+  `meta.providerConfigured`).
+- `POST /api/v1/files/:id/video/retry` (files `update`) gửi lại một video
+  thất bại hoặc đang xếp hàng.
+- `GET /api/v1/files/:id/video/playback` trả `{ hls, poster, expiresAt }` cho
+  video đã sẵn sàng. Với `video.signedPlayback` (mặc định) cả hai URL được
+  provider ký và hết hạn sau `video.playbackTtlSeconds`: cùng mô hình URL
+  sống ngắn như signed transforms. Response là
+  `Cache-Control: private, no-store`. Endpoint trả `409 VIDEO_NOT_READY` cho
+  tới khi version hiện tại sẵn sàng.
+
+Provider là thiết lập **cấp deployment**:
+
+| Biến | Ý nghĩa |
+|---|---|
+| `VIDEO_PROVIDER` | `cloudflare-stream` hoặc `mux`; không đặt = không transcode |
+| `LUMIBASE_PUBLIC_URL` | origin công khai mà provider kéo nguồn về; thiếu nó thì lượt quét định kỳ không gửi được |
+| `CF_STREAM_ACCOUNT_ID`, `CF_STREAM_API_TOKEN` | quyền gọi Stream API |
+| `CF_STREAM_WEBHOOK_SECRET` | secret trả về khi đăng ký webhook của account |
+| `CF_STREAM_CUSTOMER_DOMAIN` | host phát, ví dụ `customer-<code>.cloudflarestream.com` |
+| `MUX_TOKEN_ID`, `MUX_TOKEN_SECRET` | access token của Mux API |
+| `MUX_WEBHOOK_SECRET` | secret ký webhook của Mux |
+| `MUX_SIGNING_KEY_ID`, `MUX_SIGNING_KEY_PRIVATE` | khoá ký cho phát có chữ ký (khoá base64 Mux cấp, hoặc PEM) |
+
+Trỏ webhook của provider tới
+`<LUMIBASE_PUBLIC_URL>/api/v1/video/webhook/cloudflare-stream` hoặc
+`…/webhook/mux`.
+
+**Trong Studio.** Ngăn chi tiết asset của một file video hiển thị:
+
+- trạng thái xử lý, được hỏi lại định kỳ trong lúc provider làm việc;
+- lỗi và nút **Retry processing** khi xử lý thất bại;
+- trình phát xem trước khi video đã sẵn sàng.
+
+Trình phát chạy HLS qua hls.js, được tải lười. CSP của Studio chỉ cho phép
+`'self'` và `blob:` cho media và ảnh, nên poster và các track WebVTT được tải
+về trước rồi phát từ URL `blob:`. Track đi qua SDK, vốn mang theo phiên đăng
+nhập. Khi thiếu Media Source (webview iOS cũ trong shell desktop/mobile),
+trình phát quay về HLS gốc.
+
+## Phụ đề và caption (#871)
+
+Một track phụ đề hoặc caption là một file WebVTT trong thư viện, được gắn với
+một video cho một locale. Track vẫn là một asset bình thường: quyền thư mục,
+phiên bản và thay tại chỗ của riêng nó, nên sửa lỗi chính tả trong phụ đề vẫn
+giữ mọi liên kết. Upload nó như mọi file. `text/vtt` (`.vtt`) có trong
+catalogue upload nhưng tắt mặc định, nên hãy bật nó trong
+**Settings → Uploads**. Bộ bảo vệ upload yêu cầu chữ ký `WEBVTT`, nên một tài
+liệu HTML hay SVG không thể giả làm phụ đề.
+
+- `GET /api/v1/files/:id/captions` liệt kê các track của một video (files
+  `read`). Mỗi track mang những gì phần tử HTML `<track>` cần: `kind`,
+  `locale` (`srclang`), `label`, `isDefault` và `src`, một URL bất biến ghim
+  theo version `GET /api/v1/files/<caption>/content?v=<n>`. Track mà caller
+  không thấy được file phụ đề sẽ được liệt kê với `src: null`.
+- `POST /api/v1/files/:id/captions` gắn một track (files `update` trên
+  video), với body `{ captionFileId, locale, kind?, label?, isDefault? }`:
+  - `kind` là `subtitles` (mặc định), `captions`, `descriptions` hoặc
+    `chapters`;
+  - video phải là `video/*` (`422 NOT_A_VIDEO`);
+  - track phải là file `text/vtt` mà caller thấy được
+    (`415 CAPTION_NOT_VTT`, `404 CAPTION_FILE_NOT_FOUND`);
+  - locale phải là một locale của site (`422 LOCALE_NOT_ENABLED`);
+  - mỗi video, locale và kind chỉ có một track (`409 CAPTION_EXISTS`).
+- `PATCH /api/v1/files/:id/captions/:captionId` đổi `captionFileId`,
+  `locale`, `kind`, `label` hoặc `isDefault`. Mỗi video và kind có tối đa một
+  track mặc định, nên đặt một track làm mặc định sẽ bỏ cờ của các track khác.
+- `DELETE /api/v1/files/:id/captions/:captionId` gỡ track. File WebVTT vẫn ở
+  trong thư viện. Xoá một trong hai file sẽ gỡ liên kết.
+
+Trong Studio, mục **Captions & subtitles** ở ngăn chi tiết của video liệt kê
+các track, bật/tắt track mặc định, gỡ track, và thêm track từ một file WebVTT
+chọn trong thư viện media, kèm ngôn ngữ (các locale của site), kind và nhãn
+tuỳ chọn.
 
 ## Thiết lập
 
@@ -213,18 +416,26 @@ Chúng được lưu trong `settings` dưới key `files.dam`:
 | `extractMetadata` | `true` | trích EXIF/IPTC/XMP |
 | `scan.enabled` | `false` | quét mã độc |
 | `scan.onError` | `quarantine` | `quarantine` hoặc `allow` |
+| `video.enabled` | `false` | pipeline video |
+| `video.signedPlayback` | `true` | URL phát do provider ký, có hạn |
+| `video.playbackTtlSeconds` | `3600` | thời gian sống của URL phát (60–86400) |
 
 ## Multi-tenancy
 
-- **Cô lập theo site:** `lumibase_files`, `lumibase_folders` và
-  `lumibase_file_versions` đều mang `site_id` và nằm trong danh sách RLS
+- **Cô lập theo site:** `lumibase_files`, `lumibase_folders`,
+  `lumibase_file_versions`, `lumibase_upload_sessions`,
+  `lumibase_file_captions` và `lumibase_video_assets` đều mang `site_id` và
+  nằm trong danh sách RLS
   `site_isolation`. Mọi query của repository được lọc theo `site_id`
   (`DrizzleFileRepository`). Binary lưu trữ nằm dưới `sites/<site>/…`. Cache
   tag (`file:<site>:<id>`) và thiết lập `files.dam` là theo site. Tra cứu
   trùng lặp và "dùng ở đâu" chỉ tìm trong site của caller.
-- **Dùng chung toàn deployment:** endpoint scanner (`MALWARE_SCAN_*`). Đây là
+- **Dùng chung toàn deployment:** endpoint scanner (`MALWARE_SCAN_*`) và
+  tài khoản video provider (`VIDEO_PROVIDER`, `CF_STREAM_*`, `MUX_*`). Đây là
   định danh dịch vụ do operator kiểm soát, không phải dữ liệu tenant, và một
-  tenant chỉ có thể bật quét cho chính site của mình.
+  tenant chỉ có thể bật quét hoặc video cho chính site của mình. Webhook của
+  provider mang site trong một passthrough có chữ ký; route webhook và route
+  nguồn chỉ truy vấn dòng của site đó.
 - **Cách kiểm chứng:** `apps/cms/src/routes/__tests__/files-dam.test.ts` chạy
   hai site song song. Site A không đọc, thay hay xoá được file của site B
   (404, không ghi gì), và tra cứu trùng lặp không bao giờ trả về file cùng
@@ -232,7 +443,5 @@ Chúng được lưu trong `settings` dưới key `files.dam`:
 
 ## Chưa làm
 
-- Upload resumable (TUS, D04 #704) chưa được hiện thực. File lớn vẫn dùng
-  một lần `PUT` có chữ ký.
-- Rich text chưa nhúng ảnh qua picker (R03). API picker ở trên là điểm tích
-  hợp.
+- `Upload-Defer-Length` của TUS (chưa biết dung lượng lúc tạo) trả `501`, và
+  extension `concatenation` không được cung cấp.

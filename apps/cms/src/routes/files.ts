@@ -18,6 +18,13 @@ import {
 } from '../services/content-invalidation';
 import { damSettingsUpdateSchema, saveDamSettings, type DamSettings } from '../services/files/dam-settings';
 import { canActOnFile, canPlaceInFolder, type FilesAccess, type FilesAction } from '../services/files/file-access';
+import {
+  CaptionService,
+  captionCreateSchema,
+  captionPatchSchema,
+  presentCaption,
+  type CaptionRecord,
+} from '../services/files/captions';
 import { FileAssetError, FileAssetService } from '../services/files/file-asset-service';
 import type { FileListFilter, FileRecord } from '../services/files/file-repository';
 import type { FileUsageReport } from '../services/files/file-usage';
@@ -25,6 +32,28 @@ import { filesContext, resolveFilesAccess, type FilesContext } from '../services
 import { buildFolderTree, checkFolderMove, descendantIds, type FolderRow } from '../services/files/folder-tree';
 import { stripGpsMetadata } from '../services/files/media-metadata';
 import { isServable, runFileScan } from '../modules/malware-scan';
+import { isFileContentCompatibleWithBytes } from '../middleware/file-upload-policy';
+import { detectPolyglot } from '../services/upload-security/content-sniff';
+import { INGEST_READ_LIMIT } from '../services/files/file-asset-service';
+import {
+  MAX_PATCH_BYTES,
+  TUS_EXTENSIONS,
+  TUS_VERSION,
+  declarationFrom,
+  parseNonNegativeInt,
+  parseUploadMetadata,
+} from '../services/files/tus/protocol';
+import { TusService } from '../services/files/tus/tus-service';
+import type { UploadSession } from '../services/files/tus/session-repo';
+import { resolveUploadPolicy } from '../services/upload-policy-service';
+import {
+  isVideoEligible,
+  presentVideoAsset,
+  queueVideo,
+  retryVideo,
+  submitVideo,
+  type VideoJobDeps,
+} from '../modules/video';
 
 /**
  * /files — the digital asset library (#670).
@@ -72,7 +101,7 @@ async function verifyUploadToken(token: string, secret: string): Promise<UploadT
 
 // --- helpers ---------------------------------------------------------------
 
-type ErrorStatus = 400 | 403 | 404 | 409 | 413 | 422 | 423 | 503;
+type ErrorStatus = 400 | 403 | 404 | 409 | 410 | 412 | 413 | 415 | 422 | 423 | 501 | 503;
 
 function fail(c: Context<AppEnv>, status: ErrorStatus, code: string, message: string, details?: Record<string, unknown>) {
   return c.json({ errors: [{ code, message, ...(details ? { details } : {}) }] }, status);
@@ -174,12 +203,43 @@ function purgeAfterReplace(c: Context<AppEnv>, ctx: FilesContext, file: FileReco
 
 function scheduleScan(c: Context<AppEnv>, ctx: FilesContext, file: FileRecord): void {
   if (file.scanStatus !== 'pending') return;
-  background(c, 'malware scan', () =>
-    runFileScan(
+  background(c, 'malware scan', async () => {
+    const outcome = await runFileScan(
       { repo: ctx.repo, storage: ctx.storage, scanner: ctx.scanner, settings: ctx.settings, audit: ctx.audit },
       file.id,
-    ),
-  );
+    );
+    // A video waits for the scan; hand it to the provider once it is servable.
+    const deps = videoDeps(ctx);
+    if (deps && outcome.status === 'clean' && isVideoEligible(deps, file)) await submitVideo(deps, file.id);
+    return outcome;
+  });
+}
+
+/** Video job dependencies for this request, or null when the context has no pipeline. */
+function videoDeps(ctx: FilesContext): VideoJobDeps | null {
+  if (!ctx.video) return null;
+  return {
+    repo: ctx.repo,
+    videos: ctx.video.assets,
+    provider: ctx.video.provider,
+    settings: ctx.settings,
+    sourceUrl: ctx.video.sourceUrl,
+    audit: ctx.audit,
+  };
+}
+
+/**
+ * Queue a new or replaced video for transcoding (#871) and submit it after
+ * the response. A file still waiting on its malware scan is submitted when
+ * the scan comes back clean (above) or by the sweep.
+ */
+function scheduleVideo(c: Context<AppEnv>, ctx: FilesContext, file: FileRecord): void {
+  const deps = videoDeps(ctx);
+  if (!deps || !isVideoEligible(deps, file)) return;
+  background(c, 'video submit', async () => {
+    const queued = await queueVideo(deps, file);
+    if (queued && isServable(file.scanStatus)) await submitVideo(deps, file.id);
+  });
 }
 
 function csv(v: string | undefined): string[] | undefined {
@@ -272,6 +332,200 @@ filesRouter.put('/upload/:key', async (c) => {
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     return c.json({ errors: [{ code: 'STORAGE_ERROR', message: `Failed to upload file to storage: ${errorMsg}` }] }, 500);
+  }
+});
+
+// --- Resumable uploads: TUS 1.0 (#704) ----------------------------------------
+//
+// Core protocol + `creation`, `termination`, `expiration`. The upload guard
+// (`file-upload-policy`) checks the declaration at creation (size cap from
+// Upload-Length, MIME allowlist, filename hygiene, extension ↔ MIME); the
+// bytes are sniffed here, where the declared MIME is known: the first chunk
+// against its magic bytes, and the assembled file (up to 64 MiB) again with
+// the polyglot scan before the file row is created. `files:create` and the
+// folder placement are checked at creation AND at completion.
+
+function tusHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return { 'Tus-Resumable': TUS_VERSION, 'Cache-Control': 'no-store', ...extra };
+}
+
+function tusVersionMismatch(c: Context<AppEnv>): Response | null {
+  const v = c.req.header('tus-resumable');
+  if (v && v !== TUS_VERSION) {
+    return new Response(null, { status: 412, headers: { 'Tus-Version': TUS_VERSION, 'Tus-Resumable': TUS_VERSION } });
+  }
+  return null;
+}
+
+function tusService(ctx: FilesContext): TusService {
+  return new TusService({ repo: ctx.uploads, storage: ctx.storage });
+}
+
+/** Only the uploader (or a site admin) may see or write an upload session. */
+async function ownSession(c: Context<AppEnv>, g: Guarded, id: string): Promise<UploadSession> {
+  const session = await tusService(g.ctx).active(id);
+  const userId = c.get('auth')?.userId ?? null;
+  if (!g.access.admin && (!userId || session.createdBy !== userId)) {
+    throw new FileAssetError('NOT_FOUND', 'Upload not found.', 404);
+  }
+  return session;
+}
+
+function uploadLocation(c: Context<AppEnv>, id: string): string {
+  return `${new URL(c.req.url).origin}/api/v1/files/tus/${encodeURIComponent(id)}`;
+}
+
+filesRouter.on('OPTIONS', '/tus', async (c) => {
+  const policy = await resolveUploadPolicy({ db: c.get('db'), cache: c.get('runtime')?.cache, siteId: c.get('siteId'), env: c.env });
+  return new Response(null, {
+    status: 204,
+    headers: tusHeaders({ 'Tus-Version': TUS_VERSION, 'Tus-Extension': TUS_EXTENSIONS, 'Tus-Max-Size': String(policy.maxBytes) }),
+  });
+});
+
+/** Creation: `Upload-Length` + `Upload-Metadata` (filename, filetype, optional folder). */
+filesRouter.post('/tus', async (c) => {
+  const mismatch = tusVersionMismatch(c);
+  if (mismatch) return mismatch;
+  const g = await guard(c, 'create');
+  if (g instanceof Response) return g;
+  try {
+    if (c.req.header('upload-defer-length')) return fail(c, 501, 'DEFER_LENGTH_UNSUPPORTED', 'Upload-Defer-Length is not supported.');
+    const length = parseNonNegativeInt(c.req.header('upload-length'));
+    if (length === null) return fail(c, 400, 'VALIDATION', 'Upload-Length is required.');
+    const meta = parseUploadMetadata(c.req.header('upload-metadata'));
+    const decl = meta ? declarationFrom(meta) : null;
+    if (!meta || !decl) return fail(c, 400, 'VALIDATION', 'Upload-Metadata must carry filename and filetype.');
+    const userId = c.get('auth')?.userId ?? null;
+    const allFolders = g.folders.length ? g.folders : await g.ctx.repo.listFolders();
+    if (decl.folder && !allFolders.some((f) => f.id === decl.folder)) return fail(c, 400, 'FOLDER_NOT_FOUND', 'Folder not found.');
+    if (!canPlaceInFolder(g.access, decl.folder, g.folders, userId)) return forbidden(c, 'create');
+    const session = await tusService(g.ctx).create({
+      length,
+      filename: decl.filename,
+      mime: decl.mime,
+      folder: decl.folder,
+      userId,
+      metadata: Object.fromEntries(Object.entries(meta).filter(([k]) => ['alt', 'caption', 'title', 'credit'].includes(k))),
+    });
+    return new Response(null, {
+      status: 201,
+      headers: tusHeaders({ Location: uploadLocation(c, session.id), 'Upload-Expires': session.expiresAt.toUTCString() }),
+    });
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+// TUS clients probe progress with HEAD. Hono answers HEAD by dispatching to
+// the GET route and dropping the body, so the probe is registered on GET.
+filesRouter.get('/tus/:id', async (c) => {
+  const g = await guard(c, 'create');
+  if (g instanceof Response) return new Response(null, { status: g.status, headers: tusHeaders() });
+  try {
+    const session = await ownSession(c, g, c.req.param('id'));
+    return new Response(null, {
+      status: 200,
+      headers: tusHeaders({
+        'Upload-Offset': String(session.offset),
+        'Upload-Length': String(session.length),
+        ...(session.status === 'active' ? { 'Upload-Expires': session.expiresAt.toUTCString() } : {}),
+        ...(session.fileId ? { 'X-Lumi-File-Id': session.fileId } : {}),
+      }),
+    });
+  } catch (err) {
+    const status = err instanceof FileAssetError ? err.status : 503;
+    return new Response(null, { status, headers: tusHeaders() });
+  }
+});
+
+/** Completion: re-authorise, re-check the assembled bytes, then create the file row. */
+async function completeUpload(c: Context<AppEnv>, g: Guarded, session: UploadSession): Promise<FileRecord> {
+  const userId = c.get('auth')?.userId ?? null;
+  const tus = tusService(g.ctx);
+  const access = await resolveFilesAccess(c, 'create');
+  const folders = access && !access.admin ? await g.ctx.repo.listFolders() : [];
+  if (!access || !canPlaceInFolder(access, session.folder, folders, userId)) {
+    await tus.terminate(session.id, { deleteObject: true });
+    throw new FileAssetError('FORBIDDEN', 'Upload permission was revoked before the upload completed.', 403);
+  }
+  if (session.length <= INGEST_READ_LIMIT) {
+    const obj = await g.ctx.storage.get(session.storageKey);
+    const bytes = obj ? new Uint8Array(await new Response(obj.body as BodyInit).arrayBuffer()) : null;
+    const refused = !bytes || !isFileContentCompatibleWithBytes(bytes, session.mime) || (await detectPolyglot(bytes, session.mime));
+    if (refused) {
+      await tus.terminate(session.id, { deleteObject: true });
+      throw new FileAssetError('UPLOAD_CONTENT_MISMATCH', 'The uploaded file failed the content checks and was discarded.', 415);
+    }
+  }
+  const svc = service(g.ctx);
+  const row = await g.ctx.repo.insert({
+    filenameDisk: session.storageKey,
+    filenameDownload: session.filename,
+    mime: session.mime,
+    filesize: session.length,
+    folder: session.folder,
+    uploadedBy: userId,
+    storage: 'r2',
+    scanStatus: svc.initialScanStatus(),
+    metadata: (session.metadata ?? {}) as Record<string, unknown>,
+  });
+  recordUsage({ kind: USAGE_KINDS.storageBytes, quantity: session.length, unit: 'bytes', attributes: { source: 'files', op: 'add' } });
+  const { file } = await svc.ingestRegistered(row);
+  await tus.markCompleted(session.id, file.id);
+  scheduleScan(c, g.ctx, file);
+  return file;
+}
+
+filesRouter.patch('/tus/:id', async (c) => {
+  const mismatch = tusVersionMismatch(c);
+  if (mismatch) return mismatch;
+  if ((c.req.header('content-type') ?? '').split(';')[0]!.trim() !== 'application/offset+octet-stream') {
+    return fail(c, 415, 'VALIDATION', 'Content-Type must be application/offset+octet-stream.');
+  }
+  const g = await guard(c, 'create');
+  if (g instanceof Response) return g;
+  try {
+    const session = await ownSession(c, g, c.req.param('id'));
+    const offset = parseNonNegativeInt(c.req.header('upload-offset'));
+    if (offset === null) return fail(c, 400, 'VALIDATION', 'Upload-Offset is required.');
+    const declared = parseNonNegativeInt(c.req.header('content-length'));
+    if (declared !== null && declared > MAX_PATCH_BYTES) {
+      return fail(c, 413, 'CHUNK_TOO_LARGE', `A PATCH may carry at most ${MAX_PATCH_BYTES} bytes.`);
+    }
+    const body = new Uint8Array(await c.req.arrayBuffer());
+    // The first bytes must look like the declared type (magic-byte sniff).
+    if (offset === 0 && body.byteLength > 0 && !isFileContentCompatibleWithBytes(body.subarray(0, Math.min(body.byteLength, 64 * 1024)), session.mime)) {
+      await tusService(g.ctx).terminate(session.id);
+      return fail(c, 415, 'UPLOAD_CONTENT_MISMATCH', `File content does not match MIME type "${session.mime}".`);
+    }
+    const result = await tusService(g.ctx).patch(session.id, offset, body);
+    const headers = tusHeaders({ 'Upload-Offset': String(result.session.offset) });
+    if (result.completed) {
+      const file = await completeUpload(c, g, result.session);
+      headers['X-Lumi-File-Id'] = file.id;
+    } else {
+      headers['Upload-Expires'] = result.session.expiresAt.toUTCString();
+    }
+    return new Response(null, { status: 204, headers });
+  } catch (err) {
+    if (err instanceof FileAssetError && err.code === 'OFFSET_MISMATCH') {
+      return c.json({ errors: [{ code: err.code, message: err.message, details: err.details }] }, 409, tusHeaders());
+    }
+    return handleError(c, err);
+  }
+});
+
+/** Termination. */
+filesRouter.delete('/tus/:id', async (c) => {
+  const g = await guard(c, 'create');
+  if (g instanceof Response) return g;
+  try {
+    const session = await ownSession(c, g, c.req.param('id'));
+    await tusService(g.ctx).terminate(session.id);
+    return new Response(null, { status: 204, headers: tusHeaders() });
+  } catch (err) {
+    return handleError(c, err);
   }
 });
 
@@ -491,6 +745,7 @@ filesRouter.post('/', async (c) => {
     recordUsage({ kind: USAGE_KINDS.storageBytes, quantity: input.filesize, unit: 'bytes', attributes: { source: 'files', op: 'add' } });
     const { file, duplicates: dupes } = await svc.ingestRegistered(row);
     scheduleScan(c, g.ctx, file);
+    scheduleVideo(c, g.ctx, file);
     return c.json({
       data: file,
       meta: { duplicates: dupes.filter((f) => canActOnFile(g.access, f, g.folders)).map((f) => ({ id: f.id, filenameDownload: f.filenameDownload, folder: f.folder })) },
@@ -638,6 +893,7 @@ filesRouter.put('/:id/content', async (c) => {
     }
     purgeAfterReplace(c, g.ctx, result.file);
     scheduleScan(c, g.ctx, result.file);
+    scheduleVideo(c, g.ctx, result.file);
     c.header('ETag', `"v${result.file.version}"`);
     return c.json({ data: result.file, meta: { previousVersion: result.previous } });
   } catch (err) {
@@ -664,6 +920,7 @@ filesRouter.post('/:id/versions/:versionId/restore', async (c) => {
     const result = await service(g.ctx).restoreVersion(file.id, c.req.param('versionId'), c.get('auth')?.userId ?? null);
     purgeAfterReplace(c, g.ctx, result.file);
     scheduleScan(c, g.ctx, result.file);
+    scheduleVideo(c, g.ctx, result.file);
     return c.json({ data: result.file, meta: { previousVersion: result.previous } });
   } catch (err) {
     return handleError(c, err);
@@ -700,6 +957,172 @@ filesRouter.post('/:id/scan', requireSiteAdmin(), async (c) => {
   }
 });
 
+// --- Video pipeline (#871) --------------------------------------------------
+
+/** Processing state of a video file: `uploaded → processing → ready | failed`. */
+filesRouter.get('/:id/video', async (c) => {
+  const g = await guard(c, 'read');
+  if (g instanceof Response) return g;
+  try {
+    const file = await loadFile(g, c.req.param('id'));
+    const asset = g.ctx.video ? await g.ctx.video.assets.get(file.id) : null;
+    return c.json({
+      data: asset ? presentVideoAsset(asset) : null,
+      meta: {
+        enabled: g.ctx.settings.video.enabled,
+        providerConfigured: Boolean(g.ctx.video?.provider),
+      },
+    });
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+/** Send a failed (or never-submitted) video to the provider again. */
+filesRouter.post('/:id/video/retry', async (c) => {
+  const g = await guard(c, 'update');
+  if (g instanceof Response) return g;
+  try {
+    const file = await loadFile(g, c.req.param('id'));
+    const deps = videoDeps(g.ctx);
+    if (!deps?.provider) return fail(c, 503, 'VIDEO_PROVIDER_NOT_CONFIGURED', 'No video provider is configured for this deployment (VIDEO_PROVIDER).');
+    if (!g.ctx.settings.video.enabled) return fail(c, 409, 'VIDEO_DISABLED', 'The video pipeline is not enabled for this site.');
+    if (!isVideoEligible(deps, file)) return fail(c, 422, 'NOT_A_VIDEO', 'Only video/* files are processed.');
+    const current = await deps.videos.get(file.id);
+    if (current && (current.status === 'processing' || current.status === 'ready') && current.fileVersion === file.version) {
+      return fail(c, 409, 'VIDEO_NOT_RETRYABLE', `The video is ${current.status}; only failed or queued videos can be retried.`, { status: current.status });
+    }
+    const { outcome, asset } = await retryVideo(deps, file);
+    return c.json({ data: asset ? presentVideoAsset(asset) : null, meta: { outcome } });
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+/**
+ * Playback URLs for a ready video: the HLS manifest and a poster. With
+ * `signedPlayback` (default) both are provider-signed and expire after
+ * `playbackTtlSeconds`, the same short-lived-URL model as signed transforms;
+ * the response itself is never cached.
+ */
+filesRouter.get('/:id/video/playback', async (c) => {
+  const g = await guard(c, 'read');
+  if (g instanceof Response) return g;
+  try {
+    const file = await loadFile(g, c.req.param('id'));
+    const provider = g.ctx.video?.provider;
+    if (!g.ctx.video || !provider) return fail(c, 503, 'VIDEO_PROVIDER_NOT_CONFIGURED', 'No video provider is configured for this deployment (VIDEO_PROVIDER).');
+    const asset = await g.ctx.video.assets.get(file.id);
+    if (!asset || asset.status !== 'ready' || asset.fileVersion !== file.version || !asset.providerAssetId) {
+      return fail(c, 409, 'VIDEO_NOT_READY', 'The video has not finished processing.', { status: asset?.status ?? null });
+    }
+    if (asset.provider !== provider.name) {
+      return fail(c, 409, 'VIDEO_PROVIDER_CHANGED', 'The video was processed by another provider; retry it to re-process.', { provider: asset.provider });
+    }
+    const expiresAt = new Date(Date.now() + g.ctx.settings.video.playbackTtlSeconds * 1000);
+    const urls = await provider.playback(
+      { providerAssetId: asset.providerAssetId, playbackId: asset.playbackId, signed: asset.signedPlayback },
+      expiresAt,
+    );
+    c.header('Cache-Control', 'private, no-store');
+    return c.json({
+      data: {
+        hls: urls.hls,
+        poster: urls.poster,
+        expiresAt: urls.expiresAt ? urls.expiresAt.toISOString() : null,
+        durationMs: asset.durationMs,
+        width: asset.width,
+        height: asset.height,
+      },
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'VideoProviderError') return fail(c, 503, 'VIDEO_PROVIDER_ERROR', err.message);
+    return handleError(c, err);
+  }
+});
+
+// --- Caption / subtitle tracks of a video (#871) -----------------------------
+
+function captionService(c: Context<AppEnv>, g: Guarded): CaptionService {
+  if (!g.ctx.captions || !g.ctx.locales) throw new FileAssetError('NOT_FOUND', 'Captions are not available here.', 404);
+  return new CaptionService({
+    repo: g.ctx.repo,
+    captions: g.ctx.captions,
+    locales: g.ctx.locales,
+    // A caller may only attach a caption file it can see.
+    canUseFile: (file) => canActOnFile(g.access, file, g.folders),
+  });
+}
+
+/** Version-pinned (immutable) delivery URL of a caption file, for `<track src>`. */
+function captionSrc(c: Context<AppEnv>) {
+  return (fileId: string, version: number) => `${deliveryUrl(c, fileId)}?v=${version}`;
+}
+
+async function presentCaptions(c: Context<AppEnv>, g: Guarded, rows: CaptionRecord[]) {
+  const files = await g.ctx.repo.getMany([...new Set(rows.map((r) => r.captionFileId))]);
+  const byId = new Map(files.map((f) => [f.id, f]));
+  return rows.map((r) => {
+    const f = byId.get(r.captionFileId) ?? null;
+    // A track whose file the caller cannot see is listed without its URL.
+    return presentCaption(r, f && canActOnFile(g.access, f, g.folders) ? f : null, captionSrc(c));
+  });
+}
+
+/** Tracks of a video, ready for `<track kind srclang label src default>`. */
+filesRouter.get('/:id/captions', async (c) => {
+  const g = await guard(c, 'read');
+  if (g instanceof Response) return g;
+  try {
+    const video = await loadFile(g, c.req.param('id'));
+    return c.json({ data: await presentCaptions(c, g, await captionService(c, g).list(video)) });
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+/** Attach a WebVTT file from the library as a track (files `update` on the video). */
+filesRouter.post('/:id/captions', async (c) => {
+  const g = await guard(c, 'update');
+  if (g instanceof Response) return g;
+  try {
+    const video = await loadFile(g, c.req.param('id'));
+    const input = captionCreateSchema.parse(await readJson(c));
+    const row = await captionService(c, g).add(video, input, c.get('auth')?.userId ?? null);
+    const [presented] = await presentCaptions(c, g, [row]);
+    return c.json({ data: presented }, 201);
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+filesRouter.patch('/:id/captions/:captionId', async (c) => {
+  const g = await guard(c, 'update');
+  if (g instanceof Response) return g;
+  try {
+    const video = await loadFile(g, c.req.param('id'));
+    const patch = captionPatchSchema.parse(await readJson(c));
+    const row = await captionService(c, g).update(video, c.req.param('captionId'), patch);
+    const [presented] = await presentCaptions(c, g, [row]);
+    return c.json({ data: presented });
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
+/** Detach a track. The WebVTT file itself stays in the library. */
+filesRouter.delete('/:id/captions/:captionId', async (c) => {
+  const g = await guard(c, 'update');
+  if (g instanceof Response) return g;
+  try {
+    const video = await loadFile(g, c.req.param('id'));
+    await captionService(c, g).remove(video, c.req.param('captionId'));
+    return c.json({ data: null });
+  } catch (err) {
+    return handleError(c, err);
+  }
+});
+
 /**
  * Safe delete (#706). A file that content still references is refused with
  * `409 FILE_IN_USE` and the reference list; under the default `confirm`
@@ -711,7 +1134,14 @@ filesRouter.delete('/:id', async (c) => {
   if (g instanceof Response) return g;
   try {
     const file = await loadFile(g, c.req.param('id'));
+    // Read the video row before the delete cascades it away.
+    const video = g.ctx.video ? await g.ctx.video.assets.get(file.id) : null;
     const result = await service(g.ctx).delete(file.id, { confirm: c.req.query('confirm') === 'true' });
+    const provider = g.ctx.video?.provider;
+    const providerAssetId = video?.providerAssetId;
+    if (provider && providerAssetId && video.provider === provider.name) {
+      background(c, 'video provider delete', () => provider.remove(providerAssetId));
+    }
     if (typeof result.file.filesize === 'number') {
       recordUsage({ kind: USAGE_KINDS.storageBytes, quantity: -result.file.filesize, unit: 'bytes', attributes: { source: 'files', op: 'remove' } });
     }

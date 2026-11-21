@@ -54,8 +54,10 @@ import { retentionRouter } from './routes/retention';
 import { emailPublicRouter } from './routes/email-public';
 import { deliverRouter } from './routes/deliver';
 import { deploymentsRouter, deploymentsWebhookRouter } from './routes/deployments';
+import { videoPublicRouter } from './routes/video-public';
 import { extensionsRouter } from './routes/extensions';
 import { filesRouter } from './routes/files';
+import { TUS_EXPOSE_HEADERS, TUS_REQUEST_HEADERS } from './services/files/tus/protocol';
 import { flowsRouter } from './routes/flows';
 import { itemsRouter } from './routes/items';
 import { importsRouter } from './routes/imports';
@@ -148,8 +150,10 @@ app.use(
     // `If-Match` / `ETag`: optimistic concurrency on item writes
     // (content-environments Phase A). Studio and the Tauri shell are
     // cross-origin, so both must be listed or the browser hides them.
-    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password', 'X-LumiBase-Refresh', 'X-Confirm-Delete', 'If-Match'],
-    exposeHeaders: ['X-Request-Id', 'Retry-After', 'ETag'],
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password', 'X-LumiBase-Refresh', 'X-Confirm-Delete', 'If-Match', ...TUS_REQUEST_HEADERS],
+    // TUS (#704): resumable-upload clients read Location / Upload-Offset, and
+    // Studio reads X-Lumi-File-Id from the completing PATCH.
+    exposeHeaders: ['X-Request-Id', 'Retry-After', 'ETag', ...TUS_EXPOSE_HEADERS, 'X-Lumi-File-Id'],
   }),
 );
 
@@ -253,6 +257,13 @@ app.route('/api/v1/deployments/webhook', deploymentsWebhookRouter);
 // win; all other `/integrations/git/*` paths fall through to the authenticated
 // `gitRouter` below.
 app.route('/api/v1/integrations/git', gitPublicRouter);
+
+// Video pipeline public surface (#871). PUBLIC on purpose: the provider signs
+// its webhooks and pulls sources with a short-lived signed token; neither can
+// carry a session. The tenant comes from the verified payload and both routes
+// scope their db with `scopedDbFor(c, siteId)` (B130).
+app.use('/api/v1/video/*', withDb());
+app.route('/api/v1/video', videoPublicRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();

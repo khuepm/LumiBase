@@ -128,6 +128,15 @@ export function compareDeclaredMime(bytes: Uint8Array, mime: string | undefined)
   if (expected) {
     return kind === expected ? { ok: true, kind } : { ok: false, kind, reason: 'content_mime_mismatch' };
   }
+  if (mime === 'text/vtt') {
+    // WebVTT (#871): plain text that must open with the `WEBVTT` signature
+    // (after an optional BOM). Cue markup (`<b>`, `<v>`) sits after it, so an
+    // HTML/SVG/PHP document can never pass as captions.
+    if (kind !== 'text') {
+      return { ok: false, kind, reason: DANGEROUS_KINDS.has(kind) ? 'dangerous_disguised' : 'content_mime_mismatch' };
+    }
+    return isWebVtt(bytes) ? { ok: true, kind } : { ok: false, kind, reason: 'content_mime_mismatch' };
+  }
   if (TEXT_MIMES.has(mime)) {
     return kind === 'text' || kind === 'xml'
       ? { ok: true, kind }
@@ -359,6 +368,14 @@ function markupHead(bytes: Uint8Array): string {
   const limit = Math.min(bytes.length, start + 1024);
   for (let i = start; i < limit; i++) text += String.fromCharCode(bytes[i]!);
   return text.trimStart().toLowerCase();
+}
+
+/** WebVTT signature: `WEBVTT` then end of input, a space, a tab or a line break. */
+export function isWebVtt(bytes: Uint8Array): boolean {
+  const start = startsWith(bytes, [0xef, 0xbb, 0xbf]) ? 3 : 0;
+  if (!asciiAt(bytes, start, 'WEBVTT')) return false;
+  const next = bytes[start + 6];
+  return next === undefined || next === 0x20 || next === 0x09 || next === 0x0a || next === 0x0d;
 }
 
 export function looksLikeText(bytes: Uint8Array): boolean {

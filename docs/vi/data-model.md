@@ -1,13 +1,13 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 30
+lastUpdated: 2026-11-19T09:24:28.613Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 52465604769f9c24
+sourceHash: 5787aa0c1b489e3b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+codeVerified: 2026-11-19T09:24:28.613Z
+codeVerifiedHash: 5787aa0c1b489e3b
 codeVerifiedClaims: 22
 ---
 
@@ -34,7 +34,7 @@ Các file schema được chia theo domain:
 | `core.ts` | `lumibase_organizations`, `lumibase_organization_members`, `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
-| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_upload_sessions`, `lumibase_file_captions`, `lumibase_video_assets`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
@@ -292,7 +292,7 @@ Khi seed local/staging/prod, phải seed permission cho system collection một 
 
 ### `files`
 - `id`, `siteId`, `storage` (`r2`/`s3`/external), `filenameDisk`, `filenameDownload`, `mime`, `filesize`, `width`, `height`, `duration`, `folder`, `metadata jsonb`, `uploadedBy`, `contentHash`, `version`, `scanStatus`, `createdAt`, `updatedAt`.
-- `contentHash` — SHA-256 đầy đủ (hex) của binary hiện tại, dùng để phát hiện trùng lặp; index `(siteId, contentHash)`. `version` — tăng sau mỗi lần thay tại chỗ (cùng id và `filenameDisk`). `scanStatus` — `skipped` (mặc định) / `pending` / `clean` / `infected` / `error`; chỉ `skipped` và `clean` được phân phối. `metadata.embedded` chứa EXIF/IPTC/XMP đã trích và `metadata.searchText` là bản tóm tắt để tìm kiếm. Migration `0038_dam_assets`.
+- `contentHash` — SHA-256 đầy đủ (hex) của binary hiện tại, dùng để phát hiện trùng lặp; index `(siteId, contentHash)`. `version` — tăng sau mỗi lần thay tại chỗ (cùng id và `filenameDisk`). `scanStatus` — `skipped` (mặc định) / `pending` / `clean` / `infected` / `error`; chỉ `skipped` và `clean` được phân phối. `metadata.embedded` chứa EXIF/IPTC/XMP đã trích và `metadata.searchText` là bản tóm tắt để tìm kiếm. Migration `0038_dam_assets`. Partial index `files_pending_scan_idx` trên `updatedAt` với `scanStatus = 'pending'` phục vụ sweeper quét mã độc (migration `0046_malware_scan_pending_idx`).
 
 ### `file_versions`
 - `id`, `siteId`, `fileId` (FK cascade), `version`, `filenameDisk` (archive key `sites/<site>/file-versions/<id>/v<n>`), `filenameDownload`, `mime`, `filesize`, `width`, `height`, `contentHash`, `metadata jsonb`, `replacedBy`, `createdAt`, `expiresAt`.
@@ -300,6 +300,16 @@ Khi seed local/staging/prod, phải seed permission cho system collection một 
 
 ### `folders`
 - `id`, `siteId`, `name`, `parent`. Path, cây con và kiểm tra vòng lặp được suy ra trong `apps/cms/src/services/files/folder-tree.ts`.
+
+### `upload_sessions`
+- `id`, `siteId`, `createdBy`, `filename`, `mime`, `length`, `offset`, `storageKey`, `multipartId`, `parts jsonb`, `tailSize`, `folder`, `metadata jsonb`, `status` (`active`/`completed`/`aborted`), `lockToken`, `lockedUntil`, `fileId`, `expiresAt`, `createdAt`, `updatedAt`.
+- Một upload TUS tiếp tục được đang diễn ra: `offset` đã ghi, các phần multipart đã ghi tới giờ và kích thước object đuôi. `lockToken`/`lockedUntil` là lease một-writer mà mỗi `PATCH` giữ; `fileId` được đặt khi hoàn tất. Index `(siteId, status)` và một partial index trên `expiresAt` cho các upload đang chạy (lượt quét hết hạn). Migration `0047_upload_sessions`. Xem [Quản lý tài sản số](./features/digital-asset-management.md).
+### `file_captions`
+- `id`, `siteId`, `fileId` (video, FK cascade), `captionFileId` (file WebVTT, FK cascade), `locale`, `kind` (`subtitles`/`captions`/`descriptions`/`chapters`), `label`, `isDefault`, `createdBy`, `createdAt`, `updatedAt`.
+- Các track phụ đề/caption của một video (#871); duy nhất theo `(siteId, fileId, locale, kind)`. Migration `0045_file_captions`. Xem [Quản lý tài sản số](./features/digital-asset-management.md).
+### `video_assets`
+- `id`, `siteId`, `fileId` (FK cascade, duy nhất theo site), `fileVersion`, `provider`, `providerAssetId`, `playbackId`, `status` (`uploaded`/`processing`/`ready`/`failed`), `error`, `attempts`, `durationMs`, `width`, `height`, `renditions jsonb`, `signedPlayback`, `submittedAt`, `readyAt`, `createdAt`, `updatedAt`.
+- Trạng thái xử lý video của một file (#871), gắn với `fileVersion` lúc được gửi; thay file sẽ xếp hàng lại dòng này. Mọi lần ghi là compare-and-set trên status + version. Partial index trên `(status, updatedAt)` cho các dòng đang xếp hàng/đang xử lý (lượt quét). Migration `0044_video_assets`. Xem [Quản lý tài sản số](./features/digital-asset-management.md).
 
 ## 5. UX state (`platform.ts`)
 
