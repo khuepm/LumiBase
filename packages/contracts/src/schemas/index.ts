@@ -227,7 +227,21 @@ export {
   type CiRunResource,
 } from './git-integration';
 
-export { diffFields, type Change, type ChangeState } from './diff';
+export {
+  diffFields,
+  diffKindOf,
+  jsonPathDiff,
+  listDiff,
+  wordDiff,
+  WORD_DIFF_MAX_TOKENS,
+  type Change,
+  type ChangeState,
+  type DiffKind,
+  type DiffToken,
+  type ListDiff,
+  type PathChange,
+  type TokenOp,
+} from './diff';
 
 export {
   feToCanonical,
@@ -410,3 +424,16 @@ export * from './field-options';
 export { GeoPointSchema, GeoNearSchema, GeoBBoxSchema } from './geopoint';
 export { richTextValueSchema, RichTextDocumentSchema } from './richtext';
 export * from './preview';
+export {
+  DASHBOARD_GRID_COLUMNS,
+  DASHBOARD_MAX_ROWS,
+  DASHBOARD_MAX_WIDGETS,
+  DASHBOARD_WIDGET_CONFIG_MAX_BYTES,
+  DEFAULT_DASHBOARD_LAYOUT,
+  dashboardLayoutSchema,
+  dashboardWidgetSchema,
+  dashboardWidgetTypeSchema,
+  type DashboardLayout,
+  type DashboardLayoutSource,
+  type DashboardWidget,
+} from './dashboard-layout';

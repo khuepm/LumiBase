@@ -1,11 +1,11 @@
 ---
-version: 62
-lastUpdated: 2026-11-20T05:35:06.709Z
+version: 64
+lastUpdated: 2026-11-21T01:11:20.973Z
 sourceLang: en
-contentHash: a752c28a3a48bf3d
-codeVerified: 2026-11-20T05:35:06.709Z
-codeVerifiedHash: a752c28a3a48bf3d
-codeVerifiedClaims: 652
+contentHash: fb60174a46e9e77a
+codeVerified: 2026-11-21T01:11:20.973Z
+codeVerifiedHash: fb60174a46e9e77a
+codeVerifiedClaims: 658
 ---
 
 # Hono API Specification — LumiBase
@@ -721,6 +721,8 @@ active `siteId`.
 | `POST` | `/api/v1/items/:collection/:id/move` | Move an item and its subtree in a tree collection; list with `?tree=children\|subtree\|ancestors` ([Hierarchical collections](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | List revisions |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Revert to revision |
+| `GET` | `/api/v1/items/:collection/:id/revisions/compare?from=&to=` | Field-level comparison of two snapshots: `from` = revision id or `empty` (default), `to` = revision id or `current` (default); read-masked ([Editorial UX](../features/editorial-ux.md#comparing-revisions)) |
+| `POST` | `/api/v1/items/:collection/:id/revisions/:revisionId/restore` | Restore `{ fields?: string[] }` (all when omitted) from a revision via PATCH; writes a new revision |
 | `GET` | `/api/v1/items/:collection/:id/versions` | List named draft versions (each has a `mainChanged` flag) |
 | `POST` | `/api/v1/items/:collection/:id/versions` | Create a version `{ key, name }` (snapshots current main) |
 | `GET` | `/api/v1/items/:collection/:id/versions/:key` | Get a version |
@@ -1749,6 +1751,23 @@ identifiers.
 (count|sum|avg|min|max), field?, groupBy?, filter? (condition rule), dateRange?,
 limit? }`. `field` is required for non-`count` aggregates. A field outside the
 collection whitelist returns `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
+
+### Studio home dashboard layout
+
+The widget grid of the Studio home page (`/dashboard`). A layout is
+`{ version: 1, widgets: [{ id, type, x, y, w, h, title?, config? }] }` on a
+12-column grid (`x + w ≤ 12`, at most 40 widgets, `config` ≤ 4 KB, unique
+`id`s); `type` is a built-in widget name or `extension:<name>` for a `panel` UI
+extension. An invalid layout returns `400 { errors: [{ code: 'VALIDATION' }] }`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/dashboard/layout` | Effective layout for the caller → `{ data: { layout, source } }`, `source` one of `user`, `site`, `default` (`layout: null` means the built-in default). |
+| `PUT` | `/api/v1/dashboard/layout` | Save the caller's own layout `{ layout }`. Needs a signed-in user (`403 USER_REQUIRED` for an API key). |
+| `DELETE` | `/api/v1/dashboard/layout` | Drop the caller's layout; returns the effective layout it falls back to. |
+| `GET` | `/api/v1/dashboard/layout/site-default` | The site default layout. Site admins only. |
+| `PUT` | `/api/v1/dashboard/layout/site-default` | Set the site default `{ layout }`. Site admins only; audited as `dashboard_default_set`. |
+| `DELETE` | `/api/v1/dashboard/layout/site-default` | Clear the site default. Site admins only; audited as `dashboard_default_cleared`. |
 
 ### Activation milestones
 

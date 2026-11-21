@@ -1,14 +1,14 @@
 ---
 sourceLang: en
-version: 3
-lastUpdated: 2026-11-15T22:14:22.190Z
+version: 7
+lastUpdated: 2026-11-19T09:11:32.575Z
 translatedFrom: en
-sourceHash: c924e0830d3f4ac1
+sourceHash: f4a18816aa89953f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T22:14:22.190Z
-codeVerifiedHash: c924e0830d3f4ac1
-codeVerifiedClaims: 16
+codeVerified: 2026-11-19T09:11:32.575Z
+codeVerifiedHash: f4a18816aa89953f
+codeVerifiedClaims: 22
 ---
 
 # Editorial UX
@@ -102,7 +102,10 @@ Phản hồi là `201 { data: <copy>, meta: { sourceId, related } }`, trong đó
 `related` liệt kê id của các item con và dòng junction đã sao chép theo từng
 collection, và một mục audit `item_duplicated` ghi lại bản gốc và bản sao. Trong
 Studio, nút **Duplicate** ở đầu trình soạn item đưa ra ba chế độ quan hệ và mở
-bản sao.
+bản sao. Trong danh sách collection, **Duplicate (n)** sao chép mọi item đang
+chọn (theo tham chiếu), mỗi item một request, nên mỗi bản sao có kiểm tra quyền,
+revision và mục audit riêng; một bản sao thất bại không chặn các bản còn lại và
+được báo cạnh nút.
 
 ## Ghi không tạo revision
 
@@ -159,6 +162,61 @@ Trong Studio, collection sắp xếp thủ công mở ra theo `sort`, và các d
 kéo thả: thả phía dưới đích sẽ đặt item sau nó, thả phía trên sẽ đặt trước nó.
 SDK có `client.items('menu').reorder(id, { after })`.
 
+## Điều hướng trong Studio
+
+- **Danh sách giữ nguyên chế độ xem.** Danh sách collection ghi trang, cách
+  sắp xếp, bộ lọc và nút **Modified since publish** vào URL (`?page=`,
+  `?sort=`, `?f=`, `?modified=`). Mở một item rồi bấm nút Back của trình duyệt
+  sẽ quay lại đúng trang và bộ lọc, và URL có thể chia sẻ hoặc đánh dấu. Chế độ
+  xem trong URL được ưu tiên hơn chế độ xem mặc định đã lưu.
+- **Breadcrumb.** Trình soạn item và form tạo mới hiển thị
+  **Content › collection › item** (tiêu đề, tên hoặc nhãn của item, nếu không
+  có thì một id rút gọn). Liên kết collection và mũi tên quay lại đưa về đúng
+  chế độ xem danh sách bạn vừa rời, và **Save and return** cùng **Delete** cũng
+  quay về đó.
+- **Singleton mở thẳng vào form.** Collection được đánh dấu singleton bỏ qua
+  danh sách: mở nó sẽ đi thẳng tới item duy nhất, hoặc tới form tạo mới khi
+  chưa có item nào. Thêm `?list=1` vào URL danh sách để vẫn xem danh sách.
+- **Lỗi kết nối không làm trắng trang.** Các lần đọc tự thử lại sau khi mất
+  kết nối, gặp `429` hoặc `502`–`504` (chờ theo `Retry-After` của server, nếu
+  không thì 1, 2, 4 giây). Nếu sự cố kéo dài hơn số lần thử lại, hoặc một lần
+  lưu thất bại theo cách đó, một hộp **Try again** xuất hiện ở góc màn hình;
+  trang giữ nguyên, và với lần lưu thì thử lại sẽ gửi lại đúng thay đổi đó. Các
+  lỗi khác (validation, quyền, xung đột) vẫn do màn hình gửi request hiển thị
+  như trước. Màn hình bị lỗi khi render sẽ hiện **Try again** và
+  **Go to Content** thay vì một trang trống.
+
+## Cùng biên tập
+
+Khi nhiều người cùng mở một item, Studio thể hiện điều đó ở ba mức:
+
+- **Ai đang ở đây.** Avatar của những người biên tập khác nằm ở đầu trình
+  soạn, và một banner cho biết item đang được mở ở nơi khác.
+- **Trường nào.** Một nhãn cạnh tên trường cho biết ai đang focus trường đó.
+  Nhãn biến mất khi họ rời trường, rời item hoặc rời Studio.
+- **Khoá mềm.** Lần gõ phím đầu tiên trong một trường sẽ lấy khoá mềm của nó.
+  Với mọi người khác, trường chuyển sang chỉ đọc kèm "Ann is editing this
+  field" và nút **Take over**; take over sẽ chuyển khoá (server sắp thứ tự các
+  lần giành theo đồng hồ của chính nó, nên lần mới nhất thắng) và trường của
+  người giữ trước đó lại chuyển sang chỉ đọc. Rời trường sẽ nhả khoá. Khoá là
+  phép lịch sự giữa những người biên tập: API không cưỡng chế chúng.
+
+Lưu vẫn có thể bị tranh chấp. Khi ai đó lưu một phiên bản mới hơn trong lúc
+bản nháp của bạn đang mở, một banner đề xuất **Merge their changes** hoặc
+**Discard mine and load latest** trước khi bạn lưu. Nếu bạn vẫn lưu, lần lưu bị
+từ chối (`412`, `If-Match`) và bạn chọn:
+
+- **Merge with latest** — merge ba chiều theo từng trường so với phiên bản bạn
+  bắt đầu: trường chỉ bạn sửa giữ giá trị của bạn, trường chỉ họ sửa lấy giá
+  trị của họ, và trường cả hai cùng sửa giữ giá trị của bạn và được liệt kê để
+  xem lại. Không có gì được lưu cho tới khi bạn lưu lại.
+- **Overwrite with my changes** — lưu bản nháp của bạn đè lên phiên bản mới
+  nhất.
+- **Discard my changes and load latest.**
+
+Protocol đằng sau được mô tả trong
+[Realtime / WebSocket](./websockets-realtime.md#presence-focus-trường-và-khoá-mềm).
+
 ## Tóm tắt kiểm tra hợp lệ của release
 
 Trước khi một release xuất bản, mọi item mà nó sẽ xuất bản được kiểm tra đầy đủ
@@ -185,6 +243,35 @@ trường, focus và làm nổi bật nó. **Publish** bị vô hiệu khi lần
 nhất còn lỗi. Trường nằm trong một tab form-layout chưa mở sẽ không được focus
 tự động — hãy mở tab đó.
 
+## So sánh revision
+
+`GET /items/:collection/:id/revisions/compare?from=&to=` so sánh hai snapshot
+bất kỳ của một item: `from` là id của một revision hoặc `empty` (trạng thái
+trước khi item tồn tại, mặc định), `to` là id của một revision hoặc `current`
+(item đang live, mặc định). Người gọi cần quyền `read` trên item; cả hai phía
+được giải mã và che theo quyền đọc trường của người gọi, đúng như một lần đọc
+thông thường, nên phép so sánh không bao giờ hiện trường mà chính item sẽ ẩn.
+Phản hồi là `{ data: { from, to, before, after, changes } }`, trong đó
+`from`/`to` cho biết các revision (`null` cho empty, `"current"` cho item live)
+và `changes` là danh sách theo từng trường (`added`, `removed`, `changed`,
+`unchanged`).
+
+`POST /items/:collection/:id/revisions/:revisionId/restore` đặt các trường trở
+lại giá trị của chúng trong revision đó. Với `{ "fields": ["title"] }` chỉ các
+trường đó thay đổi; với body rỗng mọi trường của snapshot được khôi phục. Trường
+mà revision chưa có được khôi phục thành `null`, và tên trường lạ trả
+`400 UNKNOWN_FIELD`. Việc khôi phục là một lần cập nhật thông thường, nên
+validation, pin Law Zero, hook và quyền đều áp dụng, và nó ghi một revision mới
+mang provenance của người gọi (không có gì trong lịch sử bị viết lại).
+
+Trong Studio, tab **Revisions** của item có chế độ **Compare**: chọn snapshot
+**From** và **To**, mọi trường hiện cạnh nhau theo dạng giá trị — văn bản theo
+từng từ, danh sách id hoặc tag theo phần tử thêm và bớt, object và block theo
+các đường dẫn lá đã đổi. Khi **From** là một revision, mỗi trường đã đổi có nút
+**Restore**. Phép so sánh ở tab **Versions** dùng cùng cách hiển thị. SDK có
+`items(name).compareRevisions(id, { from, to })` và
+`items(name).restoreRevisionFields(id, revisionId, fields?)`.
+
 ## Tóm tắt API
 
 | Method | Path | Ghi chú |
@@ -195,6 +282,8 @@ tự động — hãy mở tab đó.
 | `POST` | `/api/v1/items/:collection/:id/duplicate` | Bản sao dạng draft. |
 | `POST` | `/api/v1/items/:collection/:id/reorder` | Sắp xếp thủ công. |
 | `GET` | `/api/v1/releases/:id/validate` | Tóm tắt kiểm tra hợp lệ của release. |
+| `GET` | `/api/v1/items/:collection/:id/revisions/compare?from=&to=` | So sánh hai snapshot. |
+| `POST` | `/api/v1/items/:collection/:id/revisions/:revisionId/restore` | Khôi phục trường từ một revision. |
 
 Xem thêm [Content releases](./content-releases.md) và
 [tài liệu API](../api/hono-api-spec.md#3-items-generic-crud).

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { Check, ChevronDown, ChevronLeft, Copy, Eye, Lock, Pin, Save, Share2, Star, Trash2, X } from 'lucide-react';
+import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { Check, ChevronDown, Copy, Eye, Lock, Pin, Save, Share2, Star, Trash2, X } from 'lucide-react';
 import type { SaveAction } from '@lumibase/contracts/schemas';
 import { useSaveAction, saveActionLabel } from './use-save-action';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -39,8 +39,14 @@ import {
 import { readEditorIntentSearch } from './editor-intent-search';
 import { ItemCreate } from './item-create';
 import { EditorialActions } from './editorial-actions';
+import { BackToList, ItemBreadcrumbs, itemTitle } from './item-breadcrumbs';
+import { lastListSearch } from './list-url-state';
 import { DuplicateItemButton, PublicationInfo } from './item-publication';
 import { useFocusFieldFromHash } from './focus-field';
+import { mergeDrafts, type MergeResult } from './stale-merge';
+import { MergeNote, StaleDraftBanner } from './stale-draft';
+import { useRealtimeSubscription } from '@/hooks/use-realtime';
+import { buildFieldPresenceApi, FieldFocusBadge, FieldLockNotice, type FieldPresenceApi } from './field-presence';
 import { DraftReviewPanel } from './draft-review-panel';
 import { useReviewRollout, useReviewSession } from './use-review-pilot';
 import { PreviewPane, PreviewSplit } from './preview-pane';
@@ -94,12 +100,24 @@ function ItemEditor({
 
   // Real-time co-editing: one presence subscription feeds both the header
   // avatar stack and the warning banner (peers on this same item, not self).
-  const { coEditors } = useCoEditors(collection, id);
+  const presence = useCoEditors(collection, id);
+  const { coEditors } = presence;
+  const sessionsOnItem = presence.sessionsOnItem ?? NO_SESSIONS;
+  const selfSessionId = presence.selfSessionId ?? null;
+  const setFocus = presence.setFocus ?? noopField;
+  const setLock = presence.setLock ?? noopField;
+  const fieldPresence = useMemo(
+    () => buildFieldPresenceApi({ sessions: sessionsOnItem, selfSessionId, setFocus, setLock }),
+    [sessionsOnItem, selfSessionId, setFocus, setLock],
+  );
 
   const [tab, setTab] = useState<Tab>('fields');
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
   // Item version the current draft is based on; sent as `If-Match` on save.
   const [baseVersion, setBaseVersion] = useState<number | undefined>(undefined);
+  // Data the draft was built from — the "base" of a three-way merge (#685).
+  const [baseData, setBaseData] = useState<Record<string, unknown>>({});
+  const [mergeNote, setMergeNote] = useState<MergeResult | null>(null);
   // Translation mode (translation-memory-ui): the site's default is the source
   // locale; the user picks a target to translate into.
   const { locales, isLoaded: localesLoaded } = useSiteLocalesState();
@@ -230,6 +248,7 @@ function ItemEditor({
       setPublishAt(isoToLocalInput(itemQuery.data.publishAt));
       setUnpublishAt(isoToLocalInput(itemQuery.data.unpublishAt));
       setBaseVersion(itemQuery.data.version);
+      setBaseData({ ...((itemQuery.data.data ?? {}) as Record<string, unknown>) });
     }
   }, [itemQuery.data, draft]);
 
@@ -298,7 +317,8 @@ function ItemEditor({
   }, [draft, itemQuery.data, publishAt, unpublishAt]);
 
   const saveMutation = useMutation({
-    mutationFn: async () => {
+    // `ifMatch` overrides the base version ("Overwrite with my changes", #685).
+    mutationFn: async (vars?: { ifMatch?: number }) => {
       if (!draft) return null;
       // Same required rule as the server (PATCH = partial), so the form can
       // flag the field — and its tab — without a round trip.
@@ -311,7 +331,7 @@ function ItemEditor({
           publishAt: localInputToIso(publishAt),
           unpublishAt: localInputToIso(unpublishAt),
         },
-        { ifMatch: baseVersion },
+        { ifMatch: vars?.ifMatch ?? baseVersion },
       );
       // Learn human-edited translations into TM (Req 6.1). Best-effort: a TM
       // write failure must not fail the save that already succeeded.
@@ -336,7 +356,11 @@ function ItemEditor({
     onSuccess: (saved) => {
       // The draft stays on screen after a save, so it is now based on the
       // version the server just wrote.
-      if (saved) setBaseVersion(saved.version);
+      if (saved) {
+        setBaseVersion(saved.version);
+        setBaseData({ ...((saved.data ?? {}) as Record<string, unknown>) });
+      }
+      setMergeNote(null);
       setFieldErrors({});
       queryClient.invalidateQueries({ queryKey: ['item', collection, id] });
       queryClient.invalidateQueries({ queryKey: ['items', collection] });
@@ -346,13 +370,59 @@ function ItemEditor({
       const action = pendingAction ?? saveAction.effective;
       setPendingAction(null);
       if (action === 'return') {
-        navigate({ to: '/content/$collection', params: { collection } });
+        navigate({ to: '/content/$collection', params: { collection }, search: lastListSearch(collection) as never });
       } else if (action === 'create_new') {
         navigate({ to: '/content/$collection/$id', params: { collection, id: 'new' } });
       }
       // 'stay' → remain on the form (current behavior).
     },
   });
+
+  // ── Stale draft handling (#685) ─────────────────────────────────────────
+  // Another session's save shows up as a realtime update for this item; the
+  // refetched version then outruns the version this draft was built from.
+  const refetchItem = itemQuery.refetch;
+  const onItemEvent = useCallback(
+    (event: { itemId?: string; action?: string }) => {
+      if (event.itemId === id && event.action === 'update') void refetchItem();
+    },
+    [id, refetchItem],
+  );
+  useRealtimeSubscription(collection, onItemEvent);
+  const newerElsewhere =
+    !saveMutation.isPending &&
+    baseVersion !== undefined &&
+    typeof itemQuery.data?.version === 'number' &&
+    itemQuery.data.version > baseVersion;
+
+  /** Fold the latest version into the draft: theirs where only they changed, mine elsewhere. */
+  const mergeWithLatest = async () => {
+    const latest = (await itemQuery.refetch()).data;
+    if (!latest || !draft) return;
+    const theirs = (latest.data ?? {}) as Record<string, unknown>;
+    const result = mergeDrafts(baseData, draft, theirs);
+    saveMutation.reset();
+    setDraft(result.data);
+    setBaseData({ ...theirs });
+    setBaseVersion(latest.version);
+    setMergeNote(result);
+  };
+  /** Save my draft over the latest version (If-Match on the latest). */
+  const overwriteWithMine = async () => {
+    const latest = (await itemQuery.refetch()).data;
+    if (!latest) return;
+    saveMutation.reset();
+    setBaseData({ ...((latest.data ?? {}) as Record<string, unknown>) });
+    setBaseVersion(latest.version);
+    saveMutation.mutate({ ifMatch: latest.version });
+  };
+  /** Drop my draft and load the latest version. */
+  const reloadLatest = async () => {
+    saveMutation.reset();
+    setMergeNote(null);
+    await itemQuery.refetch();
+    setDraft(null);
+  };
 
   // Cmd/Ctrl+S → save and stay. Mirrors the Save button's gating exactly.
   useSaveHandler(
@@ -367,7 +437,7 @@ function ItemEditor({
     onSuccess: () => {
       setDependentGroups(null);
       queryClient.invalidateQueries({ queryKey: ['items', collection] });
-      navigate({ to: '/content/$collection', params: { collection } });
+      navigate({ to: '/content/$collection', params: { collection }, search: lastListSearch(collection) as never });
     },
     onError: (err: unknown) => {
       // 409 DEPENDENT_RECORDS_EXIST → open the resolution dialog with the groups.
@@ -422,28 +492,12 @@ function ItemEditor({
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs uppercase text-muted-foreground">
-            <Link to="/" className="hover:underline">Content</Link>
-            <span className="mx-1">/</span>
-            <Link
-              to="/content/$collection"
-              params={{ collection }}
-              className="hover:underline"
-            >
-              {collection}
-            </Link>
-            <span className="mx-1">/</span>
-            <span className="font-mono">{id.slice(0, 8)}…</span>
-          </p>
+          <ItemBreadcrumbs
+            collection={collection}
+            current={itemTitle(id, itemQuery.data.data as Record<string, unknown> | undefined)}
+          />
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <Link
-              to="/content/$collection"
-              params={{ collection }}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Back to list"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </Link>
+            <BackToList collection={collection} />
             Edit item
             {latestRevision && <ProvenanceBadge revision={latestRevision} />}
           </h1>
@@ -578,15 +632,35 @@ function ItemEditor({
       {/* Real-time warning when more than one person has this item open. */}
       <CoEditingBanner coEditors={coEditors} />
 
+      {/* A newer version was saved elsewhere while this draft is open (#685). */}
+      {newerElsewhere && !saveMutation.error ? (
+        <StaleDraftBanner onMerge={() => void mergeWithLatest()} onReload={() => void reloadLatest()} />
+      ) : null}
+      {mergeNote ? <MergeNote result={mergeNote} onDismiss={() => setMergeNote(null)} /> : null}
+
       {saveMutation.error && isPreconditionFailed(saveMutation.error) ? (
         <div
           role="alert"
           className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive"
         >
           <span className="flex-1">
-            Someone else changed this item after you opened it, so your changes were not saved. Copy anything
-            you want to keep, then load the latest version.
+            Someone else changed this item after you opened it, so your changes were not saved. Merge your
+            changes into the latest version, overwrite it with yours, or discard yours.
           </span>
+          <button
+            type="button"
+            className="rounded border border-destructive/40 px-2 py-1 font-medium hover:bg-destructive/10"
+            onClick={() => void mergeWithLatest()}
+          >
+            Merge with latest
+          </button>
+          <button
+            type="button"
+            className="rounded border border-destructive/40 px-2 py-1 font-medium hover:bg-destructive/10"
+            onClick={() => void overwriteWithMine()}
+          >
+            Overwrite with my changes
+          </button>
           <button
             type="button"
             className="rounded border border-destructive/40 px-2 py-1 font-medium hover:bg-destructive/10"
@@ -758,6 +832,7 @@ function ItemEditor({
               onReleasePin={canUpdate ? (field) => releasePinMutation.mutate(field) : undefined}
               layout={layout}
               errors={fieldErrors}
+              presence={fieldPresence}
             />
           )}
           {tab === 'translation' && draft && targetLocale && (
@@ -906,6 +981,9 @@ function ItemEditor({
 }
 
 
+const NO_SESSIONS: never[] = [];
+const noopField = (_field: string | null) => {};
+
 /** ISO timestamp → `datetime-local` input value (local time), or '' when unset. */
 /** Synthesized `VALIDATION` error for a client-side required failure. */
 export function requiredError(missing: Record<string, string>) {
@@ -986,6 +1064,7 @@ export function FieldsTab({
   writeAction = 'update',
   layout = null,
   errors = {},
+  presence,
 }: {
   fields: FieldResource[];
   value: Record<string, unknown>;
@@ -1002,6 +1081,8 @@ export function FieldsTab({
   layout?: FormLayout | null;
   /** Field key → validation message (inline + tab error badges). */
   errors?: Readonly<Record<string, string>>;
+  /** Live field focus / soft locks from co-editors (#685); absent = off. */
+  presence?: FieldPresenceApi;
 }) {
   // resolveInterface reads the extension registry during render.
   useExtensionUpdates();
@@ -1039,7 +1120,11 @@ export function FieldsTab({
 
     const Interface = resolveInterface(f);
     const cellValue = value?.[f.name];
-    const writable = perms.fieldAllowed(collection, writeAction, f.name);
+    const permitted = perms.fieldAllowed(collection, writeAction, f.name);
+    // Soft lock (#685): another editor is typing here, so the field is
+    // read-only for us until they leave it or we take over.
+    const lockHolder = presence?.lockedByOther(f.name) ?? null;
+    const writable = permitted && !lockHolder;
     const pinned = pinnedFields.includes(f.name);
     const setCell = (next: unknown) => {
       if (!writable) return;
@@ -1055,9 +1140,14 @@ export function FieldsTab({
         data-field-anchor={f.name}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : undefined}
+        onFocusCapture={presence ? () => presence.onFocus(f.name) : undefined}
+        onBlurCapture={presence ? () => presence.onBlur(f.name) : undefined}
+        onInputCapture={presence && writable ? () => presence.onEdit(f.name) : undefined}
+        onChangeCapture={presence && writable ? () => presence.onEdit(f.name) : undefined}
       >
         <label className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
           <span>{f.name}</span>
+          <FieldFocusBadge info={presence?.info(f.name)} />
           {f.required && <span className="text-destructive">*</span>}
           <span className="text-[10px] uppercase">{f.interface || f.type}</span>
           {pinned && (
@@ -1079,12 +1169,15 @@ export function FieldsTab({
               )}
             </span>
           )}
-          {!writable && (
+          {!permitted && (
             <span className="ms-auto inline-flex items-center gap-1 text-[10px] text-amber-700">
               <Lock className="h-3 w-3" /> read-only
             </span>
           )}
         </label>
+        {lockHolder && presence && (
+          <FieldLockNotice holder={lockHolder} onTakeOver={() => presence.onTakeOver(f.name)} />
+        )}
         <div className={cn(!writable && 'pointer-events-none opacity-70')}>
           <RawToggle value={cellValue} onChange={setCell}>
             <Interface field={f} value={cellValue} onChange={setCell} />

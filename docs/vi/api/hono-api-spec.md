@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 61
-lastUpdated: 2026-11-20T05:35:06.709Z
+version: 63
+lastUpdated: 2026-11-21T01:11:20.973Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a752c28a3a48bf3d
+sourceHash: fb60174a46e9e77a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-20T05:35:06.709Z
-codeVerifiedHash: a752c28a3a48bf3d
-codeVerifiedClaims: 652
+codeVerified: 2026-11-21T01:11:20.973Z
+codeVerifiedHash: fb60174a46e9e77a
+codeVerifiedClaims: 658
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -641,6 +641,8 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 | `POST` | `/api/v1/items/:collection/:id/move` | Di chuyển một item cùng cây con của nó trong collection dạng cây; liệt kê với `?tree=children\|subtree\|ancestors` ([Collection phân cấp](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | Liệt kê các bản sửa đổi (revisions) |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Khôi phục lại một bản sửa đổi |
+| `GET` | `/api/v1/items/:collection/:id/revisions/compare?from=&to=` | So sánh theo trường giữa hai snapshot: `from` = id revision hoặc `empty` (mặc định), `to` = id revision hoặc `current` (mặc định); che theo quyền đọc ([Editorial UX](../features/editorial-ux.md#so-sánh-revision)) |
+| `POST` | `/api/v1/items/:collection/:id/revisions/:revisionId/restore` | Khôi phục `{ fields?: string[] }` (tất cả khi bỏ trống) từ một revision qua PATCH; ghi một revision mới |
 | `GET` | `/api/v1/items/:collection/:id/versions` | Liệt kê các bản nháp có tên (mỗi bản có cờ `mainChanged`) |
 | `POST` | `/api/v1/items/:collection/:id/versions` | Tạo bản nháp `{ key, name }` (chụp lại main hiện tại) |
 | `GET` | `/api/v1/items/:collection/:id/versions/:key` | Lấy chi tiết một bản nháp |
@@ -1546,6 +1548,23 @@ Dashboard do người dùng xây dựng gồm các panel tổng hợp trên các
 | `POST` | `/api/v1/dashboards/:id/panels/preview` | Chạy thử `PanelQuery` (xem trước trong trình chỉnh sửa) |
 
 `PanelQuery` (hợp đồng dùng chung `@lumibase/contracts`): `{ collection, aggregate (count|sum|avg|min|max), field?, groupBy?, filter? (quy tắc điều kiện), dateRange?, limit? }`. `field` is required for non-`count` aggregates. Trường nằm ngoài danh sách trắng của collection sẽ trả về `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
+
+### Bố cục dashboard trang chủ Studio
+
+Lưới widget của trang chủ Studio (`/dashboard`). Một bố cục là
+`{ version: 1, widgets: [{ id, type, x, y, w, h, title?, config? }] }` trên lưới
+12 cột (`x + w ≤ 12`, tối đa 40 widget, `config` ≤ 4 KB, `id` không trùng);
+`type` là tên một widget có sẵn hoặc `extension:<name>` cho một UI extension
+slot `panel`. Bố cục không hợp lệ trả về `400 { errors: [{ code: 'VALIDATION' }] }`.
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `GET` | `/api/v1/dashboard/layout` | Bố cục hiệu lực của người gọi → `{ data: { layout, source } }`, `source` là một trong `user`, `site`, `default` (`layout: null` nghĩa là bố cục mặc định có sẵn). |
+| `PUT` | `/api/v1/dashboard/layout` | Lưu bố cục riêng của người gọi `{ layout }`. Cần người dùng đã đăng nhập (`403 USER_REQUIRED` với API key). |
+| `DELETE` | `/api/v1/dashboard/layout` | Bỏ bố cục riêng; trả về bố cục hiệu lực được dùng thay thế. |
+| `GET` | `/api/v1/dashboard/layout/site-default` | Bố cục mặc định của site. Chỉ admin site. |
+| `PUT` | `/api/v1/dashboard/layout/site-default` | Đặt bố cục mặc định `{ layout }`. Chỉ admin site; ghi audit `dashboard_default_set`. |
+| `DELETE` | `/api/v1/dashboard/layout/site-default` | Xoá bố cục mặc định. Chỉ admin site; ghi audit `dashboard_default_cleared`. |
 
 ### Mốc kích hoạt
 

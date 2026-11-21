@@ -16,6 +16,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   GripVertical,
+  LayoutDashboard,
 } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -40,6 +41,8 @@ import { mePreferencesQueryOptions, permissionsQueryOptions } from '@/lib/me-que
 
 const MODULES: ModuleDef[] = [
   { id: 'content', label: 'Content', icon: FileText, to: '/' },
+  // Studio home dashboard with a layout composer (#691).
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard' },
   { id: 'files', label: 'Files', icon: Layers, to: '/files' },
   { id: 'users', label: 'Users', icon: Users, to: '/users' },
   { id: 'access', label: 'Access', icon: ShieldCheck, to: '/access' },
@@ -192,7 +195,9 @@ export function AppShell({ children }: AppShellProps) {
   const appPath = adminBase && location.pathname.startsWith(adminBase)
     ? location.pathname.slice(adminBase.length) || '/'
     : location.pathname;
-  const activeModule = appPath.startsWith('/data-model')
+  const activeModule = appPath.startsWith('/dashboard')
+    ? 'dashboard'
+    : appPath.startsWith('/data-model')
     ? 'data-model'
     : appPath.startsWith('/mission-control')
       ? 'mission-control'

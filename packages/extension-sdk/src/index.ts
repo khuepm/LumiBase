@@ -460,3 +460,42 @@ export function subscribeRichTextPlugins(listener: () => void): () => void {
   pluginListeners().add(listener);
   return () => pluginListeners().delete(listener);
 }
+
+// ─── Dashboard widgets (#691) ────────────────────────────────────────────────
+
+/** Props the Studio passes to a dashboard widget extension. */
+export interface DashboardWidgetProps<TConfig extends Record<string, unknown> = Record<string, unknown>> {
+  /** The widget's saved settings (`widget.config`), editable per placement. */
+  config: TConfig;
+  /** Current size on the 12-column grid, in columns and rows (80 px each). */
+  size: { w: number; h: number };
+}
+
+/**
+ * A Studio home dashboard widget. Ship it as a UI extension of type `panel`;
+ * it appears in **Dashboard → Edit → Add widget** as `extension:<name>`.
+ * It renders like every UI extension — inside an error boundary and
+ * Suspense, loaded only from an allowed bundle origin — and receives only
+ * {@link DashboardWidgetProps}; for data it calls the API with the viewer's
+ * own permissions.
+ */
+export interface DashboardWidgetDefinition<TConfig extends Record<string, unknown> = Record<string, unknown>> {
+  id: string;
+  title: string;
+  description?: string;
+  /** Default size when added (columns 1–12, rows 1–12). */
+  defaultSize?: { w: number; h: number };
+  // The component type stays framework-agnostic here; the Studio renders it with React.
+  component: (props: DashboardWidgetProps<TConfig>) => unknown;
+}
+
+export function defineDashboardWidget<TConfig extends Record<string, unknown> = Record<string, unknown>>(
+  def: DashboardWidgetDefinition<TConfig>,
+): DashboardWidgetDefinition<TConfig> {
+  if (!def.id || !def.title) throw new Error('defineDashboardWidget: id and title are required.');
+  const size = def.defaultSize;
+  if (size && (size.w < 1 || size.w > 12 || size.h < 1 || size.h > 12)) {
+    throw new Error('defineDashboardWidget: defaultSize must be within 1–12 columns and rows.');
+  }
+  return def;
+}

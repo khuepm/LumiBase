@@ -8,6 +8,10 @@ export interface PresenceEntry {
   collection?: string;
   itemId?: string;
   meta?: Record<string, unknown>;
+  /** Field focused in the item editor (#685). */
+  focus?: string;
+  /** Soft-locked field and when (server time) it was taken (#685). */
+  lock?: { field: string; since: string };
   lastSeen: string;
 }
 

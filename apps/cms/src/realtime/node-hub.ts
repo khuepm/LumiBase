@@ -24,6 +24,7 @@ import type { RealtimeEventLike } from '@lumibase/runtime';
 // (dynamically imported by `serve.ts`).
 import type { InProcessRealtimeHub } from '@lumibase/runtime/docker';
 import { canSubscribe, shouldDeliver, toWireMessage } from './fan-out';
+import { nextPresence, presenceEntries, visiblePresence, type PresenceState } from './presence';
 
 const REALTIME_PATH = '/api/v1/realtime';
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -32,6 +33,8 @@ const RATE_LIMIT_PER_SEC = 20;
 
 interface NodeSession {
   ws: WebSocket;
+  sessionId: string;
+  presence: PresenceState;
   siteId: string;
   plane: 'studio' | 'public';
   userId?: string;
@@ -126,6 +129,8 @@ export function attachNodeRealtime(opts: NodeHubOptions): { close: () => void } 
 
     const session: NodeSession = {
       ws,
+      sessionId: nanoid(12),
+      presence: { userId: principal.userId, subjectId: principal.subjectId },
       siteId: principal.siteId,
       plane: principal.plane,
       userId: principal.userId,
@@ -147,7 +152,7 @@ export function attachNodeRealtime(opts: NodeHubOptions): { close: () => void } 
     });
 
     sessions.add(session);
-    send(ws, { type: 'welcome', sessionId: nanoid(12), plane: principal.plane });
+    send(ws, { type: 'welcome', sessionId: session.sessionId, plane: principal.plane });
 
     ws.on('message', (data) => onMessage(session, data.toString()));
     ws.on('close', () => teardown(session));
@@ -236,21 +241,35 @@ export function attachNodeRealtime(opts: NodeHubOptions): { close: () => void } 
       case 'pong':
         session.lastPong = now;
         break;
-      // presence over the Node hub is out of scope for v1 (studio presence runs
-      // on Cloudflare); ignore to keep the protocol forward-compatible.
+      // Presence (#685): same rules as the Cloudflare SiteRoom, per site and
+      // plane, within this process (sessions on another replica are not seen).
       case 'presence':
+        session.presence = nextPresence(session.presence, msg, session, new Date(now));
+        broadcastPresence(session.siteId, session.plane);
         break;
+    }
+  }
+
+  /** Send every same-site, same-plane session the presence it may see. */
+  function broadcastPresence(siteId: string, plane: 'studio' | 'public'): void {
+    const peers = [...sessions].filter((s) => s.siteId === siteId && s.plane === plane);
+    const users = presenceEntries(peers, plane);
+    for (const peer of peers) {
+      send(peer.ws, { type: 'presence', users: visiblePresence(users, peer.allowedCollections) });
     }
   }
 
   function teardown(session: NodeSession): void {
     session.unsubscribeHub();
-    sessions.delete(session);
+    const wasPresent = sessions.delete(session);
     try {
       session.ws.terminate();
     } catch {
       /* already closed */
     }
+    // A closed or idle-dropped session leaves presence at once, so its focus
+    // badges and soft locks clear for everyone (#685).
+    if (wasPresent) broadcastPresence(session.siteId, session.plane);
   }
 
   // Heartbeat: ping every 30 s, disconnect sessions silent for 90 s.

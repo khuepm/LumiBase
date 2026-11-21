@@ -1,11 +1,11 @@
 ---
 sourceLang: en
-version: 3
-lastUpdated: 2026-11-15T22:14:22.190Z
-contentHash: c924e0830d3f4ac1
-codeVerified: 2026-11-15T22:14:22.190Z
-codeVerifiedHash: c924e0830d3f4ac1
-codeVerifiedClaims: 16
+version: 7
+lastUpdated: 2026-11-19T09:11:32.575Z
+contentHash: f4a18816aa89953f
+codeVerified: 2026-11-19T09:11:32.575Z
+codeVerifiedHash: f4a18816aa89953f
+codeVerifiedClaims: 22
 ---
 
 # Editorial UX
@@ -99,7 +99,10 @@ The response is `201 { data: <copy>, meta: { sourceId, related } }`, where
 `related` lists the ids of the copied children and junction rows per
 collection, and an `item_duplicated` audit entry names the source and the copy.
 In Studio, **Duplicate** in the item editor's header offers the three relation
-modes and opens the copy.
+modes and opens the copy. In the collection list, **Duplicate (n)** copies every
+selected item (by reference), one request each, so each copy gets its own
+permission check, revision and audit entry; a failed copy does not stop the rest
+and is reported next to the button.
 
 ## Writes without a revision
 
@@ -158,6 +161,59 @@ In Studio a manual-sort collection opens sorted by `sort`, and its rows can be
 dragged: dropping below the target places the item after it, dropping above
 places it before. The SDK has `client.items('menu').reorder(id, { after })`.
 
+## Navigating the Studio
+
+- **Lists keep their view.** A collection list writes its page, sort, filters
+  and the **Modified since publish** toggle into the URL (`?page=`, `?sort=`,
+  `?f=`, `?modified=`). Opening an item and pressing the browser's Back button
+  returns to the same page and filters, and the URL can be shared or
+  bookmarked. A view in the URL takes precedence over the saved default view.
+- **Breadcrumbs.** The item editor and the create form show
+  **Content › collection › item** (the item's title, name or label, else a
+  short id). The collection link and the back arrow return to the list view
+  you left, and **Save and return** and **Delete** land there too.
+- **Singletons open in the form.** A collection marked as a singleton skips its
+  list: opening it goes straight to its one item, or to the create form while
+  it has none. Add `?list=1` to the list URL to see the list anyway.
+- **Connection problems don't blank the page.** Reads retry on their own after
+  a dropped connection, a `429` or a `502`–`504` (waiting the server's
+  `Retry-After`, else 1, 2, 4 seconds). If the problem outlasts the retries, or
+  a save fails that way, a **Try again** box appears in the corner; the page
+  stays as it was, and for a save the retry re-sends the same change. Other
+  errors (validation, permissions, conflicts) are shown by the screen that made
+  the request, as before. A screen that fails to render shows **Try again** and
+  **Go to Content** instead of an empty page.
+
+## Editing together
+
+When several people have the same item open, Studio shows it at three levels:
+
+- **Who is here.** Avatars of the other editors sit in the editor's header, and
+  a banner says the item is open elsewhere.
+- **Which field.** A badge beside a field's label names whoever has it
+  focused. It clears when they leave the field, the item or the Studio.
+- **Soft locks.** The first keystroke in a field takes its soft lock. For
+  everyone else the field turns read-only with "Ann is editing this field" and
+  a **Take over** button; taking over moves the lock (the server orders claims
+  by its own clock, so the latest one wins) and the previous holder's field
+  turns read-only in turn. Leaving the field releases the lock. Locks are a
+  courtesy between editors: the API does not enforce them.
+
+Saving can still race. When someone saves a newer version while your draft is
+open, a banner offers **Merge their changes** or **Discard mine and load
+latest** before you save. If you save anyway, the save is refused (`412`,
+`If-Match`) and you choose:
+
+- **Merge with latest** — a field-by-field three-way merge against the version
+  you started from: fields only you changed keep your value, fields only they
+  changed take theirs, and fields both of you changed keep yours and are listed
+  for review. Nothing is saved until you save again.
+- **Overwrite with my changes** — save your draft over the latest version.
+- **Discard my changes and load latest.**
+
+The protocol behind this is described in
+[Realtime / WebSocket](./websockets-realtime.md#presence-field-focus-and-soft-locks).
+
 ## Release validation summary
 
 Before a release publishes, every item it would publish is validated in full —
@@ -184,6 +240,34 @@ to the field, focuses it and highlights it. **Publish** stays disabled while the
 last check found problems. A field inside a form-layout tab that is not open is
 not focused automatically — open the tab.
 
+## Comparing revisions
+
+`GET /items/:collection/:id/revisions/compare?from=&to=` compares any two
+snapshots of an item: `from` is a revision id or `empty` (the state before the
+item existed, the default), `to` is a revision id or `current` (the live item,
+the default). The caller needs `read` on the item; both sides are decrypted and
+masked with the caller's field permissions, exactly like a normal read, so a
+comparison never shows a field the item itself would hide. The response is
+`{ data: { from, to, before, after, changes } }`, where `from`/`to` name the
+revisions (`null` for empty, `"current"` for the live item) and `changes` is the
+per-field list (`added`, `removed`, `changed`, `unchanged`).
+
+`POST /items/:collection/:id/revisions/:revisionId/restore` sets fields back to
+their value in that revision. With `{ "fields": ["title"] }` only those fields
+change; with an empty body every field of the snapshot is restored. A field the
+revision did not have is restored as `null`, and an unknown field name is
+`400 UNKNOWN_FIELD`. The restore is a normal update, so validation, Law Zero
+pins, hooks and permissions apply, and it writes a new revision with the
+caller's provenance (nothing in the history is rewritten).
+
+In Studio the item's **Revisions** tab has a **Compare** mode: pick a **From**
+and a **To** snapshot and every field is shown side by side, by value shape —
+text word by word, lists of ids or tags as added and removed members, objects
+and blocks as their changed leaf paths. When **From** is a revision, each
+changed field has a **Restore** button. The **Versions** tab's comparison uses
+the same rendering. The SDK has `items(name).compareRevisions(id, { from, to })`
+and `items(name).restoreRevisionFields(id, revisionId, fields?)`.
+
 ## API summary
 
 | Method | Path | Notes |
@@ -194,6 +278,8 @@ not focused automatically — open the tab.
 | `POST` | `/api/v1/items/:collection/:id/duplicate` | Draft copy. |
 | `POST` | `/api/v1/items/:collection/:id/reorder` | Manual ordering. |
 | `GET` | `/api/v1/releases/:id/validate` | Release validation summary. |
+| `GET` | `/api/v1/items/:collection/:id/revisions/compare?from=&to=` | Compare two snapshots. |
+| `POST` | `/api/v1/items/:collection/:id/revisions/:revisionId/restore` | Restore fields from a revision. |
 
 See also [Content releases](./content-releases.md) and the
 [API reference](../api/hono-api-spec.md#3-items-generic-crud).
