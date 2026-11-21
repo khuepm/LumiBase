@@ -21,8 +21,9 @@ import {
 
 const mintToken = vi.fn();
 const getSettings = vi.fn();
+const rawRequest = vi.fn(async (_path: string): Promise<{ data: unknown[] }> => ({ data: [] }));
 vi.mock('@/lib/api', () => ({
-  getApiClient: () => ({ preview: { mintToken, getSettings } }),
+  getApiClient: () => ({ preview: { mintToken, getSettings }, rawRequest }),
 }));
 
 import { PreviewPane, PreviewSplit } from '../preview-pane';
@@ -198,5 +199,38 @@ describe('PreviewPane', () => {
       timeout: 1000,
     });
     warn.mockRestore();
+  });
+
+  it('previews a selected content version and stops streaming form edits over it (V04 #682)', async () => {
+    getSettings.mockResolvedValue({ data: { allowedOrigins: [], ttlSeconds: 900 } });
+    rawRequest.mockResolvedValue({ data: [{ key: 'redesign', name: 'Redesign' }] });
+    mintToken.mockResolvedValue(minted(`${FRONT}/p?token=tok`));
+    const { props, rerender, client } = renderPane();
+    const select = (await screen.findByRole('combobox', { name: 'Preview version' })) as HTMLSelectElement;
+    expect(rawRequest).toHaveBeenCalledWith('/api/v1/items/posts/itm_1/versions');
+    fireEvent.change(select, { target: { value: 'redesign' } });
+    await waitFor(() =>
+      expect(mintToken).toHaveBeenLastCalledWith({ collection: 'posts', itemId: 'itm_1', versionKey: 'redesign' }),
+    );
+
+    const frame = (await screen.findByTitle('Preview of posts itm_1')) as HTMLIFrameElement;
+    const frameWindow = frame.contentWindow!;
+    const posted: Array<{ message: unknown }> = [];
+    vi.spyOn(frameWindow, 'postMessage').mockImplementation(((message: unknown) => {
+      posted.push({ message });
+    }) as typeof frameWindow.postMessage);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', { data: previewMessage({ type: 'ready' as const, path: '/p' }), origin: FRONT, source: frameWindow }),
+      );
+    });
+    await waitFor(() => expect(posted.some((p) => (p.message as { type: string }).type === 'hello')).toBe(true));
+    rerender(
+      <QueryClientProvider client={client}>
+        <PreviewPane {...props} draft={{ title: 'Edited on main' }} />
+      </QueryClientProvider>,
+    );
+    await new Promise((r) => setTimeout(r, 400));
+    expect(posted.some((p) => (p.message as { type: string }).type === 'patch')).toBe(false);
   });
 });

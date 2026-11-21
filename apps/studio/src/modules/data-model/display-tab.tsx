@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { getApiClient } from '@/lib/api';
 import { DISPLAY_CATALOGUE } from '@/modules/content/displays/registry';
 import { DisplayTemplateEditor } from '@/modules/content/display-template-editor';
-import { PreviewUrlSection } from './preview-url-section';
+import { PageBlockToggle, PreviewUrlSection } from './preview-url-section';
 
 interface DisplayTabProps {
   collectionName: string;
@@ -63,6 +63,7 @@ export function DisplayTab({ collectionName }: DisplayTabProps) {
   return (
     <div className="space-y-6">
       <PreviewUrlSection collectionName={collectionName} />
+      <PageBlockToggle collectionName={collectionName} />
 
       <section>
         <header className="mb-2 flex items-center justify-between">

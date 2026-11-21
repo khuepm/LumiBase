@@ -176,6 +176,17 @@ export const PreviewSettingsSchema = z
       .min(PREVIEW_TOKEN_MIN_TTL_SECONDS)
       .max(PREVIEW_TOKEN_MAX_TTL_SECONDS)
       .default(PREVIEW_TOKEN_DEFAULT_TTL_SECONDS),
+    /**
+     * Frontend URL of a page, for the page composer's preview (V06 #684),
+     * e.g. `https://www.example.com/{slug}`. Same rules as a collection's
+     * `meta.previewUrl` (absolute http(s), known placeholders only).
+     */
+    pageUrl: z
+      .string()
+      .max(2048)
+      .refine((v) => validatePreviewUrlTemplate(v) === null, 'pageUrl must be an absolute http(s) URL template.')
+      .nullable()
+      .optional(),
   })
   .strict();
 export type PreviewSettings = z.infer<typeof PreviewSettingsSchema>;

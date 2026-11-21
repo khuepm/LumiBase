@@ -57,6 +57,10 @@ export const collectionInputSchema = z.object({
       // `meta.previewUrl` (epic #667): absolute http(s) URL template with only
       // the known placeholders — a `javascript:` template must never reach the
       // Studio preview pane or a "Preview" link.
+      // `meta.pageBlock` (V06 #684) registers the collection as a page block.
+      if (meta.pageBlock !== undefined && typeof meta.pageBlock !== 'boolean') {
+        ctx.addIssue({ code: 'custom', path: ['pageBlock'], message: 'pageBlock must be a boolean.' });
+      }
       const template = meta.previewUrl;
       if (template === undefined || template === null) return;
       if (typeof template !== 'string') {

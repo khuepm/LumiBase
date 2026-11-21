@@ -226,3 +226,55 @@ describe('PageService activity trail (#986)', () => {
     expect(a.layoutSha256).toBe(b.layoutSha256);
   });
 });
+
+describe('PageService delivery purge (#684)', () => {
+  const existing = (): PageRow => ({
+    id: 'pg_1',
+    siteId: 'site-a',
+    slug: 'home',
+    title: 'Home',
+    layoutConfig: {},
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  it('drops the site deliver tag on create, patch and delete', async () => {
+    const cache = new MemoryCacheProvider();
+    const purge = vi.spyOn(cache, 'invalidateByTag');
+    const store = { rows: [] as PageRow[] };
+    const svc = new PageService({ db: makeDb(store) as never, siteId: 'site-a', cache });
+
+    await svc.create({ slug: 'home', title: 'Home', layoutConfig: { sections: [] } });
+    expect(purge).toHaveBeenLastCalledWith('deliver:site-a');
+    purge.mockClear();
+
+    await svc.patch(store.rows[0]!.id, { title: 'Home 2' });
+    expect(purge).toHaveBeenCalledWith('deliver:site-a');
+    purge.mockClear();
+
+    await svc.delete(store.rows[0]!.id);
+    expect(purge).toHaveBeenCalledWith('deliver:site-a');
+  });
+
+  it('purges the edge copies of the site too', async () => {
+    const cache = new MemoryCacheProvider();
+    const edgeCache = { match: vi.fn(), put: vi.fn(), purge: vi.fn(async () => 0), purgeByTag: vi.fn(async () => true) };
+    const svc = new PageService({
+      db: makeDb({ rows: [existing()] }) as never,
+      siteId: 'site-a',
+      cache,
+      edgeCache: edgeCache as never,
+    });
+    await svc.patch('pg_1', { title: 'New' });
+    expect(edgeCache.purgeByTag.mock.calls.length + edgeCache.purge.mock.calls.length).toBeGreaterThan(0);
+  });
+
+  it('does not fail the write when the purge throws', async () => {
+    const cache = new MemoryCacheProvider();
+    vi.spyOn(cache, 'invalidateByTag').mockRejectedValue(new Error('redis down'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const svc = new PageService({ db: makeDb({ rows: [existing()] }) as never, siteId: 'site-a', cache });
+    await expect(svc.patch('pg_1', { title: 'New' })).resolves.toMatchObject({ title: 'New' });
+    warn.mockRestore();
+  });
+});

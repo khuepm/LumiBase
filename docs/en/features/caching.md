@@ -1,12 +1,12 @@
 ---
 title: Caching
 description: Edge HTTP cache, application CacheProvider, and cache-penetration defences
-version: 10
-lastUpdated: 2026-11-18T04:25:25.638Z
+version: 11
+lastUpdated: 2026-11-20T01:41:18.319Z
 sourceLang: en
-contentHash: 223bc6999f6ddd0d
-codeVerified: 2026-11-18T04:25:25.638Z
-codeVerifiedHash: 223bc6999f6ddd0d
+contentHash: 5884540bb6ab67a0
+codeVerified: 2026-11-20T01:41:18.319Z
+codeVerifiedHash: 5884540bb6ab67a0
 codeVerifiedClaims: 18
 ---
 
@@ -40,7 +40,7 @@ Purging by tag is one call however many URLs are affected, and it reaches copies
 
 The fallback is why the URL index exists at all. Where tag purge works, the index is redundant; where it does not, it is the whole mechanism.
 
-The URL recorded there is the **canonical** edge key, not the raw request URL: only `locale`, `lang`, `provenance=true` and `preview=true` (or `draft=true`, stored as `preview=true`) survive, in that order. Any other query parameter is dropped before `edgeCache.match/put`, so `?utm_source=…` or `?r=<random>` neither creates a new edge copy nor pushes real page URLs out of the 200-entry index.
+The URL recorded there is the **canonical** edge key, not the raw request URL: only `locale`, `lang`, `provenance=true` and `preview=true` (or `draft=true`, stored as `preview=true`) survive, in that order. Any other query parameter is dropped before `edgeCache.match/put`, so `?utm_source=…` or `?r=<random>` neither creates a new edge copy nor pushes real page URLs out of the 200-entry index. A preview read (`preview=true` or `draft=true`) never touches the edge: it skips `edgeCache.match/put` and the application cache and answers `Cache-Control: no-store`, so a just-saved page shows at once and the preview response never becomes a shared copy.
 
 A `304 Not Modified` is never written to the edge. It answers one client's conditional request, and the edge key carries no request headers, so a stored 304 would be served with an empty body to the next client that has nothing cached. An edge hit answers `If-None-Match` itself by comparing it with the stored copy's `ETag`.
 

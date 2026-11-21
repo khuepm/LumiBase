@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 65
-lastUpdated: 2026-11-21T11:04:16.006Z
+version: 66
+lastUpdated: 2026-11-21T13:49:40.031Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 49608a0a77208a74
+sourceHash: 0ad5a26f5d2e38aa
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-21T11:04:16.006Z
-codeVerifiedHash: 49608a0a77208a74
-codeVerifiedClaims: 656
+codeVerified: 2026-11-21T13:49:40.031Z
+codeVerifiedHash: 0ad5a26f5d2e38aa
+codeVerifiedClaims: 658
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -613,12 +613,22 @@ CRUD đã xác thực Studio trên `lumibase_pages` (được tiêu thụ bởi 
 |--------|------|-------------|
 | `GET` | `/api/v1/pages` | Liệt kê các trang của site đang hoạt động |
 | `POST` | `/api/v1/pages` | Tạo `{ slug, title, layoutConfig? }`. `400 VALIDATION` (`field: sections.N.source.status`) khi một `source` của section đòi status khác `published` (#1006). `403 SOURCE_FORBIDDEN` khi một `source` của section trỏ tới collection mà người gọi không đọc được toàn bộ (mọi field, không có bộ lọc dòng) |
+| `GET` | `/api/v1/pages/blocks` | Các page block đã đăng ký (collection có `meta.pageBlock: true`) cùng field của chúng — bảng block của composer |
 | `GET` | `/api/v1/pages/:id` | Lấy chi tiết một trang |
 | `PATCH` | `/api/v1/pages/:id` | Cập nhật một phần (`slug` / `title` / `layoutConfig`). `400 VALIDATION` khi `source.status` không phải published, như khi tạo. `403 SOURCE_FORBIDDEN` khi layout mới thêm `source` trên collection mà người gọi không đọc được toàn bộ; các source trang đã có thì không kiểm tra lại |
 | `DELETE` | `/api/v1/pages/:id` | Xóa trang |
 
 Định dạng slug khớp với quy tắc kiểm tra của Delivery (`^[a-z0-9]+(?:[/_-][a-z0-9]+)*$`, ≤200).
 
+**Layout của composer** (`layoutConfig.version: 1`, epic #667 V06) được kiểm khi
+tạo và khi patch: mọi `sections[].component` phải là một page block đã đăng ký,
+`data` được kiểm theo field của block đó (gồm cả field `blocks` lồng nhau; từ
+chối field lạ, field mã hoá và field pii/phi), region phải được khai trong
+`regions`, và `source` chỉ đọc item đã xuất bản. Lỗi trả `400` với mỗi vấn đề
+một mục, mỗi mục có đường dẫn `field` như `sections.2.data.title`. Layout không
+có `version` vẫn được lưu như trước, ngoại trừ quy tắc `source.status` chỉ
+published ở trên (#1006). Định dạng được mô tả ở
+[Page composer](../features/page-composer.md); delivery không đổi.
 **Quyền truy cập (#986).** Trang được phát công khai sau khi deliver, nên mọi route cần permission `lumibase_pages::<action>` (`read` / `create` / `update` / `delete`); site admin được bỏ qua. Thiếu quyền thì route trả `403 FORBIDDEN`. Rule theo dòng của grant được đánh giá trên `{ id, slug, title }` — ví dụ `{ "slug": { "_starts_with": "landing/" } }` giới hạn một editor vào các trang landing. Trang nằm ngoài phạm vi của caller trả `404`, còn thao tác tạo hoặc đổi tên khiến trang rơi ra ngoài phạm vi trả `403`. Field whitelist và preset trên permission `lumibase_pages` không được áp dụng. Mỗi lần ghi tạo một dòng `activity` (collection `lumibase_pages`) với người thực hiện cùng slug, title và SHA-256 của layout trước và sau.
 
 Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tags?: string[], keys?: string[] }` — mọi tag/key phải chứa `siteId` đang hoạt động.

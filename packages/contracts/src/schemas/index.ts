@@ -410,3 +410,4 @@ export * from './field-options';
 export { GeoPointSchema, GeoNearSchema, GeoBBoxSchema } from './geopoint';
 export { richTextValueSchema, RichTextDocumentSchema } from './richtext';
 export * from './preview';
+export * from './page-layout';
