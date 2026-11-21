@@ -30,6 +30,7 @@ import { accessRouter } from './routes/access';
 import { accessGrantsRouter } from './routes/access-grants';
 import { adminRouter } from './routes/admin';
 import { configRouter } from './routes/config';
+import { backendTemplatesRouter } from './routes/backend-templates';
 import { authRouter, meRouter } from './routes/auth';
 import { tfaAuthRouter, tfaMeRouter } from './routes/tfa';
 import { securityHistoryRouter } from './modules/security-history/routes';
@@ -333,6 +334,8 @@ api.route('/permissions', permissionsRouter);
 api.route('/access', accessGrantsRouter);
 api.route('/access', accessRouter);
 api.route('/config', configRouter);
+// Backend template catalog (#902, epic #900): site-admin only, site-scoped.
+api.route('/backend-templates', backendTemplatesRouter);
 api.route('/api-keys', apiKeysRouter);
 api.route('/search', searchRouter);
 api.route('/media', mediaRouter);

@@ -1,10 +1,10 @@
 ---
-version: 14
-lastUpdated: 2026-11-19T05:19:35.652Z
+version: 15
+lastUpdated: 2026-11-21T01:11:43.867Z
 sourceLang: vi
-contentHash: d2cc106e6be514ec
-codeVerified: 2026-11-19T05:19:35.652Z
-codeVerifiedHash: d2cc106e6be514ec
+contentHash: 92956ee527b6c902
+codeVerified: 2026-11-21T01:11:43.867Z
+codeVerifiedHash: 92956ee527b6c902
 codeVerifiedClaims: 4
 ---
 
@@ -78,6 +78,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [agent-harness-layer.md](./features/agent-harness-layer.md) — Agent goals, runs, tools, memory, approvals, artifacts, evaluations, và quản trị sinh ứng dụng.
   - [site-skills.md](./features/site-skills.md) — Site Skills: playbook có phiên bản được chèn vào agent run, CLI skills-as-code, MCP prompts.
   - [agent-receipts.md](./features/agent-receipts.md) — Agent receipts: run, approval, lần bác bỏ, chi phí, drift và autonomy trong một cửa sổ; ngưỡng cảnh báo và xuất CSV.
+  - [backend-templates.md](./features/backend-templates.md) — Backend templates: định dạng JSON `lumibase.template@v1` cho một content model hoàn chỉnh kèm seed pack tuỳ chọn; validation, giới hạn và digest canonical.
   - [locale-generator.md](./features/locale-generator.md) — Locale generator: thêm locale trong một bước; bản dịch máy chờ trong hàng đợi review.
   - [external-action-tools.md](./features/external-action-tools.md) — Tool của agent có tác động ngoài CMS, được quản trị: rủi ro khai báo, approval chỉ dành cho người, bí mật theo site.
   - [runtime-abstraction.md](./features/runtime-abstraction.md) — Lớp `@lumibase/runtime` cho phép chạy trên Cloudflare và Docker.

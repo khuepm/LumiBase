@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 61
-lastUpdated: 2026-11-20T05:35:06.709Z
+version: 64
+lastUpdated: 2026-11-21T01:11:44.078Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a752c28a3a48bf3d
+sourceHash: 42539b36fe99030a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-20T05:35:06.709Z
-codeVerifiedHash: a752c28a3a48bf3d
-codeVerifiedClaims: 652
+codeVerified: 2026-11-21T01:11:44.078Z
+codeVerifiedHash: 42539b36fe99030a
+codeVerifiedClaims: 676
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -1586,6 +1586,30 @@ Public (không có phiên làm việc; xác minh chữ ký hoặc trạng thái 
 | `POST` | `/api/v1/integrations/git/webhook/:provider/:siteId/:integrationId` | Bộ nhận webhook — GitHub HMAC-SHA256 (`X-Hub-Signature-256`) / GitLab token (`X-Gitlab-Token`); idempotent theo delivery id |
 
 Môi trường xem trước là opt-in cho từng tích hợp (`sync_config.preview = true`): khi PR mở/đồng bộ, LumiBase khởi tạo một site tạm thời (`${siteId}__pr-${number}`) được phục vụ tại `/api/v1/deliver/page/${ephemeralSiteId}/...`; khi đóng/gộp PR nó sẽ bị hủy. Thất bại CI ghi lại một `agent_incident` (role `git-sync`) + một mục audit `git_ci_failed`.
+
+---
+
+## 12d. Backend templates (catalog)
+
+Catalog template riêng của mỗi site (#902, epic #900). Chỉ dành cho site admin;
+gắn với site của request. Xem [Backend templates](../features/backend-templates.md#catalog).
+
+| Method | Path | Mô tả |
+|--------|------|-------------|
+| `GET` | `/api/v1/backend-templates` | Template của site (`?limit=&offset=`), kèm `meta.total` |
+| `GET` | `/api/v1/backend-templates/official` | Template chính thức chỉ đọc đi kèm CMS |
+| `POST` | `/api/v1/backend-templates` | Tạo draft `{ document }` (object hoặc văn bản JSON thô) → `201`; `409 CONFLICT` khi slug trùng |
+| `GET` | `/api/v1/backend-templates/:id` | Một template theo id hoặc slug: draft, `draftRevision`, `validation`, các revision |
+| `PATCH` | `/api/v1/backend-templates/:id` | Thay draft `{ document, draftRevision }`; `409 DRAFT_CONFLICT` nếu draft đã đổi |
+| `POST` | `/api/v1/backend-templates/:id/validate` | `{ valid, digest }` hoặc `{ valid: false, errors }` |
+| `POST` | `/api/v1/backend-templates/:id/publish` | Publish một revision bất biến (`{ draftRevision? }`) → `201`, hoặc `200` khi publish lại y hệt; `409 IMMUTABLE_REVISION`; `422 INVALID_TEMPLATE` |
+| `GET` | `/api/v1/backend-templates/:id/revisions/:version` | Document canonical đã publish (export) |
+| `POST` | `/api/v1/backend-templates/capture` | Draft từ chính schema của site `{ collections, slug, displayName, templateVersion?, description?, seed? }` → `201`; `422 MISSING_DEPENDENCY` (kèm `missing`); `403` nếu không đọc được item để seed |
+| `POST` | `/api/v1/backend-templates/plans` | Xem trước một lần cài (#903) `{ template: { source, sourceSiteId?, slug \| displayName, version, digest? }, targetSiteId, namespace?, seedPack? }` → `201` plan kèm `report`; `400 MISSING_INPUT` / `SITE_MISMATCH`; `409 AMBIGUOUS_TEMPLATE` / `NAME_CONFLICT`; `422 INCOMPATIBLE_RUNTIME` / `INVALID_TEMPLATE`. Không ghi schema hay content |
+| `GET` | `/api/v1/backend-templates/plans/:planId` | Đọc một plan (chỉ site đích) |
+| `POST` | `/api/v1/backend-templates/plans/:planId/verify` | Kiểm tra lại thời hạn, fingerprint đích và runtime; `409 STALE_PLAN` đóng plan |
+| `POST` | `/api/v1/backend-templates/installations` | Áp dụng một plan một cách nguyên tử (#904) `{ planId, idempotencyKey }` → `201`, hoặc `200` (`meta.replayed`) khi thử lại; `409 STALE_PLAN` / `NAME_CONFLICT` / `IDEMPOTENCY_CONFLICT`; `403` nếu không còn là site admin; `422 INCOMPATIBLE_RUNTIME` |
+| `GET` | `/api/v1/backend-templates/installations/:installationId` | Đọc một bản cài (định danh, digest, namespace, seed pack, baseline, tài nguyên) |
 
 ---
 

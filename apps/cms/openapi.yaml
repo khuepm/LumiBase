@@ -6262,6 +6262,155 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /backend-templates:
+    get:
+      tags: [Backend Templates]
+      summary: List the private templates of the site (site-admin, #902)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        '200': { description: OK }
+        '403': { description: Not a site admin }
+    post:
+      tags: [Backend Templates]
+      summary: Create a template draft from a document (object or raw JSON text)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '201': { description: Created }
+        '409': { description: CONFLICT - slug exists }
+        '403': { description: Not a site admin }
+  /backend-templates/official:
+    get:
+      tags: [Backend Templates]
+      summary: Read-only official templates bundled with the CMS
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '200': { description: OK }
+        '403': { description: Not a site admin }
+  /backend-templates/capture:
+    post:
+      tags: [Backend Templates]
+      summary: Capture selected collections of this site as a new draft (schema-only unless seed is given)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '201': { description: Created }
+        '422': { description: MISSING_DEPENDENCY or INVALID_TEMPLATE }
+        '403': { description: Not a site admin }
+  /backend-templates/{id}:
+    get:
+      tags: [Backend Templates]
+      summary: One template - draft, draftRevision, validation, revisions
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string }, description: Template id or slug }
+      responses:
+        '200': { description: OK }
+        '404': { description: Not found on this site }
+        '403': { description: Not a site admin }
+    patch:
+      tags: [Backend Templates]
+      summary: Replace the draft if it is still at draftRevision
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string }, description: Template id or slug }
+      responses:
+        '200': { description: OK }
+        '409': { description: DRAFT_CONFLICT }
+        '403': { description: Not a site admin }
+  /backend-templates/{id}/validate:
+    post:
+      tags: [Backend Templates]
+      summary: Validate the draft
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string }, description: Template id or slug }
+      responses:
+        '200': { description: OK }
+        '403': { description: Not a site admin }
+  /backend-templates/{id}/publish:
+    post:
+      tags: [Backend Templates]
+      summary: Publish an immutable revision of the templateVersion of the draft
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string }, description: Template id or slug }
+      responses:
+        '201': { description: Published }
+        '200': { description: Identical content already published }
+        '409': { description: IMMUTABLE_REVISION or DRAFT_CONFLICT }
+        '422': { description: INVALID_TEMPLATE }
+        '403': { description: Not a site admin }
+  /backend-templates/{id}/revisions/{version}:
+    get:
+      tags: [Backend Templates]
+      summary: The published canonical document (export)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string }, description: Template id or slug }
+        - { name: version, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '403': { description: Not a site admin }
+  /backend-templates/plans:
+    post:
+      tags: [Backend Templates]
+      summary: Preview installing an exact template revision into this site (#903); writes no schema or content
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '201': { description: Plan with report }
+        '400': { description: MISSING_INPUT or SITE_MISMATCH }
+        '404': { description: Template or revision not found or not readable }
+        '409': { description: AMBIGUOUS_TEMPLATE or NAME_CONFLICT }
+        '422': { description: INCOMPATIBLE_RUNTIME or INVALID_TEMPLATE }
+  /backend-templates/plans/{planId}:
+    get:
+      tags: [Backend Templates]
+      summary: Read a plan of this site
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: planId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { description: Not found }
+  /backend-templates/plans/{planId}/verify:
+    post:
+      tags: [Backend Templates]
+      summary: Re-check expiry, target schema fingerprint and runtime of a plan
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: planId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Fresh }
+        '409': { description: STALE_PLAN }
+        '422': { description: INCOMPATIBLE_RUNTIME }
+  /backend-templates/installations:
+    post:
+      tags: [Backend Templates]
+      summary: Apply a plan atomically (#904); idempotent per key and plan payload
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '201': { description: Installed }
+        '200': { description: Replay of a committed installation }
+        '403': { description: Not (or no longer) a site admin }
+        '409': { description: STALE_PLAN, NAME_CONFLICT or IDEMPOTENCY_CONFLICT }
+        '422': { description: INCOMPATIBLE_RUNTIME }
+  /backend-templates/installations/{installationId}:
+    get:
+      tags: [Backend Templates]
+      summary: Read an installation of this site
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: installationId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { description: Not found }
   /integrations/git:
     get:
       tags: [Git Integration]

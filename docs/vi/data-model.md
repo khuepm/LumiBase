@@ -1,13 +1,13 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 29
+lastUpdated: 2026-11-19T07:17:06.483Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 52465604769f9c24
+sourceHash: 306ff0358825d150
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+codeVerified: 2026-11-19T07:17:06.483Z
+codeVerifiedHash: 306ff0358825d150
 codeVerifiedClaims: 22
 ---
 
@@ -593,6 +593,20 @@ môi trường preview tạm thời và provenance commit↔content. Mọi bản
 
 Token + webhook secret được mã hoá at rest qua `CryptoService` (AES-GCM, AAD ràng
 buộc vào `{ siteId, integrationId, field }`); plaintext không bao giờ được lưu.
+
+## 11e. Backend templates (`backend-templates.ts`)
+
+Catalog template riêng của mỗi site (#902, epic #900) và plan cài đặt (#903).
+Mọi bảng đều có `site_id` (cascade) và được đăng ký cho RLS. Migration
+`0044_backend_templates`, `0045_backend_template_plans`,
+`0046_backend_template_installations`.
+
+| Bảng (vật lý) | Mục đích | Cột chính |
+|-------|---------|-------------|
+| `lumibase_backend_templates` | Mỗi `(site, slug)` một draft có thể sửa | `slug`, `display_name`, `draft` (jsonb), `draft_revision` (bộ đếm optimistic), `created_by` |
+| `lumibase_backend_template_revisions` | Revision đã publish, bất biến | unique `(site_id, template_id, template_version)`; `digest` (`sha256:`), `document` (jsonb canonical), `published_by` |
+| `lumibase_backend_template_plans` | Plan cài đặt có hạn dùng (#903); `site_id` = site đích | `source_kind`, `source_site_id`, `slug`, `template_version`, `digest`, `snapshot` (jsonb), `namespace_map`, `seed_pack`, `target_fingerprint`, `inventory`, `status`, `expires_at` |
+| `lumibase_backend_template_installations` | Bản cài đã commit (#904), ghi trong transaction cài đặt | unique `(site_id, idempotency_key)` và `(site_id, plan_id)`; `payload_digest`, `digest`, `namespace_map`, `seed_pack`, `baseline`, `resources` |
 
 ## 12. Indexing & RLS
 

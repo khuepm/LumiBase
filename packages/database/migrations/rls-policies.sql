@@ -106,6 +106,9 @@ DECLARE
     -- Git integration (GitHub / GitLab) — site-isolated.
     'lumibase_git_integrations', 'lumibase_git_pull_requests', 'lumibase_git_ci_runs',
     'lumibase_git_webhook_events', 'lumibase_git_preview_envs', 'lumibase_git_provenance',
+    -- Backend template catalog (#902): private drafts and immutable revisions.
+    'lumibase_backend_templates', 'lumibase_backend_template_revisions', 'lumibase_backend_template_plans',
+    'lumibase_backend_template_installations',
     -- Flow engine (visual-flow-builder + high-load async runs).
     'lumibase_flows', 'lumibase_flow_runs',
     -- Draft review profiles, runs and feedback (Jev J05, site-isolated). The
