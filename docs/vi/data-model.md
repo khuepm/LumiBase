@@ -1,14 +1,14 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 28
+lastUpdated: 2026-11-21T09:19:59.126Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 52465604769f9c24
+sourceHash: 7882282901381d84
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
-codeVerifiedClaims: 22
+codeVerified: 2026-11-21T09:19:59.126Z
+codeVerifiedHash: 7882282901381d84
+codeVerifiedClaims: 24
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -34,7 +34,7 @@ Các file schema được chia theo domain:
 | `core.ts` | `lumibase_organizations`, `lumibase_organization_members`, `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
-| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_upload_claims`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
@@ -273,8 +273,9 @@ Quá trình sinh SDK dùng manifest này để phát ra interface collection cơ
 - `id`, `siteId`, `policyId`, `collection`, `action` (`create`/`read`/`update`/`delete`/`share`), `permissions jsonb` (DSL rule ở mức row), `validation jsonb`, `presets jsonb`, `fields text[]` (allow list ở mức field, `*` = tất cả).
 
 ### `refresh_tokens` (migration `0005`, vật lý `lumibase_refresh_tokens`)
-- `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — không bao giờ lưu plaintext), `familyId` (chuỗi rotation), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `createdAt`.
+- `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — không bao giờ lưu plaintext), `familyId` (chuỗi rotation), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `amr` (jsonb, nullable — migration `0044`), `createdAt`.
 - Token gia hạn session, có rotation và thu hồi được. Dùng lại một row đã revoke sẽ revoke toàn bộ `familyId` (phát hiện đánh cắp). Được quét dọn bởi cron mỗi giờ sau khi hết hạn. Xem [`security/user-management.md`](./security/user-management.md) §4d.
+- `amr` ghi lại các phương thức xác thực mà lần đăng nhập đã chứng minh (`["pwd","totp"]`, `["webauthn"]`, …) và được chép sang mỗi lần rotation, nên `/auth/refresh` giữ `tfaVerified` cho session có yếu tố thứ hai (#987). NULL với đăng nhập một yếu tố và với family tạo trước `0044`. Xem §4f của cùng tài liệu.
 
 ### `user_passkeys` (migration `0031`, vật lý `lumibase_user_passkeys`)
 - `id` (nanoid), `userId`, `credentialId` (base64url, unique), `publicKey` (khóa công khai COSE), `counter`, `transports`, `aaguid`, `name`, `deviceType`, `backedUp`, `rpId`, `createdAt`, `lastUsedAt`, `updatedAt`.
@@ -300,6 +301,10 @@ Khi seed local/staging/prod, phải seed permission cho system collection một 
 
 ### `folders`
 - `id`, `siteId`, `name`, `parent`. Path, cây con và kiểm tra vòng lặp được suy ra trong `apps/cms/src/services/files/folder-tree.ts`.
+
+### `upload_claims`
+- `siteId`, `storageKey` (cùng làm khoá chính), `principal` (`user:<id>` hoặc `api_key:<id>`), `state` (`issued` → `uploading` → `uploaded` → `registered`), `createdAt`, `expiresAt`. Migration `0045`.
+- Một dòng cho mỗi key mà `POST /files/presigned-url` cấp (#993): chỉ principal đó đăng ký được key, một lần, sau khi upload xong, và key đã đăng ký từ chối mọi PUT ký sẵn tiếp theo. Bị dọn sau 24 giờ. Xem [bảo mật upload](./security/upload-security.md).
 
 ## 5. UX state (`platform.ts`)
 

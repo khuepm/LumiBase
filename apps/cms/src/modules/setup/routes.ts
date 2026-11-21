@@ -38,7 +38,7 @@ import {
 } from './service';
 import { STANDARD_LOCKOUT_POLICY, lockoutPolicySchema } from './policy-codec';
 import { OFFICIAL_KEY_ID } from './official-extensions';
-import { REQUIRE_SETUP_TOKEN_ENV, isSetupTokenRequired } from './setup-token';
+import { REQUIRE_SETUP_TOKEN_ENV, SETUP_TOKEN_ENV, isSetupTokenRequired, operatorSetupToken } from './setup-token';
 
 // ── input schema ────────────────────────────────────────────────────────
 
@@ -169,14 +169,14 @@ function buildService(c: {
   const db = c.get('db');
   // Same parser the startup mint uses (`startup.ts`), so the side that checks
   // a token and the side that prints one can never disagree about the flag.
-  const requireSetupToken = isSetupTokenRequired(
-    c.env as unknown as Readonly<Record<string, unknown>>,
-  );
+  const envRecord = c.env as unknown as Readonly<Record<string, unknown>>;
+  const requireSetupToken = isSetupTokenRequired(envRecord);
   const smtpAvailable = !!readStringEnv(c.env, 'LUMIBASE_SMTP_URL');
   return new SetupService({
     env: c.env, runtime: c.get('runtime'),
     db,
     requireSetupToken,
+    operatorSetupToken: operatorSetupToken(envRecord),
     smtpAvailable,
     encryptionAvailable: resolveEncryptionAvailable(c.env),
     officialPublisherKey: resolveOfficialPublisherKey(c.env),
@@ -285,11 +285,13 @@ function errorToHttp(error: SetupServiceError): { status: number; body: { errors
             {
               code: 'SETUP_TOKEN_NOT_ISSUED',
               message:
-                `${REQUIRE_SETUP_TOKEN_ENV} is on, but no setup token has been issued. ` +
+                'Setup requires a one-time token (on by default in production, or ' +
+                `${REQUIRE_SETUP_TOKEN_ENV}=true), but none has been issued. ` +
                 'The Node/Docker CMS mints one when it starts and prints it as a ' +
                 '"[lumibase-cms] SETUP_TOKEN=" line: restart the CMS and read its startup ' +
-                'logs. Cloudflare Workers have no startup step, so the flag is not supported ' +
-                'there: unset it and complete setup right after deploying.',
+                `logs. On Cloudflare Workers, set your own with \`wrangler secret put ${SETUP_TOKEN_ENV}\` ` +
+                '(at least 24 characters) and enter it in the wizard. To turn the gate off on ' +
+                `purpose, set ${REQUIRE_SETUP_TOKEN_ENV}=false.`,
             },
           ],
         },

@@ -148,6 +148,7 @@ function sandboxLoader(deps: SiteExtensionMcpDeps): ExtensionModuleLoader {
     sandbox.load({
       name: row.name,
       bundleUrl: row.bundleUrl,
+      siteId: row.siteId,
       capabilities: Array.isArray(row.capabilities) ? (row.capabilities as string[]) : [],
       ...buildSandboxVerifyOptions(row, deps.db, env as unknown as Bindings),
     });

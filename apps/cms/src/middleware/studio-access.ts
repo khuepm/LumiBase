@@ -29,7 +29,7 @@ const PUBLIC_AUTH_PATHS = new Set([
   '/api/v1/auth/passkey/verify',
 ]);
 
-const STUDIO_ACCESS_PATH_PREFIXES = [
+export const STUDIO_ACCESS_PATH_PREFIXES = [
   '/api/v1/access',
   '/api/v1/admin',
   '/api/v1/agent',
@@ -62,9 +62,15 @@ const STUDIO_ACCESS_PATH_PREFIXES = [
  * Directus separates `app_access` from normal API permissions: a user can be
  * allowed to call APIs without being allowed into the Data Studio. LumiBase
  * mirrors that by gating both self-identified Studio clients and the
- * server-known Studio management API surface with `appAccess` and
- * `enforceTfa`. Regular content API calls continue to rely on
- * collection/action permissions.
+ * server-known Studio management API surface with `appAccess`. Regular
+ * content API calls continue to rely on collection/action permissions.
+ *
+ * `enforceTfa` is different: it is a property of the *session*, not of the
+ * client (#987). A policy that "requires a TFA-verified session before it can
+ * be used" must hold on every route a session can reach — items, files,
+ * flows, AI, MCP — not only on requests that announce themselves as Studio.
+ * So requests outside the Studio surface still pass through
+ * {@link enforceSessionTfa}; only the `appAccess` wall stays Studio-only.
  */
 export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   // Organization authorization is independent of a site appAccess bundle.
@@ -72,7 +78,8 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
   if (isMcpPath(c.req.path) && !c.get('siteId') && c.get('auth')?.apiKey?.scope === 'organization') return next();
   const studioClient = isStudioClientRequest(c.req.header(STUDIO_CLIENT_HEADER), c.req.header('user-agent'));
   if (!studioClient && !isStudioAccessPath(c.req.path)) {
-    return next();
+    const denied = await enforceSessionTfa(c);
+    return denied ?? next();
   }
 
   if (PUBLIC_AUTH_PATHS.has(c.req.path) || isSocialAuthPublicPath(c.req.path)) {
@@ -115,34 +122,72 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
   }
 
   if (bundle.tfaRequired) {
-    const user = await loadUserTfaState(c.get('db'), auth.userId);
-    // A user who must have 2FA but has none yet needs to reach the enrollment
-    // endpoints, or `enforceTfa` is a lockout rather than a requirement (#735).
-    // Only enrolling is let through — once a factor exists, the session must
-    // be TFA-verified like everywhere else.
-    if (!user.enrolled && isTfaEnrollmentRequest(c.req.method, c.req.path)) {
-      c.set('access', bundle);
-      mergeRequestContext(c, { accessBundle: bundle });
-      return next();
-    }
-    if (!user.enrolled) {
-      return c.json(
-        { errors: [{ code: 'TFA_REQUIRED', message: 'Two-factor authentication enrollment is required for Studio access.' }] },
-        403,
-      );
-    }
-    if (!isSessionTfaVerified(auth)) {
-      return c.json(
-        { errors: [{ code: 'TFA_REQUIRED', message: 'A two-factor verified session is required for Studio access.' }] },
-        403,
-      );
-    }
+    const denied = await tfaDenial(c, auth, auth.userId);
+    if (denied) return denied;
   }
 
   c.set('access', bundle);
   mergeRequestContext(c, { accessBundle: bundle });
   return next();
 };
+
+/**
+ * `enforceTfa` outside the Studio surface (#987). Applies only to an
+ * interactive user session: API keys are non-interactive credentials and
+ * anonymous principals have no session, so both pass through unchanged, as
+ * do the public auth routes that carry their own credential. Returns the 403
+ * to send, or `null` to continue.
+ */
+async function enforceSessionTfa(c: Parameters<MiddlewareHandler<AppEnv>>[0]): Promise<Response | null> {
+  if (PUBLIC_AUTH_PATHS.has(c.req.path) || isSocialAuthPublicPath(c.req.path)) return null;
+  const auth = c.get('auth');
+  if (!isUserSession(auth)) return null;
+  if (auth.raw?.dev === true && auth.roles?.includes('admin')) return null;
+  // Policies are site-scoped: with no site there is no policy to enforce.
+  if (!c.get('siteId')) return null;
+
+  const bundle = await resolveAccessBundle(c, auth);
+  if (!bundle.tfaRequired) return null;
+  return tfaDenial(c, auth, auth.userId);
+}
+
+/** An interactive user session: a user id, and neither an API key nor anonymous. */
+function isUserSession(auth: AuthPrincipal | undefined): auth is AuthPrincipal & { userId: string } {
+  if (!auth?.userId) return false;
+  if (auth.type === 'anonymous' || auth.type === 'api_key') return false;
+  return !auth.apiKeyId;
+}
+
+/**
+ * The `enforceTfa` decision shared by the Studio wall and the session gate.
+ * A user who must have 2FA but has none yet needs to reach the enrollment
+ * endpoints, or `enforceTfa` is a lockout rather than a requirement (#735).
+ * Only enrolling is let through — once a factor exists, the session must be
+ * TFA-verified like everywhere else.
+ */
+async function tfaDenial(
+  c: Parameters<MiddlewareHandler<AppEnv>>[0],
+  auth: AuthPrincipal,
+  userId: string,
+): Promise<Response | null> {
+  const user = await loadUserTfaState(c.get('db'), userId);
+  if (!user.enrolled && isTfaEnrollmentRequest(c.req.method, c.req.path)) return null;
+  // `reason` tells a client what to do (#987): enroll a factor, or sign in
+  // again with the one it has.
+  if (!user.enrolled) {
+    return c.json(
+      { errors: [{ code: 'TFA_REQUIRED', message: 'Two-factor authentication enrollment is required for this account.', details: { reason: 'enrollment_required' } }] },
+      403,
+    );
+  }
+  if (!isSessionTfaVerified(auth)) {
+    return c.json(
+      { errors: [{ code: 'TFA_REQUIRED', message: 'A two-factor verified session is required for this account.', details: { reason: 'verification_required' } }] },
+      403,
+    );
+  }
+  return null;
+}
 
 async function resolveAccessBundle(
   c: Parameters<MiddlewareHandler<AppEnv>>[0],
@@ -216,6 +261,11 @@ async function loadUserTfaState(db: AppEnv['Variables']['db'], userId: string): 
  * method + path pairs, so nothing else under `/me` slips through.
  */
 const TFA_ENROLLMENT_REQUESTS = new Set([
+  // Read-only boot calls, so the Studio can render its shell and route the
+  // user to Settings → Security instead of failing every screen (#987).
+  'GET /api/v1/permissions/me',
+  'GET /api/v1/me/preferences',
+  'GET /api/v1/me/admin-path',
   'GET /api/v1/me/tfa',
   'POST /api/v1/me/tfa/setup',
   'POST /api/v1/me/tfa/confirm',

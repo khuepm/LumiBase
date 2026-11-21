@@ -95,6 +95,9 @@ describe.skipIf(!hasDbIntegrationUrl)('page sources — DB integration', () => {
       await db.insert(policies).values({ siteId: SITE, name: 'Editor', adminAccess: false, appAccess: true }).returning({ id: policies.id })
     )[0]!.id;
     await db.insert(permissionsTable).values([
+      // Page-builder access itself (#986): the editor may edit pages; what is
+      // under test is which collections a section may take its data from.
+      ...(['read', 'create', 'update'] as const).map((action) => ({ siteId: SITE, policyId: editorPolicy, collection: 'lumibase_pages', action, fields: ['*'] })),
       { siteId: SITE, policyId: editorPolicy, collection: 'posts', action: 'read', fields: ['*'] },
       { siteId: SITE, policyId: editorPolicy, collection: 'people', action: 'read', fields: ['title'] },
       { siteId: SITE, policyId: editorPolicy, collection: 'notes', action: 'read', fields: ['*'], permissions: { title: { _eq: 'mine' } } },

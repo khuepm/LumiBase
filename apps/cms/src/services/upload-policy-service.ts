@@ -1,6 +1,8 @@
 import { settings, scopeSite } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import {
+  CATALOGUED_UPLOAD_MIME_TYPES,
+  DEFAULT_UPLOAD_MIME_TYPES,
   UploadPolicyConfigSchema,
   resolveMaxBytes,
   resolveMimeAllowlist,
@@ -33,12 +35,52 @@ export interface UploadPolicyDeps {
   env?: Partial<Bindings>;
 }
 
+/** Opt-out env for {@link catalogueBoundMimeAllowlist}. */
+export const ALLOW_UNCATALOGUED_MIME_ENV = 'FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME';
+
+const CATALOGUED = new Set(CATALOGUED_UPLOAD_MIME_TYPES.map((m) => m.toLowerCase()));
+const warnedDropped = new Set<string>();
+
+/**
+ * The env MIME override, held to the upload type catalogue (#993).
+ *
+ * The admin API (`PUT /api/v1/uploads/config`) only accepts catalogued types,
+ * because only those have content sniffing and an extension map. The env
+ * override used to accept anything — `application/zip`, `text/html`, `*\/*` —
+ * so a single variable could re-open exactly the archive downloads FBI FLASH
+ * CC-111626-MW describes. Entries outside the catalogue (wildcards included)
+ * are now dropped with a one-time warning; an override that drops to nothing
+ * falls back to the default. `FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME=true`
+ * restores the old behaviour, and `lumibase doctor --security` reports it.
+ */
+export function catalogueBoundMimeAllowlist(
+  raw: string | undefined,
+  allowUncatalogued: string | undefined,
+): string[] {
+  const requested = resolveMimeAllowlist(raw);
+  if (allowUncatalogued === 'true') return requested;
+  const kept = requested.filter((mime) => CATALOGUED.has(mime.toLowerCase()));
+  const dropped = requested.filter((mime) => !CATALOGUED.has(mime.toLowerCase()));
+  const fresh = dropped.filter((mime) => !warnedDropped.has(mime));
+  if (fresh.length > 0) {
+    for (const mime of fresh) warnedDropped.add(mime);
+    console.warn(
+      `[upload-policy] FILE_UPLOAD_ALLOWED_MIME_TYPES: ignoring types outside the upload catalogue: ${fresh.join(', ')}. ` +
+        `Set ${ALLOW_UNCATALOGUED_MIME_ENV}=true to allow them anyway (they are accepted without content sniffing).`,
+    );
+  }
+  return kept.length > 0 ? kept : [...DEFAULT_UPLOAD_MIME_TYPES];
+}
+
 /** Config from env override → default, ignoring any DB row. */
 export function envFallbackPolicy(env?: Partial<Bindings>): UploadPolicyConfig {
+  const allow = (env as Record<string, string | undefined> | undefined)?.[ALLOW_UNCATALOGUED_MIME_ENV]
+    ?? process.env[ALLOW_UNCATALOGUED_MIME_ENV];
   return {
     maxBytes: resolveMaxBytes(env?.FILE_UPLOAD_MAX_BYTES ?? process.env.FILE_UPLOAD_MAX_BYTES),
-    allowedMimeTypes: resolveMimeAllowlist(
+    allowedMimeTypes: catalogueBoundMimeAllowlist(
       env?.FILE_UPLOAD_ALLOWED_MIME_TYPES ?? process.env.FILE_UPLOAD_ALLOWED_MIME_TYPES,
+      allow,
     ),
   };
 }

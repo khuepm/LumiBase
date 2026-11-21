@@ -276,7 +276,7 @@
       },
       "tokenPrompt": {
         "title": "Cần setup token",
-        "body": "Instance này được khởi động với LUMIBASE_REQUIRE_SETUP_TOKEN=true. Hãy dán setup token một lần được in trong log khởi động của CMS để tiếp tục.",
+        "body": "Việc setup instance này cần một token dùng một lần. Hãy dán token được in trong log khởi động của CMS (SETUP_TOKEN=…), hoặc LUMIBASE_SETUP_TOKEN mà người vận hành đã đặt, để tiếp tục.",
         "label": "Setup token",
         "submit": "Tiếp tục"
       }
