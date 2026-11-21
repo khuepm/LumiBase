@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-11-21T03:36:06.095Z
+version: 4
+lastUpdated: 2026-11-21T12:08:30.751Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 64456fef2a7ac15c
+sourceHash: 72e0b204fa836186
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-21T03:36:06.095Z
-codeVerifiedHash: 64456fef2a7ac15c
+codeVerified: 2026-11-21T12:08:30.751Z
+codeVerifiedHash: 72e0b204fa836186
 codeVerifiedClaims: 16
 ---
 
@@ -92,6 +92,28 @@ khớp SHA-256 đã ghi nhận (`importVerifiedBundle` trong
    nếu một bản triển khai cần cách ly theo từng extension ở đó.
 4. Không chọn C hay D: C không chạy được trên Workers, còn D dùng chung process
    nên không giới hạn được điều gì quan trọng ở đây.
+5. **Chỉ chạy những byte đã được xác minh (#1008), theo từng runtime:**
+
+   | Runtime | Quyết định |
+   | --- | --- |
+   | Node, process host | Đã vá (#990): một lần tải; chữ ký và SHA-256 được kiểm trên buffer đó; child nhận đúng các byte ấy. |
+   | Node, `EXTENSION_RUNTIME=in-process` | Đã vá: cùng phép kiểm một lần tải, rồi `import()` một `data:` URL của các byte đã xác minh (`ExtensionSandbox.loadVerifiedInProcess`), không bao giờ import URL của bundle. |
+   | Studio (trình duyệt) | Đã vá: `importVerifiedBundle` tải một lần, kiểm SHA-256, rồi import một `blob:` URL của các byte đó. Vì vậy `script-src` của CSP cho phép `blob:` (CMS và Studio Pages). Bundle của Studio phải là một file duy nhất, vì module `blob:` không phân giải được import tương đối. |
+   | Cloudflare Workers | **Chấp nhận rủi ro.** Workers không import được module `data:`/`blob:`, nên bundle được xác minh và import bằng hai lần fetch. Yêu cầu với operator: `EXTENSION_BUNDLE_ORIGINS` chỉ liệt kê origin bạn kiểm soát, phục vụ URL bất biến, định địa chỉ theo nội dung (SHA-256 nằm trong đường dẫn, không bao giờ bị ghi đè). `lumibase doctor --security` cảnh báo khi extension được bật trên Workers. Phương án B (Workers for Platforms) bỏ được yêu cầu này. |
+
+6. **Egress mạng của mã extension (#1009), theo từng runtime: chấp nhận rủi ro
+   ở tầng process; giới hạn ở tầng mạng.** Permission model của Node không
+   kiểm soát mạng, và một shim `fetch` trong child sẽ không phải là ranh giới.
+
+   | Runtime | Quyết định |
+   | --- | --- |
+   | Kubernetes (Helm chart) | `networkPolicy.egress.restrict=true` cấp cho pod CMS và worker một egress policy. Nó cho phép DNS, các service kèm sẵn của chính release, các peer trong `networkPolicy.egress.allowTo` và địa chỉ công khai, và chặn `169.254.0.0/16` (metadata của cloud), các dải private, CGNAT và loopback. Mặc định tắt (nó giới hạn toàn bộ CMS, và cần CNI có thực thi egress), khuyến nghị bật ở production. Khi đó chart đặt `LUMIBASE_EGRESS_RESTRICTED=true`. |
+   | Node / Docker không dùng chart | Yêu cầu với operator: chặn dải metadata và private cho container CMS (firewall, rule mạng của Docker hoặc một egress proxy), rồi đặt `LUMIBASE_EGRESS_RESTRICTED=true`. |
+   | Cloudflare Workers | Chấp nhận rủi ro: `fetch` ra ngoài từ isolate không bị giới hạn. Workers không có mạng private hay endpoint metadata nào để chạm tới; rủi ro còn lại là việc đẩy ra ngoài dữ liệu mà extension nhận qua `ctx`. |
+
+   Ở production, khi có cấu hình extension, CMS ghi một cảnh báo lúc khởi động
+   và `lumibase doctor --security` báo `extension-egress-unrestricted` cho tới
+   khi đặt `LUMIBASE_EGRESS_RESTRICTED=true`.
 
 ## Consequences
 
@@ -99,20 +121,19 @@ khớp SHA-256 đã ghi nhận (`importVerifiedBundle` trong
   file, tạo process hay vá các phép kiểm capability của host; những gì nó làm
   được là những gì capability đã khai báo cho phép `ctx` làm.
 - Permission model không bao phủ mạng: mã trong child vẫn mở được kết nối riêng,
-  nhưng không có credential nào của CMS. Hãy giới hạn egress ở tầng container
-  nếu điều đó quan trọng.
+  nhưng không có credential nào của CMS. Thay vào đó, egress được giới hạn ở
+  tầng mạng (quyết định 6).
 - Ngoài process, `ctx.env.EXTENSION_X` là một promise (cần `await`), `ctx.fetch`
   trả về bản sao của response (tối đa 5 MB), `ctx.logger` của CDC là console
   của child, và factory của extension chạy một lần cho mỗi child thay vì mỗi
   request. Tham số và kết quả phải structured-clone được.
 - Bundle `https` từ xa nay nạp được trên Node: host tải nó về, điều mà
   `import()` của Node không làm được.
-- Ngoài process, không có gì chạy mà chưa được xác minh: chỉ có một lần tải,
-  và chữ ký cùng SHA-256 được kiểm trên chính buffer mà child nhận. Một server
-  trả lời khác ở lần tải sau sẽ bị từ chối ở lần nạp đó. Đường chạy trong
-  process (Workers, `EXTENSION_RUNTIME=in-process`) vẫn xác minh một response
-  và import URL riêng.
-- Kiểm tra toàn vẹn của Studio bắt được bundle bị thay ở URL của nó, nhưng không
-  bắt được server trả lời request kiểm tra và lần import module khác nhau; đóng
-  khe hở đó cần import qua `blob:` và do đó cần `blob:` trong `script-src` của
-  CSP Studio, việc này vẫn để lại sau.
+- Trên Node (cả hai runtime) và trong Studio, không có gì chạy mà chưa được
+  xác minh: chỉ có một lần tải, và chữ ký cùng SHA-256 được kiểm trên chính
+  buffer được thực thi. Một server trả lời khác ở lần tải sau sẽ bị từ chối ở
+  lần nạp đó. Chỉ còn Cloudflare Workers xác minh một response và import URL
+  riêng (quyết định 5, chấp nhận rủi ro).
+- `script-src` cho phép `blob:`. Một trang chỉ tạo được script `blob:` khi đã
+  có script đang chạy, nên việc này không mở thêm đường chèn mã nào;
+  `'unsafe-inline'` và `'unsafe-eval'` vẫn tắt.

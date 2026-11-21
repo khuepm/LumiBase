@@ -108,6 +108,36 @@ describe('bundle integrity (#990)', () => {
     await expect(assertBundleIntegrity('panel', 'https://ext.example/p.js', 'a'.repeat(64))).rejects.toThrow(/404/);
   });
 
+  it('imports the verified bytes from a blob: URL, never the bundle URL (#1008)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(bytes, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const loader = await import('../extension-loader');
+    const imported: string[] = [];
+    let importedText = '';
+    vi.spyOn(loader.bundleImporter, 'import').mockImplementation(async (url: string) => {
+      imported.push(url);
+      importedText = await (await import('node:buffer')).resolveObjectURL(url)!.text();
+      return { default: 'ok' };
+    });
+    const mod = await loader.importVerifiedBundle('panel', 'https://ext.example/p.js', await sha256(bytes));
+    expect(mod).toEqual({ default: 'ok' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(imported).toHaveLength(1);
+    expect(imported[0]).toMatch(/^blob:/);
+    expect(importedText).toBe(new TextDecoder().decode(bytes));
+  });
+
+  it('a second, different response is never what runs', async () => {
+    // First (and only) download is tampered: refused before any import.
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response('tampered', { status: 200 }))
+      .mockResolvedValue(new Response(bytes, { status: 200 })));
+    const loader = await import('../extension-loader');
+    const importSpy = vi.spyOn(loader.bundleImporter, 'import');
+    await expect(loader.importVerifiedBundle('panel', 'https://ext.example/p.js', await sha256(bytes))).rejects.toThrow(/does not match/);
+    expect(importSpy).not.toHaveBeenCalled();
+  });
+
   it('never imports a mismatched bundle', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('tampered', { status: 200 })));
     const { importVerifiedBundle } = await import('../extension-loader');

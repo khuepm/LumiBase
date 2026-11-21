@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-11-21T00:28:04.283Z
+version: 4
+lastUpdated: 2026-11-21T12:08:32.348Z
 sourceLang: en
-contentHash: caac29248d95f271
-codeVerified: 2026-11-21T00:28:04.283Z
-codeVerifiedHash: caac29248d95f271
+contentHash: 493dacdb586f3c5b
+codeVerified: 2026-11-21T12:08:32.348Z
+codeVerifiedHash: 493dacdb586f3c5b
 codeVerifiedClaims: 16
 ---
 
@@ -44,7 +44,7 @@ Mapped to the control table in the FLASH:
 | Least privilege | Grant `lumibase_pages` only to people who edit pages; scope it with a row rule. Keep extensions and API keys with admins. Agents cannot install extensions, mint keys, or change settings, roles or webhooks without a human, at any autonomy level. |
 | Monitor integrity | Filter the security audit tab by `admin_change` (who changed what, from where) and `content_integrity_alert` (suspicious content that went live). |
 | File-upload controls | Keep `FILE_UPLOAD_ALLOWED_MIME_TYPES` within the catalogue; archives and scripts are not uploadable by default. |
-| Patching and trusted components | Extensions load only from `EXTENSION_BUNDLE_ORIGINS` with a valid signature; a bundle change is re-verified. On Node in production each extension runs in its own process, without the CMS's secrets (`EXTENSION_RUNTIME`, [ADR-015](../architecture/decisions/adr-015-extension-isolation.md)). |
+| Patching and trusted components | Extensions load only from `EXTENSION_BUNDLE_ORIGINS` with a valid signature; a bundle change is re-verified. On Node in production each extension runs in its own process, without the CMS's secrets (`EXTENSION_RUNTIME`, [ADR-015](../architecture/decisions/adr-015-extension-isolation.md)). Restrict the CMS's egress so extension code cannot reach cloud metadata or private networks (Helm `networkPolicy.egress.restrict`, then `LUMIBASE_EGRESS_RESTRICTED=true`). On Cloudflare Workers, list only origins you control that serve immutable, content-addressed bundle URLs. |
 | Centralise evidence | Export the audit log (`GET /api/v1/admin/security/audit-log/export`) to storage outside the CMS. |
 
 Run `lumibase doctor --security` against your production environment; it

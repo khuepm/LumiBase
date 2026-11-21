@@ -9,7 +9,14 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Security
+- **Extensions run only the bytes that were verified (#1008, ADR-015).** On Node with `EXTENSION_RUNTIME=in-process`, an extension bundle was verified on one download and then imported from its URL with a second, unchecked one. It is now downloaded once, checked against the recorded SHA-256 and the signature on that buffer, and imported from a `data:` URL of those exact bytes, as the out-of-process host already did. The Studio loader likewise downloads a UI bundle once, checks its SHA-256 and imports a `blob:` URL of those bytes; the CMS and Studio Pages CSP `script-src` now allow `blob:` for that. On Cloudflare Workers, which cannot import `data:`/`blob:` modules, the two-fetch load is an accepted risk with an operator requirement (immutable, content-addressed bundle origins you control); `lumibase doctor --security` reports `extension-workers-bundle-origin`.
+- **Extension network egress (#1009, ADR-015).** Extension code can open connections outside the capability-checked `ctx.fetch`; Node's permission model has no network control. The Helm chart gains `networkPolicy.egress.restrict`: an egress policy for the CMS and worker pods that allows DNS, the release's bundled services, `networkPolicy.egress.allowTo` peers and public addresses, and blocks cloud metadata (`169.254.0.0/16`), private, CGNAT and loopback ranges. It is off by default and recommended in production. With extensions enabled in production, the CMS logs a startup warning and `lumibase doctor --security` reports `extension-egress-unrestricted` until `LUMIBASE_EGRESS_RESTRICTED=true` (set by the chart with the policy).
+
+### Upgrade notes
+- **Studio extensions (#1008).** A Studio extension bundle with a recorded hash is imported from a `blob:` URL, so it must be a single file: relative imports (`./chunk.js`) do not resolve. A custom CSP in front of the Studio must allow `blob:` in `script-src`.
+- **Node with `EXTENSION_RUNTIME=in-process` (#1008).** A remote `https` bundle now loads (the host downloads it); before, Node could not import it at all.
+- **Egress (#1009).** Before enabling `networkPolicy.egress.restrict`, list in `networkPolicy.egress.allowTo` any private-address peer the CMS needs (an external database, SMTP relay or object store on a private network). Outside the chart, restrict egress yourself and set `LUMIBASE_EGRESS_RESTRICTED=true`.
 
 ## [2.2.0] - 2026-11-21
 

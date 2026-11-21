@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 9
-lastUpdated: 2026-10-17T16:36:20.639Z
+version: 10
+lastUpdated: 2026-11-21T12:08:32.120Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 7af46441f83e7d8e
+sourceHash: 79aeceacf3fa2d6d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-17T16:36:20.639Z
-codeVerifiedHash: 7af46441f83e7d8e
+codeVerified: 2026-11-21T12:08:32.120Z
+codeVerifiedHash: 79aeceacf3fa2d6d
 codeVerifiedClaims: 56
 ---
 
@@ -60,7 +60,7 @@ Trong **78 điểm yếu có áp dụng**: **78 đã vá (100%)**, 0 một phầ
 
 | # | CWE | Điểm yếu | Verdict | Bằng chứng / ghi chú |
 |---|-----|----------|---------|----------------------|
-| 1 | 79 | Cross-site Scripting | ✅ | Allowlist DOMPurify tập trung `apps/studio/src/lib/sanitize-html.ts`; markdown escape rồi sanitize; CSP `script-src 'self'` trong `apps/cms/src/middleware/security-headers.ts`; quét active-content SVG khi upload. |
+| 1 | 79 | Cross-site Scripting | ✅ | Allowlist DOMPurify tập trung `apps/studio/src/lib/sanitize-html.ts`; markdown escape rồi sanitize; CSP `script-src 'self' blob:` trong `apps/cms/src/middleware/security-headers.ts`; quét active-content SVG khi upload. |
 | 2 | 89 | SQL Injection | ✅ | **Đã vá 2026-07-06.** `materialize-service.ts` nay dùng bind parameter của Drizzle cho mọi value và `sql.identifier()` cho tên bảng vật lý đã kiểm; chỗ duy nhất không thể dùng bind param (thân hàm PL/pgSQL của trigger) kiểm id fail-closed theo `/^[A-Za-z0-9_-]+$/` thay vì escape. Các nơi khác Drizzle parameterized xuyên suốt. Có test `materialize-sql-injection.test.ts` + `materialize-service.test.ts`. |
 | 3 | 352 | CSRF | ✅ | Trên nhánh này auth chỉ dùng bearer header — không phát hành cookie, nên không có credential tự-gửi để CSRF lợi dụng. Origin CORS được kiểm (`apps/cms/src/config/cors.ts`). Kiểm lại nếu refresh qua cookie được merge (đang ở nhánh tính năng, commit 807d0fbd / 4469c36c — chưa có trên nhánh này). |
 | 4 | 862 | Missing Authorization | ✅ | `withAuth()` phủ toàn bộ stack `/api/v1` (`apps/cms/src/index.ts`); chỉ các bypass chủ đích: login, setup wizard (chặn theo state), recovery (giới hạn tần suất), đổi ticket realtime. |

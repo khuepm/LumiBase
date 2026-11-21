@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 27
-lastUpdated: 2026-11-21T00:28:03.227Z
+version: 28
+lastUpdated: 2026-11-21T12:08:31.276Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 474ca884dbb2b4af
+sourceHash: 305405771bb1e9c7
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-21T00:28:03.227Z
-codeVerifiedHash: 474ca884dbb2b4af
-codeVerifiedClaims: 102
+codeVerified: 2026-11-21T12:08:31.276Z
+codeVerifiedHash: 305405771bb1e9c7
+codeVerifiedClaims: 104
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -55,6 +55,7 @@ trong build artifact.
 | `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ | **bật ở production**, tắt ở nơi khác | Khiến `POST /api/v1/setup/complete` đòi một setup token dùng một lần. `true` / `1` / `yes` bật, `false` / `0` / `no` tắt có chủ đích (provisioning tự động). Khi không đặt, cổng bật nếu `LUMIBASE_ENV` hoặc `NODE_ENV` là `production` (#992) hoặc khi `LUMIBASE_SETUP_TOKEN` được đặt — nếu không, ai chạm tới cổng trước sẽ tạo được tài khoản admin. Node/Docker sinh token lúc khởi động và in một lần dạng `[lumibase-cms] SETUP_TOKEN=…`. |
 | `LUMIBASE_ADMIN_REQUIRE_MFA` | ✗ | **bật ở production** khi có khoá mã hoá, tắt ở nơi khác | Wizard setup có gắn policy `enforceTfa` "Administrator MFA" vào role Administrator hay không (#987), để admin đầu tiên đăng ký yếu tố thứ hai trước khi dùng Studio. `true` / `1` / `yes` bật (passkey dùng được khi không có khoá mã hoá), `false` / `0` / `no` tắt. Chỉ đọc một lần, lúc setup. |
 | `EXTENSION_RUNTIME` | ✗ (Node/Docker) | **`process` ở production**, `in-process` ở nơi khác | Nơi extension phía server chạy (#990, ADR-015). `process`: mỗi extension trong child process riêng với môi trường rỗng và permission model của Node; các lời gọi `ctx` của nó do CMS kiểm. `in-process`: trong process của CMS. Bị bỏ qua trên Cloudflare Workers (luôn chạy trong process). |
+| `LUMIBASE_EGRESS_RESTRICTED` | ✗ | tắt | Đặt `true` khi lưu lượng ra ngoài của CMS không còn chạm được tới metadata của cloud hay mạng private (#1009, ADR-015). Helm chart tự đặt nó cùng `networkPolicy.egress.restrict`; ở nơi khác, đặt nó sau khi đã thêm rule firewall, mạng Docker hoặc egress proxy. Nếu thiếu, production có `EXTENSION_BUNDLE_ORIGINS` sẽ ghi cảnh báo lúc khởi động và `lumibase doctor --security` báo `extension-egress-unrestricted`. Nó chỉ ghi nhận sự việc, tự nó không giới hạn gì. |
 | `PASSWORD_PBKDF2_ITERATIONS` | ✗ (Node/Docker) | `100000` | Mức chi phí PBKDF2 cho hash mật khẩu mới, 100.000–2.000.000; khi đăng nhập, mật khẩu cũ được băm lại lên mức này (#994). Bị bỏ qua trên Cloudflare Workers (Web Crypto giới hạn ở 100.000) — đừng nâng nếu database sau này có thể được phục vụ bởi Workers. |
 | `API_KEY_DEFAULT_TTL_DAYS` | ✗ | `90` | Thời hạn của API key tạo mà không có `expiresAt` (#994). `0` khôi phục mặc định cũ là không bao giờ hết hạn; `"expiresAt": null` tường minh luôn tạo key không hết hạn. |
 | `FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME` | ✗ | tắt | `true` cho phép `FILE_UPLOAD_ALLOWED_MIME_TYPES` nhận các loại ngoài catalogue upload, vốn được nhận mà không dò nội dung (#993). `lumibase doctor --security` sẽ báo cáo. |
