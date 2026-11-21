@@ -112,7 +112,7 @@ export async function verifyReleaseManifest(
 
   let json: unknown;
   try {
-    json = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    json = JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes));
   } catch {
     return { ok: false, reason: 'MALFORMED_PAYLOAD' };
   }

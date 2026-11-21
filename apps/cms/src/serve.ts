@@ -200,6 +200,7 @@ async function main() {
   let goalDispatchTask: ScheduledTask | undefined;
   let importTask: ScheduledTask | undefined;
   let localeJobTask: ScheduledTask | undefined;
+  let releasePullTask: ScheduledTask | undefined;
   let loadGuardTimer: ReturnType<typeof setInterval> | undefined;
 
   if (runWorkers) {
@@ -670,6 +671,39 @@ async function main() {
     ),
   );
 
+  // ── Release manifest pull (#897) ────────────────────────────────────────
+  // Opt-in (LUMIBASE_RELEASE_MANIFEST_URL). Once at start, then a minute tick
+  // that pulls only when LUMIBASE_RELEASE_MANIFEST_REFRESH_S has passed since
+  // the last attempt by any replica — so an idle instance still picks up a
+  // new manifest without waiting for a request to evaluate flags. A failed
+  // pull keeps the accepted manifest; nothing here can turn a feature off.
+  const { releaseEnvFromRecord, runScheduledReleasePull } = await import('./modules/release-flags/service');
+  const releasePullDeps = () => ({
+    systemDb: rotatorDb,
+    env: releaseEnvFromRecord(process.env),
+    cache: runtime.cache,
+  });
+  if (releasePullDeps().env.LUMIBASE_RELEASE_MANIFEST_URL) {
+    // Not awaited: an unreachable release server must not delay the start
+    // (the fetch has its own 5 s timeout).
+    void runScheduledReleasePull(releasePullDeps()).then((result) => {
+      if (result.status === 'pulled') {
+        console.log('[release-flags] startup pull', JSON.stringify(result.outcome));
+      }
+    });
+    releasePullTask = cron.schedule(
+      '* * * * *',
+      leaderLockedCallback(
+        'release-manifest-pull',
+        50_000,
+        async () => {
+          await runScheduledReleasePull(releasePullDeps());
+        },
+        lockOpts,
+      ),
+    );
+  }
+
   const { runGoalDispatchTick } = await import('./services/goal-dispatch-service');
   const goalDispatchDeps = { db: rotatorDb, queue: runtime.queue };
   goalDispatchTask = cron.schedule(
@@ -785,6 +819,7 @@ async function main() {
     goalDispatchTask?.stop();
     importTask?.stop();
     localeJobTask?.stop();
+    releasePullTask?.stop();
     extensionDevClient?.stop();
     if (runHttp) {
       pressureLimiter.stop();

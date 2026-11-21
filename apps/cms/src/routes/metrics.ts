@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import {
   Counter,
+  Gauge,
   Histogram,
   Registry,
   collectDefaultMetrics,
@@ -42,6 +43,31 @@ if (canCollectDefaultMetrics()) {
 // ---------------------------------------------------------------------------
 // Custom metrics
 // ---------------------------------------------------------------------------
+
+/**
+ * Release-manifest pulls by outcome (#897): `accepted` (a newer manifest was
+ * stored), `unchanged` (the same one again), `failed` (fetch or verification).
+ */
+export const releaseManifestPullsTotal = new Counter({
+  name: 'lumibase_release_manifest_pulls_total',
+  help: 'Release manifest pulls by outcome',
+  labelNames: ['outcome'] as const,
+  registers: [register],
+});
+
+/** Consecutive failed release-manifest pulls (0 after a success). */
+export const releaseManifestConsecutiveFailures = new Gauge({
+  name: 'lumibase_release_manifest_consecutive_failures',
+  help: 'Consecutive failed release manifest pulls',
+  registers: [register],
+});
+
+/** Unix time of the last successful release-manifest pull. */
+export const releaseManifestLastSuccess = new Gauge({
+  name: 'lumibase_release_manifest_last_success_timestamp_seconds',
+  help: 'Unix time of the last successful release manifest pull',
+  registers: [register],
+});
 
 /** Total HTTP requests processed. */
 export const httpRequestsTotal = new Counter({

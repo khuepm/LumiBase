@@ -1,11 +1,11 @@
 ---
-version: 3
-lastUpdated: 2026-11-17T14:46:37.198Z
+version: 6
+lastUpdated: 2026-11-19T08:17:22.428Z
 sourceLang: en
-contentHash: c9ed73e7edd52284
-codeVerified: 2026-11-17T14:46:37.198Z
-codeVerifiedHash: c9ed73e7edd52284
-codeVerifiedClaims: 26
+contentHash: f879fd38950937f2
+codeVerified: 2026-11-19T08:17:22.428Z
+codeVerifiedHash: f879fd38950937f2
+codeVerifiedClaims: 46
 ---
 
 # Release Flags
@@ -83,6 +83,12 @@ There are two channels. Both go through the same verification.
   The bootstrap admin can trigger a fetch with
   `POST /api/v1/release-flags/manifest/pull`.
 
+  The pull does not wait for traffic: the instance also pulls once at start
+  and from a one-minute schedule (`node-cron` in the Docker worker process,
+  the Cron Trigger `scheduled` handler on Workers). A scheduled pull runs only
+  when `LUMIBASE_RELEASE_MANIFEST_REFRESH_S` has passed since the last attempt
+  by any replica, so several replicas still pull about once per interval.
+
 If a fetch fails or a manifest is rejected, the instance keeps the manifest it
 already accepted. Losing contact with LumiBase never turns a released feature
 off. The pull does not follow redirects.
@@ -95,6 +101,69 @@ audit log at instance scope (no site), as `release_flags.manifest_accepted` or
 is still in `LUMIBASE_RELEASE_PUBLIC_KEYS` with the same PEM. Removing a key, for
 example after a leak, withdraws every manifest it signed: flags fall back to
 their stage default until a manifest signed by a trusted key arrives.
+
+## Operating the release channel (LumiBase side)
+
+This is how LumiBase runs the issuing side. Self-hosted operators only need the
+public key and, if they opt in, the pull URL.
+
+**Key custody.** The release private key exists in two places only: the
+`LUMIBASE_RELEASE_SIGNING_KEY` secret of the GitHub environment
+`release-manifest`, and an offline backup held by the maintainers. It is never
+committed, never written to a CI log or disk, and never stored on an instance —
+instances hold public keys only. The environment requires reviewer approval
+and only allows the `main` branch, so a manifest is issued by one person and
+approved by another.
+
+**Issuing.** Run the **Release manifest** workflow
+(`.github/workflows/release-manifest.yml`, manual dispatch) with a channel and
+the full list of released flags. It shows the manifest currently published on
+that channel, signs a new one with `manifest.mjs sign --key-env` (the key is
+read from the environment, not a file), verifies it with `manifest.mjs verify`
+against the published public keys and the channel's audience, uploads it to
+`<bucket>/flags/<channel>.json`, and keeps the envelope as a run artifact. It
+needs these settings on the `release-manifest` environment:
+
+| Name | Kind | Value |
+|---|---|---|
+| `LUMIBASE_RELEASE_SIGNING_KEY` | secret | Ed25519 private key (PEM) |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | secret | R2 write access to the manifest bucket |
+| `LUMIBASE_RELEASE_KEY_ID` | variable | Key id of the signing key, e.g. `lumibase-release-v1` |
+| `LUMIBASE_RELEASE_PUBLIC_KEYS` | variable | The same JSON instances use |
+| `LUMIBASE_RELEASE_MANIFEST_BUCKET` | variable | R2 bucket that serves the manifests |
+| `LUMIBASE_RELEASE_MANIFEST_BASE_URL` | variable | Public `https://` URL of that bucket |
+
+**Audiences.** Each LumiBase-operated environment has its own channel and
+instance id, set in `apps/cms/wrangler.toml`: `lumibase-staging`,
+`lumibase-production`, `lumibase-demo`, `lumibase-dev`. A manifest issued for
+one of them carries that id as its `audience`, so it cannot be replayed on
+another environment. Point each environment's `LUMIBASE_RELEASE_MANIFEST_URL`
+at `<base>/flags/<instance id>.json`. The `public` channel is signed with
+audience `"*"` for self-hosted instances that opted in to the pull.
+
+**Rotating the key.**
+
+1. `manifest.mjs keygen --key-id lumibase-release-v2` on an offline machine.
+2. Add the new public key next to the old one in `LUMIBASE_RELEASE_PUBLIC_KEYS`
+   everywhere (instances and the workflow variable) and deploy. Both keys are
+   now trusted.
+3. Replace `LUMIBASE_RELEASE_SIGNING_KEY` and `LUMIBASE_RELEASE_KEY_ID` with the
+   new key and issue a new manifest on every channel.
+4. After every instance reports the new manifest (`acceptedIssuedAt` in
+   `/health`), remove the old public key everywhere. Manifests it signed stop
+   counting from then on.
+5. For a leaked key, skip the overlap: remove the old key first (flags fall
+   back to their stage defaults) and issue with the new one.
+
+**Monitoring.** With observability access (`/metrics` credentials),
+`GET /health` adds `releaseManifest`: `pull` (`not-configured`, `pending`, `ok`
+or `failing`), `lastAttemptAt`, `lastSuccessAt`, `acceptedIssuedAt`,
+`consecutiveFailures` and `lastError`. The history is shared by every replica
+through the runtime cache. A failing pull never degrades the health status,
+because the accepted manifest stays in force. `/metrics` exposes
+`lumibase_release_manifest_pulls_total{outcome}`,
+`lumibase_release_manifest_consecutive_failures` and
+`lumibase_release_manifest_last_success_timestamp_seconds`.
 
 ## Configuration
 
@@ -121,6 +190,27 @@ The manifest endpoints refuse API keys. A rejected manifest answers
 expired, not yet valid, wrong audience or malformed payload; `409` for `STALE`
 (older than the accepted one) or when no trusted key is configured.
 
+## Studio
+
+**Settings → System → Release flags** lists the flags for the active site.
+
+- Site admins see every declared flag: description, stage, whether this
+  deployment released it and why (the operator, the LumiBase manifest or the
+  stage default), whether it is on for this site and why (follows the release,
+  chosen for this site, or site default), owner and removal date.
+- A released flag declared `siteToggle` has a switch for the site, and a
+  **Use default** button clears the site's choice (`null`). The switch is
+  disabled with an explanation while the deployment has not released the flag.
+- Members see only the released flags and whether each is on, read-only.
+- Managing the signed manifest stays an API for the bootstrap admin; Studio
+  has no page for it.
+
+Other Studio screens hide the UI of a feature whose flag is off with
+`useReleaseFlag(key)` or `<ReleaseFlagGate flag="…">` from
+`apps/studio/src/lib/release-flags.tsx`. The list is read once per session and
+site; a read error keeps the feature hidden. Hiding is a convenience — the
+server still answers `404` on a gated route.
+
 ## Gating code (developers)
 
 ```ts
@@ -145,6 +235,57 @@ Rules for a new flag:
    feature is off.
 3. When the feature is generally available, delete the flag and its checks.
 
+## Existing switches
+
+Before the registry, several features had their own per-site switch in
+`lumibase_settings`. Each one is either a **release gate** (it decides whether
+a rolled-out feature runs at all) or a **configuration value** (it tunes how a
+feature that is already available behaves). Only release gates belong in the
+registry ([#896](https://github.com/khuepm/LumiBase/issues/896)).
+
+Release gates are declared in the registry with `stage: 'ga'`, `siteToggle`
+and `siteDefault: false`, and keep their original storage through
+`siteSetting`. No stored value moved:
+
+| Flag | Stored in | Reader |
+|---|---|---|
+| `content-os.reconciler` | `contentOs.reconciler` | `getContentOsFlags` |
+| `content-os.veto-window` | `contentOs.vetoWindow` | `getContentOsFlags` |
+| `content-os.agent-review` | `contentOs.agentReview` | `getContentOsFlags` |
+| `content-os.mcp` | `contentOs.mcp` | `getContentOsFlags` |
+| `ai-decisions.flows` | `aiDecisions.flows` | `readDecisionSettings` |
+| `ai-decisions.drift` | `aiDecisions.drift` | `readDecisionSettings` |
+
+What this changes, and what it does not:
+
+- With no manifest and no `LUMIBASE_RELEASE_FLAGS`, every site behaves as
+  before: `ga` is released, so the stored value decides.
+- A manifest or `LUMIBASE_RELEASE_FLAGS` can now **withdraw** one of these
+  features on a whole deployment, e.g. `content-os.mcp=off`. It can never turn
+  a feature on for a site that has not chosen it.
+- `PUT /api/v1/release-flags/site` writes the choice to the original object
+  (`contentOs`, `aiDecisions`), so the feature's reader and the existing
+  settings screens see the same value.
+- `ai-decisions.flows` and `ai-decisions.drift` also need the site's AI
+  decisions opt-in (`aiDecisions.enabled`); the flag alone does not send
+  content to a provider.
+- Code that runs outside a request (reconciler cycles, queue consumers) reads
+  the release gate with `resolveStoredSiteFlags` from
+  `modules/release-flags/gate.ts`. If the manifest cannot be read, the last
+  manifest the process read still applies, so a read error never switches a
+  withdrawn feature back on.
+
+Configuration values stay where they are, read by their own endpoints:
+
+| Settings key | Why it is configuration |
+|---|---|
+| `aiDecisions` (`enabled`, limits, `review`) | `enabled` is the site's consent to send content to a provider and its kill switch; `review` is a per-collection pilot. |
+| `files.dam` | Delete policy, version retention, metadata and malware scanning options. |
+| `openapi` | Whether the live OpenAPI document is exposed and to which callers. |
+| `encryption.envelope` | Security mode with a background migration, changed with step-up auth. |
+| `deployment.environments` | Mapping of deploy targets to environments and approval gates. |
+| `cdc_feed`, `erasureDualControl`, `media.signedTransform`, `upload_policy`, `password_policy`, `login_security_policy`, `preview`, `locales`, `revalidation.targets`, `retention.policies` | Operational settings, not feature switches. |
+
 ## Limits
 
 - **Not a security or licensing boundary on self-hosted instances.** The code
@@ -155,8 +296,10 @@ Rules for a new flag:
   `LUMIBASE_RELEASE_MANIFEST_URL` is set.
 - **Propagation is not instant across replicas.** The replica that accepts a
   manifest uses it immediately; other replicas read it within 30 seconds. A site
-  choice made through the API is visible on the next request; one written
-  through the generic settings endpoint can take up to 60 seconds.
+  choice made through the API is visible on the next request. A write through
+  the generic settings endpoint to `release.flags`, `contentOs` or
+  `aiDecisions` drops the cached copy, so it is visible on the next request
+  too; a change made directly in the database can take up to 60 seconds.
 
 ## Multi-tenancy
 
@@ -164,9 +307,10 @@ Rules for a new flag:
 |---|---|---|
 | Accepted manifest (`lumibase_release_manifests`, one row) | Deployment-wide | It records what the deployment released. It holds no tenant data. |
 | `LUMIBASE_RELEASE_FLAGS`, trusted keys, pull URL | Deployment-wide | Operator configuration. |
-| Site choices (`lumibase_settings`, key `release.flags`) | Per site | Under the existing `site_isolation` RLS policy. |
-| Cache entry `release-flags:site:{siteId}` | Per site | The key contains the site id. |
+| Site choices (`lumibase_settings`, key `release.flags`, and `contentOs` / `aiDecisions` for existing switches) | Per site | Under the existing `site_isolation` RLS policy. |
+| Cache entry `release-flags:site:v2:{siteId}` | Per site | The key contains the site id. |
 
 Verified by `apps/cms/src/modules/release-flags/__tests__/release-flags.db.integration.test.ts`
-and `routes.db.integration.test.ts` in the same folder: a choice on one site does
+, `legacy-switches.db.integration.test.ts` and `routes.db.integration.test.ts`
+in the same folder: a choice on one site does
 not change another site, and a gated route opens only on the site that chose it.

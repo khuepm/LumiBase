@@ -1,11 +1,11 @@
 ---
-version: 62
-lastUpdated: 2026-11-20T05:35:06.709Z
+version: 65
+lastUpdated: 2026-11-21T01:11:44.322Z
 sourceLang: en
-contentHash: a752c28a3a48bf3d
-codeVerified: 2026-11-20T05:35:06.709Z
-codeVerifiedHash: a752c28a3a48bf3d
-codeVerifiedClaims: 652
+contentHash: c2a06d08a4ff8982
+codeVerified: 2026-11-21T01:11:44.322Z
+codeVerifiedHash: c2a06d08a4ff8982
+codeVerifiedClaims: 656
 ---
 
 # Hono API Specification — LumiBase
@@ -344,13 +344,25 @@ manifest and chosen per site. Full guide: [Release flags](../features/release-fl
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/api/v1/release-flags` | member | `{ key, enabled }[]` of released flags only for the active site; site admins get every flag plus stage, `releasedBy`, `enabledBy`, `siteValue`, owner and `removeBy` |
-| `PUT` | `/api/v1/release-flags/site` | site-admin | Body `{ flags: { "<key>": true \| false \| null } }`; `null` clears the choice. `400 UNKNOWN_FLAG` / `NOT_SITE_TOGGLE` |
-| `GET` | `/api/v1/release-flags/manifest` | bootstrap admin | Accepted manifest, trusted key ids, pull configuration and last pull result |
+| `PUT` | `/api/v1/release-flags/site` | site-admin | Body `{ flags: { "<key>": true \| false \| null } }`; `null` clears the choice. Switches that predate the registry (`content-os.*`, `ai-decisions.flows`/`drift`) are written to their original settings object (`contentOs`, `aiDecisions`). `400 UNKNOWN_FLAG` / `NOT_SITE_TOGGLE` |
+| `GET` | `/api/v1/release-flags/manifest` | bootstrap admin | Accepted manifest, trusted key ids, pull configuration, last pull result in this process (`lastPull`) and the deployment-wide pull history (`pullHistory`) |
 | `PUT` | `/api/v1/release-flags/manifest` | bootstrap admin | Body `{ keyId, payload, signature }` (Ed25519 over the base64-decoded payload). `422` / `409` `MANIFEST_REJECTED` with a `reason` |
 | `POST` | `/api/v1/release-flags/manifest/pull` | bootstrap admin | Fetch from `LUMIBASE_RELEASE_MANIFEST_URL` now. `409 PULL_NOT_CONFIGURED`, `502 PULL_FAILED` |
 
 The manifest endpoints refuse API keys. A gated route answers `404 NOT_FOUND`
 while its flag is off, like an unknown route.
+
+
+### In-app upgrade
+
+A running instance cannot replace itself: these endpoints check that an upgrade is safe and ask the
+operator's deploy hook to roll the deployment. Full guide: [Upgrade operations](../operations/upgrades.md#in-app-upgrade-button).
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/system/upgrade/preflight` | bootstrap admin (no API key) | In-app upgrade preflight (#898): current and target version, `minimumSafeUpgradeVersion`, pending migrations, `migrationWarning`, who runs migrations, provider configuration, `checks[]`, `canUpgrade`, latest request |
+| `POST` | `/api/v1/system/upgrade` | bootstrap admin (no API key) | Body `{ targetVersion, backupAcknowledged: true, retry? }`. Calls the configured upgrade hook once per target version; `202` new request, `200` + `meta.idempotent` for one already recorded. `422 BACKUP_NOT_ACKNOWLEDGED`, `409 TARGET_MISMATCH` / `PREFLIGHT_FAILED` / `PREVIOUS_ATTEMPT_FAILED`, `502 UPGRADE_HOOK_FAILED`; audited at instance scope |
+| `GET` | `/api/v1/system/upgrade` | bootstrap admin (no API key) | Latest upgrade request; `completed` once the deployment reports the target version, `overdue` after 30 minutes |
 
 ### Email identity policy
 

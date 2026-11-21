@@ -1,14 +1,14 @@
 ---
-version: 3
-lastUpdated: 2026-11-17T14:46:37.198Z
+version: 6
+lastUpdated: 2026-11-19T08:17:22.428Z
 sourceLang: en
 translatedFrom: en
-sourceHash: c9ed73e7edd52284
+sourceHash: f879fd38950937f2
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T14:46:37.198Z
-codeVerifiedHash: c9ed73e7edd52284
-codeVerifiedClaims: 26
+codeVerified: 2026-11-19T08:17:22.428Z
+codeVerifiedHash: f879fd38950937f2
+codeVerifiedClaims: 46
 ---
 
 # Release Flags
@@ -86,6 +86,12 @@ Có hai kênh. Cả hai đi qua cùng một bước xác minh.
   60). Bootstrap admin có thể yêu cầu tải ngay bằng
   `POST /api/v1/release-flags/manifest/pull`.
 
+  Kênh pull không chờ có traffic: instance còn tải một lần khi khởi động và
+  theo lịch mỗi phút (`node-cron` trong process worker của Docker, handler
+  Cron Trigger `scheduled` trên Workers). Lần tải theo lịch chỉ chạy khi đã qua
+  `LUMIBASE_RELEASE_MANIFEST_REFRESH_S` kể từ lần thử gần nhất của bất kỳ
+  replica nào, nên nhiều replica vẫn chỉ tải khoảng một lần mỗi chu kỳ.
+
 Nếu tải lỗi hoặc manifest bị từ chối, instance giữ manifest đã chấp nhận trước
 đó. Mất kết nối tới LumiBase không bao giờ làm tắt một tính năng đã phát hành.
 Kênh pull không đi theo redirect.
@@ -98,6 +104,69 @@ vào audit log ở cấp instance (không gắn site), với sự kiện
 trong `LUMIBASE_RELEASE_PUBLIC_KEYS` với cùng PEM. Gỡ một khoá, ví dụ sau khi
 khoá bị lộ, sẽ rút lại mọi manifest khoá đó đã ký: các flag quay về mặc định
 theo stage cho tới khi có manifest ký bằng khoá còn được tin cậy.
+
+## Vận hành kênh phát hành (phía LumiBase)
+
+Đây là cách LumiBase vận hành phía phát hành. Operator tự host chỉ cần khoá
+công khai và, nếu đã bật, URL pull.
+
+**Giữ khoá.** Khoá riêng để phát hành chỉ tồn tại ở hai nơi: secret
+`LUMIBASE_RELEASE_SIGNING_KEY` của GitHub environment `release-manifest`, và một
+bản sao lưu offline do maintainer giữ. Khoá không bao giờ được commit, không
+bao giờ được ghi vào log CI hay ra đĩa, và không bao giờ nằm trên instance —
+instance chỉ giữ khoá công khai. Environment này đòi reviewer phê duyệt và chỉ
+cho phép nhánh `main`, nên một manifest do một người phát hành và một người
+khác duyệt.
+
+**Phát hành.** Chạy workflow **Release manifest**
+(`.github/workflows/release-manifest.yml`, chạy tay) với một kênh và danh sách
+đầy đủ các flag được phát hành. Workflow hiển thị manifest đang được công bố
+trên kênh đó, ký manifest mới bằng `manifest.mjs sign --key-env` (khoá đọc từ
+biến môi trường, không phải file), xác minh bằng `manifest.mjs verify` với các
+khoá công khai đang công bố và audience của kênh, tải lên
+`<bucket>/flags/<channel>.json`, và giữ envelope làm artifact của lần chạy. Nó
+cần các thiết lập sau trên environment `release-manifest`:
+
+| Tên | Loại | Giá trị |
+|---|---|---|
+| `LUMIBASE_RELEASE_SIGNING_KEY` | secret | Khoá riêng Ed25519 (PEM) |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | secret | Quyền ghi R2 vào bucket chứa manifest |
+| `LUMIBASE_RELEASE_KEY_ID` | variable | Key id của khoá ký, ví dụ `lumibase-release-v1` |
+| `LUMIBASE_RELEASE_PUBLIC_KEYS` | variable | Đúng JSON mà các instance dùng |
+| `LUMIBASE_RELEASE_MANIFEST_BUCKET` | variable | Bucket R2 phục vụ các manifest |
+| `LUMIBASE_RELEASE_MANIFEST_BASE_URL` | variable | URL công khai `https://` của bucket đó |
+
+**Audience.** Mỗi môi trường do LumiBase vận hành có kênh và instance id riêng,
+đặt trong `apps/cms/wrangler.toml`: `lumibase-staging`, `lumibase-production`,
+`lumibase-demo`, `lumibase-dev`. Manifest phát hành cho một môi trường mang id
+đó làm `audience`, nên không thể phát lại sang môi trường khác. Trỏ
+`LUMIBASE_RELEASE_MANIFEST_URL` của mỗi môi trường tới
+`<base>/flags/<instance id>.json`. Kênh `public` được ký với audience `"*"` cho
+các instance tự host đã bật pull.
+
+**Xoay khoá.**
+
+1. Chạy `manifest.mjs keygen --key-id lumibase-release-v2` trên một máy offline.
+2. Thêm khoá công khai mới bên cạnh khoá cũ trong `LUMIBASE_RELEASE_PUBLIC_KEYS`
+   ở mọi nơi (các instance và variable của workflow) rồi deploy. Lúc này cả hai
+   khoá đều được tin cậy.
+3. Thay `LUMIBASE_RELEASE_SIGNING_KEY` và `LUMIBASE_RELEASE_KEY_ID` bằng khoá mới
+   và phát hành manifest mới trên mọi kênh.
+4. Khi mọi instance đã báo manifest mới (`acceptedIssuedAt` trong `/health`), gỡ
+   khoá công khai cũ ở mọi nơi. Từ đó các manifest do khoá cũ ký không còn hiệu
+   lực.
+5. Nếu khoá bị lộ, bỏ qua giai đoạn song song: gỡ khoá cũ trước (các flag quay
+   về mặc định theo stage) rồi phát hành bằng khoá mới.
+
+**Giám sát.** Với quyền xem observability (thông tin đăng nhập `/metrics`),
+`GET /health` thêm `releaseManifest`: `pull` (`not-configured`, `pending`, `ok`
+hoặc `failing`), `lastAttemptAt`, `lastSuccessAt`, `acceptedIssuedAt`,
+`consecutiveFailures` và `lastError`. Lịch sử này dùng chung cho mọi replica qua
+cache của runtime. Pull lỗi không bao giờ làm giảm trạng thái health, vì
+manifest đã chấp nhận vẫn có hiệu lực. `/metrics` có
+`lumibase_release_manifest_pulls_total{outcome}`,
+`lumibase_release_manifest_consecutive_failures` và
+`lumibase_release_manifest_last_success_timestamp_seconds`.
 
 ## Cấu hình
 
@@ -124,6 +193,28 @@ Các endpoint manifest từ chối API key. Manifest bị từ chối trả về
 tới hiệu lực, sai audience hoặc payload sai dạng; `409` khi `STALE` (cũ hơn bản
 đã chấp nhận) hoặc khi chưa cấu hình khoá tin cậy nào.
 
+## Studio
+
+**Settings → System → Release flags** liệt kê các flag của site đang chọn.
+
+- Admin của site thấy mọi flag đã khai báo: mô tả, giai đoạn, deployment này
+  đã phát hành flag hay chưa và vì sao (do operator, theo manifest của LumiBase
+  hoặc theo mặc định của giai đoạn), flag có đang bật cho site này không và vì
+  sao (theo trạng thái phát hành, đã chọn cho site, hoặc mặc định của site),
+  người phụ trách và ngày gỡ.
+- Flag đã phát hành và khai báo `siteToggle` có công tắc cho site, và nút
+  **Dùng mặc định** xoá lựa chọn của site (`null`). Công tắc bị khoá kèm lời giải
+  thích khi deployment chưa phát hành flag.
+- Thành viên chỉ thấy các flag đã phát hành và trạng thái bật/tắt, chỉ đọc.
+- Quản lý manifest có chữ ký vẫn là API dành cho bootstrap admin; Studio không
+  có trang cho việc này.
+
+Các màn hình khác của Studio ẩn giao diện của tính năng có flag đang tắt bằng
+`useReleaseFlag(key)` hoặc `<ReleaseFlagGate flag="…">` trong
+`apps/studio/src/lib/release-flags.tsx`. Danh sách được đọc một lần mỗi phiên
+và mỗi site; nếu đọc lỗi thì tính năng vẫn bị ẩn. Việc ẩn chỉ để tiện — server
+vẫn trả `404` cho route có gắn cờ.
+
 ## Gắn cờ vào code (cho developer)
 
 ```ts
@@ -148,6 +239,55 @@ Quy tắc cho một flag mới:
    tính năng đang tắt.
 3. Khi tính năng đã phổ biến, xoá flag và các chỗ kiểm tra nó.
 
+## Các công tắc có sẵn
+
+Trước khi có registry, một số tính năng đã có công tắc riêng theo site trong
+`lumibase_settings`. Mỗi công tắc hoặc là một **cổng phát hành** (quyết định một
+tính năng đã triển khai có chạy hay không), hoặc là một **giá trị cấu hình**
+(điều chỉnh cách một tính năng đã có hoạt động). Chỉ cổng phát hành mới thuộc về
+registry ([#896](https://github.com/khuepm/LumiBase/issues/896)).
+
+Cổng phát hành được khai báo trong registry với `stage: 'ga'`, `siteToggle` và
+`siteDefault: false`, và giữ nguyên chỗ lưu cũ thông qua `siteSetting`. Không
+giá trị nào bị chuyển chỗ:
+
+| Flag | Lưu ở | Hàm đọc |
+|---|---|---|
+| `content-os.reconciler` | `contentOs.reconciler` | `getContentOsFlags` |
+| `content-os.veto-window` | `contentOs.vetoWindow` | `getContentOsFlags` |
+| `content-os.agent-review` | `contentOs.agentReview` | `getContentOsFlags` |
+| `content-os.mcp` | `contentOs.mcp` | `getContentOsFlags` |
+| `ai-decisions.flows` | `aiDecisions.flows` | `readDecisionSettings` |
+| `ai-decisions.drift` | `aiDecisions.drift` | `readDecisionSettings` |
+
+Điều thay đổi và điều không đổi:
+
+- Khi không có manifest và không có `LUMIBASE_RELEASE_FLAGS`, mọi site hoạt
+  động như trước: `ga` đã được phát hành, nên giá trị đã lưu quyết định.
+- Manifest hoặc `LUMIBASE_RELEASE_FLAGS` giờ có thể **rút lại** một trong các
+  tính năng này trên toàn deployment, ví dụ `content-os.mcp=off`. Chúng không
+  bao giờ bật tính năng cho một site chưa chọn bật.
+- `PUT /api/v1/release-flags/site` ghi lựa chọn vào đúng object cũ
+  (`contentOs`, `aiDecisions`), nên hàm đọc của tính năng và các màn hình
+  settings hiện có thấy cùng một giá trị.
+- `ai-decisions.flows` và `ai-decisions.drift` còn cần site đồng ý dùng AI
+  decisions (`aiDecisions.enabled`); riêng flag không gửi nội dung tới provider.
+- Code chạy ngoài request (chu kỳ reconciler, consumer của queue) đọc cổng phát
+  hành bằng `resolveStoredSiteFlags` trong `modules/release-flags/gate.ts`. Nếu
+  không đọc được manifest, manifest gần nhất mà process đã đọc vẫn có hiệu lực,
+  nên lỗi đọc không bao giờ bật lại một tính năng đã bị rút.
+
+Giá trị cấu hình giữ nguyên chỗ, đọc qua endpoint riêng của chúng:
+
+| Key settings | Vì sao là cấu hình |
+|---|---|
+| `aiDecisions` (`enabled`, giới hạn, `review`) | `enabled` là sự đồng ý của site để gửi nội dung tới provider và là công tắc khẩn của site; `review` là pilot theo từng collection. |
+| `files.dam` | Chính sách xoá, thời gian giữ phiên bản, metadata và tuỳ chọn quét mã độc. |
+| `openapi` | Có công khai tài liệu OpenAPI trực tiếp hay không và cho những ai. |
+| `encryption.envelope` | Chế độ bảo mật kèm migration chạy nền, đổi bằng step-up auth. |
+| `deployment.environments` | Ánh xạ target triển khai vào môi trường và cổng phê duyệt. |
+| `cdc_feed`, `erasureDualControl`, `media.signedTransform`, `upload_policy`, `password_policy`, `login_security_policy`, `preview`, `locales`, `revalidation.targets`, `retention.policies` | Thiết lập vận hành, không phải công tắc tính năng. |
+
 ## Giới hạn
 
 - **Không phải rào chắn bảo mật hay bản quyền trên instance tự host.** Code và
@@ -157,8 +297,10 @@ Quy tắc cho một flag mới:
   `LUMIBASE_RELEASE_MANIFEST_URL` được đặt.
 - **Thay đổi không lan ngay lập tức giữa các replica.** Replica chấp nhận
   manifest dùng nó ngay; các replica khác đọc được trong vòng 30 giây. Lựa chọn
-  của site đặt qua API có hiệu lực ở request tiếp theo; nếu ghi qua endpoint
-  settings chung thì có thể mất tới 60 giây.
+  của site đặt qua API có hiệu lực ở request tiếp theo. Ghi qua endpoint
+  settings chung vào `release.flags`, `contentOs` hoặc `aiDecisions` sẽ xoá bản
+  cache, nên cũng có hiệu lực ở request tiếp theo; thay đổi sửa thẳng trong
+  database có thể mất tới 60 giây.
 
 ## Đa tenant
 
@@ -166,9 +308,10 @@ Quy tắc cho một flag mới:
 |---|---|---|
 | Manifest đã chấp nhận (`lumibase_release_manifests`, một dòng) | Toàn deployment | Ghi nhận những gì deployment đã phát hành. Không chứa dữ liệu tenant. |
 | `LUMIBASE_RELEASE_FLAGS`, khoá tin cậy, URL pull | Toàn deployment | Cấu hình của operator. |
-| Lựa chọn của site (`lumibase_settings`, key `release.flags`) | Theo site | Nằm dưới policy RLS `site_isolation` sẵn có. |
-| Cache `release-flags:site:{siteId}` | Theo site | Key chứa site id. |
+| Lựa chọn của site (`lumibase_settings`, key `release.flags`, và `contentOs` / `aiDecisions` cho các công tắc có sẵn) | Theo site | Nằm dưới policy RLS `site_isolation` sẵn có. |
+| Cache `release-flags:site:v2:{siteId}` | Theo site | Key chứa site id. |
 
 Kiểm chứng bằng `apps/cms/src/modules/release-flags/__tests__/release-flags.db.integration.test.ts`
-và `routes.db.integration.test.ts` trong cùng thư mục: lựa chọn ở một site không
+, `legacy-switches.db.integration.test.ts` và `routes.db.integration.test.ts`
+trong cùng thư mục: lựa chọn ở một site không
 làm đổi site khác, và một route có gắn cờ chỉ mở trên site đã chọn bật.

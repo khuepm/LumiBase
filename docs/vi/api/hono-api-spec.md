@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 61
-lastUpdated: 2026-11-20T05:35:06.709Z
+version: 64
+lastUpdated: 2026-11-21T01:11:44.322Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a752c28a3a48bf3d
+sourceHash: c2a06d08a4ff8982
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-20T05:35:06.709Z
-codeVerifiedHash: a752c28a3a48bf3d
-codeVerifiedClaims: 652
+codeVerified: 2026-11-21T01:11:44.322Z
+codeVerifiedHash: c2a06d08a4ff8982
+codeVerifiedClaims: 656
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -308,13 +308,25 @@ bằng một manifest có chữ ký, và được chọn bật theo từng site.
 | Method | Path | Auth | Mô tả |
 |--------|------|------|-------------|
 | `GET` | `/api/v1/release-flags` | member | `{ key, enabled }[]` chỉ gồm flag đã phát hành của site đang chọn; admin của site nhận mọi flag cùng stage, `releasedBy`, `enabledBy`, `siteValue`, owner và `removeBy` |
-| `PUT` | `/api/v1/release-flags/site` | site-admin | Body `{ flags: { "<key>": true \| false \| null } }`; `null` xoá lựa chọn. `400 UNKNOWN_FLAG` / `NOT_SITE_TOGGLE` |
-| `GET` | `/api/v1/release-flags/manifest` | bootstrap admin | Manifest đã chấp nhận, các key id được tin cậy, cấu hình pull và kết quả lần pull gần nhất |
+| `PUT` | `/api/v1/release-flags/site` | site-admin | Body `{ flags: { "<key>": true \| false \| null } }`; `null` xoá lựa chọn. Các công tắc có trước registry (`content-os.*`, `ai-decisions.flows`/`drift`) được ghi vào object settings gốc (`contentOs`, `aiDecisions`). `400 UNKNOWN_FLAG` / `NOT_SITE_TOGGLE` |
+| `GET` | `/api/v1/release-flags/manifest` | bootstrap admin | Manifest đã chấp nhận, các key id được tin cậy, cấu hình pull, kết quả lần pull gần nhất trong process này (`lastPull`) và lịch sử pull chung của deployment (`pullHistory`) |
 | `PUT` | `/api/v1/release-flags/manifest` | bootstrap admin | Body `{ keyId, payload, signature }` (Ed25519 trên payload sau khi giải base64). `422` / `409` `MANIFEST_REJECTED` kèm `reason` |
 | `POST` | `/api/v1/release-flags/manifest/pull` | bootstrap admin | Tải ngay từ `LUMIBASE_RELEASE_MANIFEST_URL`. `409 PULL_NOT_CONFIGURED`, `502 PULL_FAILED` |
 
 Các endpoint manifest từ chối API key. Route có gắn cờ trả `404 NOT_FOUND` khi
 cờ đang tắt, giống một route không tồn tại.
+
+
+### Nâng cấp trong ứng dụng
+
+Một instance đang chạy không tự thay thế chính nó được: các endpoint này kiểm tra việc nâng cấp có an toàn
+không và nhờ deploy hook của operator triển khai bản mới. Hướng dẫn đầy đủ: [Vận hành nâng cấp](../operations/upgrades.md#nút-upgrade-trong-ứng-dụng).
+
+| Method | Path | Auth | Mô tả |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/system/upgrade/preflight` | bootstrap admin (không API key) | Preflight cho nâng cấp trong ứng dụng (#898): phiên bản hiện tại và đích, `minimumSafeUpgradeVersion`, migration chưa áp dụng, `migrationWarning`, ai chạy migration, cấu hình provider, `checks[]`, `canUpgrade`, yêu cầu gần nhất |
+| `POST` | `/api/v1/system/upgrade` | bootstrap admin (không API key) | Body `{ targetVersion, backupAcknowledged: true, retry? }`. Gọi upgrade hook đã cấu hình một lần cho mỗi phiên bản đích; `202` khi tạo yêu cầu mới, `200` + `meta.idempotent` khi yêu cầu đã được ghi. `422 BACKUP_NOT_ACKNOWLEDGED`, `409 TARGET_MISMATCH` / `PREFLIGHT_FAILED` / `PREVIOUS_ATTEMPT_FAILED`, `502 UPGRADE_HOOK_FAILED`; ghi audit ở cấp instance |
+| `GET` | `/api/v1/system/upgrade` | bootstrap admin (không API key) | Yêu cầu nâng cấp gần nhất; `completed` khi deployment báo đúng phiên bản đích, `overdue` sau 30 phút |
 
 ### Chính sách định danh email
 

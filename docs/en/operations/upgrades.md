@@ -1,11 +1,11 @@
 ---
-version: 6
-lastUpdated: 2026-11-08T01:49:06.315Z
+version: 7
+lastUpdated: 2026-11-19T05:02:45.072Z
 sourceLang: en
-contentHash: ed15a6714963d33b
-codeVerified: 2026-11-08T01:49:06.315Z
-codeVerifiedHash: ed15a6714963d33b
-codeVerifiedClaims: 6
+contentHash: a4c30b1685cd00ee
+codeVerified: 2026-11-19T05:02:45.072Z
+codeVerifiedHash: a4c30b1685cd00ee
+codeVerifiedClaims: 22
 ---
 
 # Upgrade Operations
@@ -84,6 +84,87 @@ Prefer `X.Y.Z` for regulated or high-availability production systems. Use `X.Y` 
 
 8. Smoke test authentication, Studio access, collection reads/writes, file operations, flows/webhooks, and realtime if enabled.
 9. Keep the previous image tag or digest available locally until the rollback window closes.
+
+## In-app Upgrade button
+
+**Settings → Updates → Upgrade this deployment** in Studio runs the flows above
+from one button. A running instance cannot replace itself, so the button asks
+something outside the process to do it — a deploy hook the operator
+configured — and then watches `GET /api/v1/system/version` until the new
+version answers ([#898](https://github.com/khuepm/LumiBase/issues/898)).
+
+Only the bootstrap admin sees and uses it, signed in as a person: API keys are
+refused. Every request is written to the audit log at instance scope
+(`system.upgrade_requested`, `system.upgrade_request_failed`).
+
+**Flow.**
+
+1. **Preflight** (`GET /api/v1/system/upgrade/preflight`): the running version,
+   the latest release on the configured channel (read from the public
+   `releases.json`), the minimum version that can upgrade to it directly,
+   migrations of the running version that are not applied, the release's
+   migration warning, who runs migrations, and whether a hook is configured.
+   Every check must pass.
+2. **Confirm**: the admin confirms a current database backup
+   (`backupAcknowledged: true` is required).
+3. **Request** (`POST /api/v1/system/upgrade`): the hook is called once per
+   target version. Asking again for the same version returns the recorded
+   request without calling the hook again; a failed request — or one with no
+   answer after 30 minutes — is retried only with `retry: true`.
+4. **Progress**: Studio polls the version endpoint. The request becomes
+   `completed` when the deployment reports the target version. After 30
+   minutes without it, Studio shows the rollback instruction: redeploy the
+   previous version, and restore the backup if migrations ran (see
+   [Rollback app](#rollback-app)).
+
+**Configuration** (environment only; nothing is editable from Studio):
+
+| Variable | Purpose |
+|---|---|
+| `LUMIBASE_UPGRADE_PROVIDER` | `webhook` to enable the button; default `none` (Studio shows the checks and this guide). |
+| `LUMIBASE_UPGRADE_WEBHOOK_URL` | Where the request is sent: a CI relay, an updater service next to the container, or the LumiBase control plane for hosted instances. |
+| `LUMIBASE_UPGRADE_WEBHOOK_SECRET` | HMAC key the receiver uses to check the request. |
+| `LUMIBASE_RELEASES_URL` | Release manifest; default `https://docs.lumibase.dev/releases.json`. |
+| `LUMIBASE_UPGRADE_CHANNEL` | `stable` (default) or `edge`. |
+| `LUMIBASE_MIGRATIONS_RUNNER` | `startup` or `pipeline`; see below. |
+
+**Webhook contract.** A `POST` with this JSON body:
+
+```json
+{
+  "event": "lumibase.upgrade.requested",
+  "requestId": "…",
+  "fromVersion": "2.2.0",
+  "targetVersion": "2.3.0",
+  "channel": "stable",
+  "instanceId": "lumibase-production",
+  "runtime": "docker",
+  "migrationsRunner": "startup",
+  "requestedAt": "2026-12-02T10:00:00.000Z"
+}
+```
+
+It carries the headers `X-LumiBase-Event`, `X-LumiBase-Timestamp` (Unix
+seconds) and `X-LumiBase-Signature: sha256=<hex>`, an HMAC-SHA256 of
+`<timestamp>.<raw body>` keyed by `LUMIBASE_UPGRADE_WEBHOOK_SECRET`. The
+receiver must check the signature and refuse timestamps older than a few
+minutes. Any `2xx` means accepted; the body may carry
+`{ "reference": "<run id>" }`, which Studio shows. Redirects are refused.
+
+**Who runs migrations.** The button follows the deployment mode:
+
+- **Docker / self-hosted** (`startup`, the default): the new image applies
+  migrations when it starts (the container entrypoint runs the migration
+  runner before the server). The receiver only pulls and restarts the image —
+  for example an updater service next to the container. Never give the CMS
+  container the Docker socket.
+- **Cloudflare Workers** (`pipeline`, the default there): the receiver is the
+  operator's CI, which runs `pnpm db:migrate` and then `wrangler deploy`, as in
+  the [Cloudflare-hosted upgrade flow](#cloudflare-hosted-upgrade-flow). The
+  CMS does not hold a Cloudflare deploy token: the webhook secret can only ask
+  for an upgrade, not replace the running code.
+- **LumiBase-operated**: the hook is the control plane, which rolls the version
+  the same way.
 
 ## Backup checklist
 

@@ -30,6 +30,7 @@ import { resolveBuildMetadata } from './routes/system';
 import { runScheduledPageviewFlush } from './modules/pageviews/scheduled';
 import { resolveSentryOptions } from './observability/sentry';
 import { withWorkerRuntimeDefault } from './worker-runtime-default';
+import { pickReleaseEnv, rememberReleaseEnv } from './modules/release-flags/gate';
 
 // ── Default export: ExportedHandler (fetch + scheduled) ─────────────────────
 //
@@ -60,10 +61,16 @@ export default Sentry.withSentry(
   (env: Bindings) => resolveSentryOptions(env),
   {
   // Routes by `batch.queue` to the agent-runs, flow-runs and flow-events consumers.
+  // Each handler remembers the release-flag variables first: code that runs
+  // outside a request (queue consumers, sweeps) reads the release gate from
+  // them, and the Worker has no `process.env` to fall back to (#896).
+  // (`processCloudflareQueue` remembers them itself.)
   queue: processCloudflareQueue,
 
-  fetch: (request: Request, env: Bindings, ctx: ExecutionContext) =>
-    app.fetch(request, withWorkerRuntimeDefault(env), ctx),
+  fetch: (request: Request, env: Bindings, ctx: ExecutionContext) => {
+    rememberReleaseEnv(pickReleaseEnv(env));
+    return app.fetch(request, withWorkerRuntimeDefault(env), ctx);
+  },
 
   /**
    * Cloudflare Cron Trigger handler (design §10.2). Fires on the
@@ -84,6 +91,7 @@ export default Sentry.withSentry(
     env: Bindings,
     ctx: ExecutionContext,
   ): Promise<void> {
+    rememberReleaseEnv(pickReleaseEnv(env));
     const system = createCloudflareSystemDb(env);
     if (!system.db) {
       console.error(`[lumibase-cms] scheduled work skipped: ${system.error}`);
@@ -108,6 +116,20 @@ export default Sentry.withSentry(
     const runtime = createCloudflareRuntime(env as unknown as Record<string, unknown>);
 
     const sweepDeps = { db, runtime };
+    // Release manifest pull (#897), on every trigger: it pulls only when the
+    // refresh interval has passed since the last attempt by any isolate, so
+    // overlapping triggers do not multiply requests. Opt-in, never throws.
+    ctx.waitUntil(
+      import('./modules/release-flags/service')
+        .then(({ releaseEnvFromRecord, runScheduledReleasePull }) =>
+          runScheduledReleasePull({
+            systemDb: db,
+            env: releaseEnvFromRecord(env as unknown as Record<string, unknown>),
+            cache: runtime.cache,
+          }),
+        )
+        .catch(() => console.error('[release-flags] scheduled pull failed')),
+    );
     if (controller.cron === '* * * * *') {
       // The scheduler tick includes the schedule-flow sweep Docker's
       // `flow-schedule` cron runs; overlapping ticks enqueue each due flow once

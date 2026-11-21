@@ -1,0 +1,152 @@
+name: Release manifest
+
+# Issue a signed release-flag manifest (#869 / #897) — "LumiBase gives the
+# command". Manual only, and gated twice:
+#
+#   1. The job runs in the `release-manifest` GitHub environment. Configure it
+#      with required reviewers and "deployment branches: main" (Settings →
+#      Environments); the signing key is a secret of that environment only, so
+#      no other workflow, branch or fork can read it.
+#   2. The envelope is verified against the published public keys before it is
+#      uploaded, with the same checks an instance applies.
+#
+# The private key lives only in the environment secret
+# `LUMIBASE_RELEASE_SIGNING_KEY` (PEM). It is passed to the signer through an
+# environment variable (`manifest.mjs sign --key-env`), never written to disk
+# or echoed. Runbook (key custody, rotation, audiences):
+# docs/en/features/release-flags.md → "Operating the release channel".
+#
+# A manifest replaces the previous one for that channel as a whole: list every
+# flag that should be released, not only the one that changes.
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Channel: a LumiBase-operated instance id, or `public` for self-hosted instances that opted in"
+        required: true
+        type: choice
+        options:
+          - lumibase-staging
+          - lumibase-production
+          - lumibase-demo
+          - lumibase-dev
+          - public
+      flags:
+        description: "Every released flag, e.g. content-environments=on,content-os.mcp=on"
+        required: true
+        type: string
+      not_after:
+        description: "Optional expiry (ISO 8601). Instances refuse the manifest after it."
+        required: false
+        type: string
+        default: ""
+      allow_empty:
+        description: "Allow an empty flag list (withdraws every feature this channel released)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-manifest-${{ inputs.channel }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  issue:
+    name: Sign, verify and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release-manifest
+    env:
+      CHANNEL: ${{ inputs.channel }}
+      FLAGS: ${{ inputs.flags }}
+      NOT_AFTER: ${{ inputs.not_after }}
+      ALLOW_EMPTY: ${{ inputs.allow_empty }}
+      KEY_ID: ${{ vars.LUMIBASE_RELEASE_KEY_ID }}
+      PUBLIC_KEYS: ${{ vars.LUMIBASE_RELEASE_PUBLIC_KEYS }}
+      BUCKET: ${{ vars.LUMIBASE_RELEASE_MANIFEST_BUCKET }}
+      BASE_URL: ${{ vars.LUMIBASE_RELEASE_MANIFEST_BASE_URL }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Check configuration
+        run: |
+          set -euo pipefail
+          for name in KEY_ID PUBLIC_KEYS BUCKET BASE_URL; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Environment variable ${name} is not configured for the release-manifest environment."
+              exit 1
+            fi
+          done
+
+      - name: Show the manifest currently published on this channel
+        run: |
+          set -uo pipefail
+          url="${BASE_URL%/}/flags/${CHANNEL}.json"
+          if curl -fsS --max-time 10 -o "$RUNNER_TEMP/current.json" "$url"; then
+            {
+              echo "### Currently published on \`${CHANNEL}\`"
+              echo '```json'
+              node scripts/release-flags/manifest.mjs verify --in "$RUNNER_TEMP/current.json" --public-keys "$PUBLIC_KEYS" \
+                || echo "(does not verify against the current public keys)"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No manifest published at ${url} yet." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Sign
+        env:
+          LUMIBASE_RELEASE_SIGNING_KEY: ${{ secrets.LUMIBASE_RELEASE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$LUMIBASE_RELEASE_SIGNING_KEY" ]; then
+            echo "::error::Secret LUMIBASE_RELEASE_SIGNING_KEY is not set for the release-manifest environment."
+            exit 1
+          fi
+          args=(sign --key-env LUMIBASE_RELEASE_SIGNING_KEY --key-id "$KEY_ID" --flags "$FLAGS" --out "$RUNNER_TEMP/manifest.json")
+          if [ "$CHANNEL" != "public" ]; then args+=(--audience "$CHANNEL"); fi
+          if [ -n "$NOT_AFTER" ]; then args+=(--not-after "$NOT_AFTER"); fi
+          if [ "$ALLOW_EMPTY" = "true" ]; then args+=(--allow-empty); fi
+          node scripts/release-flags/manifest.mjs "${args[@]}"
+
+      - name: Verify like an instance would
+        run: |
+          set -euo pipefail
+          audience_args=()
+          if [ "$CHANNEL" != "public" ]; then audience_args=(--audience "$CHANNEL"); fi
+          node scripts/release-flags/manifest.mjs verify --in "$RUNNER_TEMP/manifest.json" \
+            --public-keys "$PUBLIC_KEYS" "${audience_args[@]}" > "$RUNNER_TEMP/payload.json"
+          {
+            echo "### Issued for \`${CHANNEL}\`"
+            echo '```json'
+            cat "$RUNNER_TEMP/payload.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.161.0 r2 object put "${BUCKET}/flags/${CHANNEL}.json" \
+            --file "$RUNNER_TEMP/manifest.json" \
+            --content-type application/json \
+            --cache-control "public, max-age=60" \
+            --remote
+          echo "Published ${BASE_URL%/}/flags/${CHANNEL}.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the signed envelope
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-manifest-${{ inputs.channel }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/manifest.json
+          retention-days: 90

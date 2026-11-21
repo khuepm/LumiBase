@@ -20,13 +20,13 @@
 - [ ] 11. Studio: trang chỉ đọc "Release flags" (trạng thái, nguồn quyết định) và công tắc theo site cho admin
 - [ ] 12. Chuyển các cờ hiện có vào registry hoặc khai báo chúng (`contentOs.*`, `files.dam`, `openapi`, …) — giữ tương thích dữ liệu `settings` cũ
 - [ ] 13. Lớp organization (đọc + đường ghi), nếu còn cần sau khi có billing (ADR-013)
-- [ ] 14. Nạp manifest khi khởi động / cron thay vì chỉ khi có request (instance ít traffic)
-- [ ] 15. Hạ tầng phát hành của LumiBase: nơi giữ khoá riêng, CI ký và đăng manifest
+- [x] 14. Nạp manifest khi khởi động / cron thay vì chỉ khi có request (instance ít traffic) — #897: `runScheduledReleasePull` (start + `node-cron` Docker, `scheduled` Workers), lịch sử pull dùng chung qua cache, `/health` `releaseManifest`, metric `lumibase_release_manifest_*`
+- [x] 15. Hạ tầng phát hành của LumiBase: nơi giữ khoá riêng, CI ký và đăng manifest — #897: secret của environment `release-manifest` (reviewer bắt buộc) + bản offline; workflow `release-manifest.yml` (`sign --key-env` → `verify` → R2); audience theo `LUMIBASE_INSTANCE_ID` từng môi trường; runbook xoay khoá trong docs
 
 ## Part 2 — Nút Upgrade (Req 5)
 
-- [ ] 16. Preflight endpoint (phiên bản, migration chờ, cảnh báo)
-- [ ] 17. Mô hình deploy hook theo kiểu triển khai (hosted control plane / CI webhook / updater riêng), tái dùng provider của deployment-integrations
-- [ ] 18. `POST /system/upgrade` + audit + theo dõi tiến độ
-- [ ] 19. Studio: preflight → xác nhận → tiến độ trên trang Updates
-- [ ] 20. Quyết định ai chạy migration ở từng chế độ triển khai
+- [x] 16. Preflight endpoint (phiên bản, migration chờ, cảnh báo) — #898
+- [x] 17. Mô hình deploy hook theo kiểu triển khai (hosted control plane / CI webhook / updater riêng), tái dùng provider của deployment-integrations — #898
+- [x] 18. `POST /system/upgrade` + audit + theo dõi tiến độ — #898
+- [x] 19. Studio: preflight → xác nhận → tiến độ trên trang Updates — #898
+- [x] 20. Quyết định ai chạy migration ở từng chế độ triển khai — #898

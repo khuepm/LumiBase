@@ -2,6 +2,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import type { AppEnv } from '../../env';
 import { runDetached } from '../../lib/detached';
 import { systemDbFor } from '../../middleware/db';
+import { pickReleaseEnv, rememberReleaseEnv } from './gate';
 import type { ReleaseFlagKey } from './registry';
 import type { ReleaseFlagState } from './resolver';
 import { evaluateReleaseFlags, maybeStartReleasePull, type ReleaseEnv } from './service';
@@ -15,21 +16,14 @@ declare module '../../env' {
 
 type AppContext = Context<AppEnv>;
 
-const ENV_KEYS = [
-  'LUMIBASE_RELEASE_FLAGS',
-  'LUMIBASE_RELEASE_PUBLIC_KEYS',
-  'LUMIBASE_RELEASE_MANIFEST_URL',
-  'LUMIBASE_RELEASE_MANIFEST_REFRESH_S',
-  'LUMIBASE_INSTANCE_ID',
-] as const satisfies readonly (keyof ReleaseEnv)[];
-
-/** Worker bindings first, then `process.env` for the Node/Docker entry. */
+/**
+ * Worker bindings first, then `process.env` for the Node/Docker entry. The
+ * result is remembered for evaluations outside a request (`./gate`).
+ */
 export function releaseEnvFrom(c: AppContext): ReleaseEnv {
-  const bindings = (c.env ?? {}) as Partial<Record<(typeof ENV_KEYS)[number], string>>;
-  const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
-  const out: Record<string, string | undefined> = {};
-  for (const key of ENV_KEYS) out[key] = bindings[key] ?? proc[key];
-  return out as ReleaseEnv;
+  const env = pickReleaseEnv(c.env);
+  rememberReleaseEnv(env);
+  return env;
 }
 
 /**
@@ -43,7 +37,7 @@ export async function releaseFlagStates(c: AppContext): Promise<ReadonlyMap<stri
   if (memo) return memo;
   const env = releaseEnvFrom(c);
   const systemDb = systemDbFor(c);
-  const pending = maybeStartReleasePull({ systemDb, env });
+  const pending = maybeStartReleasePull({ systemDb, env, cache: c.get('runtime')?.cache });
   if (pending) runDetached(c, pending);
   const states = await evaluateReleaseFlags({
     systemDb,

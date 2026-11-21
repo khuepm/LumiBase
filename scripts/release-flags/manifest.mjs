@@ -3,19 +3,25 @@
  * Release manifest tool (#869) — what LumiBase runs to "give the command".
  *
  *   node scripts/release-flags/manifest.mjs keygen  --out <dir> [--key-id lumibase-release-v1]
- *   node scripts/release-flags/manifest.mjs sign    --key <private.pem> --key-id <id>
+ *   node scripts/release-flags/manifest.mjs sign    (--key <private.pem> | --key-env <VAR>) --key-id <id>
  *        --flags key=on,other=off [--audience id1,id2] [--not-after 2026-12-31T00:00:00Z]
  *        [--issued-at <iso>] [--out manifest.json] [--allow-empty]
+ *   node scripts/release-flags/manifest.mjs verify  --in manifest.json --public-keys '<json>' [--audience <instance id>]
  *
  * `keygen` writes an Ed25519 key pair and prints the JSON line to put in
  * `LUMIBASE_RELEASE_PUBLIC_KEYS`. Keep the private key out of the repository.
  * `sign` prints (or writes) the envelope accepted by
  * `PUT /api/v1/release-flags/manifest` and served at `LUMIBASE_RELEASE_MANIFEST_URL`.
+ * `--key-env` reads the PEM from an environment variable so CI never writes
+ * the private key to disk (#897). `verify` checks an envelope against the
+ * public keys the way an instance does (trusted key, signature, payload shape,
+ * audience) and prints its payload — the publish workflow runs it before
+ * uploading anything.
  *
  * Every manifest replaces the previous one as a whole and must be issued later
  * than it: include every flag you want released, not only the one that changed.
  */
-import { generateKeyPairSync, createPrivateKey, sign } from 'node:crypto';
+import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -70,7 +76,12 @@ if (command === 'keygen') {
   console.log(`wrote ${join(dir, `${keyId}.private.pem`)} (keep secret) and ${keyId}.public.pem`);
   console.log(`LUMIBASE_RELEASE_PUBLIC_KEYS='${JSON.stringify({ [keyId]: pub })}'`);
 } else if (command === 'sign') {
-  const keyPath = opt.key ?? fail('--key <private.pem> is required');
+  let privatePem;
+  if (opt['key-env']) {
+    privatePem = process.env[opt['key-env']] ?? fail(`environment variable ${opt['key-env']} is not set`);
+  } else {
+    privatePem = readFileSync(opt.key ?? fail('--key <private.pem> or --key-env <VAR> is required'));
+  }
   const keyId = opt['key-id'] ?? fail('--key-id is required');
   const payload = {
     v: 1,
@@ -85,14 +96,44 @@ if (command === 'keygen') {
     fail('no flags given (--flags key=on,...). An empty manifest withdraws every released feature; pass --allow-empty if that is intended.');
   }
   const bytes = Buffer.from(JSON.stringify(payload), 'utf8');
-  const signature = sign(null, bytes, createPrivateKey(readFileSync(keyPath)));
+  const signature = sign(null, bytes, createPrivateKey(privatePem));
   const envelope = { keyId, payload: bytes.toString('base64'), signature: signature.toString('base64') };
   const text = `${JSON.stringify(envelope, null, 2)}\n`;
   if (opt.out) {
     writeFileSync(opt.out, text);
     console.error(`wrote ${opt.out} (issuedAt ${payload.issuedAt}, ${Object.keys(payload.flags).length} flag(s))`);
   } else process.stdout.write(text);
+} else if (command === 'verify') {
+  const envelope = JSON.parse(readFileSync(opt.in ?? fail('--in <manifest.json> is required'), 'utf8'));
+  let keys;
+  try {
+    keys = JSON.parse(opt['public-keys'] ?? fail('--public-keys <json> is required'));
+  } catch {
+    fail('--public-keys is not JSON ({ "keyId": "<PEM>" })');
+  }
+  const pem = keys?.[envelope?.keyId];
+  if (typeof pem !== 'string') fail(`key "${envelope?.keyId}" is not in --public-keys`);
+  const bytes = Buffer.from(String(envelope.payload ?? ''), 'base64');
+  if (!verify(null, bytes, createPublicKey(pem), Buffer.from(String(envelope.signature ?? ''), 'base64'))) {
+    fail('signature does not verify');
+  }
+  let payload;
+  try {
+    payload = JSON.parse(bytes.toString('utf8'));
+  } catch {
+    fail('payload is not JSON');
+  }
+  if (payload?.v !== 1 || Number.isNaN(Date.parse(payload.issuedAt)) || typeof payload.flags !== 'object' || payload.flags === null) {
+    fail('payload is not a v1 manifest');
+  }
+  for (const [key, value] of Object.entries(payload.flags)) {
+    if (typeof value !== 'boolean') fail(`flag "${key}" is not a boolean`);
+  }
+  if (opt.audience && payload.audience !== '*' && !(Array.isArray(payload.audience) && payload.audience.includes(opt.audience))) {
+    fail(`audience ${JSON.stringify(payload.audience)} does not include ${opt.audience}`);
+  }
+  process.stdout.write(`${JSON.stringify({ keyId: envelope.keyId, ...payload }, null, 2)}\n`);
 } else {
-  console.error('usage: manifest.mjs keygen --out <dir> [--key-id id] | sign --key <pem> --key-id <id> --flags k=on,...');
+  console.error('usage: manifest.mjs keygen --out <dir> [--key-id id] | sign (--key <pem> | --key-env VAR) --key-id <id> --flags k=on,... | verify --in <file> --public-keys <json>');
   process.exit(command ? 1 : 0);
 }
