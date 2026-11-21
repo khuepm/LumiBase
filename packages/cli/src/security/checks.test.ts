@@ -189,6 +189,19 @@ describe('security rules', () => {
     ).not.toContain('database-tls');
   });
 
+  it('treats the setup gate as on by default in production (#992)', () => {
+    const { LUMIBASE_REQUIRE_SETUP_TOKEN: _flag, ...prodNoFlag } = PROD_OK;
+    expect(ids(runSecurityChecks(envOf(prodNoFlag)))).not.toContain('setup-token-off');
+    expect(ids(runSecurityChecks(envOf({ ...PROD_OK, LUMIBASE_REQUIRE_SETUP_TOKEN: 'no' })), 'warning')).toContain('setup-token-off');
+    expect(ids(runSecurityChecks(envOf({ LUMIBASE_SETUP_TOKEN: 'op-token-0123456789abcdefghijkl' })))).not.toContain('setup-token-off');
+    expect(ids(runSecurityChecks(envOf({})), 'info')).toContain('setup-token-off');
+  });
+
+  it('flags the uncatalogued upload type opt-out (#993)', () => {
+    expect(ids(runSecurityChecks(envOf({ ...PROD_OK, FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME: 'true' })), 'warning')).toContain('upload-uncatalogued-mime');
+    expect(ids(runSecurityChecks(envOf({ ...PROD_OK })))).not.toContain('upload-uncatalogued-mime');
+  });
+
   it('skips Node-only rules on the Cloudflare runtime', () => {
     const r = runSecurityChecks(
       envOf({ NODE_ENV: 'production', JWT_SECRET: STRONG_JWT, ENCRYPTION_KEY: STRONG_AES, CORS_ALLOWED_ORIGINS: 'https://a.com' }, 'cloudflare'),

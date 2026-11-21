@@ -1,13 +1,13 @@
 ---
-version: 3
+version: 7
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-11-15T19:51:31.763Z
-sourceHash: 0cecb3b0be52686a
-codeVerified: 2026-11-15T19:51:31.763Z
-codeVerifiedHash: 0cecb3b0be52686a
+lastUpdated: 2026-11-21T09:33:18.501Z
+sourceHash: 3761b10584f2fe4a
+codeVerified: 2026-11-21T09:33:18.501Z
+codeVerifiedHash: 3761b10584f2fe4a
 codeVerifiedClaims: 16
 ---
 
@@ -46,6 +46,47 @@ Upload presigned **không** đi thẳng vào storage: bytes vẫn chảy qua b�
 CMS, nên guard thấy trọn file trước `storage.put`.
 `POST /api/v1/files/presigned-url` còn từ chối cấp URL upload cho tên file
 không an toàn.
+
+**Storage theo từng site (#993).** Bucket dùng chung cho mọi tenant, nên key
+mang theo site của nó: key presigned có dạng `sites/<siteId>/files/<ts>_<name>`
+(media vốn đã dùng `sites/<siteId>/media/`). Token upload ràng buộc một key và
+một site, bộ nhận từ chối key nằm ngoài namespace của site đó, và guard áp chính
+sách upload của site đã cấp token (đường này không có tenant context riêng).
+`POST /api/v1/files` từ chối `filenameDisk` nằm ngoài site của người gọi với
+`400 FILENAME_DISK_OUT_OF_SCOPE` — trước đây, một thành viên có thể đăng ký key
+object của site khác rồi đọc, thay thế hoặc xoá bytes của nó qua
+`/files/:id/content`. Bản ghi tạo trước đó giữ nguyên key.
+
+**Key presigned chỉ có một chủ và chỉ được đăng ký một lần (#993).** Key là định danh,
+không phải bí mật, nên chỉ tiền tố site là chưa đủ: nếu không, một thành viên có
+thể đăng ký một key mà file khác trong thư mục riêng tư đã dùng, rồi đọc, thay
+thế hoặc xoá bytes đó qua bản ghi của chính mình. Mỗi key do
+`POST /api/v1/files/presigned-url` cấp (nay có dạng `sites/<siteId>/files/<ts>_<random>_<name>`)
+có một dòng claim (`lumibase_upload_claims`) gắn với site và principal đã xin
+nó, đi qua `issued` → `uploading` → `uploaded` → `registered`, mỗi bước là một
+lệnh update có điều kiện. Mỗi lúc chỉ một PUT ký sẵn được chạy
+(`409 UPLOAD_IN_PROGRESS`); trước khi key được đăng ký, token vẫn PUT lại được
+(thử lại, hoặc một file đã sửa), vì khi đó chưa có bản ghi hay lần quét nào; `POST /api/v1/files` chỉ đăng ký key cho đúng
+principal đó, một lần, sau khi upload xong (`400 UPLOAD_CLAIM_INVALID`,
+`409 UPLOAD_NOT_COMPLETE`); và key đã đăng ký từ chối mọi PUT ký sẵn tiếp theo
+(`409 UPLOAD_ALREADY_REGISTERED`), nên phát lại token không thể tráo bytes phía
+sau một file đã quét sạch. Thay một file đã đăng ký qua
+`PUT /api/v1/files/:id/content`, đường này chạy lại guard và lần quét. Key không
+có claim (cấp trước thay đổi này) không đăng ký được: hãy xin URL upload mới.
+Claim được job dọn hằng giờ xoá sau 24 giờ.
+
+**Upload không được đăng ký sẽ bị dọn (#993).** Một upload presigned không bao
+giờ được đăng ký bằng `POST /api/v1/files` để lại một object không file nào trỏ
+tới. Mỗi giờ, với từng site, CMS liệt kê `sites/<siteId>/files/` và xoá các
+object mà không file hay phiên bản file nào tham chiếu và có tiền tố key `<ts>_`
+cũ hơn 24 giờ, tối đa 1.000 object mỗi lần chạy. Key không có tiền tố đó không
+bao giờ bị xoá, vì không biết tuổi của nó.
+
+**Allowlist từ env bị giới hạn theo catalogue (#993).** Các mục trong
+`FILE_UPLOAD_ALLOWED_MIME_TYPES` nằm ngoài catalogue loại upload — kể cả
+wildcard — bị bỏ qua kèm cảnh báo, như API quản trị vốn đã làm;
+`FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME=true` khôi phục hành vi cũ, và
+`lumibase doctor --security` báo cáo việc đó.
 
 Các helper thuần nằm trong `apps/cms/src/services/upload-security/`:
 

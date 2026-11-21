@@ -1,0 +1,16 @@
+# Security headers for the Studio when it is deployed as a static Cloudflare
+# Pages site (#995). They mirror what the CMS sends when it serves the Studio
+# itself (apps/cms/src/middleware/security-headers.ts); a test in
+# apps/cms/src/middleware/__tests__/studio-pages-headers.test.ts fails if the
+# two drift apart. Edit both together. One deliberate difference: a Pages
+# Studio talks to the CMS on another origin (VITE_API_URL), so img-src and
+# media-src also allow https: — with 'self' only, every file thumbnail and
+# video served by the CMS would be blocked.
+/*
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; font-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; frame-src https: http://localhost:* http://127.0.0.1:*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=(self), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains

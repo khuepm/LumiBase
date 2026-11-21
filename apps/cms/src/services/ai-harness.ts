@@ -3,6 +3,8 @@ import { applyContentMigrationSchema, planContentMigration, type ContentMigratio
 import {
   agentApprovals,
   agentGoals,
+  agentRuns,
+  agentToolCalls,
   aiApprovals,
   collections as collectionsTable,
   flowRuns,
@@ -11,7 +13,7 @@ import {
 } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
 import { agentToolNamesWithSchema, jsonSchemaFor, validateAgentToolInput } from '@lumibase/contracts';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
 import type { MagicContext } from './permission-dsl';
@@ -329,6 +331,51 @@ const IRREVERSIBLE_SKILLS = new Set([
   'revokeApiKey',
   'removeUser',
 ]);
+
+/**
+ * Skills an agent may never run without a human, at any autonomy level (#991).
+ * They extend the system's own privileges or code — new code (extensions), new
+ * credentials (API keys), new outbound channels (webhooks, flows), access
+ * rules (roles, policies), accounts, and site settings — so a poisoned input
+ * that reached an L4 agent could otherwise turn it into the persistence
+ * channel. They are always treated as dangerous and share the irreversible
+ * skills' L2 ceiling, so they always park for approval (or are refused at L0).
+ * Earned autonomy covers content operations, not these.
+ */
+export const NEVER_AUTONOMOUS_SKILLS: ReadonlySet<string> = new Set([
+  'installExtension',
+  'updateExtension',
+  'uninstallExtension',
+  'createApiKey',
+  'rotateApiKey',
+  'createWebhook',
+  'updateWebhook',
+  'createFlow',
+  'upsertSetting',
+  'deleteSetting',
+  'createRole',
+  'createPolicy',
+  'inviteUser',
+  'updateUser',
+]);
+
+/** Skills held at the L2 ceiling: irreversible, or never autonomous. */
+function cappedAtApproval(skillName: string): boolean {
+  return IRREVERSIBLE_SKILLS.has(skillName) || NEVER_AUTONOMOUS_SKILLS.has(skillName);
+}
+
+/**
+ * Default hourly ceiling on publications an L4 agent role makes on its own
+ * (#991). Above it, further publishes park for approval instead of executing.
+ * An intent can set its own with `budget.maxPublishesPerHour`.
+ */
+export const DEFAULT_AUTONOMOUS_PUBLISHES_PER_HOUR = 30;
+
+/** Tool-call risk recorded for a publication an agent made without a human. */
+export const AUTONOMOUS_PUBLISH_RISK = 'autonomous_publish';
+
+/** Why an L4 item write was held for a human instead of executing (#991). */
+export type AutonomousPublishHold = 'constitution_blocked' | 'publish_budget_exceeded';
 
 /** The capability whose autonomy grant governs a dangerous skill. */
 function primaryDangerousCapability(
@@ -2775,6 +2822,101 @@ export class AISecureHarness {
     }
   }
 
+  /**
+   * Whether an L4 publication must wait for a human (#991): the active
+   * constitution blocks the resulting content, or the agent role has used up
+   * its hourly publish budget. Returns `null` to proceed. Fails closed: if
+   * either check cannot be evaluated, the publication is held.
+   *
+   * The budget check and the reservation are one atomic step across workers:
+   * under a transaction-scoped advisory lock on `(site, role)`, it counts the
+   * role's autonomous publishes in the last hour that are executed OR still
+   * running (reserved), and, when there is room, marks `toolCallId` itself as
+   * an `autonomous_publish` reservation before the lock is released. A second
+   * concurrent request therefore sees the first one's slot as taken. A call
+   * that then fails is finished as `failed` and stops counting, which releases
+   * its slot; one that crashes mid-run stays `running` and keeps its slot for
+   * the hour (fail closed).
+   */
+  async autonomousPublishHold(
+    skillName: string,
+    args: Record<string, unknown>,
+    agentRole: string,
+    budget: Record<string, unknown> | undefined,
+    toolCallId?: string,
+  ): Promise<AutonomousPublishHold | null> {
+    try {
+      const record = await this.publicationRecord(skillName, args);
+      const { ConstitutionService } = await import('./constitution-service');
+      const gate = await new ConstitutionService({ db: this.db, siteId: this.siteId }).publishGate(record);
+      if (!gate.allowed) return 'constitution_blocked';
+    } catch {
+      return 'constitution_blocked';
+    }
+    try {
+      const configured = Number((budget ?? {})['maxPublishesPerHour']);
+      const limit = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_AUTONOMOUS_PUBLISHES_PER_HOUR;
+      const since = new Date(Date.now() - 60 * 60 * 1000);
+      const exceeded = await this.db.transaction(async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`lumibase_publish_budget:${this.siteId}:${agentRole}`}, 0))`,
+        );
+        const [row] = await tx
+          .select({ n: count() })
+          .from(agentToolCalls)
+          .innerJoin(agentRuns, eq(agentRuns.id, agentToolCalls.runId))
+          .where(
+            and(
+              eq(agentToolCalls.siteId, this.siteId),
+              eq(agentRuns.siteId, this.siteId),
+              eq(agentRuns.agentName, agentRole),
+              eq(agentToolCalls.risk, AUTONOMOUS_PUBLISH_RISK),
+              inArray(agentToolCalls.status, ['executed', 'running']),
+              gte(agentToolCalls.createdAt, since),
+              ...(toolCallId ? [ne(agentToolCalls.id, toolCallId)] : []),
+            ),
+          );
+        if (Number(row?.n ?? 0) >= limit) return true;
+        if (toolCallId) {
+          await tx
+            .update(agentToolCalls)
+            .set({ risk: AUTONOMOUS_PUBLISH_RISK })
+            .where(and(eq(agentToolCalls.siteId, this.siteId), eq(agentToolCalls.id, toolCallId)));
+        }
+        return false;
+      });
+      if (exceeded) return 'publish_budget_exceeded';
+    } catch {
+      return 'publish_budget_exceeded';
+    }
+    return null;
+  }
+
+  /**
+   * The content a publication would leave live: for `createItem` the new
+   * data, for `updateItem` the current data with the patch applied. This is
+   * what the constitution is evaluated against.
+   */
+  private async publicationRecord(skillName: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const patch = (args['data'] && typeof args['data'] === 'object' ? args['data'] : {}) as Record<string, unknown>;
+    if (skillName !== 'updateItem') return { ...patch };
+    const [row] = await this.db
+      .select({ data: itemsTable.data })
+      .from(itemsTable)
+      .innerJoin(collectionsTable, eq(collectionsTable.id, itemsTable.collectionId))
+      .where(
+        and(
+          eq(itemsTable.siteId, this.siteId),
+          eq(collectionsTable.siteId, this.siteId),
+          eq(collectionsTable.name, String(args['collection'])),
+          eq(itemsTable.id, String(args['id'])),
+        ),
+      )
+      .limit(1);
+    const current = (row?.data && typeof row.data === 'object' ? row.data : {}) as Record<string, unknown>;
+    return { ...current, ...patch };
+  }
+
   // ---------- Input validation ----------
 
   /**
@@ -3039,6 +3181,7 @@ export class AISecureHarness {
     const itemImpact = await this.evaluateItemWriteImpact(skillName, args);
     const isDangerous =
       this.evaluateRisk(tool, skillName) ||
+      NEVER_AUTONOMOUS_SKILLS.has(skillName) ||
       policy.risk === 'dangerous' ||
       policy.risk === 'review_required' ||
       itemImpact !== null;
@@ -3055,7 +3198,7 @@ export class AISecureHarness {
       const level = await autonomy.resolve(agentRole, capability, {
         dangerous: true,
         intentCap: envelope.autonomyCap ?? null,
-        irreversible: IRREVERSIBLE_SKILLS.has(skillName),
+        irreversible: cappedAtApproval(skillName),
       });
 
       // L0 shadow: no side effects, not even approvable ones (#578). This branch
@@ -3150,6 +3293,26 @@ export class AISecureHarness {
 
       // L4 autopilot: execute directly within capability and budget.
       if (level >= AUTONOMY_LEVELS.AUTOPILOT) {
+        // A publication made with no human in the loop must still pass the
+        // tenant constitution and stay inside the role's publish budget
+        // (#991). Either failing holds it for a human instead of executing.
+        const publishes = itemImpact !== null;
+        if (publishes) {
+          const hold = await this.autonomousPublishHold(skillName, args, agentRole, envelope.budget, toolCallId);
+          if (hold) {
+            return this.parkForApproval({
+              skillName,
+              args,
+              contextMessage,
+              run,
+              toolCallId,
+              approvalPolicy: 'before_execute',
+              startedAt,
+              requestedByPrincipal: envelope.requestedByPrincipal ?? null,
+              riskReason: hold,
+            });
+          }
+        }
         agentAutonomousOpsTotal.inc({ level: 'L4' });
         const result = await this.runSkill(skillName, args, { runId: run.runId });
         if (result.success) {
@@ -3158,6 +3321,7 @@ export class AISecureHarness {
             output: result.data,
             cost: skillUsage(result.data),
             latencyMs: Date.now() - startedAt,
+            ...(publishes ? { risk: AUTONOMOUS_PUBLISH_RISK } : {}),
           });
           await this.runService.closeRun(run.runId, {
             toolCalls: 1,
@@ -3212,7 +3376,7 @@ export class AISecureHarness {
         {
           dangerous: false,
           intentCap: envelope.autonomyCap ?? null,
-          irreversible: IRREVERSIBLE_SKILLS.has(skillName),
+          irreversible: cappedAtApproval(skillName),
         },
       );
 
@@ -3293,8 +3457,12 @@ export class AISecureHarness {
     approvalPolicy?: string | undefined;
     startedAt: number;
     requestedByPrincipal?: ApprovalRequester | null | undefined;
-    /** Set when an item write was escalated by its content impact (#578). */
-    riskReason?: ItemWriteImpact | null | undefined;
+    /**
+     * Set when an item write was escalated by its content impact (#578), or
+     * an L4 publication was held by the constitution or the publish budget
+     * (#991).
+     */
+    riskReason?: ItemWriteImpact | AutonomousPublishHold | null | undefined;
   }): Promise<HarnessExecutionResult> {
     const { skillName, args, contextMessage, run, toolCallId, startedAt } = input;
 
@@ -3601,6 +3769,7 @@ export class AISecureHarness {
           }, TIMEOUT_MS);
         }),
       ]);
+      await this.auditControlPlaneSkill(skillName, skill, args, runContext?.runId ?? null);
       return { success: true, data: result };
     } catch (err: unknown) {
       if (timedOut) {
@@ -3620,6 +3789,42 @@ export class AISecureHarness {
     } finally {
       clearTimeout(timer);
       await this.itemService?.flushCoalescedWrites().catch(() => {});
+    }
+  }
+
+  /**
+   * Admin-plane change audit for agents (#988). A control-plane skill that ran
+   * (installing an extension, creating an API key, webhook or flow, changing a
+   * setting, a schema change, a delete, …) records the same `admin_change`
+   * event the HTTP middleware records for people, with `via: 'agent'` and the
+   * run id that links it to its provenance. Argument NAMES only, never values:
+   * these calls carry secrets. Never throws — auditing must not turn an
+   * executed action into a reported failure.
+   */
+  private async auditControlPlaneSkill(
+    skillName: string,
+    skill: SkillDefinition,
+    args: Record<string, unknown>,
+    runId: string | null,
+  ): Promise<void> {
+    try {
+      if (!isControlPlaneSkill({ dangerous: skill.dangerous, requiredCapabilities: skill.requiredCapabilities ?? [] }, skillName)) return;
+      const { AuditLogger } = await import('../modules/audit/logger');
+      await new AuditLogger({ db: this.db, siteId: this.siteId }).write({
+        event: 'admin_change',
+        actorEmail: null,
+        ip: null,
+        userAgent: null,
+        requestId: null,
+        metadata: {
+          via: 'agent',
+          skill: skillName,
+          runId,
+          changedFields: Object.keys(args ?? {}).slice(0, 50),
+        },
+      });
+    } catch {
+      // The logger already never throws; this guards the import and the predicate.
     }
   }
 

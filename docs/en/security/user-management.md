@@ -1,11 +1,11 @@
 ---
-version: 15
-lastUpdated: 2026-11-17T19:23:30.212Z
+version: 18
+lastUpdated: 2026-11-21T00:02:58.713Z
 sourceLang: en
-contentHash: c4cf5c68f57e9896
-codeVerified: 2026-11-17T19:23:30.212Z
-codeVerifiedHash: c4cf5c68f57e9896
-codeVerifiedClaims: 122
+contentHash: e3b0be70412db75d
+codeVerified: 2026-11-21T00:02:58.713Z
+codeVerifiedHash: e3b0be70412db75d
+codeVerifiedClaims: 132
 ---
 
 # User Management Best Practices
@@ -239,7 +239,7 @@ Visitor (Next.js)            CMS                              Email
 
 | Endpoint | Auth | Notes |
 |----------|------|-------|
-| `POST /api/v1/auth/register` | public | Creates `subscriber`, `status=invited`. Per-IP rate-limited. Returns generic `202` (no enumeration). |
+| `POST /api/v1/auth/register` | public | Creates `subscriber`, `status=invited`. Per-IP rate-limited. Returns generic `202` (no enumeration). A site that sets `auth.registration` to `{ "enabled": false }` answers `403 REGISTRATION_DISABLED` before any other work (#994). |
 | `POST /api/v1/auth/verify-email` | public | Body `{token}` (or `?token=`). Flips `invited`→`active`. Idempotent (`already_verified`). |
 | `POST /api/v1/auth/login` | public | Issues `frontend`/`studio` JWT. Gated on `status='active'`, LoginGuard, anomaly detector. |
 | `POST /api/v1/auth/resend-verification` | public | Body `{email}`. Per-IP rate-limited. Generic `202`; re-emails the activation link only for a not-yet-active, password-based account (lost-email recovery). |
@@ -247,6 +247,14 @@ Visitor (Next.js)            CMS                              Email
 | `POST /api/v1/auth/reset-password` | public | Body `{token,password}`. Consumes a stateless `password-reset` token (1h TTL), sets the new password hash, and revokes all refresh tokens. |
 | `POST /api/v1/auth/refresh` | public | Rotates the presented refresh token (cookie or body `{refreshToken}`) → fresh access JWT + rotated refresh token. Reuse of a revoked token revokes the whole family. |
 | `POST /api/v1/auth/logout` | public | Revokes the presented refresh token's family and clears the cookie. Idempotent. |
+
+**Password work factor (#994).** Passwords are PBKDF2-SHA256, 100,000
+iterations by default. `PASSWORD_PBKDF2_ITERATIONS` raises the work factor of
+new hashes on Node/Docker (100,000–2,000,000), and a successful login re-hashes
+a password stored below it; the "unknown email" path uses a dummy hash of the
+same cost so login timing does not reveal which emails exist. Cloudflare
+Workers stay at 100,000 because their Web Crypto refuses more — do not raise
+it on a Docker deployment whose database may later be served by Workers.
 | `POST /api/v1/me/change-password` | bearer | Body `{currentPassword,newPassword}`. Verifies current password, sets new hash, revokes all refresh tokens. |
 | `GET /api/v1/me/sessions` | bearer | The caller's active sessions (live refresh tokens), redacted. |
 | `DELETE /api/v1/me/sessions/:id` | bearer | Revoke one of the caller's own sessions (`:id` = `sessionId`); effective immediately. |
@@ -498,6 +506,52 @@ the password (`amr: ["pwd","webauthn"]`) or as a passwordless staff sign-in
 `/auth/login` adds `methods` to the `mfa_required` response. Recovery codes are
 shared with TOTP. See [Passkeys](./passkeys.md).
 
+**Where `enforceTfa` applies.** A policy with `enforceTfa: true` requires a
+TFA-verified session for **every** route the session reaches — items, files,
+media, flows, imports, releases, AI and MCP as well as the Studio management
+API — whatever the client (Studio, SDK, script or `curl`). Before #987 the
+check ran only on requests that identified themselves as Studio or hit a
+Studio management prefix, so an un-enrolled user under an `enforceTfa` policy
+could still write content from a non-Studio client. The rules:
+
+- A user who must have 2FA but has not enrolled reaches the enrollment
+  endpoints (`/me/tfa`, `/me/tfa/setup`, `/me/tfa/confirm`, `/me/passkeys`,
+  `/me/passkeys/registration-options`) and nothing else; every other request
+  answers `403 TFA_REQUIRED`.
+- An enrolled user needs a session whose token carries `tfaVerified` (or an
+  `amr` with `totp` / `webauthn`); a password-only session answers
+  `403 TFA_REQUIRED`.
+- API keys are non-interactive credentials and are **not** subject to
+  `enforceTfa`; restrict them with their own policies and expiry. Anonymous
+  (public-role) requests have no session and are not affected either.
+- `appAccess` is unchanged: it is still checked only on the Studio surface.
+- The Studio's boot reads (`GET /permissions/me`, `GET /me/preferences`,
+  `GET /me/admin-path`) are also open to an un-enrolled user, so the Studio
+  can load and route them.
+- Each `403 TFA_REQUIRED` says why in `errors[0].details.reason`:
+  `enrollment_required` (enrol a factor) or `verification_required` (sign in
+  again with it). The Studio uses it: the first sends the user to
+  **Settings → Security** with a banner, the second signs them out to the
+  login screen with a notice. After enrolling, the session is still
+  password-only, so the next request answers `verification_required` and the
+  user signs in once more with the new factor.
+
+**Administrator MFA at setup.** The setup wizard binds an **Administrator
+MFA** policy (key `administrator_mfa`, `enforceTfa: true`, no other access)
+to the Administrator role when `LUMIBASE_ADMIN_REQUIRE_MFA` is `true`, or,
+when that variable is unset, in production (`LUMIBASE_ENV` or `NODE_ENV` is
+`production`) with an encryption key configured — without one TOTP enrolment
+is not available. `LUMIBASE_ADMIN_REQUIRE_MFA=false` turns it off. To drop it
+later, detach or delete the policy in Settings → Access. Sites created later
+from an organization do not get the policy; add `enforceTfa` to their
+policies yourself.
+
+**Second factor across renewal.** The refresh-token family records the
+login's `amr` (`lumibase_refresh_tokens.amr`, migration `0044`), so
+`/auth/refresh` re-issues `tfaVerified` + `amr` for a session that started
+with TOTP or a passkey. Families minted before `0044` renew without the claim
+— those users sign in again once to start a family that carries it.
+
 ## 5. Staff onboarding (do NOT use self-service)
 
 Staff are created **invite-only**:
@@ -510,7 +564,7 @@ POST /api/v1/users/invite     (requireSiteAdmin)
 This creates/links the user with a Studio role (`appAccess: true`) and
 sends a best-effort invite email. Enforce TFA on admin roles via a policy
 with `enforceTfa: true` (`withStudioAccess` then requires a TFA-verified
-session).
+session on every route, not only in Studio — see §4f).
 
 ---
 

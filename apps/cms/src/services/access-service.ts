@@ -11,7 +11,7 @@ import {
 } from '@lumibase/database';
 import type { CacheProvider } from '@lumibase/runtime';
 import { and, eq } from 'drizzle-orm';
-import { createPlaintextToken } from './api-key-token';
+import { apiKeyExpiry, createPlaintextToken } from './api-key-token';
 import { PermissionService } from './permission-service';
 import { inviteRefusalMessage, inviteUserToSite } from '../modules/email-identity/invite';
 
@@ -132,7 +132,8 @@ export class AccessService {
         prefix: token.prefix,
         tokenHash: token.tokenHash,
         createdBy: this.deps.userId ?? null,
-        expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+        // Omitted → default lifetime; explicit null → never expires (#994).
+        expiresAt: apiKeyExpiry(input.expiresAt === '' ? undefined : input.expiresAt),
         metadata: input.metadata ?? {},
       })
       .returning();

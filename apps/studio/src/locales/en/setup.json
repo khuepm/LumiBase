@@ -276,7 +276,7 @@
       },
       "tokenPrompt": {
         "title": "Setup token required",
-        "body": "This instance was started with LUMIBASE_REQUIRE_SETUP_TOKEN=true. Paste the one-time setup token printed in the CMS startup logs to continue.",
+        "body": "Setup on this instance requires a one-time token. Paste the token printed in the CMS startup logs (SETUP_TOKEN=…), or the LUMIBASE_SETUP_TOKEN your operator set, to continue.",
         "label": "Setup token",
         "submit": "Continue"
       }

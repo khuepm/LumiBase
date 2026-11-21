@@ -9,6 +9,7 @@ import {
 } from '@lumibase/contracts/schemas';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { resolveUploadPolicy } from '../services/upload-policy-service';
+import { siteIdFromUploadToken } from '../services/files/upload-token';
 import {
   compareDeclaredMime,
   detectPolyglot,
@@ -65,10 +66,16 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
   // Effective policy: per-site DB config → env override → default. Resolution
   // is fail-safe (falls back to env/default if the DB/cache are unavailable),
   // so the guard keeps working even when mounted without a DB context.
+  // The signed upload path carries no tenant context (it is exempt from
+  // `withTenant`); the site is the one its token was issued for (#993), so the
+  // issuing site's own policy applies instead of the env default.
+  const policySiteId = isSignedUpload
+    ? await siteIdFromUploadToken(c.req.query('token'), c.env as Partial<AppEnv['Bindings']> | undefined)
+    : safeGet(c, 'siteId');
   const policy = await resolveUploadPolicy({
     db: safeGet(c, 'db'),
     cache: safeGet(c, 'runtime')?.cache,
-    siteId: safeGet(c, 'siteId'),
+    siteId: policySiteId ?? undefined,
     env: c.env as Partial<AppEnv['Bindings']> | undefined,
   });
   const maxBytes = policy.maxBytes;
@@ -293,6 +300,11 @@ export function resolveFileUploadMaxBytes(raw: string | undefined): number {
   return resolveMaxBytes(raw);
 }
 
+/**
+ * Parses an allowlist string only. The allowlist the guard enforces comes from
+ * `resolveUploadPolicy`, which also holds an env override to the upload type
+ * catalogue (`catalogueBoundMimeAllowlist`, #993).
+ */
 export function resolveFileUploadMimeAllowlist(raw: string | undefined): string[] {
   return resolveMimeAllowlist(raw);
 }

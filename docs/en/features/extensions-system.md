@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-11-15T19:28:29.361Z
+version: 5
+lastUpdated: 2026-11-19T20:13:28.035Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 70cc0629da389101
+sourceHash: 06e7b733bca02fe8
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T19:28:29.361Z
-codeVerifiedHash: 70cc0629da389101
+codeVerified: 2026-11-19T20:13:28.035Z
+codeVerifiedHash: 06e7b733bca02fe8
 codeVerifiedClaims: 6
 ---
 
@@ -66,6 +66,10 @@ An extension may only use the APIs corresponding to its declared capabilities; c
 - The global `fetch` is replaced by `ctx.fetch`, which only allows whitelisted hosts.
 - Timeout: 5s per hook; memory capped by the Workers limit.
 - Versioning: install multiple versions, switch the active one.
+- An `endpoint` extension's handler (`/api/v1/extensions/<name>/*`) gets only `ctx`: **not** the CMS env bindings, the execution context, or the caller's `Authorization` / `Cookie` / `X-Lumi-Api-Key` headers, and it sees its own sub-path (`/api/v1/extensions/search/a/b` → `/a/b`) (#990).
+- Changing an installed extension's `bundleUrl` or `version` re-verifies its signature before saving; under the `require` policy (the default) an unverifiable new bundle is refused and the old one keeps running (#990).
+- Studio imports a UI bundle only when its SHA-256 matches the recorded `bundleSha256` (#990).
+- This is a capability gate, not an isolation boundary: bundle code runs in the CMS process. See [ADR-015](../architecture/decisions/adr-015-extension-isolation.md).
 
 ## 4. Hook events
 

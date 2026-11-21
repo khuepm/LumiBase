@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:09:39.809Z
+version: 2
+lastUpdated: 2026-11-19T20:13:26.504Z
 sourceLang: en
-contentHash: 2bdc828c1f456441
-codeVerified: 2026-08-02T19:09:39.809Z
-codeVerifiedHash: 2bdc828c1f456441
-codeVerifiedClaims: 2
+contentHash: 5cf4663bdf7f640c
+codeVerified: 2026-11-19T20:13:26.504Z
+codeVerifiedHash: 5cf4663bdf7f640c
+codeVerifiedClaims: 4
 ---
 
 # Cloudflare Deployment
@@ -66,6 +66,21 @@ After deploy, verify:
 ```bash
 curl -fsS https://<worker-host>/health
 ```
+
+**First-run setup token.** In production the setup wizard requires a one-time
+token (#992), so nobody who finds the Worker before you can claim the admin
+account. Workers have no startup step to mint and print one, so set your own
+before opening the wizard, enter it on the wizard's first screen, and delete it
+once setup is done:
+
+```bash
+openssl rand -base64 32 | pnpm exec wrangler secret put LUMIBASE_SETUP_TOKEN --env production
+# after setup:
+pnpm exec wrangler secret delete LUMIBASE_SETUP_TOKEN --env production
+```
+
+Without it, `POST /api/v1/setup/complete` answers `503 SETUP_TOKEN_NOT_ISSUED`.
+`LUMIBASE_REQUIRE_SETUP_TOKEN=false` turns the gate off on purpose.
 
 ## Documentation Site
 

@@ -317,3 +317,61 @@ describe('where nothing minted a token (Cloudflare Workers)', () => {
     expect(message).toMatch(/Cloudflare Workers/);
   });
 });
+
+describe('secure default in production (#992)', () => {
+  const OPERATOR = 'op-token-0123456789abcdefghijkl';
+
+  it.each([
+    [{ NODE_ENV: 'production' }, true],
+    [{ LUMIBASE_ENV: 'production' }, true],
+    [{ LUMIBASE_ENV: 'staging' }, false],
+    [{ NODE_ENV: 'development' }, false],
+    [{}, false],
+    [{ NODE_ENV: 'production', LUMIBASE_REQUIRE_SETUP_TOKEN: 'false' }, false],
+    [{ NODE_ENV: 'production', LUMIBASE_REQUIRE_SETUP_TOKEN: '0' }, false],
+    [{ NODE_ENV: 'production', LUMIBASE_REQUIRE_SETUP_TOKEN: 'no' }, false],
+    [{ LUMIBASE_SETUP_TOKEN: OPERATOR }, true],
+    [{ LUMIBASE_SETUP_TOKEN: 'short' }, false],
+  ] as const)('%j → required=%s', (env, expected) => {
+    expect(isSetupTokenRequired(env)).toBe(expected);
+  });
+
+  it('mints and prints at startup in production with no flag set', async () => {
+    const fake = makeFakeDb();
+    const { outcome, log } = await boot(fake, { NODE_ENV: 'production' });
+    expect(outcome).toBe('minted');
+    expect(log.some((line) => line.startsWith('[lumibase-cms] SETUP_TOKEN='))).toBe(true);
+  });
+
+  it('does not mint when the operator supplies LUMIBASE_SETUP_TOKEN, and says so', async () => {
+    const fake = makeFakeDb();
+    const { outcome, log } = await boot(fake, { NODE_ENV: 'production', LUMIBASE_SETUP_TOKEN: OPERATOR });
+    expect(outcome).toBe('not_required');
+    expect(fake.row?.setupTokenHash ?? null).toBeNull();
+    expect(log.join('\n')).toContain('LUMIBASE_SETUP_TOKEN');
+    expect(log.join('\n')).not.toContain(OPERATOR);
+  });
+
+  it('respects the explicit opt-out in production', async () => {
+    const fake = makeFakeDb();
+    const { outcome } = await boot(fake, { NODE_ENV: 'production', LUMIBASE_REQUIRE_SETUP_TOKEN: 'false' });
+    expect(outcome).toBe('not_required');
+  });
+
+  it('/setup/state reports the gate in production', async () => {
+    const fake = makeFakeDb();
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('db', fake.db);
+      await next();
+    });
+    app.route('/api/v1/setup', setupRouter);
+    const res = await app.request(
+      '/api/v1/setup/state',
+      { headers: { 'cf-connecting-ip': '198.51.100.9' } },
+      { LUMIBASE_ENV: 'production' } as unknown as AppEnv['Bindings'],
+    );
+    const body = (await res.json()) as { requiresSetupToken: boolean };
+    expect(body.requiresSetupToken).toBe(true);
+  });
+});

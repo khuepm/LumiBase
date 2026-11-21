@@ -369,6 +369,13 @@ export const refreshTokens = pgTable(
     revokedAt: timestamp('revoked_at'),
     lastIp: text('last_ip'),
     lastUserAgent: text('last_user_agent'),
+    /**
+     * Authentication methods the login that started this family proved
+     * (`['pwd','totp']`, `['webauthn']`, …). Copied to every rotation so a
+     * renewed access token keeps `tfaVerified` (#987). NULL = no record
+     * (families minted before migration 0044, or a single-factor login).
+     */
+    amr: jsonb('amr').$type<string[]>(),
     createdAt: createdAt(),
   },
   (t) => ({
