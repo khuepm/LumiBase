@@ -1,11 +1,11 @@
 ---
-version: 62
-lastUpdated: 2026-11-20T05:35:06.709Z
+version: 63
+lastUpdated: 2026-11-21T01:11:34.268Z
 sourceLang: en
-contentHash: a752c28a3a48bf3d
-codeVerified: 2026-11-20T05:35:06.709Z
-codeVerifiedHash: a752c28a3a48bf3d
-codeVerifiedClaims: 652
+contentHash: 923901a85a343fe3
+codeVerified: 2026-11-21T01:11:34.268Z
+codeVerifiedHash: 923901a85a343fe3
+codeVerifiedClaims: 654
 ---
 
 # Hono API Specification — LumiBase
@@ -1831,6 +1831,25 @@ disables public caching), `LUMIBASE_DELIVER_SWR` (seconds, default `300`),
 `LUMIBASE_NEGATIVE_CACHE_TTL` (seconds, default `30`, `0` disables
 tombstones), `LUMIBASE_DELIVER_RATE_LIMIT` (req/min/IP, default `1200`,
 `0` disables). See [Caching — penetration](../features/caching.md).
+
+**Personalisation** (#762): when the site has audiences, the page route
+resolves one from `CF-IPCountry` / `X-Vercel-IP-Country` /
+`CloudFront-Viewer-Country`, `?locale=`, `utm_*` and `X-Lumi-Attrs` (the last
+two only with `X-Lumi-Consent: personalization`; `DNT` / `Sec-GPC` withdraw
+it), applies that audience's published page and item variants, and returns
+`personalisation: { audience, variants }` plus `X-Lumi-Variant: <key|_>`.
+`Vary` then lists those headers, and the edge key, app-cache key and `ETag`
+include the audience. With `X-Lumi-Consent: analytics` one exposure is
+counted per day, slug and audience. See
+[Personalisation](../features/personalisation.md).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST` | `/api/v1/personalisation/audiences` | List / create audiences (site admin); `409 AUDIENCE_EXISTS` |
+| `PATCH/DELETE` | `/api/v1/personalisation/audiences/:id` | Update / delete (its variants are deleted too) |
+| `GET/POST` | `/api/v1/personalisation/variants` | List (`?subjectType=&subjectId=&audienceId=`) / create `{ subjectType, subjectId, audienceId, overrides, status? }`; `404 SUBJECT_NOT_FOUND` / `AUDIENCE_NOT_FOUND`, `409 VARIANT_EXISTS`, `413 OVERRIDES_TOO_LARGE` |
+| `PATCH/DELETE` | `/api/v1/personalisation/variants/:id` | `{ overrides?, status? }` / delete |
+| `GET` | `/api/v1/personalisation/exposures` | Daily exposure counts per slug and audience (`?from=&to=`, ≤ 366 days) with `meta.totals` |
 
 ---
 

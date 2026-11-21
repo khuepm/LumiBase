@@ -51,6 +51,7 @@ import { consentRouter } from './routes/consent';
 import { dataExportRouter } from './routes/data-export';
 import { restrictionRouter } from './routes/restriction';
 import { retentionRouter } from './routes/retention';
+import { personalisationRouter } from './modules/personalisation/routes';
 import { emailPublicRouter } from './routes/email-public';
 import { deliverRouter } from './routes/deliver';
 import { deploymentsRouter, deploymentsWebhookRouter } from './routes/deployments';
@@ -304,6 +305,8 @@ api.route('/me/restriction', restrictionRouter);
 api.route('/me/automated-decisions', automatedDecisionsRouter);
 // `/retention` — admin general data-retention pruning (site-admin only).
 api.route('/retention', retentionRouter);
+// Audience rules + content variants (#762), site admin.
+api.route('/personalisation', personalisationRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/pages', pagesRouter);

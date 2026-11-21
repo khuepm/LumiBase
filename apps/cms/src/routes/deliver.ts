@@ -27,6 +27,17 @@ import {
   resolveNegativeTtl,
 } from '../services/negative-cache';
 import { buildSeo } from '../services/seo-builder';
+import { PERSONALISATION_VARY } from '../modules/personalisation/context';
+import {
+  applyItemVariants,
+  applyPageVariant,
+  DEFAULT_AUDIENCE_TOKEN,
+  edgeUrlWithAudience,
+  resolveDeliveryAudience,
+  utcDay,
+  type DeliveryAudience,
+} from '../modules/personalisation/delivery';
+import { PersonalisationRepository } from '../modules/personalisation/repo';
 
 /**
  * Delivery API — implements the "1-Roundtrip Rule" (Strict Rule #3).
@@ -443,25 +454,53 @@ function sectionCollections(layoutConfig: unknown): string[] {
   return [...names];
 }
 
-/** Hydrate every section of a page into the delivery payload. */
+/** Personalisation inputs for {@link buildPagePayload} (#762). */
+interface PayloadPersonalisation {
+  repo: PersonalisationRepository;
+  audience: DeliveryAudience;
+}
+
+/**
+ * Hydrate every section of a page into the delivery payload. With an
+ * audience, the page's published variant replaces its title / layout first,
+ * and item variants are merged over the hydrated items.
+ */
 async function buildPagePayload(
   db: Variables['db'],
   siteId: string,
-  page: { title: string; slug: string; layoutConfig: unknown },
+  pageRow: { id: string; title: string; slug: string; layoutConfig: unknown },
   withProvenance: boolean,
+  personal?: PayloadPersonalisation,
 ) {
+  const audienceId = personal?.audience.audience?.id;
+  const pageVariant = audienceId
+    ? (await personal!.repo.publishedVariants('page', [pageRow.id], audienceId))[0]
+    : undefined;
+  const page = applyPageVariant(pageRow, pageVariant);
   const layout = (page.layoutConfig ?? {}) as LayoutConfig;
   const sections = layout.sections ?? [];
   const resolved = await Promise.all(
     sections.map((section) => hydrateSection(db, siteId, section, withProvenance)),
   );
-  return {
+  const payload: {
+    page: { title: string; slug: string };
+    sections: typeof resolved;
+    personalisation?: { audience: string | null; variants: string[] };
+  } = {
     page: {
       title: page.title,
       slug: page.slug,
     },
     sections: resolved,
   };
+  if (personal?.audience.active) {
+    const itemVariants = audienceId ? await applyItemVariants(personal.repo, payload, audienceId) : [];
+    payload.personalisation = {
+      audience: personal.audience.audience?.key ?? null,
+      variants: [...(pageVariant ? [pageVariant.id] : []), ...itemVariants],
+    };
+  }
+  return payload;
 }
 
 /**
@@ -522,8 +561,41 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
 
   const runtime = c.get('runtime');
   const edgeCache = runtime?.edgeCache;
+
+  // Personalisation (#762): resolve the audience before any cache tier, so
+  // every tier is keyed by it. Sites without audiences pay one cached lookup.
+  const personalRepo = new PersonalisationRepository(db, siteId);
+  const personal: DeliveryAudience = await resolveDeliveryAudience({
+    repo: personalRepo,
+    cache: runtime?.cache,
+    headers: c.req.raw.headers,
+    url: new URL(c.req.url),
+  }).catch(() => ({
+    active: false,
+    audience: null,
+    ctx: { country: null, locale: null, utm: {}, attrs: {}, consent: { personalization: false, analytics: false } },
+    token: DEFAULT_AUDIENCE_TOKEN,
+  }));
+  if (personal.active) {
+    // Downstream shared caches key by URL + Vary; the audience inputs are headers.
+    c.header('Vary', [PUBLIC_DELIVERY_VARY, ...PERSONALISATION_VARY].join(', '));
+    c.header('X-Lumi-Variant', personal.token);
+  }
+  /** Count one exposure (analytics consent only), after the response. */
+  const recordExposure = () => {
+    if (!personal.active || !personal.ctx.consent.analytics) return;
+    const task = personalRepo.recordExposure(utcDay(), 'page', slug, personal.token).catch(() => undefined);
+    try {
+      c.executionCtx.waitUntil(task);
+    } catch {
+      void task;
+    }
+  };
+  const payloadPersonal = personal.active ? { repo: personalRepo, audience: personal } : undefined;
+
   // One key per real variant, shared by match/put and the purge index (#622 B2).
-  const edgeUrl = canonicalDeliverEdgeUrl(c.req.url);
+  const canonicalEdgeUrl = canonicalDeliverEdgeUrl(c.req.url);
+  const edgeUrl = personal.active ? edgeUrlWithAudience(canonicalEdgeUrl, personal.token) : canonicalEdgeUrl;
   const edgeRequest = new Request(edgeUrl, { method: 'GET' });
   const useDeliverCache = policy.cacheable && !isPreview;
   const appCache = useDeliverCache ? runtime?.cache : undefined;
@@ -531,6 +603,7 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
     locale: c.req.query('locale'),
     lang: c.req.query('lang'),
     provenance: withProvenance ? 'true' : undefined,
+    audience: personal.active ? personal.token : undefined,
   });
   const appCacheKey =
     appCache && useDeliverCache ? deliverAppCacheKey(siteId, slug, variantHash) : null;
@@ -572,8 +645,10 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
         const headers = new Headers(cached.headers);
         headers.delete('content-length');
         headers.delete('content-type');
+        recordExposure();
         return new Response(null, { status: 304, headers });
       }
+      recordExposure();
       return cached;
     }
   }
@@ -589,8 +664,10 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
         // A 304 answers one client's conditional request. The edge is keyed by
         // URL alone, so storing it would hand an empty 304 to the next client
         // that has nothing cached (#622 B1).
+        recordExposure();
         return c.body(null, 304);
       }
+      recordExposure();
       const response = c.json(cached.body);
       if (edgeCache) {
         await edgeCache.put(edgeRequest, response.clone());
@@ -637,7 +714,8 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
 
   if (!policy.cacheable) {
     c.header('Cache-Control', policy.cacheControl);
-    return c.json(await buildPagePayload(db, siteId, page, withProvenance));
+    recordExposure();
+    return c.json(await buildPagePayload(db, siteId, page, withProvenance, payloadPersonal));
   }
 
   const fingerprint = await contentFingerprint(db, siteId);
@@ -648,6 +726,8 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
     page.updatedAt,
     fingerprint.maxUpdatedAt,
     fingerprint.visibleCount,
+    // A variant edit or a different audience must never revalidate as 304.
+    ...(personal.active ? [personal.token, await personalRepo.variantsFingerprint()] : []),
   ]);
 
   c.header('ETag', etag);
@@ -655,10 +735,12 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
   tagResponse(sectionCollections(page.layoutConfig));
   if (etagMatches(c.req.header('if-none-match'), etag)) {
     // Never into the shared edge cache — see the app-cache branch (#622 B1).
+    recordExposure();
     return c.body(null, 304);
   }
 
-  const body = await buildPagePayload(db, siteId, page, withProvenance);
+  recordExposure();
+  const body = await buildPagePayload(db, siteId, page, withProvenance, payloadPersonal);
   if (appCache && appCacheKey) {
     try {
       await appCache.set(appCacheKey, JSON.stringify({ body, etag } satisfies DeliverAppCacheEntry), {
