@@ -1,10 +1,10 @@
 ---
-version: 6
+version: 7
 sourceLang: en
-lastUpdated: 2026-11-21T09:19:22.356Z
-contentHash: 0a85a6f248399396
-codeVerified: 2026-11-21T09:19:22.356Z
-codeVerifiedHash: 0a85a6f248399396
+lastUpdated: 2026-11-21T09:33:18.501Z
+contentHash: 3761b10584f2fe4a
+codeVerified: 2026-11-21T09:33:18.501Z
+codeVerifiedHash: 3761b10584f2fe4a
 codeVerifiedClaims: 16
 ---
 
@@ -54,7 +54,7 @@ with `400 FILENAME_DISK_OUT_OF_SCOPE` — before this, a member could register
 another site's object key and read, replace or delete its bytes through
 `/files/:id/content`. Records created earlier keep their keys.
 
-**A presigned key has one owner and is used once (#993).** A key is an
+**A presigned key has one owner and is registered once (#993).** A key is an
 identifier, not a secret, so the site prefix alone is not enough: a member
 could otherwise register a key another file in a private folder already uses
 and read, replace or delete those bytes through their own record. Each key
@@ -62,7 +62,8 @@ and read, replace or delete those bytes through their own record. Each key
 has a claim row (`lumibase_upload_claims`) bound to the site and the principal
 that asked for it, moving `issued` → `uploading` → `uploaded` → `registered`
 with one conditional update per step. Only one signed PUT runs at a time
-(`409 UPLOAD_IN_PROGRESS`); `POST /api/v1/files` registers the key only for
+(`409 UPLOAD_IN_PROGRESS`); until the key is registered, the token may PUT
+again (a retry, or a corrected file), since no record or scan exists yet; `POST /api/v1/files` registers the key only for
 that principal, once, after the upload finished (`400 UPLOAD_CLAIM_INVALID`,
 `409 UPLOAD_NOT_COMPLETE`); and a registered key refuses every further signed
 PUT (`409 UPLOAD_ALREADY_REGISTERED`), so replaying the token cannot swap the

@@ -1,13 +1,13 @@
 ---
-version: 6
+version: 7
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-11-21T09:19:22.356Z
-sourceHash: 0a85a6f248399396
-codeVerified: 2026-11-21T09:19:22.356Z
-codeVerifiedHash: 0a85a6f248399396
+lastUpdated: 2026-11-21T09:33:18.501Z
+sourceHash: 3761b10584f2fe4a
+codeVerified: 2026-11-21T09:33:18.501Z
+codeVerifiedHash: 3761b10584f2fe4a
 codeVerifiedClaims: 16
 ---
 
@@ -57,7 +57,7 @@ sách upload của site đã cấp token (đường này không có tenant conte
 object của site khác rồi đọc, thay thế hoặc xoá bytes của nó qua
 `/files/:id/content`. Bản ghi tạo trước đó giữ nguyên key.
 
-**Key presigned chỉ có một chủ và chỉ dùng một lần (#993).** Key là định danh,
+**Key presigned chỉ có một chủ và chỉ được đăng ký một lần (#993).** Key là định danh,
 không phải bí mật, nên chỉ tiền tố site là chưa đủ: nếu không, một thành viên có
 thể đăng ký một key mà file khác trong thư mục riêng tư đã dùng, rồi đọc, thay
 thế hoặc xoá bytes đó qua bản ghi của chính mình. Mỗi key do
@@ -65,7 +65,8 @@ thế hoặc xoá bytes đó qua bản ghi của chính mình. Mỗi key do
 có một dòng claim (`lumibase_upload_claims`) gắn với site và principal đã xin
 nó, đi qua `issued` → `uploading` → `uploaded` → `registered`, mỗi bước là một
 lệnh update có điều kiện. Mỗi lúc chỉ một PUT ký sẵn được chạy
-(`409 UPLOAD_IN_PROGRESS`); `POST /api/v1/files` chỉ đăng ký key cho đúng
+(`409 UPLOAD_IN_PROGRESS`); trước khi key được đăng ký, token vẫn PUT lại được
+(thử lại, hoặc một file đã sửa), vì khi đó chưa có bản ghi hay lần quét nào; `POST /api/v1/files` chỉ đăng ký key cho đúng
 principal đó, một lần, sau khi upload xong (`400 UPLOAD_CLAIM_INVALID`,
 `409 UPLOAD_NOT_COMPLETE`); và key đã đăng ký từ chối mọi PUT ký sẵn tiếp theo
 (`409 UPLOAD_ALREADY_REGISTERED`), nên phát lại token không thể tráo bytes phía
