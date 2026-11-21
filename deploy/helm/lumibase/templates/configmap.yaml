@@ -10,6 +10,10 @@
 {{- if include "lumibase.isProduction" . -}}
 {{- $_ := set $env "NODE_ENV" "production" -}}
 {{- end -}}
+{{- if and .Values.networkPolicy.enabled .Values.networkPolicy.egress.restrict -}}
+{{- /* #1009: tells the CMS and `lumibase doctor --security` that egress is restricted. */ -}}
+{{- $_ := set $env "LUMIBASE_EGRESS_RESTRICTED" "true" -}}
+{{- end -}}
 {{- if $publicUrl -}}
 {{- $_ := set $env "LUMIBASE_PUBLIC_URL" $publicUrl -}}
 {{- end -}}
