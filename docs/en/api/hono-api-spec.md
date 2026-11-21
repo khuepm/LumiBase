@@ -1,10 +1,10 @@
 ---
-version: 62
-lastUpdated: 2026-11-19T04:17:55.964Z
+version: 63
+lastUpdated: 2026-11-21T01:11:53.936Z
 sourceLang: en
-contentHash: 5fd3b74566a2b92f
-codeVerified: 2026-11-19T04:17:55.964Z
-codeVerifiedHash: 5fd3b74566a2b92f
+contentHash: fa7f7fd6165bfb58
+codeVerified: 2026-11-21T01:11:53.936Z
+codeVerifiedHash: fa7f7fd6165bfb58
 codeVerifiedClaims: 654
 ---
 
@@ -690,10 +690,10 @@ matching negative-cache tombstones immediately.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/pages` | List pages for the active site |
-| `POST` | `/api/v1/pages` | Create `{ slug, title, layoutConfig? }` |
+| `POST` | `/api/v1/pages` | Create `{ slug, title, layoutConfig? }`. `403 SOURCE_FORBIDDEN` when a section `source` names a collection the caller cannot read in full (every field, no row filter) |
 | `GET` | `/api/v1/pages/blocks` | Registered page blocks (collections with `meta.pageBlock: true`) and their fields — the composer palette |
 | `GET` | `/api/v1/pages/:id` | Get one page |
-| `PATCH` | `/api/v1/pages/:id` | Partial update (`slug` / `title` / `layoutConfig`) |
+| `PATCH` | `/api/v1/pages/:id` | Partial update (`slug` / `title` / `layoutConfig`). `403 SOURCE_FORBIDDEN` when the new layout adds a `source` on a collection the caller cannot read in full; sources the page already had are not re-checked |
 | `DELETE` | `/api/v1/pages/:id` | Delete page |
 
 Slug shape matches the Delivery guard (`^[a-z0-9]+(?:[/_-][a-z0-9]+)*$`, ≤200).

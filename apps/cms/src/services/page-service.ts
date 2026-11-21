@@ -17,6 +17,7 @@ import { invalidateDeliverTag } from './content-invalidation';
 import { forgetNegative, negativePageKey } from './negative-cache';
 import { SchemaService, type CompiledField } from './schema-service';
 import { validateItem, type ValidationIssue } from './validation';
+import type { PermissionService } from './permission-service';
 
 export type PageRow = typeof pages.$inferSelect;
 
@@ -36,7 +37,7 @@ export class PageServiceError extends Error {
   constructor(
     readonly code: string,
     message: string,
-    readonly status: 400 | 404 | 409 = 400,
+    readonly status: 400 | 403 | 404 | 409 = 400,
     /** Per-path problems of a rejected composer layout. */
     readonly issues: ValidationIssue[] = [],
   ) {
@@ -72,7 +73,29 @@ export type PageServiceDeps = {
   siteId: string;
   cache?: CacheProvider;
   edgeCache?: EdgeCacheProvider | null;
+  /**
+   * The writer's permissions. A section `source` makes a collection's items
+   * part of a public page, so the writer must be able to read that collection
+   * in full. Omitted only by internal callers (seed, setup), which are trusted.
+   */
+  permissions?: Pick<PermissionService, 'canAccess'>;
 };
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** Collections named by any section `source`, in any layout shape (v1 or older). */
+export function pageSourceCollections(layout: unknown): Set<string> {
+  const names = new Set<string>();
+  const sections = isRecord(layout) && Array.isArray(layout.sections) ? layout.sections : [];
+  for (const section of sections) {
+    const source = isRecord(section) ? section.source : undefined;
+    if (isRecord(source) && typeof source.collection === 'string' && source.collection) {
+      names.add(source.collection);
+    }
+  }
+  return names;
+}
 
 export class PageService {
   constructor(private readonly deps: PageServiceDeps) {}
@@ -232,6 +255,7 @@ export class PageService {
     if (!input.title.trim()) {
       throw new PageServiceError('VALIDATION', 'title is required');
     }
+    await this.assertSourcesReadable(input.layoutConfig, undefined);
 
     const id = nanoid();
     try {
@@ -270,6 +294,9 @@ export class PageService {
       throw new PageServiceError('VALIDATION', 'title is required');
     }
     const layoutConfig = input.layoutConfig !== undefined ? await this.normaliseLayout(input.layoutConfig) : undefined;
+    if (input.layoutConfig !== undefined) {
+      await this.assertSourcesReadable(input.layoutConfig, existing.layoutConfig);
+    }
 
     try {
       const [row] = await this.deps.db
@@ -322,6 +349,33 @@ export class PageService {
       await invalidateDeliverTag(this.deps.cache, this.deps.siteId, this.deps.edgeCache);
     } catch {
       // never fail the write over a cache purge
+    }
+  }
+
+  /**
+   * Every collection a layout newly binds through a section `source` must be
+   * readable by the writer in full: a read permission on every field with no
+   * row filter. Delivery serves those items to anyone, so a narrower grant
+   * would let the writer publish what they cannot read themselves. Sources the
+   * page already had are not re-checked, so an editor can still change a page
+   * an administrator bound to a collection.
+   */
+  private async assertSourcesReadable(next: unknown, previous: unknown): Promise<void> {
+    const permissions = this.deps.permissions;
+    if (!permissions) return;
+    const before = pageSourceCollections(previous);
+    for (const name of pageSourceCollections(next)) {
+      if (before.has(name)) continue;
+      const perm = await permissions.canAccess(name, 'read');
+      const allFields = !!perm && perm.fields.length === 1 && perm.fields[0] === '*';
+      const allRows = !!perm && (perm.rule === null || (isRecord(perm.rule) && Object.keys(perm.rule).length === 0));
+      if (!allFields || !allRows) {
+        throw new PageServiceError(
+          'SOURCE_FORBIDDEN',
+          `A page section can only take its data from a collection you can read in full (every field and every row): "${name}".`,
+          403,
+        );
+      }
     }
   }
 
