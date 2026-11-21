@@ -255,7 +255,11 @@ export function processKey(siteId: string | null | undefined, name: string, bund
 /** A loaded child for this key, spawning (and loading) one when needed. */
 export async function acquireExtensionProcess(input: {
   key: string;
-  url: string;
+  /**
+   * The bundle's import URL. Only called when a child has to be spawned, so a
+   * live child never costs a bundle download.
+   */
+  url: () => Promise<string>;
   name: string;
   dispatch: CtxDispatch;
   timeoutMs: number;
@@ -267,8 +271,9 @@ export async function acquireExtensionProcess(input: {
     pool.delete(input.key);
   }
   const created = (async () => {
+    const url = await input.url();
     const proc = await ExtensionProcess.spawn({ onExit: () => { if (pool.get(input.key) === created) pool.delete(input.key); } });
-    await proc.load(input.url, input.name, input.dispatch, input.timeoutMs);
+    await proc.load(url, input.name, input.dispatch, input.timeoutMs);
     return proc;
   })();
   pool.set(input.key, created);

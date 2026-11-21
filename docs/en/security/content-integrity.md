@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-11-21T00:18:21.182Z
+version: 3
+lastUpdated: 2026-11-21T03:52:31.907Z
 sourceLang: en
-contentHash: a2c80706d77224a3
-codeVerified: 2026-11-21T00:18:21.182Z
-codeVerifiedHash: a2c80706d77224a3
+contentHash: 241fbe6d9887f2d1
+codeVerified: 2026-11-21T03:52:31.907Z
+codeVerifiedHash: 241fbe6d9887f2d1
 codeVerifiedClaims: 8
 ---
 
@@ -31,8 +31,11 @@ is created or its layout changes (`modules/content-integrity/monitor.ts`):
 
 "The site's own" hosts are the site's domains (`/api/v1/domains`) plus
 `allowedHosts`, compared by registrable domain, so `cms.acme.com` and
-`www.acme.com` count as one site. Only the host, file extension and field path
-are recorded — never the content.
+`www.acme.com` count as one site. On a shared hosting suffix (`pages.dev`,
+`workers.dev`, `github.io`, `vercel.app`, `netlify.app` and similar) each
+subdomain is its own site: `acme.pages.dev` does not treat `attacker.pages.dev`
+as its own. Only the host, file extension and field path are recorded — never
+the content.
 
 ## What happens
 

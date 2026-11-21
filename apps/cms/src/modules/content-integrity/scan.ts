@@ -55,10 +55,21 @@ const MAX_SIGNALS = 20;
 export function siteKey(host: string): string {
   const labels = host.toLowerCase().replace(/\.$/, '').split('.').filter(Boolean);
   if (labels.length <= 2) return labels.join('.');
+  const lastTwo = labels.slice(-2).join('.');
+  // On a shared hosting suffix every customer is a different site: a site on
+  // `acme.pages.dev` must not treat `attacker.pages.dev` as its own.
+  if (SHARED_HOSTING_SUFFIXES.has(lastTwo)) return labels.slice(-3).join('.');
   const second = labels[labels.length - 2]!;
   const take = ['co', 'com', 'net', 'org', 'gov', 'edu', 'ac'].includes(second) && labels[labels.length - 1]!.length === 2 ? 3 : 2;
   return labels.slice(-take).join('.');
 }
+
+/** Hosting suffixes under which each subdomain belongs to a different owner. */
+const SHARED_HOSTING_SUFFIXES: ReadonlySet<string> = new Set([
+  'pages.dev', 'workers.dev', 'r2.dev', 'github.io', 'gitlab.io', 'vercel.app', 'netlify.app',
+  'herokuapp.com', 'onrender.com', 'fly.dev', 'web.app', 'firebaseapp.com', 'appspot.com',
+  'azurewebsites.net', 'cloudfront.net', 'blogspot.com', 'wordpress.com', 'repl.co', 'glitch.me',
+]);
 
 export interface ScanOptions {
   /** Hosts that belong to the site (CMS domains, frontend, CDN). */

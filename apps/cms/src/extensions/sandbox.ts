@@ -292,8 +292,9 @@ export class ExtensionSandbox {
         key,
         // The child has no network authority of ours and Node cannot import
         // an https URL: the host downloads the (trusted, verified) bundle and
-        // hands the child its source.
-        url: await this.fetchBundleSource(opts.bundleUrl),
+        // hands the child its source — only when a child is spawned, not on
+        // every load of an extension whose child is already running.
+        url: () => this.fetchBundleSource(opts.bundleUrl),
         name: opts.name,
         dispatch,
         timeoutMs: opts.timeoutMs ?? 5000,

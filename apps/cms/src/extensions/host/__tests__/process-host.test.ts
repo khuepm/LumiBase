@@ -38,10 +38,12 @@ export default (ctx) => ({
 
 const ORIGIN = 'https://extensions.test';
 const BUNDLES: Record<string, string> = {};
+const FETCHES: Record<string, number> = {};
 
 /** Serves bundles from memory instead of the network; the trust gates still run. */
 class TestSandbox extends ExtensionSandbox {
   protected override async fetchBundleSource(url: string): Promise<string> {
+    FETCHES[url] = (FETCHES[url] ?? 0) + 1;
     const source = BUNDLES[url];
     if (!source) throw new Error(`no bundle at ${url}`);
     return source;
@@ -109,6 +111,15 @@ describe('out-of-process extension host (#990)', () => {
     // db:read without service-account is refused by the host, before any SQL.
     await expect(granted!.hooks!['items.delete.before']!({ collection: 'posts' })).rejects.toThrow(/db:read/);
   }, 40_000);
+
+  it('downloads the bundle only when it spawns a child, not on every load', async () => {
+    const before = FETCHES[PROBE] ?? 0;
+    const first = await sandbox().load({ name: 'probe', bundleUrl: PROBE, capabilities: [], siteId: 'site_a', timeoutMs: 20_000 });
+    const again = await sandbox().load({ name: 'probe', bundleUrl: PROBE, capabilities: [], siteId: 'site_a', timeoutMs: 20_000 });
+    expect(first).not.toBeNull();
+    expect(again).not.toBeNull();
+    expect((FETCHES[PROBE] ?? 0) - before).toBe(1);
+  }, 30_000);
 
   it('keeps one child per site: module state is not shared between tenants', async () => {
     const a = await sandbox().load({ name: 'probe', bundleUrl: PROBE, capabilities: [], siteId: 'site_a', timeoutMs: 20_000 });

@@ -62,7 +62,18 @@ describe('siteKey', () => {
     ['acme.com', 'acme.com'],
     ['shop.acme.co.uk', 'acme.co.uk'],
     ['ACME.COM.', 'acme.com'],
+    ['acme.pages.dev', 'acme.pages.dev'],
+    ['preview.acme.pages.dev', 'acme.pages.dev'],
+    ['someone.github.io', 'someone.github.io'],
   ])('%s → %s', (host, key) => {
     expect(siteKey(host)).toBe(key);
+  });
+
+  it('does not treat another tenant of a shared hosting suffix as the site itself', () => {
+    const signals = scanContent(
+      { body: 'Get it at https://attacker.pages.dev/setup.exe' },
+      { siteHosts: ['acme.pages.dev'] },
+    );
+    expect(signals).toEqual([expect.objectContaining({ kind: 'download_link', host: 'attacker.pages.dev' })]);
   });
 });

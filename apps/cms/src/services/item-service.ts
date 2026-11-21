@@ -1363,12 +1363,14 @@ export class ItemService {
     });
     const storedData = row.data;
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
+    // Before any fan-out (search, realtime, sync, flows, CDC), so an item the
+    // integrity policy sends back to draft is never announced as published.
+    await this.contentIntegrityGate(collectionName, row, row.status === 'published');
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>, storedData);
     await this.publishRealtimeEvent(collectionName, 'create', row.id);
     await this.dispatchFirebaseSync(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     await this.dispatchFlowEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     await this.writeCdcEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
-    await this.contentIntegrityGate(collectionName, row, row.status === 'published');
     // After hook — fire-and-forget.
     hooks?.dispatch('items.create.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
@@ -1600,6 +1602,13 @@ export class ItemService {
     if (!row) throw new ItemServiceError('UPDATE_FAILED', 'Failed to update item.');
     const storedData = row.data;
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
+    // Before any fan-out, as on create. A first publish is this write moving
+    // `firstPublishedAt` from unset to set — not any save within a minute of it.
+    await this.contentIntegrityGate(
+      collectionName,
+      row,
+      rawRow.firstPublishedAt == null && row.firstPublishedAt != null,
+    );
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>, storedData);
     await this.publishRealtimeEvent(collectionName, 'update', row.id);
     await this.dispatchFirebaseSync(collectionName, 'update', row.id, row.data as Record<string, unknown>);
@@ -1611,7 +1620,6 @@ export class ItemService {
       row.data as Record<string, unknown>,
       Object.keys(patch.data ?? {}),
     );
-    await this.contentIntegrityGate(collectionName, row, isRecentFirstPublish(row.firstPublishedAt));
     // After hook — fire-and-forget.
     hooks?.dispatch('items.update.after', { collection: collectionName, item: row.data as Record<string, unknown>, itemId: row.id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
@@ -3034,7 +3042,6 @@ export class ItemService {
     return collections;
   }
 
-  /** Per-write invalidation: immediate normally, deferred while coalescing. */
   /**
    * Content-integrity check for content that is live after this write (#989,
    * see modules/content-integrity). Under the site's `unpublish` policy, an
@@ -3079,6 +3086,7 @@ export class ItemService {
     }
   }
 
+  /** Per-write invalidation: immediate normally, deferred while coalescing. */
   private async afterWriteInvalidation(collectionName: string): Promise<void> {
     if (this.writeCoalescer) {
       this.writeCoalescer.record(collectionName);
@@ -3748,9 +3756,4 @@ function assignRelation(
 
 function limitArray<T>(values: T[], limit: number | undefined): T[] {
   return typeof limit === 'number' ? values.slice(0, limit) : values;
-}
-
-/** True when an item's first publication happened within the last minute (this write). */
-function isRecentFirstPublish(firstPublishedAt: Date | null | undefined): boolean {
-  return firstPublishedAt instanceof Date && Date.now() - firstPublishedAt.getTime() < 60_000;
 }

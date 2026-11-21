@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-11-21T00:18:21.182Z
+version: 3
+lastUpdated: 2026-11-21T03:52:31.907Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a2c80706d77224a3
+sourceHash: 241fbe6d9887f2d1
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-21T00:18:21.182Z
-codeVerifiedHash: a2c80706d77224a3
+codeVerified: 2026-11-21T03:52:31.907Z
+codeVerifiedHash: 241fbe6d9887f2d1
 codeVerifiedClaims: 8
 ---
 
@@ -34,8 +34,11 @@ delivery được tạo hoặc đổi layout (`modules/content-integrity/monitor
 
 Host "của site" là các domain của site (`/api/v1/domains`) cộng với
 `allowedHosts`, so theo tên miền đăng ký, nên `cms.acme.com` và `www.acme.com`
-được tính là một site. Chỉ host, phần mở rộng file và đường dẫn field được ghi
-lại — không bao giờ ghi nội dung.
+được tính là một site. Trên một hậu tố hosting dùng chung (`pages.dev`,
+`workers.dev`, `github.io`, `vercel.app`, `netlify.app` và tương tự), mỗi
+subdomain là một site riêng: `acme.pages.dev` không coi `attacker.pages.dev` là
+của mình. Chỉ host, phần mở rộng file và đường dẫn field được ghi lại — không
+bao giờ ghi nội dung.
 
 ## Điều gì xảy ra
 
