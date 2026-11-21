@@ -1,13 +1,13 @@
 ---
-version: 3
+version: 4
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-11-15T11:57:28.932Z
-sourceHash: 9863d4c9c17ad1fa
-codeVerified: 2026-11-15T17:12:06.232Z
-codeVerifiedHash: 9863d4c9c17ad1fa
+lastUpdated: 2026-11-21T12:08:31.624Z
+sourceHash: 3c1893cf56a3ed68
+codeVerified: 2026-11-21T12:08:31.624Z
+codeVerifiedHash: 3c1893cf56a3ed68
 codeVerifiedClaims: 8
 ---
 
@@ -128,7 +128,7 @@ hoặc `http://localhost`; mọi giá trị khác quay về mặc định.
 
 ### Chính sách trình duyệt
 
-- **CSP.** Trong Docker, CMS phục vụ Studio với `script-src 'self'` và
+- **CSP.** Trong Docker, CMS phục vụ Studio với `script-src 'self' blob:` và
   `connect-src 'self' https:`. Tile, glyph và sprite được tải qua https, và
   worker của MapLibre là một file cùng origin (Studio đặt nó bằng
   `setWorkerUrl`), nên chính sách không cần đổi. Style phục vụ qua http thường
