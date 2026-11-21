@@ -52,7 +52,10 @@ interface SectionConfig {
     collection: string;
     limit?: number;
     orderBy?: string;
-    /** Public delivery defaults to published items. */
+    /**
+     * Never honoured: delivery serves published items only, and page writes
+     * refuse any other value (#1006). Drafts are previewed with a preview token.
+     */
     status?: string;
     /** Emit a normalised `_seo` block per item (Req 14.1). */
     seo?: boolean | { jsonLdType?: string };
@@ -72,7 +75,7 @@ interface DeliveryItemRow {
   updatedAt: Date;
 }
 
-function clampLimit(limit: unknown): number {
+export function clampLimit(limit: unknown): number {
   if (typeof limit !== 'number' || !Number.isFinite(limit)) return DEFAULT_SECTION_LIMIT;
   return Math.min(Math.max(Math.floor(limit), 1), MAX_SECTION_LIMIT);
 }
@@ -97,7 +100,7 @@ function fieldExpression(name: string): SQL | undefined {
   }
 }
 
-function buildSort(orderBy?: string) {
+export function buildSort(orderBy?: string) {
   if (!orderBy) return [desc(schema.items.updatedAt)];
   const direction = orderBy.startsWith('-') ? 'desc' : 'asc';
   const field = orderBy.replace(/^-/, '');

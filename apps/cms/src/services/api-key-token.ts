@@ -53,3 +53,28 @@ export async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
+
+/** Env knob for the default lifetime of a new API key, in days (#994). */
+export const API_KEY_DEFAULT_TTL_DAYS_ENV = 'API_KEY_DEFAULT_TTL_DAYS';
+export const DEFAULT_API_KEY_TTL_DAYS = 90;
+
+/**
+ * Expiry for a new API key (#994). An explicit value wins: a date, or `null`
+ * for a key that never expires (an opt-in, not the default). When the caller
+ * says nothing, the key expires after `API_KEY_DEFAULT_TTL_DAYS` (default 90;
+ * `0` restores the old never-expires default) — a forgotten credential then
+ * stops working on its own instead of staying valid forever.
+ */
+export function apiKeyExpiry(
+  requested: Date | string | null | undefined,
+  env?: Readonly<Record<string, unknown>>,
+  now = new Date(),
+): Date | null {
+  if (requested === null) return null;
+  if (requested !== undefined) return requested instanceof Date ? requested : new Date(requested);
+  const raw = env?.[API_KEY_DEFAULT_TTL_DAYS_ENV] ?? (typeof process !== 'undefined' ? process.env[API_KEY_DEFAULT_TTL_DAYS_ENV] : undefined);
+  const parsed = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : DEFAULT_API_KEY_TTL_DAYS;
+  const days = Number.isFinite(parsed) && parsed >= 0 ? Math.min(parsed, 3650) : DEFAULT_API_KEY_TTL_DAYS;
+  if (days === 0) return null;
+  return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+}

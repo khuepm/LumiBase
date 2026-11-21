@@ -1,12 +1,14 @@
 import { PREVIEW_HEADER, PREVIEW_QUERY_PARAM } from '@lumibase/contracts';
 import { formatSafeError } from '@lumibase/contracts/utils';
-import type { Database } from '@lumibase/database';
+import { pages, scopeSite, type Database } from '@lumibase/database';
+import { and, eq } from 'drizzle-orm';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { scopedDbFor } from '../middleware/db';
 import { assertPublicIdentifier } from '../services/identifier-guard';
 import { PREVIEW_LIST_MAX_LIMIT, PreviewService, type PreviewAuthFailure } from '../services/preview-service';
+import { buildSort, clampLimit } from './deliver';
 import { previewAudit, previewError, secretFor } from './preview';
 
 /**
@@ -17,6 +19,7 @@ import { previewAudit, previewError, secretFor } from './preview';
  *   GET /:site_id                          what the token targets (+ the item)
  *   GET /:site_id/items/:collection        live items + the token's overlay
  *   GET /:site_id/items/:collection/:id    one item through the overlay
+ *   GET /:site_id/page/:slug               a page, section sources read through the overlay
  *
  * The token is read from the `x-lumibase-preview` header (preferred) or the
  * `?__preview=` query parameter. Every failure answers one 401 body; every
@@ -141,6 +144,74 @@ previewDeliveryRouter.get('/:site_id/items/:collection/:id', async (c) => {
     if (!item) return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Item not found.' }] }, 404);
     await recordRead(c, auth, { route: 'item', collection, itemId: id });
     return c.json({ data: item, meta: { locale: auth.row.locale } });
+  } catch (err) {
+    const { status, body } = previewError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * A page as the token sees it (#1006). Public `GET /deliver/page` resolves a
+ * section `source` to published items only; here each source is read with the
+ * token's rules instead (live items + the previewed draft, version or release,
+ * through the token creator's read permission). This is the only way a page
+ * shows unpublished items, and it needs a valid preview token: like every
+ * preview read it is `no-store` and never touches the delivery caches.
+ */
+previewDeliveryRouter.get('/:site_id/page/:slug', async (c) => {
+  const auth = await authenticateDelivery(c);
+  if (!auth.ok) return auth.response;
+  const slug = c.req.param('slug');
+  const notFound = { errors: [{ code: 'NOT_FOUND', message: 'Page not found.' }] };
+  if (!assertPublicIdentifier('slug', slug).ok) return c.json(notFound, 404);
+  try {
+    const [page] = await auth.db
+      .select()
+      .from(pages)
+      .where(and(scopeSite(pages.siteId, auth.siteId), eq(pages.slug, slug)))
+      .limit(1);
+    if (!page) return c.json(notFound, 404);
+
+    const layout = isRecord(page.layoutConfig) ? page.layoutConfig : {};
+    const sections = Array.isArray(layout.sections) ? layout.sections.filter(isRecord) : [];
+    const resolved = await Promise.all(
+      sections.map(async (section) => {
+        const base = {
+          id: section.id,
+          component: section.component,
+          styleConfig: isRecord(section.styleConfig) ? section.styleConfig : {},
+          data: isRecord(section.data) ? section.data : {},
+        };
+        const source = isRecord(section.source) ? section.source : undefined;
+        if (!source || typeof source.collection !== 'string' || !source.collection) return base;
+        const items = await auth.service.listItems(auth.row, source.collection, {
+          limit: clampLimit(source.limit),
+          orderBy: buildSort(typeof source.orderBy === 'string' ? source.orderBy : undefined),
+        });
+        if (!items) {
+          // Missing, or not readable by the token's creator: same shape as delivery.
+          return {
+            ...base,
+            data: { ...base.data, items: [] },
+            sourceError: { code: 'SOURCE_COLLECTION_NOT_FOUND', collection: source.collection },
+          };
+        }
+        return {
+          ...base,
+          data: {
+            ...base.data,
+            items: items.map(({ data, ...rest }) => ({ ...data, ...rest })),
+          },
+        };
+      }),
+    );
+    await recordRead(c, auth, { route: 'page', slug });
+    return c.json({
+      data: { page: { title: page.title, slug: page.slug }, sections: resolved },
+      meta: { expiresAt: auth.row.expiresAt.toISOString(), locale: auth.row.locale },
+    });
   } catch (err) {
     const { status, body } = previewError(err);
     return c.json(body, status as 400);

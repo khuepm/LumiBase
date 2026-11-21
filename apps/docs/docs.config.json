@@ -130,6 +130,8 @@
           "security/anti-abuse",
           "security/secure-defaults",
           "security/route-guards",
+          "security/content-integrity",
+          "security/content-injection-defence",
           "security/runtime-security-guards-plan",
           "security/cwe-top-100-audit",
           "security/idor-testing",

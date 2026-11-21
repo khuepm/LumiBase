@@ -41,6 +41,12 @@ packages/
    `.kiro/steering/definition-of-done.md` §4a (prefer over-syncing; re-stamp
    provenance with `stamp-pair.mjs` when the pair is already 1-1 translated).
 8. **Deprecation is opt-in:** `withDeprecation` (`apps/cms/src/middleware/deprecation.ts`) is a reusable RFC 8594 tool. Attach it **only** when explicitly told to deprecate/retire/sunset a specific route — never globally, never on healthy endpoints. Unwired while nothing is retiring is correct.
+9. **Release freeze:** while `.github/release-freeze.json` is `active` (now: v2.2.0), `main` takes
+   no `feat`, `refactor`, breaking change, `epic/*` branch or `release(epic …)` PR — only fixes,
+   tests, docs, chore/ci/build and the release PR. **Security fixes are the exception**
+   (`fix(security)`, `security(...)`, or the `security` label). Epic work continues on `epic/*`
+   branches. Do not open or merge feature PRs into `main`, and do not title a feature `fix`.
+   Policy: `.kiro/steering/release-freeze.md`; CI guard: `release-freeze` workflow.
 
 ## Docs i18n — mandatory workflow
 

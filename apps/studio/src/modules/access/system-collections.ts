@@ -41,6 +41,12 @@ const EXTENSION_ACCESS_TARGETS = [
   'extension_endpoints',
   'extension_operations',
 ] as const;
+/**
+ * Delivery page builder (#986): `/api/v1/pages` requires
+ * `lumibase_pages::<action>`; pages are public, so writing one is publishing.
+ * Grouped with content — it is content, just not a schema collection.
+ */
+const DELIVERY_COLLECTIONS = ['lumibase_pages'] as const;
 /** Pseudo-collections gating paid AI usage (#511: `lumibase_ai_decisions` → `create`). */
 const AI_COLLECTIONS = ['lumibase_ai_decisions'] as const;
 /**
@@ -56,6 +62,7 @@ const DEPLOY_COLLECTIONS = [
 ] as const;
 
 const SYSTEM_CONTRACT_COLLECTIONS = [
+  ...DELIVERY_COLLECTIONS,
   ...SCHEMA_COLLECTIONS,
   ...ACCESS_COLLECTIONS,
   ...EXTENSION_ACCESS_TARGETS,
@@ -66,6 +73,7 @@ const SYSTEM_CONTRACT_COLLECTIONS = [
 
 /** Display labels for system pseudo-collections whose name is not self-explanatory. */
 const SYSTEM_LABELS: Record<string, string> = {
+  lumibase_pages: 'Delivery pages (page builder)',
   lumibase_ai_decisions: 'AI decisions',
   'lumibase_deploy:*': 'Deploy: every environment',
   'lumibase_deploy:preview': 'Deploy: preview',
@@ -151,6 +159,10 @@ export function buildAccessCollectionGroups(
       fromSystemContract: SYSTEM_CONTRACT_SET.has(name),
     });
   }
+
+  // Project collections lead the content group (and the dialog default); the
+  // page builder grant (`lumibase_pages`) follows them.
+  grouped.content.sort((a, b) => Number(a.fromSystemContract) - Number(b.fromSystemContract));
 
   return (['content', 'schema', 'access', 'extension', 'ai', 'deploy', 'sensitive'] as const)
     .map((id) => ({ ...ACCESS_COLLECTION_GROUPS[id], options: grouped[id] }))

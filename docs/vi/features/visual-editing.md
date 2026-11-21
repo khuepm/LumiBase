@@ -1,14 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-11-18T06:07:15.330Z
+version: 4
+lastUpdated: 2026-11-21T13:49:43.114Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a0532da35ea57607
+sourceHash: 03cee90deba0d489
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-18T06:07:15.330Z
-codeVerifiedHash: a0532da35ea57607
-codeVerifiedClaims: 14
+codeVerified: 2026-11-21T13:49:43.114Z
+codeVerifiedHash: 03cee90deba0d489
+codeVerifiedClaims: 18
 ---
 
 # Live preview & visual editing
@@ -20,8 +20,8 @@ codeVerifiedClaims: 14
 
 **Status:** đã có — preview token (V01), khung preview trong Studio (V02),
 overlay `@lumibase/visual-editing` (V03), preview theo version/release/locale
-(V04, gồm cả **Preview release** trong Studio), CSP và threat model (V05). Chưa
-có: trình dựng trang trực quan (V06, sau v1).
+(V04, gồm cả **Preview release** trong Studio), CSP và threat model (V05), và
+trình dựng trang trực quan (V06, xem [Page composer](./page-composer.md)).
 
 ## 1. Các phần ghép với nhau thế nào
 
@@ -111,9 +111,14 @@ của bạn:
 GET /api/v1/deliver/preview/:site_id                         # what the token targets (+ the item)
 GET /api/v1/deliver/preview/:site_id/items/:collection        # live items + the preview overlay
 GET /api/v1/deliver/preview/:site_id/items/:collection/:id    # one item through the overlay
+GET /api/v1/deliver/preview/:site_id/page/:slug               # a page, its section sources through the overlay
 ```
 
-Response là `private, no-store` và `noindex`. Xem `examples/nextjs-blog` để có
+Response là `private, no-store` và `noindex`. Cách đọc trang trả về cùng các
+section như `GET /deliver/page`, bọc trong `{ data, meta }`; mỗi `source` của
+section hiện các item đang live cộng với bản nháp, version hoặc release của
+token. Route trang công khai không bao giờ hiện item chưa xuất bản, dù layout
+ghi gì (#1006). Xem `examples/nextjs-blog` để có
 cấu hình Next.js đầy đủ: `src/app/api/preview/route.ts` kiểm token phía server,
 bật draft mode, giữ token trong cookie `httpOnly` rồi redirect;
 `src/app/posts/[id]/page.tsx` đọc qua token khi draft mode đang bật.

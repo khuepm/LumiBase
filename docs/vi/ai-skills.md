@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-11-15T13:42:40.951Z
+version: 7
+lastUpdated: 2026-11-21T08:45:30.621Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8221209427f28e25
+sourceHash: 7f85b6f0eb0a9ee5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T13:42:40.951Z
-codeVerifiedHash: 8221209427f28e25
+codeVerified: 2026-11-21T08:45:30.621Z
+codeVerifiedHash: 7f85b6f0eb0a9ee5
 codeVerifiedClaims: 6
 ---
 
@@ -79,6 +79,10 @@ Sao chép các phần sau vào system prompt của trợ lý AI hoặc file READ
 Các kỹ năng chạy qua **điểm cuối được kiểm soát** `POST /api/v1/mcp` (được bảo vệ bởi cờ per-site `contentOs.mcp`) thông qua `AISecureHarness.execute`, kế thừa mọi cơ chế bảo vệ: kill switch → kiểm tra capability → mức tự trị L0–L4 → cửa sổ phủ quyết (veto window) → phê duyệt HITL → kiểm toán (audit).
 
 **Phân loại rủi ro.** Một kỹ năng là nguy hiểm (được kiểm soát bởi HITL/tự trị) khi nó (a) đặt cờ `dangerous`, (b) yêu cầu capability thay đổi dữ liệu `schema:*`, hoặc (c) có tên bắt đầu bằng `delete*`. Thao tác CRUD mục lưu trữ (Item) vẫn an toàn. Các kỹ năng không thể đảo ngược (`deleteCollection`, `deleteField`, `deleteRole`, `deletePolicy`, `deleteRelation`, `revokeApiKey`, `removeUser`) bị giới hạn cứng ở mức tự trị **L2** và không bao giờ chạy tự động hoàn toàn.
+
+**Không bao giờ tự trị (#991).** Các kỹ năng mở rộng chính quyền hạn hoặc mã của hệ thống dùng chung trần L2 đó và luôn bị coi là nguy hiểm, nên chúng luôn chờ người duyệt ở mọi mức (hoặc bị từ chối ở L0): `installExtension`, `updateExtension`, `uninstallExtension`, `createApiKey`, `rotateApiKey`, `createWebhook`, `updateWebhook`, `createFlow`, `upsertSetting`, `deleteSetting`, `createRole`, `createPolicy`, `inviteUser`, `updateUser` (`NEVER_AUTONOMOUS_SKILLS` trong `ai-harness.ts`). Tự trị "kiếm được" chỉ áp dụng cho thao tác nội dung, không cho những kỹ năng này.
+
+**Xuất bản ở L4 (#991).** Một lần xuất bản agent tự thực hiện — `createItem` với `status: 'published'`, đổi trạng thái, hoặc sửa một item đang live — còn phải qua constitution đang hoạt động của tenant (các evaluator chặn, chạy trên nội dung kết quả) và nằm trong ngân sách xuất bản theo giờ của role: `budget.maxPublishesPerHour` trên intent, mặc định 30. Ngân sách vẫn đúng khi chạy song song: mỗi lần xuất bản giữ chỗ dưới một khoá database theo site và role trước khi chạy, nên các lượt chạy song song trên bao nhiêu worker cũng không vượt được, và lần xuất bản thất bại sẽ trả lại chỗ. Không đạt một trong hai thì lời gọi chờ duyệt với `riskReason` là `constitution_blocked` hoặc `publish_budget_exceeded` thay vì thực thi. Nội dung do agent tạo mà bộ giám sát toàn vẹn nội dung gắn cờ sẽ ghi một incident `content_integrity`, làm hạ cấp role đó (xem [Toàn vẹn nội dung](./security/content-integrity.md)).
 
 | Skill | Capability | Risk |
 |-------|-----------|------|

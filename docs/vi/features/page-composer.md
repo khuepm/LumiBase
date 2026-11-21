@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-11-20T01:40:56.111Z
+version: 4
+lastUpdated: 2026-11-21T13:49:43.383Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 99c1393a2a14232d
+sourceHash: 8413de5a84806b63
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-20T01:40:56.111Z
-codeVerifiedHash: 99c1393a2a14232d
+codeVerified: 2026-11-21T13:49:43.383Z
+codeVerifiedHash: 8413de5a84806b63
 codeVerifiedClaims: 12
 ---
 
@@ -108,7 +108,9 @@ lạ, thiếu giá trị bắt buộc, sai kiểu, lỗi ở block lồng nhau),
 được khai, id section bị trùng, một `source` trỏ tới collection không tồn tại
 hoặc đòi thứ khác ngoài item đã xuất bản, hoặc dữ liệu block điền vào field mã
 hoá hay pii/phi. Mỗi lỗi có đường dẫn `field` như `sections.1.data.title`.
-Layout không có `version` vẫn được lưu nguyên như trước.
+Layout không có `version` vẫn được lưu nguyên như trước, trừ việc `source` của
+section ở đó cũng không được đòi status khác `published` (#1006, xem
+[page hydration](../architecture/page-hydration.md)).
 
 ## 4. Render
 

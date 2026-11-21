@@ -72,6 +72,7 @@ const EncryptionSettingsPage = lazy(() => import('./modules/settings/encryption-
 const SecuritySettingsPage = lazy(() => import('./modules/settings/security-page').then((m) => ({ default: m.SecuritySettingsPage })));
 const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
 const UploadsSettingsPage = lazy(() => import('./modules/settings/uploads-page').then((m) => ({ default: m.UploadsSettingsPage })));
+const ContentIntegritySettingsPage = lazy(() => import('./modules/settings/content-integrity-page').then((m) => ({ default: m.ContentIntegritySettingsPage })));
 const AiDecisionsSettingsPage = lazy(() => import('./modules/settings/ai-decisions-settings').then((m) => ({ default: m.AiDecisionsSettingsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
 const UpdatesPage = lazy(() => import('./modules/settings/updates-page').then((m) => ({ default: m.UpdatesPage })));
@@ -812,6 +813,11 @@ const uploadsSettingsRoute = createRoute({
   path: 'uploads',
   component: withSuspense(UploadsSettingsPage),
 });
+const contentIntegritySettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'content-integrity',
+  component: withSuspense(ContentIntegritySettingsPage),
+});
 const aiDecisionsSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'ai-decisions',
@@ -1000,6 +1006,11 @@ const adminPathUploadsSettingsRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'uploads',
   component: withSuspense(UploadsSettingsPage),
+});
+const adminPathContentIntegritySettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'content-integrity',
+  component: withSuspense(ContentIntegritySettingsPage),
 });
 const adminPathAiDecisionsSettingsRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
@@ -1479,6 +1490,7 @@ const routeTree = rootRoute.addChildren([
       extensionsRoute,
       uploadsSettingsRoute,
       aiDecisionsSettingsRoute,
+      contentIntegritySettingsRoute,
       marketplaceRoute,
       updatesRoute,
       agentHarnessRoute,
@@ -1565,6 +1577,7 @@ const routeTree = rootRoute.addChildren([
       adminPathExtensionsRoute,
       adminPathUploadsSettingsRoute,
       adminPathAiDecisionsSettingsRoute,
+      adminPathContentIntegritySettingsRoute,
       adminPathMarketplaceRoute,
       adminPathUpdatesRoute,
       adminPathAgentHarnessRoute,

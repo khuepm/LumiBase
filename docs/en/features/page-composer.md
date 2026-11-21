@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-11-20T01:40:56.111Z
+version: 4
+lastUpdated: 2026-11-21T13:49:43.383Z
 sourceLang: en
-contentHash: 99c1393a2a14232d
-codeVerified: 2026-11-20T01:40:56.111Z
-codeVerifiedHash: 99c1393a2a14232d
+contentHash: 8413de5a84806b63
+codeVerified: 2026-11-21T13:49:43.383Z
+codeVerifiedHash: 8413de5a84806b63
 codeVerifiedClaims: 12
 ---
 
@@ -108,7 +108,8 @@ a region is undeclared, a section id repeats, a `source` names a missing
 collection or asks for anything other than published items, or block data
 fills an encrypted or pii/phi field. Each error has a `field` path such as
 `sections.1.data.title`. Layouts without `version` are stored untouched, as
-before.
+before, except that a section `source` may not ask for a status other than
+`published` there either (#1006, see [page hydration](../architecture/page-hydration.md)).
 
 ## 4. Render it
 

@@ -15,6 +15,8 @@ import {
   revokeOtherSessions,
   isSessionLive,
   newSessionId,
+  normalizeAmr,
+  amrHasSecondFactor,
 } from '../refresh-token';
 
 /**
@@ -164,6 +166,61 @@ describe('rotateRefreshToken', () => {
     expect(calls.inserts).toHaveLength(0);
     expect(calls.updates.length).toBeGreaterThanOrEqual(1);
     expect(calls.updates.at(-1)).toHaveProperty('revokedAt');
+  });
+});
+
+describe('second factor across rotation (#987)', () => {
+  const live = {
+    id: 'r1',
+    userId: 'u1',
+    audience: 'studio',
+    familyId: 'fam1',
+    revokedAt: null,
+    expiresAt: new Date(Date.now() + 60_000),
+  };
+
+  it('stores the login amr on the new family row', async () => {
+    const { db, calls } = fakeDb({});
+    await issueRefreshToken(db, { siteId: 's1', userId: 'u1', audience: 'studio', amr: ['pwd', 'totp'] }, undefined);
+    expect(calls.inserts[0].amr).toEqual(['pwd', 'totp']);
+  });
+
+  it('stores NULL for a single-factor family', async () => {
+    const { db, calls } = fakeDb({});
+    await issueRefreshToken(db, { siteId: 's1', userId: 'u1', audience: 'studio' }, undefined);
+    expect(calls.inserts[0].amr).toBeNull();
+  });
+
+  it('copies amr to the successor and returns it to /refresh', async () => {
+    const { db, calls } = fakeDb({
+      selectRows: [{ ...live, amr: ['pwd', 'webauthn'] }],
+      updateReturning: [{ id: 'r1' }],
+    });
+    const out = await rotateRefreshToken(db, { rawToken: 'x', siteId: 's1' }, undefined);
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.amr).toEqual(['pwd', 'webauthn']);
+    expect(calls.inserts[0].amr).toEqual(['pwd', 'webauthn']);
+  });
+
+  it('a family minted before migration 0044 (amr NULL) renews without a second factor', async () => {
+    const { db } = fakeDb({ selectRows: [{ ...live, amr: null }], updateReturning: [{ id: 'r1' }] });
+    const out = await rotateRefreshToken(db, { rawToken: 'x', siteId: 's1' }, undefined);
+    expect(out.ok && out.amr).toBeNull();
+    expect(amrHasSecondFactor(out.ok ? out.amr : null)).toBe(false);
+  });
+
+  it('normalizes amr: strings only, de-duplicated, capped, empty → null', () => {
+    expect(normalizeAmr(['pwd', 'pwd', 7, '', 'totp'])).toEqual(['pwd', 'totp']);
+    expect(normalizeAmr([])).toBeNull();
+    expect(normalizeAmr('totp')).toBeNull();
+    expect(normalizeAmr(Array.from({ length: 20 }, (_, i) => `m${i}`))).toHaveLength(8);
+  });
+
+  it('recognizes second-factor methods only', () => {
+    expect(amrHasSecondFactor(['pwd'])).toBe(false);
+    expect(amrHasSecondFactor(['pwd', 'totp'])).toBe(true);
+    expect(amrHasSecondFactor(['webauthn'])).toBe(true);
+    expect(amrHasSecondFactor(null)).toBe(false);
   });
 });
 

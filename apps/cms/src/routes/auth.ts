@@ -8,7 +8,8 @@ import { and, eq, sql } from 'drizzle-orm';
 import { roles, systemState, users, userSites } from '@lumibase/database';
 import type { AppEnv } from '../env';
 import { runDetached } from '../lib/detached';
-import { hashPassword, verifyPassword } from '../services/auth/password';
+import { hashPassword, passwordNeedsRehash, targetPbkdf2Iterations, verifyPassword } from '../services/auth/password';
+import { isSelfRegistrationEnabled } from '../services/auth/registration-settings';
 import { ensureSubscriberRole } from '../services/auth/frontend-role';
 import {
   TOKEN_AUDIENCE,
@@ -28,6 +29,7 @@ import {
   revokeSessionById,
   revokeOtherSessions,
   newSessionId,
+  amrHasSecondFactor,
 } from '../services/auth/refresh-token';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import {
@@ -226,7 +228,7 @@ meRouter.post('/change-password', async (c) => {
   });
   if (policyFailure) return c.json(passwordPolicyErrorBody(policyFailure), 400);
 
-  const passwordHash = await hashPassword(input.newPassword);
+  const passwordHash = await hashPassword(input.newPassword, targetPbkdf2Iterations(c.env as unknown as Record<string, unknown>));
   const now = new Date();
   await db
     .update(users)
@@ -595,6 +597,17 @@ authRouter.post('/register', async (c) => {
   const ip = extractClientIp(c);
   const userAgent = c.req.header('user-agent') ?? null;
 
+  // Self-registration switch (#994). A site that has no public audience can
+  // close the subscriber sign-up surface entirely instead of relying on rate
+  // limits and email verification. Checked before anything else, so a closed
+  // site does no hashing and creates nothing.
+  if (!(await isSelfRegistrationEnabled(db, siteId))) {
+    return c.json(
+      { errors: [{ code: 'REGISTRATION_DISABLED', message: 'Self-registration is not available on this site.' }] },
+      403,
+    );
+  }
+
   // (3) Best-effort per-IP abuse brake. Runs before body parse / hashing
   // so a flood is cheap to reject.
   const rate = await checkAuthFlowRate(
@@ -660,7 +673,7 @@ authRouter.post('/register', async (c) => {
     .limit(1);
 
   if (!existing) {
-    const passwordHash = await hashPassword(input.password);
+    const passwordHash = await hashPassword(input.password, targetPbkdf2Iterations(c.env as unknown as Record<string, unknown>));
     // (1) Server-resolved least-privilege role. Never from the body.
     const subscriberRoleId = await ensureSubscriberRole(db, siteId);
 
@@ -1116,7 +1129,7 @@ authRouter.post('/reset-password', async (c) => {
   const policyFailure = await checkNewPassword(c, input.password, { userInputs: [user.email] });
   if (policyFailure) return c.json(passwordPolicyErrorBody(policyFailure), 400);
 
-  const passwordHash = await hashPassword(input.password);
+  const passwordHash = await hashPassword(input.password, targetPbkdf2Iterations(c.env as unknown as Record<string, unknown>));
   // Single winner (#732): compare-and-swap on the session generation read
   // above. A concurrent request with the same link already bumped it, so
   // this one updates nothing and the link reads as spent.
@@ -1171,15 +1184,20 @@ authRouter.use('/login', loginGuardMiddleware());
  * The dummy hash is computed lazily on the first failed login so the
  * cold-start cost doesn't pad the first successful login.
  */
-let DUMMY_PASSWORD_HASH: string | null = null;
-async function getDummyPasswordHash(): Promise<string> {
-  if (DUMMY_PASSWORD_HASH) return DUMMY_PASSWORD_HASH;
+// Keyed by work factor (#994): the dummy must cost what a real account's hash
+// costs, or a raised PASSWORD_PBKDF2_ITERATIONS would make unknown emails
+// answer faster than known ones.
+const DUMMY_PASSWORD_HASHES = new Map<number, string>();
+async function getDummyPasswordHash(iterations: number): Promise<string> {
+  const cached = DUMMY_PASSWORD_HASHES.get(iterations);
+  if (cached) return cached;
   const seed = crypto.getRandomValues(new Uint8Array(32));
   const seedStr = Array.from(seed)
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
-  DUMMY_PASSWORD_HASH = await hashPassword(seedStr);
-  return DUMMY_PASSWORD_HASH;
+  const hash = await hashPassword(seedStr, iterations);
+  DUMMY_PASSWORD_HASHES.set(iterations, hash);
+  return hash;
 }
 
 /**
@@ -1284,7 +1302,7 @@ authRouter.post('/login', async (c) => {
     // missing-user branch matches the existing-user branch in CPU
     // time (Req 7.5). The verify always returns false, but we don't
     // even check the result — the only point is the wall clock.
-    await verifyPassword(input.password, await getDummyPasswordHash());
+    await verifyPassword(input.password, await getDummyPasswordHash(targetPbkdf2Iterations(c.env as unknown as Record<string, unknown>)));
 
     await recordLoginFailure(
       db,
@@ -1360,6 +1378,22 @@ authRouter.post('/login', async (c) => {
       { errors: [{ code: 'ACCOUNT_DISABLED', message: 'This account is not active.' }] },
       403,
     );
+  }
+
+  // Re-hash on a successful login when the stored hash uses fewer PBKDF2
+  // iterations than the configured target (#994). Best-effort: a failed write
+  // never fails the login, and the password itself is unchanged, so sessions
+  // and tokenVersion are left alone.
+  const targetIterations = targetPbkdf2Iterations(c.env as unknown as Record<string, unknown>);
+  if (passwordNeedsRehash(user.passwordHash, targetIterations)) {
+    try {
+      await db
+        .update(users)
+        .set({ passwordHash: await hashPassword(input.password, targetIterations) })
+        .where(eq(users.id, user.id));
+    } catch (err) {
+      console.warn('[auth] password re-hash failed', formatSafeError(err));
+    }
   }
 
   const siteId = c.get('siteId');
@@ -1779,6 +1813,10 @@ authRouter.post('/refresh', async (c) => {
       tokenVersion: user.tokenVersion ?? 0,
       // Same session across rotation — see the login path.
       sid: outcome.familyId,
+      // A family started by a second-factor login renews TFA-verified (#987).
+      // Without this, `enforceTfa` refused the user as soon as the first
+      // access token expired.
+      ...(amrHasSecondFactor(outcome.amr) ? { tfaVerified: true, amr: outcome.amr } : {}),
     },
     jwtSecret,
     audience,

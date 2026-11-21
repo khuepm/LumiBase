@@ -223,7 +223,14 @@ describe.skipIf(!hasDbIntegrationUrl)('page composer (DB integration)', () => {
   });
 
   it('validates on PATCH too, and leaves free-form (pre-composer) layouts untouched', async () => {
-    const legacy = { sections: [{ id: 'x', component: 'AnythingGoes', data: { foo: 1 }, source: { collection: 'posts', status: 'draft' } }] };
+    // A free-form layout may not ask for drafts either (#1006)…
+    const asksForDrafts = { sections: [{ id: 'x', component: 'AnythingGoes', source: { collection: 'posts', status: 'draft' } }] };
+    const refused = await send('POST', '/api/v1/pages', { slug: 'legacy', title: 'Legacy', layoutConfig: asksForDrafts });
+    expect(refused.status).toBe(400);
+    expect(JSON.stringify(await refused.json())).toContain('sections.0.source.status');
+
+    // …but is otherwise stored untouched.
+    const legacy = { sections: [{ id: 'x', component: 'AnythingGoes', data: { foo: 1 }, source: { collection: 'posts', limit: 3 } }] };
     const created = await send('POST', '/api/v1/pages', { slug: 'legacy', title: 'Legacy', layoutConfig: legacy });
     expect(created.status).toBe(201);
     const id = ((await created.json()) as { data: { id: string } }).data.id;

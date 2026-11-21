@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-11-18T06:07:15.330Z
+version: 4
+lastUpdated: 2026-11-21T13:49:43.114Z
 sourceLang: en
-contentHash: a0532da35ea57607
-codeVerified: 2026-11-18T06:07:15.330Z
-codeVerifiedHash: a0532da35ea57607
-codeVerifiedClaims: 14
+contentHash: 03cee90deba0d489
+codeVerified: 2026-11-21T13:49:43.114Z
+codeVerifiedHash: 03cee90deba0d489
+codeVerifiedClaims: 18
 ---
 
 # Live preview & visual editing
@@ -17,8 +17,8 @@ codeVerifiedClaims: 14
 
 **Status:** shipped — preview tokens (V01), Studio preview pane (V02),
 `@lumibase/visual-editing` overlay (V03), version/release/locale preview (V04,
-including **Preview release** in the Studio), CSP and threat model (V05). Not
-yet: the visual page composer (V06, post-v1).
+including **Preview release** in the Studio), CSP and threat model (V05), and
+the visual page composer (V06, see [Page composer](./page-composer.md)).
 
 ## 1. How it fits together
 
@@ -108,9 +108,14 @@ Send the token in the `x-lumibase-preview` header (or `?__preview=`), from your
 GET /api/v1/deliver/preview/:site_id                         # what the token targets (+ the item)
 GET /api/v1/deliver/preview/:site_id/items/:collection        # live items + the preview overlay
 GET /api/v1/deliver/preview/:site_id/items/:collection/:id    # one item through the overlay
+GET /api/v1/deliver/preview/:site_id/page/:slug               # a page, its section sources through the overlay
 ```
 
-Responses are `private, no-store` and `noindex`. See
+Responses are `private, no-store` and `noindex`. The page read returns the same
+sections as `GET /deliver/page`, wrapped in `{ data, meta }`; each section
+`source` shows live items plus the token's draft, version or release. The
+public page route never shows unpublished items, whatever the layout says
+(#1006). See
 `examples/nextjs-blog` for a complete Next.js setup:
 `src/app/api/preview/route.ts` checks the token server-side, enables draft
 mode, keeps the token in an `httpOnly` cookie and redirects;

@@ -131,6 +131,7 @@ export async function loadExtensions(): Promise<ExtensionEntry[]> {
       type: string;
       enabled: boolean;
       bundleUrl: string;
+      bundleSha256?: string | null;
       manifest: Record<string, string>;
       capabilities?: unknown;
     }>;
@@ -141,6 +142,8 @@ export async function loadExtensions(): Promise<ExtensionEntry[]> {
 
       const bundleUrl = ext.bundleUrl;
       const name = ext.name;
+      const expectedSha256 = typeof ext.bundleSha256 === 'string' ? ext.bundleSha256 : null;
+      const load = () => importVerifiedBundle(name, bundleUrl, expectedSha256);
 
       // GRANTED capabilities (server-side subset of the manifest) scope which
       // intents this extension may claim.
@@ -150,15 +153,14 @@ export async function loadExtensions(): Promise<ExtensionEntry[]> {
       if (hasIntentCapability(capabilities)) {
         intentSources.set(name, {
           capabilities,
-          load: async () => (await import(/* @vite-ignore */ bundleUrl)) as Record<string, unknown>,
+          load,
         });
       }
 
       // Create a lazy component from the bundle's default export.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const LazyComponent = lazy(async (): Promise<{ default: ComponentType<any> }> => {
-        // eslint-disable-next-line @typescript-eslint/no-implied-eval
-        const mod = await import(/* @vite-ignore */ bundleUrl) as Record<string, unknown>;
+        const mod = await load();
         const component = (mod.default ?? mod.component) as ComponentType<unknown> | undefined;
         if (!component) throw new Error(`Extension "${name}" does not export a default component.`);
         return { default: component };
@@ -401,4 +403,41 @@ export function ExtensionComponent({ name, ...props }: ExtensionComponentProps) 
       </Suspense>
     </ExtensionErrorBoundary>
   );
+}
+
+/**
+ * Import an extension bundle only if its bytes match the SHA-256 the server
+ * recorded for it (#990). A bundle whose content was replaced at its URL — a
+ * compromised CDN, a swapped file — is refused instead of running inside the
+ * admin origin. Rows without a recorded hash (installed under the `warn`
+ * signature policy) load as before, with a console warning.
+ *
+ * Limit: the check fetches the bytes, then `import()`s the same URL, which the
+ * browser normally serves from the HTTP cache. It catches a persistent swap,
+ * not a server that answers the two requests differently; a blob-URL import
+ * would close that gap but needs `blob:` in the Studio CSP `script-src`. See
+ * ADR-015.
+ */
+export async function importVerifiedBundle(
+  name: string,
+  bundleUrl: string,
+  expectedSha256: string | null,
+): Promise<Record<string, unknown>> {
+  if (expectedSha256) {
+    await assertBundleIntegrity(name, bundleUrl, expectedSha256);
+  } else {
+    console.warn(`[extension-loader] "${name}" has no recorded bundle hash; loading without an integrity check.`);
+  }
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  return (await import(/* @vite-ignore */ bundleUrl)) as Record<string, unknown>;
+}
+
+export async function assertBundleIntegrity(name: string, bundleUrl: string, expectedSha256: string): Promise<void> {
+  const res = await fetch(bundleUrl, { credentials: 'omit' });
+  if (!res.ok) throw new Error(`Extension "${name}": bundle could not be fetched for verification (${res.status}).`);
+  const digest = await crypto.subtle.digest('SHA-256', await res.arrayBuffer());
+  const actual = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+  if (actual !== expectedSha256.toLowerCase()) {
+    throw new Error(`Extension "${name}": bundle content does not match its recorded SHA-256; refusing to load it.`);
+  }
 }

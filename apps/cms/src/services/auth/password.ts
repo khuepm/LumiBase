@@ -17,6 +17,12 @@
  */
 
 const PBKDF2_ITERATIONS = 100_000;
+/** Upper bound for `PASSWORD_PBKDF2_ITERATIONS` (#994). */
+export const MAX_PBKDF2_ITERATIONS = 2_000_000;
+/** Cloudflare Workers' Web Crypto refuses PBKDF2 above 100,000 iterations. */
+export const WORKERS_MAX_PBKDF2_ITERATIONS = 100_000;
+/** Env knob for the PBKDF2 work factor of NEW hashes (Node/Docker only). */
+export const PBKDF2_ITERATIONS_ENV = 'PASSWORD_PBKDF2_ITERATIONS';
 const SALT_BYTES = 16;
 const HASH_BITS = 256;
 const SCHEME = 'pbkdf2';
@@ -77,10 +83,42 @@ async function pbkdf2(
  * Hash a plaintext password using PBKDF2-SHA256 with a freshly generated
  * 16-byte salt and 100k iterations. Returns the canonical encoded string.
  */
-export async function hashPassword(plaintext: string): Promise<string> {
+export async function hashPassword(plaintext: string, iterations: number = PBKDF2_ITERATIONS): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
-  const hash = await pbkdf2(plaintext, salt, PBKDF2_ITERATIONS, HASH_BITS);
-  return `${SCHEME}$${PBKDF2_ITERATIONS}$${toHex(salt)}$${toHex(hash)}`;
+  const hash = await pbkdf2(plaintext, salt, iterations, HASH_BITS);
+  return `${SCHEME}$${iterations}$${toHex(salt)}$${toHex(hash)}`;
+}
+
+/** True when running on Cloudflare Workers. */
+function isWorkersRuntime(): boolean {
+  return typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers';
+}
+
+/**
+ * Work factor for new password hashes (#994). `PASSWORD_PBKDF2_ITERATIONS`
+ * raises it on Node/Docker (clamped to 100,000–2,000,000). On Cloudflare
+ * Workers it is always 100,000: Workers' Web Crypto refuses more, and a hash
+ * it cannot verify would lock the user out. For the same reason, do not raise
+ * it on a Docker deployment whose database may later be served by Workers.
+ */
+export function targetPbkdf2Iterations(env?: Readonly<Record<string, unknown>>): number {
+  if (isWorkersRuntime()) return WORKERS_MAX_PBKDF2_ITERATIONS;
+  const raw = env?.[PBKDF2_ITERATIONS_ENV] ?? (typeof process !== 'undefined' ? process.env[PBKDF2_ITERATIONS_ENV] : undefined);
+  const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(parsed)) return PBKDF2_ITERATIONS;
+  return Math.min(MAX_PBKDF2_ITERATIONS, Math.max(PBKDF2_ITERATIONS, parsed));
+}
+
+/**
+ * Whether a stored hash was made with fewer iterations than `target`, so a
+ * successful login should re-hash it (#994). Malformed hashes return false.
+ */
+export function passwordNeedsRehash(stored: string | null | undefined, target: number): boolean {
+  if (typeof stored !== 'string') return false;
+  const parts = stored.split('$');
+  if (parts.length !== 4 || parts[0] !== SCHEME) return false;
+  const iterations = Number.parseInt(parts[1] ?? '', 10);
+  return Number.isInteger(iterations) && iterations > 0 && iterations < target;
 }
 
 /**

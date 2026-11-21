@@ -634,7 +634,7 @@ export class PreviewService {
   async listItems(
     row: PreviewSecretRow,
     collection: string,
-    opts: { limit?: number; offset?: number } = {},
+    opts: { limit?: number; offset?: number; orderBy?: SQL[] } = {},
   ): Promise<PreviewItem[] | null> {
     const ctx = await this.readContext(row, collection);
     if (!ctx) return null;
@@ -658,7 +658,7 @@ export class PreviewService {
           ctx.perms.whereFor(ctx.read),
         ),
       )
-      .orderBy(desc(items.updatedAt))
+      .orderBy(...(opts.orderBy && opts.orderBy.length > 0 ? opts.orderBy : [desc(items.updatedAt)]))
       .limit(limit)
       .offset(offset)) as ItemRow[];
 
