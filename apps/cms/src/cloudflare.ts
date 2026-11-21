@@ -191,6 +191,12 @@ export default Sentry.withSentry(
     if (controller.cron === '0 * * * *') {
       ctx.waitUntil(runScheduledRotation(db));
       ctx.waitUntil(runScheduledRefreshTokenPrune(db));
+      // Unregistered presigned uploads older than a day (#993).
+      ctx.waitUntil(
+        import('./services/files/orphan-sweep').then(({ runScheduledOrphanSweep }) =>
+          runScheduledOrphanSweep({ db, storage: runtime.storage }),
+        ),
+      );
       ctx.waitUntil(runScheduledReviewRunPurge(db, env.DECISION_REVIEW_RETENTION_DAYS));
       // Opt-in anonymous usage telemetry — same pass as the Docker hourly cron.
       // Off unless enabled AND an endpoint is set; then it is a no-op.

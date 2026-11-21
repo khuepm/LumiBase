@@ -1,10 +1,10 @@
 ---
-version: 4
+version: 5
 sourceLang: en
-lastUpdated: 2026-11-20T06:00:17.786Z
-contentHash: f9f1da0558c36442
-codeVerified: 2026-11-20T06:00:17.786Z
-codeVerifiedHash: f9f1da0558c36442
+lastUpdated: 2026-11-21T00:02:59.060Z
+contentHash: 82417fcc383b6530
+codeVerified: 2026-11-21T00:02:59.060Z
+codeVerifiedHash: 82417fcc383b6530
 codeVerifiedClaims: 16
 ---
 
@@ -53,6 +53,13 @@ own). `POST /api/v1/files` refuses a `filenameDisk` outside the caller's site
 with `400 FILENAME_DISK_OUT_OF_SCOPE` — before this, a member could register
 another site's object key and read, replace or delete its bytes through
 `/files/:id/content`. Records created earlier keep their keys.
+
+**Unregistered uploads are swept (#993).** A presigned upload that is never
+registered with `POST /api/v1/files` leaves an object no file points to. Once
+an hour, for every site, the CMS lists `sites/<siteId>/files/` and deletes
+objects that no file or file version references and whose `<ts>_` key prefix
+is more than 24 hours old, at most 1,000 per run. A key without that prefix is
+never deleted, since its age is unknown.
 
 **The env allowlist is held to the catalogue (#993).**
 `FILE_UPLOAD_ALLOWED_MIME_TYPES` entries outside the upload type catalogue —

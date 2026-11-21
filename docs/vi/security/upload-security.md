@@ -1,13 +1,13 @@
 ---
-version: 4
+version: 5
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-11-20T06:00:17.786Z
-sourceHash: f9f1da0558c36442
-codeVerified: 2026-11-20T06:00:17.786Z
-codeVerifiedHash: f9f1da0558c36442
+lastUpdated: 2026-11-21T00:02:59.060Z
+sourceHash: 82417fcc383b6530
+codeVerified: 2026-11-21T00:02:59.060Z
+codeVerifiedHash: 82417fcc383b6530
 codeVerifiedClaims: 16
 ---
 
@@ -56,6 +56,13 @@ sách upload của site đã cấp token (đường này không có tenant conte
 `400 FILENAME_DISK_OUT_OF_SCOPE` — trước đây, một thành viên có thể đăng ký key
 object của site khác rồi đọc, thay thế hoặc xoá bytes của nó qua
 `/files/:id/content`. Bản ghi tạo trước đó giữ nguyên key.
+
+**Upload không được đăng ký sẽ bị dọn (#993).** Một upload presigned không bao
+giờ được đăng ký bằng `POST /api/v1/files` để lại một object không file nào trỏ
+tới. Mỗi giờ, với từng site, CMS liệt kê `sites/<siteId>/files/` và xoá các
+object mà không file hay phiên bản file nào tham chiếu và có tiền tố key `<ts>_`
+cũ hơn 24 giờ, tối đa 1.000 object mỗi lần chạy. Key không có tiền tố đó không
+bao giờ bị xoá, vì không biết tuổi của nó.
 
 **Allowlist từ env bị giới hạn theo catalogue (#993).** Các mục trong
 `FILE_UPLOAD_ALLOWED_MIME_TYPES` nằm ngoài catalogue loại upload — kể cả
