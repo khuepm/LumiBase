@@ -1,5 +1,6 @@
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { boolean, foreignKey, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
+import { items } from './cms';
 import { sites } from './core';
 
 /**
@@ -90,6 +91,13 @@ export const translationSuggestions = pgTable(
   (t) => ({
     siteTargetUnique: uniqueIndex('translation_suggestions_site_target_locale_unique').on(t.siteId, t.targetKey, t.locale),
     siteStatusIdx: index('translation_suggestions_site_status_idx').on(t.siteId, t.locale, t.status),
+    /** Same-site item (migration 0044); erasure of the item removes this row. */
+    itemFk: foreignKey({
+      name: 'lumibase_translation_suggestions_item_fk',
+      columns: [t.siteId, t.itemId],
+      foreignColumns: [items.siteId, items.id],
+    }).onDelete('cascade'),
+    siteItemIdx: index('translation_suggestions_site_item_idx').on(t.siteId, t.itemId),
     jobIdx: index('translation_suggestions_job_idx').on(t.jobId),
   }),
 );

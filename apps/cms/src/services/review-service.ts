@@ -634,6 +634,10 @@ export class ReviewService {
       if (unknown.length > 0) throw invalid(`Questions not in this run: ${unknown.join(', ')}.`);
     }
 
+    // `item_id` is a same-site FK (migration 0041): an unknown or unreadable
+    // item is the caller's error (REVIEW_ITEM_NOT_FOUND / FORBIDDEN), not a 500.
+    if (request.itemId !== undefined) await this.deps.content.readItem(request.collection, request.itemId, []);
+
     const row = await this.deps.store.insertSession({
       id: this.newId(),
       siteId: this.deps.siteId,

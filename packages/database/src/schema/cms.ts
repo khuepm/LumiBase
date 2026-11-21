@@ -611,6 +611,12 @@ export const contentVersions = pgTable(
       t.itemId,
       t.key,
     ),
+    /** Same-site item (migration 0044); erasure of the item removes this row. */
+    itemFk: foreignKey({
+      name: 'lumibase_content_versions_item_fk',
+      columns: [t.siteId, t.itemId],
+      foreignColumns: [items.siteId, items.id],
+    }).onDelete('cascade'),
     itemIdx: index('content_versions_item_idx').on(t.siteId, t.itemId),
   }),
 );
@@ -763,6 +769,12 @@ export const previewSecrets = pgTable(
   (t) => ({
     tokenHashUnique: uniqueIndex('preview_secrets_token_hash_unique').on(t.tokenHash),
     siteActiveIdx: index('preview_secrets_site_active_idx').on(t.siteId, t.revokedAt, t.expiresAt),
+    /** Same-site item (migration 0044); erasure of the item removes this row. */
+    itemFk: foreignKey({
+      name: 'lumibase_preview_secrets_item_fk',
+      columns: [t.siteId, t.itemId],
+      foreignColumns: [items.siteId, items.id],
+    }).onDelete('cascade'),
     siteItemIdx: index('preview_secrets_site_item_idx').on(t.siteId, t.collection, t.itemId),
     targetCheck: check(
       'preview_secrets_target_chk',

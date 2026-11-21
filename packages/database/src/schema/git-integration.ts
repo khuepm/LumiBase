@@ -220,6 +220,11 @@ export const gitProvenance = pgTable(
     commitSha: text('commit_sha').notNull(),
     prNumber: integer('pr_number'),
     collection: text('collection'),
+    /**
+     * Same-site item. Migration 0044 declares the composite FK with
+     * `ON DELETE SET NULL (item_id)`, which keeps `site_id`; Drizzle has no
+     * column-list form, so that FK lives in SQL only.
+     */
     itemId: text('item_id'),
     /** 'content' | 'schema' | 'intent'. */
     changeType: text('change_type').notNull(),

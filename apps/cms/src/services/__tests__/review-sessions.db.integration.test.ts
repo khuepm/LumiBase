@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { reviewFeedback, reviewRuns, reviewSessions, settings, sites, type Database } from '@lumibase/database';
 import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
+import { seedItems } from '../../__tests__/helpers/seed-items';
 import { DECISION_SETTINGS_KEY, readDecisionSettings, reviewRolloutMode } from '../decision-governance';
 import { computeReviewMetrics, DrizzleReviewMetricsSource } from '../review-metrics';
 import { purgeExpiredReviewRuns } from '../review-run-retention';
@@ -128,6 +129,8 @@ describe.skipIf(!hasDbIntegrationUrl)('Review pilot sessions — DB integration'
       { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_A, name: 'Review sessions IT A' },
       { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_B, name: 'Review sessions IT B' },
     ]);
+    await seedItems(db, SITE_A, ['itm_1']);
+    await seedItems(db, SITE_B, ['itm_1']);
   });
 
   it('migration 0020 created the sessions table', async () => {

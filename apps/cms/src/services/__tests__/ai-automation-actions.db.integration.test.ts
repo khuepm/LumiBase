@@ -15,6 +15,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
+import { seedItems } from '../../__tests__/helpers/seed-items';
 import { AUTOMATION_AGENT } from '../ai-automation';
 import { automationRuntimeFromEnv, reconcileAutomationAction, revertAutomationAction } from '../ai-automation-ops';
 import { DrizzleAutomationActionStore, type AutomationActionInsert } from '../ai-automation-store';
@@ -92,6 +93,8 @@ describe.skipIf(!hasDbIntegrationUrl)('Automation actions — DB integration', (
       .values({ siteId: SITE_A, collectionId: collection!.id, data: { title: 'Tin nóng', tags: ['featured'] } })
       .returning();
     itemId = item!.id;
+    await seedItems(db, SITE_A, ['itm_1', 'itm_2']);
+    await seedItems(db, SITE_B, ['itm_1']);
   });
 
   it('migration 0021 created the table and its unique index', async () => {

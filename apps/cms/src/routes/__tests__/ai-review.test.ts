@@ -511,6 +511,18 @@ describe('POST /ai/reviews/sessions (J09)', () => {
     expect(store.sessions[0]).toMatchObject({ mode: 'baseline', runId: null, viewedQuestions: [] });
   });
 
+  it('returns 404 for an item the site does not have and stores nothing (same-site FK, #868)', async () => {
+    ctx.settings = { enabled: false, allowedStateFields: null, review: pilot({ mode: 'baseline' }) };
+    const res = await call(buildApp(), 'POST', '/ai/reviews/sessions', {
+      collection: 'posts',
+      itemId: 'itm_missing',
+      mode: 'baseline',
+      durationMs: 90_000,
+    });
+    expect(res.status).toBe(404);
+    expect(store.sessions).toHaveLength(0);
+  });
+
   it.each([
     ['an unresolved principal', { allowed: false, capabilities: [], controlPlaneAdmin: false, code: 'PRINCIPAL_UNRESOLVED' }],
     ['a principal of another site', { allowed: false, capabilities: [], controlPlaneAdmin: false, code: 'PRINCIPAL_SITE_MISMATCH' }],

@@ -1,7 +1,8 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { boolean, foreignKey, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
 import { agentGoals } from './ai';
+import { items } from './cms';
 import { sites, users } from './core';
 
 /**
@@ -169,6 +170,12 @@ export const contentDrifts = pgTable(
       t.intentId,
       t.status,
     ),
+    /** Same-site item (migration 0044); erasure of the item removes this row. */
+    itemFk: foreignKey({
+      name: 'lumibase_content_drifts_item_fk',
+      columns: [t.siteId, t.itemId],
+      foreignColumns: [items.siteId, items.id],
+    }).onDelete('cascade'),
     siteItemIdx: index('content_drifts_site_item_idx').on(t.siteId, t.itemId),
   }),
 );

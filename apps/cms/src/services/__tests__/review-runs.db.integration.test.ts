@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { reviewFeedback, reviewProfiles, reviewRuns, sites, type Database } from '@lumibase/database';
 import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
+import { seedItems } from '../../__tests__/helpers/seed-items';
 import { purgeExpiredReviewRuns } from '../review-run-retention';
 import { DrizzleReviewStore, type ReviewProfileInsert, type ReviewRunInsert } from '../review-store';
 
@@ -72,6 +73,8 @@ describe.skipIf(!hasDbIntegrationUrl)('Review profiles and runs — DB integrati
       { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_A, name: 'Review IT A' },
       { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_B, name: 'Review IT B' },
     ]);
+    await seedItems(db, SITE_A, ['itm_1']);
+    await seedItems(db, SITE_B, ['itm_1']);
   });
 
   it('migration 0019 created the three tables', async () => {
