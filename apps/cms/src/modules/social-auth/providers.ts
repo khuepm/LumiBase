@@ -306,13 +306,16 @@ export async function appleClientSecret(
   } catch {
     throw new SocialAuthError('SOCIAL_PROVIDER_MISCONFIGURED', 500, 'The Apple signing key is not a valid PKCS#8 ES256 key.');
   }
+  // One clock read: `setIssuedAt()` and `setExpirationTime('5m')` each read
+  // the clock, so a second boundary between them made the lifetime 301 s.
+  const now = Math.floor(Date.now() / 1000);
   return new SignJWT({})
     .setProtectedHeader({ alg: 'ES256', kid: apple.keyId })
     .setIssuer(apple.teamId)
     .setSubject(clientId)
     .setAudience(APPLE_AUDIENCE)
-    .setIssuedAt()
-    .setExpirationTime('5m')
+    .setIssuedAt(now)
+    .setExpirationTime(now + 300)
     .sign(key);
 }
 

@@ -35,6 +35,14 @@
       "source"
     ]
   },
+  "applyThemeOverrides": {
+    "properties": [
+      "themeOverrides"
+    ],
+    "required": [
+      "themeOverrides"
+    ]
+  },
   "askUser": {
     "properties": [
       "allowFreeText",
@@ -397,6 +405,14 @@
     ],
     "required": [
       "email"
+    ]
+  },
+  "mapDesignTokens": {
+    "properties": [
+      "tokens"
+    ],
+    "required": [
+      "tokens"
     ]
   },
   "planContentMigration": {

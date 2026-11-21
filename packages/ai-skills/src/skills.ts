@@ -814,6 +814,33 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
     },
     requiredCapabilities: ['config:write'],
   },
+  mapDesignTokens: {
+    name: 'mapDesignTokens',
+    description:
+      'Map design tokens (colors with usage, fonts, radii — e.g. the `tokens` of a Figma import preview) to Studio theme overrides. Read-only; returns { light, rationale }.',
+    parameters: {
+      type: 'object',
+      properties: {
+        tokens: {
+          type: 'object',
+          description: '{ colors: [{ hex, count, usage: ("fill"|"text"|"button"|"frame")[] }], fonts: [{ family, sizes }], radii: [{ value, count }] }',
+        },
+      },
+      required: ['tokens'],
+    },
+    requiredCapabilities: ['config:read'],
+  },
+  applyThemeOverrides: {
+    name: 'applyThemeOverrides',
+    description:
+      "Replace the site's Studio theme overrides: { light, dark } maps of whitelisted CSS tokens (HSL triples like \"240 5.9% 10%\", --radius as a CSS length). Requires approval.",
+    parameters: {
+      type: 'object',
+      properties: { themeOverrides: { type: 'object', description: '{ light?: { "--primary": "H S% L%", ... }, dark?: {...} }' } },
+      required: ['themeOverrides'],
+    },
+    requiredCapabilities: ['config:write'],
+  },
   deleteSetting: {
     name: 'deleteSetting',
     description: 'Delete a site setting by key.',
