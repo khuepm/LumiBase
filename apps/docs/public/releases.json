@@ -1,7 +1,7 @@
 {
   "stable": {
     "version": "2.2.0",
-    "releaseDate": "2026-11-19",
+    "releaseDate": "2026-11-21",
     "changelogUrl": "https://github.com/khuepm/lumibase/releases/tag/v2.2.0",
     "minimumSafeUpgradeVersion": "0.26.0",
     "migrationWarning": false,
@@ -9,7 +9,7 @@
   },
   "edge": {
     "version": "2.2.0",
-    "releaseDate": "2026-11-19",
+    "releaseDate": "2026-11-21",
     "changelogUrl": "https://github.com/khuepm/lumibase/releases/tag/v2.2.0",
     "minimumSafeUpgradeVersion": "0.26.0",
     "migrationWarning": false,

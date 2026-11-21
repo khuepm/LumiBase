@@ -11,13 +11,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 _No unreleased changes yet._
 
-## [2.2.0] - 2026-11-19
+## [2.2.0] - 2026-11-21
 
 ### Version
 - `v2.2.0`
 
 ### Date
-- `2026-11-19`
+- `2026-11-21`
 
 ### Highlights
 - **The new home page:** lumibase.dev becomes a storybook. Lumi, the mascot, rises from a lamp and travels through seven chapters in a three.js scene. Devices without a real GPU, or too slow to keep it moving, get a static night sky and an SVG Lumi instead (#885, #998).
