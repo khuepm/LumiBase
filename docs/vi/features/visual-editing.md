@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-11-21T00:04:50.178Z
+version: 3
+lastUpdated: 2026-11-21T11:14:09.702Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 86d9efbbcd644939
+sourceHash: ccc2c4da73477f42
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-21T00:04:50.178Z
-codeVerifiedHash: 86d9efbbcd644939
+codeVerified: 2026-11-21T11:14:09.702Z
+codeVerifiedHash: ccc2c4da73477f42
 codeVerifiedClaims: 18
 ---
 
@@ -21,7 +21,8 @@ codeVerifiedClaims: 18
 **Status:** đã có — preview token (V01), khung preview trong Studio (V02),
 overlay `@lumibase/visual-editing` (V03), preview theo version/release/locale
 (V04, API), CSP và threat model (V05). Chưa có: nút "Preview release" trong
-Studio (Studio chưa có màn hình release — dùng API), và trình dựng trang trực
+Studio (trang **Releases** liệt kê các release và lỗi validation của chúng,
+nhưng chưa mở được preview của một release — dùng API), và trình dựng trang trực
 quan (V06, sau v1).
 
 ## 1. Các phần ghép với nhau thế nào

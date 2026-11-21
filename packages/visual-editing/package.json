@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/visual-editing",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Click-to-edit overlay and origin-validated postMessage bridge between a LumiBase Studio preview pane and your frontend.",
   "license": "Apache-2.0",
   "type": "module",
