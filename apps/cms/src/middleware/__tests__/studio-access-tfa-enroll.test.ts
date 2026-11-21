@@ -61,6 +61,10 @@ describe('enforceTfa and enrollment', () => {
     ['GET', '/api/v1/me/passkeys'],
     ['POST', '/api/v1/me/passkeys/registration-options'],
     ['POST', '/api/v1/me/passkeys'],
+    // Studio boot reads (#987), so it can route to Settings → Security.
+    ['GET', '/api/v1/permissions/me'],
+    ['GET', '/api/v1/me/preferences'],
+    ['GET', '/api/v1/me/admin-path'],
   ])('lets an un-enrolled user %s %s', async (method, path) => {
     const res = await app({}, { amr: ['pwd'] }).request(path, { method, headers: studio });
     expect(res.status).toBe(200);
@@ -79,6 +83,20 @@ describe('enforceTfa and enrollment', () => {
   it('once enrolled, a password-only session is blocked even on enrollment paths', async () => {
     const res = await app({ enabled: true, method: 'webauthn' }, { amr: ['pwd'] })
       .request('/api/v1/me/passkeys', { method: 'POST', headers: studio });
+    expect(res.status).toBe(403);
+  });
+
+  it('tells a client why: enrollment first, then a verified session (#987)', async () => {
+    const unenrolled = await app({}, { amr: ['pwd'] }).request('/api/v1/roles', { headers: studio });
+    expect(((await unenrolled.json()) as { errors: { code: string; details: unknown }[] }).errors[0])
+      .toMatchObject({ code: 'TFA_REQUIRED', details: { reason: 'enrollment_required' } });
+    const unverified = await app({ enabled: true, method: 'totp' }, { amr: ['pwd'] }).request('/api/v1/roles', { headers: studio });
+    expect(((await unverified.json()) as { errors: { code: string; details: unknown }[] }).errors[0])
+      .toMatchObject({ code: 'TFA_REQUIRED', details: { reason: 'verification_required' } });
+  });
+
+  it('once enrolled, boot reads need a verified session too', async () => {
+    const res = await app({ enabled: true, method: 'totp' }, { amr: ['pwd'] }).request('/api/v1/permissions/me', { headers: studio });
     expect(res.status).toBe(403);
   });
 

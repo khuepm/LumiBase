@@ -150,6 +150,63 @@ export function handleUnauthorized(): void {
   window.location.assign(adminBase ? `${adminBase}/login${intentNext}` : '/');
 }
 
+export type TfaRequiredReason = 'enrollment_required' | 'verification_required';
+
+/**
+ * The `reason` of a `403 TFA_REQUIRED` body (#987), or null for any other
+ * response. An older server sends the code without a reason; that is read as
+ * `enrollment_required`, the case the Security page can resolve.
+ */
+export function tfaRequiredReason(body: unknown): TfaRequiredReason | null {
+  if (!body || typeof body !== 'object') return null;
+  const errors = (body as { errors?: unknown }).errors;
+  if (!Array.isArray(errors)) return null;
+  for (const entry of errors) {
+    if (!entry || typeof entry !== 'object' || (entry as { code?: unknown }).code !== 'TFA_REQUIRED') continue;
+    const reason = (entry as { details?: { reason?: unknown } }).details?.reason;
+    return reason === 'verification_required' ? 'verification_required' : 'enrollment_required';
+  }
+  return null;
+}
+
+let tfaRedirectInFlight = false;
+
+/**
+ * Global `403 TFA_REQUIRED` handler (#987). A policy with `enforceTfa` now
+ * refuses every route for a session without a verified second factor, so
+ * without this each screen would show its own "Failed to load…" error.
+ *   - `enrollment_required`: send the user to Settings → Security, where the
+ *     enrolment endpoints stay open, with a banner saying why.
+ *   - `verification_required`: the user has a factor but this session did not
+ *     use it (it predates enrolment). Sign in again, with the factor.
+ */
+export function handleTfaRequired(reason: TfaRequiredReason): void {
+  if (typeof window === 'undefined' || tfaRedirectInFlight) return;
+  const { pathname } = window.location;
+  const adminBase = getAdminBase(pathname);
+  const rest = adminBase ? pathname.slice(adminBase.length) : pathname;
+  if (reason === 'verification_required') {
+    if (rest.startsWith('/login')) return;
+    tfaRedirectInFlight = true;
+    clearActiveToken();
+    window.location.assign(adminBase ? `${adminBase}/login?tfa=verify` : '/?tfa=verify');
+    return;
+  }
+  if (rest.startsWith('/settings/security')) return;
+  tfaRedirectInFlight = true;
+  window.location.assign(`${adminBase}/settings/security?tfa=required`);
+}
+
+async function inspectTfaRequired(response: Response): Promise<void> {
+  if (response.status !== 403) return;
+  try {
+    const reason = tfaRequiredReason(await response.clone().json());
+    if (reason) handleTfaRequired(reason);
+  } catch {
+    // Not JSON: not ours to handle.
+  }
+}
+
 function createApiClient(token: string, site: string) {
   return createLumiClient({
     url: getApiBaseUrl(),
@@ -162,7 +219,10 @@ function createApiClient(token: string, site: string) {
       const path = url.slice(getApiBaseUrl().length).split('?')[0] ?? '';
       if (path === '/api/v1/orgs' || path.startsWith('/api/v1/orgs/')) headers.delete('X-Lumi-Site');
       if (path === '/api/v1/auth/refresh') headers.set('X-Lumi-Site', getSessionSite());
-      return fetch(input, { ...init, headers });
+      return fetch(input, { ...init, headers }).then(async (response) => {
+        await inspectTfaRequired(response);
+        return response;
+      });
     },
     headers: { 'X-Lumi-Client': 'studio' },
     // Persist the rotated pair so a page reload keeps the renewed session.

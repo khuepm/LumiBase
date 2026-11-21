@@ -134,6 +134,8 @@ export async function completePasswordLoginSession(
       ip,
       userAgent,
       familyId: sessionId,
+      // Carried on every rotation so a renewed token stays TFA-verified (#987).
+      amr: options.tfaVerified ? options.amr ?? null : null,
     },
     c.env,
   );

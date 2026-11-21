@@ -27,8 +27,11 @@
  */
 
 import type { Database } from '@lumibase/database';
-import { validateOutboundUrl } from '../services/ssrf-guard';
+import { guardedFetch, validateOutboundUrl } from '../services/ssrf-guard';
 import { formatSafeError } from '@lumibase/contracts/utils';
+import {
+  acquireExtensionProcess, ctxDispatcher, evictExtensionProcesses, evictOtherExtensionDigests, processKey, remoteModule, resolveExtensionRuntime,
+} from './host/process-host';
 import {
   devBuildAppliesToSite,
   devExtensionRegistry,
@@ -148,6 +151,14 @@ interface SandboxLoadOptions {
    */
   verify?: SandboxVerify;
   /**
+   * Out-of-process host only (#990): verify the signature over the bytes the
+   * host downloaded and is about to execute. Required (fail-closed) when
+   * `isOfficial || requireSignature`; `verify` is not used on that path.
+   */
+  verifyBytes?: (bytes: Uint8Array) => Promise<boolean>;
+  /** Recorded `bundleSha256`; when set, the downloaded bytes must match it. */
+  expectedSha256?: string | null;
+  /**
    * Site of the request. Only used to decide whether a dev hot-reload build
    * (`lumibase-ext dev --site`) applies; ignored outside local development.
    */
@@ -206,6 +217,14 @@ export class ExtensionSandbox {
         `[extension-sandbox] refused to load "${opts.name}" from an untrusted bundle URL`,
       );
       return null;
+    }
+
+    // Out-of-process host on Node (#990). It downloads the bundle ONCE and
+    // runs the signature and SHA-256 checks on that exact buffer before a
+    // child executes it, so it does not use the URL-based `verify()` below:
+    // a second response from the same URL would be unverified code.
+    if (resolveExtensionRuntime(this.env as unknown as Record<string, unknown>) === 'process') {
+      return this.loadInProcessHost(opts, this.buildCtx(new Set(opts.capabilities), opts.name));
     }
 
     // Signature gate (fail-closed for official / when signature is required).
@@ -270,14 +289,76 @@ export class ExtensionSandbox {
     }
   }
 
-  /** Evict an extension from the cache (e.g. after update). */
-  evict(name: string): void {
-    this.cache.delete(name);
+  private async loadInProcessHost(opts: SandboxLoadOptions, ctx: ReturnType<ExtensionSandbox['buildCtx']>): Promise<ExtensionModule | null> {
+    const bundleGuard = validateExtensionBundleUrl(opts.bundleUrl);
+    if (!bundleGuard.allowed) {
+      console.error(`[extension-sandbox] refused to load "${opts.name}": ${bundleGuard.reason ?? 'bundle URL not allowed'}`);
+      return null;
+    }
+    const dispatch = ctxDispatcher(ctx as unknown as Parameters<typeof ctxDispatcher>[0]);
+    try {
+      // One download; every check below and the child see this same buffer.
+      const bytes = await this.fetchBundleBytes(opts.bundleUrl);
+      const digest = await sha256Hex(bytes);
+      if (opts.expectedSha256 && opts.expectedSha256.toLowerCase() !== digest) {
+        console.error(`[extension-sandbox] refused to load "${opts.name}": bundle SHA-256 does not match the recorded value`);
+        return null;
+      }
+      if (opts.isOfficial || opts.requireSignature) {
+        // Fail closed: without a byte verifier there is nothing that checked these bytes.
+        const ok = opts.verifyBytes ? await opts.verifyBytes(bytes) : false;
+        if (!ok) {
+          console.error(
+            `[extension-sandbox] refused to load "${opts.name}": signature verification failed (official=${Boolean(opts.isOfficial)})`,
+          );
+          return null;
+        }
+      }
+      // Keyed by digest: a reused child always runs bytes that passed these
+      // checks; a child of the same extension holding other bytes is ended.
+      const key = processKey(opts.siteId, opts.name, opts.bundleUrl, digest);
+      await evictOtherExtensionDigests(key);
+      const proc = await acquireExtensionProcess({
+        key,
+        // Node cannot import an https URL, and the child must not refetch:
+        // it receives the verified bytes themselves.
+        url: toJavaScriptDataUrl(bytes),
+        name: opts.name,
+        dispatch,
+        timeoutMs: opts.timeoutMs ?? 5000,
+      });
+      const mod = remoteModule(proc, dispatch) as unknown as ExtensionModule;
+      this.cache.set(opts.name, mod);
+      return mod;
+    } catch (err) {
+      console.error(`[extension-sandbox] failed to load "${opts.name}" out of process`, formatSafeError(err));
+      return null;
+    }
   }
 
-  /** Evict all cached extensions. */
+  /**
+   * The bundle bytes for the out-of-process host: downloaded through the SSRF
+   * guard (DNS re-checked), redirects refused, at most 5 MB. Called once per
+   * load; the caller verifies and executes exactly what this returns.
+   */
+  protected async fetchBundleBytes(bundleUrl: string): Promise<Uint8Array> {
+    const res = await guardedFetch(bundleUrl, { redirect: 'error' }, { allowLocalhost: isLoopbackUrl(bundleUrl), allowPrivateNetwork: isLoopbackUrl(bundleUrl) });
+    if (!res.ok) throw new SandboxLoadError(bundleUrl, `bundle download failed with HTTP ${res.status}`);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.byteLength > MAX_REMOTE_BUNDLE_BYTES) throw new SandboxLoadError(bundleUrl, 'bundle is larger than 5 MB');
+    return bytes;
+  }
+
+  /** Evict an extension from the cache (e.g. after update), and end its host processes. */
+  evict(name: string): void {
+    this.cache.delete(name);
+    void evictExtensionProcesses(name);
+  }
+
+  /** Evict all cached extensions, and end every host process. */
   evictAll(): void {
     this.cache.clear();
+    void evictExtensionProcesses();
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -463,6 +544,29 @@ export class ExtensionSandbox {
   }
 }
 
+
+const MAX_REMOTE_BUNDLE_BYTES = 5 * 1024 * 1024;
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource));
+  return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function toJavaScriptDataUrl(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return `data:text/javascript;base64,${btoa(binary)}`;
+}
+
+/** `http://localhost` bundles are allowed by the trust policy (local development). */
+function isLoopbackUrl(raw: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(raw);
+    return protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname);
+  } catch {
+    return false;
+  }
+}
 
 function requestInfoToUrl(input: RequestInfo): string {
   if (typeof input === 'string') return input;

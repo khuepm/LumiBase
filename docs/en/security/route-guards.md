@@ -1,11 +1,11 @@
 ---
-version: 6
-lastUpdated: 2026-10-17T16:36:21.044Z
+version: 7
+lastUpdated: 2026-11-19T19:39:17.847Z
 sourceLang: en
-contentHash: 0a951ac2ef5f147c
-codeVerified: 2026-10-17T16:36:21.044Z
-codeVerifiedHash: 0a951ac2ef5f147c
-codeVerifiedClaims: 22
+contentHash: 6e9459c969d4e881
+codeVerified: 2026-11-19T19:39:17.847Z
+codeVerifiedHash: 6e9459c969d4e881
+codeVerifiedClaims: 30
 ---
 
 # Route guards — the `/api/v1` security chain
@@ -51,6 +51,19 @@ Each layer answers one question, in order:
 4. **Dynamic dispatch surfaces (extensions, agent harness, flows) are
    control-plane.** Anything that loads and executes stored code or mutates
    agent state requires an admin principal before the handler runs.
+5. **Admin-plane changes are audited by prefix (#988).** Every successful
+   POST / PUT / PATCH / DELETE under a prefix in `ADMIN_CHANGE_AUDIT_PREFIXES`
+   (`middleware/admin-change-audit.ts`) writes one `admin_change` audit row:
+   actor, IP, User-Agent, request id, method, path, resource, first id
+   segment, status, and the **names** of the top-level JSON fields sent —
+   never values, never the query string. A new control-plane or Studio
+   management prefix must be added there or to
+   `ADMIN_CHANGE_AUDIT_EXCLUSIONS` with a reason; agent-executed control-plane
+   skills record the same event with `via: 'agent'` and the run id. Filter
+   the Studio security audit tab by `admin_change` to review them.
+6. **A surface that publishes needs a permission, not just Studio access.**
+   `/api/v1/pages` writes rows the deliver API serves publicly, so it checks
+   `lumibase_pages::<action>` (#986) instead of trusting `appAccess`.
 
 ## Tripwire tests
 
@@ -71,11 +84,19 @@ Behavioural companions:
 - `routes/extensions.test.ts` — admin gate on management and dynamic dispatch.
 - `routes/__tests__/auth-register.test.ts` — register fails closed without a
   principal; binds the seeded member role id (never a literal role key).
+- `middleware/__tests__/admin-change-audit.test.ts` — every prefix in
+  `CONTROL_PLANE_PATHS` and `STUDIO_ACCESS_PATH_PREFIXES` is audited or
+  excluded with a reason; no field value or query string reaches the trail.
+- `middleware/__tests__/studio-access-session-tfa.test.ts` — `enforceTfa`
+  holds on content, file, flow, AI and MCP routes for any client (#987).
+- `routes/__tests__/pages-access.test.ts` — `lumibase_pages` grants and
+  row-rule scoping on the page builder (#986).
 
 ## Incident history (why these rules exist)
 
 | Fix | Vulnerability |
 | --- | --- |
+| #986 / #987 / #988 | Hardening after FBI FLASH CC-111626-MW (credential-led content injection on WordPress). `/api/v1/pages` accepted writes from any Studio user, though pages are served publicly; `enforceTfa` was checked only on Studio-identified requests, so a non-Studio client skipped it; and `/auth/refresh` dropped `tfaVerified`, so enforcing it refused enrolled users after the first renewal. Admin-plane changes (extensions, flows, webhooks, settings, …) left no audit row. |
 | PR #495 | The backstop also covered `GET /api/v1/permissions/me`, the caller's own permission bundle. Every user without the literal `admin` role got 403, so Studio showed "no read permission" on collections their role could read. The exemption is GET-only and requires a principal; the rest of `/permissions` stays admin-only. |
 | PR #495 (B101) | The backstop recognised admins by role **name** only. Invited users carry their role **id**, so a user holding the Administrator role was refused by every control-plane route that `requireSiteAdmin` would have allowed. The backstop now also admits a signed-in user whose site permission bundle has `admin`; API keys are excluded pending #472. |
 | PR #184 (ported) | No membership check between `withAuth` and handlers: any authenticated principal could pick an arbitrary `X-Lumi-Site` and operate on another tenant. |

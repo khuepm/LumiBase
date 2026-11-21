@@ -120,6 +120,28 @@ export class ExtensionVerifierService {
       return { ok: false, reason: 'bad-signature', isOfficial: false };
     }
 
+    return this.verifyBytes(name, meta, bundleBytes);
+  }
+
+  /**
+   * Verify the signature over bytes the caller already holds (#990 review):
+   * the out-of-process host downloads a bundle once and must check the very
+   * buffer it then executes, not a second response from the same URL.
+   */
+  async verifyBytes(
+    name: string,
+    meta: ExtensionSignatureMeta,
+    bundleBytes: ArrayBuffer | Uint8Array,
+  ): Promise<VerifyByMetadataResult> {
+    const sig: BundleSignature = {
+      sha256: meta.bundleSha256,
+      signature: meta.signature,
+      keyId: meta.publisherKeyId,
+      alg: (meta.signatureAlg as SignatureAlg | null) ?? null,
+    };
+    if (!sig.sha256 || !sig.signature || !sig.keyId || !sig.alg) {
+      return { ok: false, reason: 'missing-fields', isOfficial: false };
+    }
     const result = await verifyBundle(bundleBytes, sig, (id) => this.resolveKey(id));
     return { ...result, isOfficial: deriveIsOfficial(name, result) };
   }
@@ -151,7 +173,13 @@ export function buildSandboxVerifyOptions(
   row: LoadableExtensionRow,
   db: Database,
   env: Bindings,
-): { isOfficial: boolean; requireSignature: boolean; verify: () => Promise<boolean> } {
+): {
+  isOfficial: boolean;
+  requireSignature: boolean;
+  verify: () => Promise<boolean>;
+  verifyBytes: (bytes: Uint8Array) => Promise<boolean>;
+  expectedSha256: string | null;
+} {
   const requireSignature =
     row.isOfficial ||
     ExtensionVerifierService.isReservedName(row.name) ||
@@ -172,5 +200,17 @@ export function buildSandboxVerifyOptions(
       // Official rows must be signed by an official key; third-party just valid.
       return row.isOfficial ? verdict.ok && verdict.isOfficial : verdict.ok;
     },
+    verifyBytes: async (bytes) => {
+      const verifier = new ExtensionVerifierService(db, env);
+      const verdict = await verifier.verifyBytes(row.name, {
+        bundleUrl: row.bundleUrl,
+        bundleSha256: row.bundleSha256,
+        signature: row.signature,
+        publisherKeyId: row.publisherKeyId,
+        signatureAlg: row.signatureAlg,
+      }, bytes);
+      return row.isOfficial ? verdict.ok && verdict.isOfficial : verdict.ok;
+    },
+    expectedSha256: row.bundleSha256,
   };
 }

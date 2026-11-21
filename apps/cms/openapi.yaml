@@ -2086,10 +2086,11 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '503':
           description: >-
-            `SETUP_TOKEN_NOT_ISSUED` — `LUMIBASE_REQUIRE_SETUP_TOKEN` is on but no
-            setup token has been minted, so no request can succeed. The Node/Docker
-            CMS mints and prints one at startup; Cloudflare Workers have no startup
-            step and do not support the flag. The error `message` says what to do.
+            `SETUP_TOKEN_NOT_ISSUED` — the setup-token gate is on (by default in
+            production, or `LUMIBASE_REQUIRE_SETUP_TOKEN=true`) but no token exists,
+            so no request can succeed. The Node/Docker CMS mints and prints one at
+            startup; on Cloudflare Workers the operator sets `LUMIBASE_SETUP_TOKEN`
+            (≥ 24 characters). The error `message` says what to do.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

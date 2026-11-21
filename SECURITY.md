@@ -151,3 +151,7 @@ Operators deploying LumiBase should also review:
   — the living CWE audit and current mitigations.
 - [`docs/en/security/user-management.md`](docs/en/security/user-management.md)
   — auth realms and RBAC model (ADR-010).
+- [`docs/en/security/content-injection-defence.md`](docs/en/security/content-injection-defence.md)
+  ([Tiếng Việt](docs/vi/security/content-injection-defence.md)) — detecting and
+  responding to content injection and SEO poisoning: hardening checklist,
+  frontend/CDN checks and an incident runbook (#996).

@@ -19,7 +19,9 @@ const cases = [
   { name: 'flow', table: 'lumibase_flows', router: flowsRouter,
     stored: { name: 'before', status: 'active', triggerType: 'schedule', triggerOptions: { cron: '*/5 * * * *' }, graph: { entry: 'n1', nodes: [{ id: 'n1', key: 'log' }] } }, patch: { name: 'after' } },
   { name: 'extension', table: 'lumibase_extensions', router: extensionsRouter,
-    stored: { name: 'example', type: 'interface', version: '1.0.0', enabled: true, manifest: { config: 'keep' }, capabilities: ['items:read'] }, patch: { version: '1.0.1' } },
+    // Not `version`: a version or bundle change is re-verified first (#990),
+    // and this fixture row is unsigned. Omission is what is under test.
+    stored: { name: 'example', type: 'interface', version: '1.0.0', enabled: true, manifest: { config: 'keep' }, capabilities: ['items:read'] }, patch: { enabled: false } },
 ];
 
 function fixture(test: typeof cases[number]) {

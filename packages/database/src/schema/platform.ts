@@ -5,6 +5,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -117,6 +118,34 @@ export const fileVersions = pgTable(
   (t) => ({
     fileIdx: index('file_versions_file_idx').on(t.siteId, t.fileId, t.version),
     expiryIdx: index('file_versions_expiry_idx').on(t.expiresAt),
+  }),
+);
+
+/**
+ * One row per presigned upload key (#993). It binds the key to the site and
+ * the principal that asked for it, and walks a one-way state machine:
+ * `issued` → `uploading` → `uploaded` → `registered`. Only the principal that
+ * received the key may register it (no aliasing of a key another file already
+ * uses), and once registered the raw signed PUT is refused, so the bytes
+ * behind a scanned file record cannot be replaced by replaying the token.
+ */
+export const uploadClaims = pgTable(
+  'lumibase_upload_claims',
+  {
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    storageKey: text('storage_key').notNull(),
+    /** `user:<id>` or `api_key:<id>`: who may register the key. */
+    principal: text('principal').notNull(),
+    state: text('state').notNull().default('issued'),
+    createdAt: createdAt(),
+    /** After this, the key can no longer be registered. */
+    expiresAt: timestamp('expires_at').notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.siteId, t.storageKey] }),
+    createdIdx: index('upload_claims_created_idx').on(t.siteId, t.createdAt),
   }),
 );
 

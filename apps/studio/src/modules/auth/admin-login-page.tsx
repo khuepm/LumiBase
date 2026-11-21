@@ -239,6 +239,13 @@ export function AdminLoginPage({ adminPath }: AdminLoginPageProps) {
           </p>
         </header>
 
+        {step === 'credentials' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tfa') === 'verify' ? (
+          // The API client lands here after `TFA_REQUIRED: verification_required` (#987).
+          <p role="status" className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
+            Your role requires two-factor authentication. Sign in again and use your authenticator app or passkey.
+          </p>
+        ) : null}
+
         {step === 'credentials' ? (
           <form className="space-y-4" onSubmit={onSubmitCredentials}>
             <div className="space-y-1">
