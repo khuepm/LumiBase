@@ -1,10 +1,10 @@
 ---
-version: 7
-lastUpdated: 2026-11-19T09:50:09.980Z
+version: 8
+lastUpdated: 2026-11-19T17:22:20.645Z
 sourceLang: en
-contentHash: e8e91333010d7759
-codeVerified: 2026-11-19T09:50:09.980Z
-codeVerifiedHash: e8e91333010d7759
+contentHash: b98c8eed97b5b035
+codeVerified: 2026-11-19T17:22:20.645Z
+codeVerifiedHash: b98c8eed97b5b035
 codeVerifiedClaims: 10
 ---
 
@@ -137,9 +137,10 @@ send each file as the provider's own image or document block (OpenAI
   `422 LLM_ATTACHMENTS_UNSUPPORTED` without calling the model. Files count
   against the context budget by estimate: about 1,600 tokens per image, and at
   least 3,000 per PDF, growing with its size. With the default
-  `LLM_CONTEXT_WINDOW_TOKENS` (32,768) the tool catalogue leaves room for about
-  one image. Set it to your model's real window to send PDFs; otherwise the
-  turn fails with `413 LLM_CONTEXT_LIMIT`.
+  `LLM_CONTEXT_WINDOW_TOKENS` (32,768) about 20,000 tokens are left for the
+  conversation and its files once the tool catalogue and output reserve are
+  counted. Set it to your model's real window to send large PDFs; a turn that
+  does not fit fails with `413 LLM_CONTEXT_LIMIT`.
 
 Two skills read a file by id, from the chat or from `POST /api/v1/mcp`:
 

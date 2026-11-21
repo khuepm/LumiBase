@@ -1,13 +1,13 @@
 ---
-version: 7
-lastUpdated: 2026-11-19T09:50:09.980Z
+version: 8
+lastUpdated: 2026-11-19T17:22:20.645Z
 sourceLang: en
 translatedFrom: en
-sourceHash: e8e91333010d7759
+sourceHash: b98c8eed97b5b035
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T09:50:09.980Z
-codeVerifiedHash: e8e91333010d7759
+codeVerified: 2026-11-19T17:22:20.645Z
+codeVerifiedHash: b98c8eed97b5b035
 codeVerifiedClaims: 10
 ---
 
@@ -139,9 +139,10 @@ gửi mỗi file dưới dạng block ảnh hoặc tài liệu của chính prov
   được ảnh và PDF). Workers AI trả `422 LLM_ATTACHMENTS_UNSUPPORTED` mà không
   gọi model. File được tính vào ngân sách context theo ước lượng: khoảng 1.600
   token mỗi ảnh, và ít nhất 3.000 mỗi PDF, tăng theo kích thước. Với
-  `LLM_CONTEXT_WINDOW_TOKENS` mặc định (32.768), danh mục tool chỉ chừa chỗ cho
-  khoảng một ảnh. Đặt nó bằng context window thật của model để gửi PDF; nếu
-  không, lượt chat fail với `413 LLM_CONTEXT_LIMIT`.
+  `LLM_CONTEXT_WINDOW_TOKENS` mặc định (32.768), sau khi trừ danh mục tool và
+  phần chừa cho đầu ra, còn khoảng 20.000 token cho hội thoại và file. Đặt nó
+  bằng context window thật của model để gửi PDF lớn; lượt chat không vừa sẽ fail
+  với `413 LLM_CONTEXT_LIMIT`.
 
 Hai skill đọc file theo id, từ chat hoặc từ `POST /api/v1/mcp`:
 

@@ -1,5 +1,15 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { boundLLMContext, createConfiguredLLMProvider, createLLMProvider, LLMContextLimitError } from '../llm-provider';
+import {
+  boundLLMContext,
+  chatToolCatalogueTokens,
+  chatToolSkills,
+  COPILOT_SYSTEM_PROMPT,
+  createConfiguredLLMProvider,
+  createLLMProvider,
+  DEFAULT_CONTEXT_WINDOW_TOKENS,
+  LLMContextLimitError,
+  TOOL_CATALOGUE_BYTES_PER_TOKEN,
+} from '../llm-provider';
 
 describe('#582 context input and output budget', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -26,6 +36,20 @@ describe('#582 context input and output budget', () => {
   it('never drops oversized system policy or tool definitions to make a request fit', () => {
     expect(() => boundLLMContext([{ role: 'user', content: 'hi' }], { ...options, systemPrompt: 'p'.repeat(3000) })).toThrow(LLMContextLimitError);
     expect(() => boundLLMContext([{ role: 'user', content: 'hi' }], { ...options, tools: true })).toThrow(LLMContextLimitError);
+  });
+  it('leaves at least half of the default window to the conversation with the full tool catalogue', () => {
+    const fixed = chatToolCatalogueTokens() + new TextEncoder().encode(JSON.stringify(COPILOT_SYSTEM_PROMPT)).length + 2048;
+    // Adding skills must not quietly starve the chat history again.
+    expect(fixed).toBeLessThanOrEqual(DEFAULT_CONTEXT_WINDOW_TOKENS / 2);
+    const history = Array.from({ length: 12 }, (_, i) => ({ role: i % 2 ? 'assistant' as const : 'user' as const, content: `turn ${i} `.repeat(120) }));
+    expect(boundLLMContext(history, {})).toEqual(history);
+  });
+  it('counts the tool catalogue by its calibrated ratio, not one byte per token', () => {
+    expect(TOOL_CATALOGUE_BYTES_PER_TOKEN).toBe(3);
+    const catalogueBytes = new TextEncoder().encode(JSON.stringify(chatToolSkills().map((s) => ({
+      type: 'function', function: { name: s.name, description: s.description, parameters: s.parameters },
+    })))).length;
+    expect(chatToolCatalogueTokens()).toBe(Math.ceil(catalogueBytes / 3));
   });
   it.each([0, -1, 2048, Infinity, 2.5])('rejects invalid output reserve %s', (maxOutputTokens) => {
     expect(() => boundLLMContext([], { ...options, maxOutputTokens })).toThrow(LLMContextLimitError);

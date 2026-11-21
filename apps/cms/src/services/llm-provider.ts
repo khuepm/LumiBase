@@ -353,20 +353,44 @@ export class LLMContextLimitError extends Error {
 
 export const DEFAULT_CONTEXT_WINDOW_TOKENS = 32_768;
 
-/** UTF-8 bytes conservatively bound text tokens, plus framing/tool overhead. */
+/**
+ * Bytes per token assumed for the chat tool catalogue. The catalogue is
+ * code-defined English JSON: measured at ~4.7 bytes/token on the whole set and
+ * 3.28 on the densest single tool (OpenAI o200k/cl100k). 3 leaves headroom for
+ * other providers' tokenizers and their per-tool framing. Counting it at one
+ * byte per token, like untrusted text, left the default window with almost no
+ * room for the conversation.
+ */
+export const TOOL_CATALOGUE_BYTES_PER_TOKEN = 3;
+
+const utf8Bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+
+let toolCatalogueTokens: number | undefined;
+
+/** Estimated token cost of the chat tool catalogue (static, so computed once). */
+export function chatToolCatalogueTokens(): number {
+  toolCatalogueTokens ??= Math.ceil(utf8Bytes(skillsToOpenAITools()) / TOOL_CATALOGUE_BYTES_PER_TOKEN);
+  return toolCatalogueTokens;
+}
+
+/**
+ * Bounds a turn to the context window. Text that can come from users or tenants
+ * (messages, the system prompt with site playbooks) counts one UTF-8 byte per
+ * token, a bound no tokenizer exceeds. The code-defined tool catalogue counts by
+ * {@link TOOL_CATALOGUE_BYTES_PER_TOKEN}. Framing and the output reserve are added.
+ */
 export function boundLLMContext(messages: LLMMessage[], options: LLMChatOptions): LLMMessage[] {
   const window = options.contextWindowTokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS;
   const output = options.maxOutputTokens ?? DEFAULT_CHAT_MAX_OUTPUT_TOKENS;
   if (!Number.isSafeInteger(window) || window < 1 || !Number.isSafeInteger(output) || output < 1 || output >= window) {
     throw new LLMContextLimitError();
   }
-  const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
-  const tools = options.tools === false ? [] : skillsToOpenAITools();
-  const fixed = bytes(options.systemPrompt ?? SYSTEM_PROMPT) + bytes(tools) + output + 1024;
+  const tools = options.tools === false ? 0 : chatToolCatalogueTokens();
+  const fixed = utf8Bytes(options.systemPrompt ?? SYSTEM_PROMPT) + tools + output + 1024;
   const kept = [...messages];
   // Attachment bytes are not text tokens: they count by estimate (#709).
   const messageSize = ({ attachments, ...text }: LLMMessage) =>
-    bytes(text) + 64 + (attachments ?? []).reduce((sum, a) => sum + estimateAttachmentTokens(a), 0);
+    utf8Bytes(text) + 64 + (attachments ?? []).reduce((sum, a) => sum + estimateAttachmentTokens(a), 0);
   const size = () => fixed + kept.reduce((sum, message) => sum + messageSize(message), 0);
   while (size() > window) {
     const lastUser = kept.map((message) => message.role).lastIndexOf('user');

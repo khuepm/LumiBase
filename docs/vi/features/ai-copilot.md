@@ -1,16 +1,16 @@
 ---
-version: 8
-lastUpdated: 2026-11-07T22:02:15.899Z
+version: 9
+lastUpdated: 2026-11-19T17:22:21.230Z
 sourceLang: vi
 translatedFrom: en
 sourceHash: ecc8983d3122446b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-07T22:02:15.899Z
-codeVerifiedHash: 80e544c4c41dcb0c
+codeVerified: 2026-11-19T17:22:21.230Z
+codeVerifiedHash: c3f2a89a328715e2
 codeVerifiedClaims: 30
 
-contentHash: 80e544c4c41dcb0c
+contentHash: c3f2a89a328715e2
 ---
 
 # AI Copilot (HITL)
@@ -202,7 +202,9 @@ chỉnh cần khai báo cửa sổ. Thiếu cửa sổ hoặc giá trị không 
 gọi mô hình trả `LLM_CONTEXT_LIMIT` trước khi gọi mạng; route không gọi mô hình
 (ví dụ MCP `tools/list`) vẫn chạy bình thường. Trước khi gọi mạng, provider tính byte UTF-8 sau
 serialize làm cận trên thận trọng cho token văn bản, chừa đầu ra (thường 1.024
-token) và tính cả công cụ, phần đóng gói message. Hệ thống bỏ lịch sử cũ trước,
+token) và tính cả công cụ, phần đóng gói message. Riêng danh mục công cụ do code
+định nghĩa được tính 3 byte mỗi token (đo thực tế khoảng 4,7), nên với cửa sổ
+mặc định vẫn còn hơn một nửa cho hội thoại. Hệ thống bỏ lịch sử cũ trước,
 giữ chính sách hệ thống, định nghĩa công cụ và yêu cầu mới nhất. Yêu cầu quá dài
 trả HTTP 413 với `LLM_CONTEXT_LIMIT`. Giới hạn tần suất, phản hồi không hợp lệ và
 mất kết nối đều có mã lỗi để xử lý; không tự ghi hoặc tự sửa bằng lần gọi mới.
