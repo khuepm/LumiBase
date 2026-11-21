@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-11-15T19:48:28.979Z
+version: 2
+lastUpdated: 2026-11-21T08:34:26.859Z
 sourceLang: en
-contentHash: 65a41201b56dc214
-codeVerified: 2026-11-15T19:48:28.979Z
-codeVerifiedHash: 65a41201b56dc214
+contentHash: 97ba2f621ab44d33
+codeVerified: 2026-11-21T08:34:26.859Z
+codeVerifiedHash: 97ba2f621ab44d33
 codeVerifiedClaims: 14
 ---
 
@@ -18,7 +18,8 @@ codeVerifiedClaims: 14
 **Status:** shipped — preview tokens (V01), Studio preview pane (V02),
 `@lumibase/visual-editing` overlay (V03), version/release/locale preview (V04
 API), CSP and threat model (V05). Not yet: a "Preview release" button in the
-Studio (there is no release view yet — use the API), and the visual page
+Studio (the **Releases** page lists releases and their validation issues, but
+cannot open a preview of one yet — use the API), and the visual page
 composer (V06, post-v1).
 
 ## 1. How it fits together

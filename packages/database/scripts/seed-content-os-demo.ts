@@ -163,7 +163,8 @@ async function main() {
     await db
       .insert(items)
       .values({ ...item, siteId: SITE, collectionId: ID.collection })
-      .onConflictDoNothing({ target: items.id });
+      // Items are keyed by (site_id, id) since migration 0035.
+      .onConflictDoNothing({ target: [items.siteId, items.id] });
   }
   log('3 demo items (fresh / stale / staged target)');
 
