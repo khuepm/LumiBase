@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-11-21T00:28:02.151Z
+version: 3
+lastUpdated: 2026-11-21T03:36:06.095Z
 sourceLang: en
 translatedFrom: en
-sourceHash: b74d0223ad19ed41
+sourceHash: 64456fef2a7ac15c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-21T00:28:02.151Z
-codeVerifiedHash: b74d0223ad19ed41
+codeVerified: 2026-11-21T03:36:06.095Z
+codeVerifiedHash: 64456fef2a7ac15c
 codeVerifiedClaims: 16
 ---
 
@@ -76,8 +76,11 @@ khớp SHA-256 đã ghi nhận (`importVerifiedBundle` trong
    `kv` / `env` đi qua IPC về host và được trả lời bởi chính ctx đã kiểm
    capability như trước, gắn với request đã thực hiện lời gọi. Hook, tool MCP,
    subscriber CDC và request tới endpoint được chuyển tiếp theo cùng cách. Host
-   tải bundle (allowlist origin, chữ ký, SSRF guard, tối đa 5 MB) và đưa mã
-   nguồn cho child. Một child bị kết thúc khi nạp lỗi, khi một lời gọi chạy quá
+   tải bundle một lần (allowlist origin, SSRF guard, tối đa 5 MB), kiểm chữ ký
+   và `bundleSha256` đã ghi nhận trên chính buffer đó, rồi đưa đúng các byte
+   ấy cho child. Child được định danh theo digest đã xác minh, nên một child
+   được dùng lại luôn chạy byte đã kiểm, và child đang giữ byte khác của cùng
+   extension sẽ bị kết thúc. Một child bị kết thúc khi nạp lỗi, khi một lời gọi chạy quá
    10 giây, khi extension được cập nhật, hoặc khi CMS thoát.
 2. **`EXTENSION_RUNTIME` chọn chế độ này**: `process` hoặc `in-process`; khi
    không đặt, là `process` ở production (`LUMIBASE_ENV` hoặc `NODE_ENV` =
@@ -104,9 +107,11 @@ khớp SHA-256 đã ghi nhận (`importVerifiedBundle` trong
   request. Tham số và kết quả phải structured-clone được.
 - Bundle `https` từ xa nay nạp được trên Node: host tải nó về, điều mà
   `import()` của Node không làm được.
-- Xác minh chữ ký vẫn chạy trong host trước mỗi lần nạp. Lần tải sau đó là một
-  lần fetch thứ hai, nên một server trả lời hai lần khác nhau sẽ không bị phát
-  hiện; hãy ghim bundle vào một origin bạn kiểm soát.
+- Ngoài process, không có gì chạy mà chưa được xác minh: chỉ có một lần tải,
+  và chữ ký cùng SHA-256 được kiểm trên chính buffer mà child nhận. Một server
+  trả lời khác ở lần tải sau sẽ bị từ chối ở lần nạp đó. Đường chạy trong
+  process (Workers, `EXTENSION_RUNTIME=in-process`) vẫn xác minh một response
+  và import URL riêng.
 - Kiểm tra toàn vẹn của Studio bắt được bundle bị thay ở URL của nó, nhưng không
   bắt được server trả lời request kiểm tra và lần import module khác nhau; đóng
   khe hở đó cần import qua `blob:` và do đó cần `blob:` trong `script-src` của

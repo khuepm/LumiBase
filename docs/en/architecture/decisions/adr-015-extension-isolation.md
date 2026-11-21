@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-11-21T00:28:02.151Z
+version: 3
+lastUpdated: 2026-11-21T03:36:06.095Z
 sourceLang: en
-contentHash: b74d0223ad19ed41
-codeVerified: 2026-11-21T00:28:02.151Z
-codeVerifiedHash: b74d0223ad19ed41
+contentHash: 64456fef2a7ac15c
+codeVerified: 2026-11-21T03:36:06.095Z
+codeVerifiedHash: 64456fef2a7ac15c
 codeVerifiedClaims: 16
 ---
 
@@ -72,8 +72,11 @@ do not match the recorded SHA-256 (`importVerifiedBundle` in
    `env` call goes over IPC to the host and is answered by the same
    capability-checked ctx as before, bound to the request that made the call.
    Hooks, MCP tools, CDC subscribers and endpoint requests are forwarded the
-   same way. The host downloads the bundle (origin allowlist, signature, SSRF
-   guard, at most 5 MB) and hands the child its source. A child is killed on a
+   same way. The host downloads the bundle once (origin allowlist, SSRF
+   guard, at most 5 MB), checks the signature and the recorded `bundleSha256`
+   on that exact buffer, and hands the child those bytes. Children are keyed
+   by the verified digest, so a reused child always runs checked bytes, and a
+   child holding other bytes of the same extension is ended. A child is killed on a
    load failure, a call that runs past 10 s, an update of the extension, or
    CMS exit.
 2. **`EXTENSION_RUNTIME` selects it**: `process` or `in-process`; unset, it is
@@ -100,9 +103,11 @@ do not match the recorded SHA-256 (`importVerifiedBundle` in
   once per request. Arguments and results must be structured-cloneable.
 - A remote `https` bundle now loads on Node: the host downloads it, which a
   Node `import()` could not.
-- Signature verification still runs before every load in the host. The
-  download that follows it is a second fetch, so a server that answers the two
-  differently is not caught; pin bundles to an origin you control.
+- Out of process, nothing runs that was not verified: there is one download,
+  and the signature and SHA-256 are checked on the buffer the child receives.
+  A server that answers a later download differently is refused at that load.
+  The in-process path (Workers, `EXTENSION_RUNTIME=in-process`) still verifies
+  one response and imports the URL separately.
 - Studio's integrity check catches a bundle replaced at its URL, but not a
   server that answers the verification fetch and the module import
   differently; closing that needs a `blob:` import and therefore `blob:` in the

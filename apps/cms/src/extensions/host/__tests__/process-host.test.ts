@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
+import { generateKeyPairSync, sign } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { sha256Hex, verifyBundle } from '@lumibase/contracts/extensions';
 import { ExtensionSandbox } from '../../sandbox';
 import { evictExtensionProcesses, extensionProcessCount, resolveExtensionRuntime } from '../process-host';
 
@@ -10,7 +12,7 @@ import { evictExtensionProcesses, extensionProcessCount, resolveExtensionRuntime
  * processes (the child script is bundled on demand with esbuild).
  */
 
-const bundle = (source: string) => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
+const bundle = (source: string) => source;
 
 const PROBE_SOURCE = bundle(`
 let calls = 0;
@@ -37,16 +39,18 @@ export default (ctx) => ({
 `);
 
 const ORIGIN = 'https://extensions.test';
-const BUNDLES: Record<string, string> = {};
-const FETCHES: Record<string, number> = {};
+/** A URL's response, or a queue of successive responses (one per download). */
+const BUNDLES: Record<string, string | string[]> = {};
+const downloads: Record<string, number> = {};
 
 /** Serves bundles from memory instead of the network; the trust gates still run. */
 class TestSandbox extends ExtensionSandbox {
-  protected override async fetchBundleSource(url: string): Promise<string> {
-    FETCHES[url] = (FETCHES[url] ?? 0) + 1;
-    const source = BUNDLES[url];
-    if (!source) throw new Error(`no bundle at ${url}`);
-    return source;
+  protected override async fetchBundleBytes(url: string): Promise<Uint8Array> {
+    const entry = BUNDLES[url];
+    const source = Array.isArray(entry) ? entry.shift() : entry;
+    if (source === undefined) throw new Error(`no bundle at ${url}`);
+    downloads[url] = (downloads[url] ?? 0) + 1;
+    return new TextEncoder().encode(source);
   }
 }
 
@@ -112,15 +116,6 @@ describe('out-of-process extension host (#990)', () => {
     await expect(granted!.hooks!['items.delete.before']!({ collection: 'posts' })).rejects.toThrow(/db:read/);
   }, 40_000);
 
-  it('downloads the bundle only when it spawns a child, not on every load', async () => {
-    const before = FETCHES[PROBE] ?? 0;
-    const first = await sandbox().load({ name: 'probe', bundleUrl: PROBE, capabilities: [], siteId: 'site_a', timeoutMs: 20_000 });
-    const again = await sandbox().load({ name: 'probe', bundleUrl: PROBE, capabilities: [], siteId: 'site_a', timeoutMs: 20_000 });
-    expect(first).not.toBeNull();
-    expect(again).not.toBeNull();
-    expect((FETCHES[PROBE] ?? 0) - before).toBe(1);
-  }, 30_000);
-
   it('keeps one child per site: module state is not shared between tenants', async () => {
     const a = await sandbox().load({ name: 'probe', bundleUrl: PROBE, capabilities: [], siteId: 'site_a', timeoutMs: 20_000 });
     const b = await sandbox().load({ name: 'probe', bundleUrl: PROBE, capabilities: [], siteId: 'site_b', timeoutMs: 20_000 });
@@ -158,4 +153,87 @@ describe('out-of-process extension host (#990)', () => {
     expect(await sandbox().load({ name: 'broken', bundleUrl: broken, capabilities: [], siteId: 'site_a', timeoutMs: 20_000 })).toBeNull();
     expect(extensionProcessCount()).toBe(0);
   }, 30_000);
+
+  describe('signature is checked on the bytes that run (#990 review)', () => {
+    const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+    const publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+    const SIGNED = `export default () => ({ hooks: { 'items.create.before': async () => ({ who: 'signed' }) } });`;
+    const EVIL = `export default () => ({ hooks: { 'items.create.before': async () => ({ who: 'evil' }) } });`;
+
+    async function signedOptions(source: string) {
+      const bytes = new TextEncoder().encode(source);
+      const meta = {
+        sha256: await sha256Hex(bytes),
+        signature: sign(null, bytes, privateKey).toString('base64'),
+        keyId: 'test-key',
+        alg: 'ed25519' as const,
+      };
+      return {
+        requireSignature: true,
+        expectedSha256: meta.sha256,
+        // The old URL-based gate: it would have fetched (and passed) a clean response.
+        verify: async () => true,
+        verifyBytes: async (b: Uint8Array) =>
+          (await verifyBundle(b, meta, () => ({ publicKeyPem, publisher: 'test', official: false, revoked: false }))).ok,
+      };
+    }
+
+    it('downloads once, and runs nothing when the response changes after the signed one', async () => {
+      const url = `${ORIGIN}/swap.mjs`;
+      // First download: the signed bundle. Every later download: different code.
+      BUNDLES[url] = [SIGNED, EVIL, EVIL];
+      downloads[url] = 0;
+      const opts = await signedOptions(SIGNED);
+
+      const first = await sandbox().load({ name: 'swap', bundleUrl: url, capabilities: [], siteId: 'site_a', timeoutMs: 20_000, ...opts });
+      expect(downloads[url]).toBe(1);
+      expect(await first!.hooks!['items.create.before']!({ collection: 'x' })).toEqual({ who: 'signed' });
+
+      // A later load (new request) gets the swapped bytes: refused before any child runs them.
+      const second = await sandbox().load({ name: 'swap', bundleUrl: url, capabilities: [], siteId: 'site_a', timeoutMs: 20_000, ...opts });
+      expect(second).toBeNull();
+      expect(downloads[url]).toBe(2);
+      expect(extensionProcessCount()).toBe(1);
+      expect(await first!.hooks!['items.create.before']!({ collection: 'x' })).toEqual({ who: 'signed' });
+    }, 40_000);
+
+    it('refuses unsigned bytes even though the URL-based verify() would pass', async () => {
+      const url = `${ORIGIN}/evil.mjs`;
+      BUNDLES[url] = EVIL;
+      const opts = await signedOptions(SIGNED);
+      const mod = await sandbox().load({ name: 'evil', bundleUrl: url, capabilities: [], siteId: 'site_a', timeoutMs: 20_000, ...opts, expectedSha256: null });
+      expect(mod).toBeNull();
+      expect(extensionProcessCount()).toBe(0);
+    }, 30_000);
+
+    it('refuses bytes that do not match the recorded SHA-256, signature policy or not', async () => {
+      const url = `${ORIGIN}/pinned.mjs`;
+      BUNDLES[url] = EVIL;
+      const mod = await sandbox().load({
+        name: 'pinned', bundleUrl: url, capabilities: [], siteId: 'site_a', timeoutMs: 20_000,
+        expectedSha256: await sha256Hex(new TextEncoder().encode(SIGNED)),
+      });
+      expect(mod).toBeNull();
+      expect(extensionProcessCount()).toBe(0);
+    }, 30_000);
+
+    it('fails closed when a signature is required and no byte verifier is given', async () => {
+      const url = `${ORIGIN}/noverifier.mjs`;
+      BUNDLES[url] = SIGNED;
+      const mod = await sandbox().load({ name: 'noverifier', bundleUrl: url, capabilities: [], siteId: 'site_a', timeoutMs: 20_000, requireSignature: true, verify: async () => true });
+      expect(mod).toBeNull();
+      expect(extensionProcessCount()).toBe(0);
+    }, 30_000);
+
+    it('a newly verified bundle replaces the child running the old one', async () => {
+      const url = `${ORIGIN}/upgrade.mjs`;
+      const V2 = SIGNED.replace("'signed'", "'v2'");
+      BUNDLES[url] = [SIGNED, V2];
+      const v1 = await sandbox().load({ name: 'upgrade', bundleUrl: url, capabilities: [], siteId: 'site_a', timeoutMs: 20_000, ...(await signedOptions(SIGNED)) });
+      expect(await v1!.hooks!['items.create.before']!({ collection: 'x' })).toEqual({ who: 'signed' });
+      const v2 = await sandbox().load({ name: 'upgrade', bundleUrl: url, capabilities: [], siteId: 'site_a', timeoutMs: 20_000, ...(await signedOptions(V2)) });
+      expect(await v2!.hooks!['items.create.before']!({ collection: 'x' })).toEqual({ who: 'v2' });
+      expect(extensionProcessCount()).toBe(1);
+    }, 40_000);
+  });
 });

@@ -247,19 +247,30 @@ export class ExtensionProcess {
 
 const pool = new Map<string, Promise<ExtensionProcess>>();
 
-/** Pool key: one child per site, extension and bundle. */
-export function processKey(siteId: string | null | undefined, name: string, bundleUrl: string): string {
-  return `${siteId ?? '-'}\u0000${name}\u0000${bundleUrl}`;
+/**
+ * Pool key: one child per site, extension, bundle URL and verified SHA-256 of
+ * the bytes it runs. A different digest is a different child.
+ */
+export function processKey(siteId: string | null | undefined, name: string, bundleUrl: string, digest: string): string {
+  return `${siteId ?? '-'}\u0000${name}\u0000${bundleUrl}\u0000${digest}`;
+}
+
+/** End children of the same site and extension that run other bytes than `key`. */
+export async function evictOtherExtensionDigests(key: string): Promise<void> {
+  const [site, name] = key.split('\u0000');
+  for (const [other, entry] of [...pool]) {
+    if (other === key) continue;
+    const [otherSite, otherName] = other.split('\u0000');
+    if (otherSite !== site || otherName !== name) continue;
+    pool.delete(other);
+    (await entry.catch(() => null))?.kill();
+  }
 }
 
 /** A loaded child for this key, spawning (and loading) one when needed. */
 export async function acquireExtensionProcess(input: {
   key: string;
-  /**
-   * The bundle's import URL. Only called when a child has to be spawned, so a
-   * live child never costs a bundle download.
-   */
-  url: () => Promise<string>;
+  url: string;
   name: string;
   dispatch: CtxDispatch;
   timeoutMs: number;
@@ -271,9 +282,8 @@ export async function acquireExtensionProcess(input: {
     pool.delete(input.key);
   }
   const created = (async () => {
-    const url = await input.url();
     const proc = await ExtensionProcess.spawn({ onExit: () => { if (pool.get(input.key) === created) pool.delete(input.key); } });
-    await proc.load(url, input.name, input.dispatch, input.timeoutMs);
+    await proc.load(input.url, input.name, input.dispatch, input.timeoutMs);
     return proc;
   })();
   pool.set(input.key, created);
