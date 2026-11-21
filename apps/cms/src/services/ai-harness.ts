@@ -13,7 +13,7 @@ import {
 } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
 import { agentToolNamesWithSchema, jsonSchemaFor, validateAgentToolInput } from '@lumibase/contracts';
-import { and, count, eq, gte, inArray, isNull } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
 import type { MagicContext } from './permission-dsl';
@@ -2827,12 +2827,23 @@ export class AISecureHarness {
    * constitution blocks the resulting content, or the agent role has used up
    * its hourly publish budget. Returns `null` to proceed. Fails closed: if
    * either check cannot be evaluated, the publication is held.
+   *
+   * The budget check and the reservation are one atomic step across workers:
+   * under a transaction-scoped advisory lock on `(site, role)`, it counts the
+   * role's autonomous publishes in the last hour that are executed OR still
+   * running (reserved), and, when there is room, marks `toolCallId` itself as
+   * an `autonomous_publish` reservation before the lock is released. A second
+   * concurrent request therefore sees the first one's slot as taken. A call
+   * that then fails is finished as `failed` and stops counting, which releases
+   * its slot; one that crashes mid-run stays `running` and keeps its slot for
+   * the hour (fail closed).
    */
   async autonomousPublishHold(
     skillName: string,
     args: Record<string, unknown>,
     agentRole: string,
     budget: Record<string, unknown> | undefined,
+    toolCallId?: string,
   ): Promise<AutonomousPublishHold | null> {
     try {
       const record = await this.publicationRecord(skillName, args);
@@ -2846,21 +2857,35 @@ export class AISecureHarness {
       const configured = Number((budget ?? {})['maxPublishesPerHour']);
       const limit = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_AUTONOMOUS_PUBLISHES_PER_HOUR;
       const since = new Date(Date.now() - 60 * 60 * 1000);
-      const [row] = await this.db
-        .select({ n: count() })
-        .from(agentToolCalls)
-        .innerJoin(agentRuns, eq(agentRuns.id, agentToolCalls.runId))
-        .where(
-          and(
-            eq(agentToolCalls.siteId, this.siteId),
-            eq(agentRuns.siteId, this.siteId),
-            eq(agentRuns.agentName, agentRole),
-            eq(agentToolCalls.risk, AUTONOMOUS_PUBLISH_RISK),
-            inArray(agentToolCalls.status, ['executed']),
-            gte(agentToolCalls.createdAt, since),
-          ),
+      const exceeded = await this.db.transaction(async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`lumibase_publish_budget:${this.siteId}:${agentRole}`}, 0))`,
         );
-      if (Number(row?.n ?? 0) >= limit) return 'publish_budget_exceeded';
+        const [row] = await tx
+          .select({ n: count() })
+          .from(agentToolCalls)
+          .innerJoin(agentRuns, eq(agentRuns.id, agentToolCalls.runId))
+          .where(
+            and(
+              eq(agentToolCalls.siteId, this.siteId),
+              eq(agentRuns.siteId, this.siteId),
+              eq(agentRuns.agentName, agentRole),
+              eq(agentToolCalls.risk, AUTONOMOUS_PUBLISH_RISK),
+              inArray(agentToolCalls.status, ['executed', 'running']),
+              gte(agentToolCalls.createdAt, since),
+              ...(toolCallId ? [ne(agentToolCalls.id, toolCallId)] : []),
+            ),
+          );
+        if (Number(row?.n ?? 0) >= limit) return true;
+        if (toolCallId) {
+          await tx
+            .update(agentToolCalls)
+            .set({ risk: AUTONOMOUS_PUBLISH_RISK })
+            .where(and(eq(agentToolCalls.siteId, this.siteId), eq(agentToolCalls.id, toolCallId)));
+        }
+        return false;
+      });
+      if (exceeded) return 'publish_budget_exceeded';
     } catch {
       return 'publish_budget_exceeded';
     }
@@ -3273,7 +3298,7 @@ export class AISecureHarness {
         // (#991). Either failing holds it for a human instead of executing.
         const publishes = itemImpact !== null;
         if (publishes) {
-          const hold = await this.autonomousPublishHold(skillName, args, agentRole, envelope.budget);
+          const hold = await this.autonomousPublishHold(skillName, args, agentRole, envelope.budget, toolCallId);
           if (hold) {
             return this.parkForApproval({
               skillName,

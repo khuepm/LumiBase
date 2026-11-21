@@ -1,13 +1,13 @@
 ---
-version: 6
-lastUpdated: 2026-11-19T20:13:27.811Z
+version: 7
+lastUpdated: 2026-11-21T08:45:30.621Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 9fadef044a837780
+sourceHash: 7f85b6f0eb0a9ee5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T20:13:27.811Z
-codeVerifiedHash: 9fadef044a837780
+codeVerified: 2026-11-21T08:45:30.621Z
+codeVerifiedHash: 7f85b6f0eb0a9ee5
 codeVerifiedClaims: 6
 ---
 
@@ -82,7 +82,7 @@ Các kỹ năng chạy qua **điểm cuối được kiểm soát** `POST /api/v
 
 **Không bao giờ tự trị (#991).** Các kỹ năng mở rộng chính quyền hạn hoặc mã của hệ thống dùng chung trần L2 đó và luôn bị coi là nguy hiểm, nên chúng luôn chờ người duyệt ở mọi mức (hoặc bị từ chối ở L0): `installExtension`, `updateExtension`, `uninstallExtension`, `createApiKey`, `rotateApiKey`, `createWebhook`, `updateWebhook`, `createFlow`, `upsertSetting`, `deleteSetting`, `createRole`, `createPolicy`, `inviteUser`, `updateUser` (`NEVER_AUTONOMOUS_SKILLS` trong `ai-harness.ts`). Tự trị "kiếm được" chỉ áp dụng cho thao tác nội dung, không cho những kỹ năng này.
 
-**Xuất bản ở L4 (#991).** Một lần xuất bản agent tự thực hiện — `createItem` với `status: 'published'`, đổi trạng thái, hoặc sửa một item đang live — còn phải qua constitution đang hoạt động của tenant (các evaluator chặn, chạy trên nội dung kết quả) và nằm trong ngân sách xuất bản theo giờ của role: `budget.maxPublishesPerHour` trên intent, mặc định 30. Không đạt một trong hai thì lời gọi chờ duyệt với `riskReason` là `constitution_blocked` hoặc `publish_budget_exceeded` thay vì thực thi. Nội dung do agent tạo mà bộ giám sát toàn vẹn nội dung gắn cờ sẽ ghi một incident `content_integrity`, làm hạ cấp role đó (xem [Toàn vẹn nội dung](./security/content-integrity.md)).
+**Xuất bản ở L4 (#991).** Một lần xuất bản agent tự thực hiện — `createItem` với `status: 'published'`, đổi trạng thái, hoặc sửa một item đang live — còn phải qua constitution đang hoạt động của tenant (các evaluator chặn, chạy trên nội dung kết quả) và nằm trong ngân sách xuất bản theo giờ của role: `budget.maxPublishesPerHour` trên intent, mặc định 30. Ngân sách vẫn đúng khi chạy song song: mỗi lần xuất bản giữ chỗ dưới một khoá database theo site và role trước khi chạy, nên các lượt chạy song song trên bao nhiêu worker cũng không vượt được, và lần xuất bản thất bại sẽ trả lại chỗ. Không đạt một trong hai thì lời gọi chờ duyệt với `riskReason` là `constitution_blocked` hoặc `publish_budget_exceeded` thay vì thực thi. Nội dung do agent tạo mà bộ giám sát toàn vẹn nội dung gắn cờ sẽ ghi một incident `content_integrity`, làm hạ cấp role đó (xem [Toàn vẹn nội dung](./security/content-integrity.md)).
 
 | Skill | Capability | Risk |
 |-------|-----------|------|

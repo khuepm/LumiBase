@@ -1,10 +1,10 @@
 ---
-version: 6
-lastUpdated: 2026-11-19T20:13:27.811Z
+version: 7
+lastUpdated: 2026-11-21T08:45:30.621Z
 sourceLang: en
-contentHash: 9fadef044a837780
-codeVerified: 2026-11-19T20:13:27.811Z
-codeVerifiedHash: 9fadef044a837780
+contentHash: 7f85b6f0eb0a9ee5
+codeVerified: 2026-11-21T08:45:30.621Z
+codeVerifiedHash: 7f85b6f0eb0a9ee5
 codeVerifiedClaims: 6
 ---
 
@@ -79,7 +79,7 @@ Skills run through the **governed endpoint** `POST /api/v1/mcp` (gated by the pe
 
 **Never autonomous (#991).** Skills that extend the system's own privileges or code share the same L2 ceiling and are always treated as dangerous, so they park for a human at every level (or are refused at L0): `installExtension`, `updateExtension`, `uninstallExtension`, `createApiKey`, `rotateApiKey`, `createWebhook`, `updateWebhook`, `createFlow`, `upsertSetting`, `deleteSetting`, `createRole`, `createPolicy`, `inviteUser`, `updateUser` (`NEVER_AUTONOMOUS_SKILLS` in `ai-harness.ts`). Earned autonomy covers content operations, not these.
 
-**Publishing at L4 (#991).** A publication an agent makes on its own — `createItem` with `status: 'published'`, a status change, or a patch on a live item — must also pass the active tenant constitution (its blocking evaluators, run against the resulting content) and stay within the role's hourly publish budget: `budget.maxPublishesPerHour` on the intent, default 30. Either failing parks the call for approval with `riskReason` `constitution_blocked` or `publish_budget_exceeded` instead of executing. Agent-authored content that the content-integrity monitor flags records a `content_integrity` incident, which demotes the role (see [Content integrity](./security/content-integrity.md)).
+**Publishing at L4 (#991).** A publication an agent makes on its own — `createItem` with `status: 'published'`, a status change, or a patch on a live item — must also pass the active tenant constitution (its blocking evaluators, run against the resulting content) and stay within the role's hourly publish budget: `budget.maxPublishesPerHour` on the intent, default 30. The budget holds under concurrency: each publish reserves its slot under a per-site, per-role database lock before it runs, so parallel runs on any number of workers cannot exceed it, and a publish that fails gives its slot back. Either failing parks the call for approval with `riskReason` `constitution_blocked` or `publish_budget_exceeded` instead of executing. Agent-authored content that the content-integrity monitor flags records a `content_integrity` incident, which demotes the role (see [Content integrity](./security/content-integrity.md)).
 
 | Skill | Capability | Risk |
 |-------|-----------|------|
