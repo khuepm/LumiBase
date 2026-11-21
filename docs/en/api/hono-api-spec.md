@@ -1,10 +1,10 @@
 ---
-version: 64
-lastUpdated: 2026-11-19T07:17:03.229Z
+version: 65
+lastUpdated: 2026-11-21T01:11:44.078Z
 sourceLang: en
-contentHash: 83452beb535f1abf
-codeVerified: 2026-11-19T07:17:03.229Z
-codeVerifiedHash: 83452beb535f1abf
+contentHash: 42539b36fe99030a
+codeVerified: 2026-11-21T01:11:44.078Z
+codeVerifiedHash: 42539b36fe99030a
 codeVerifiedClaims: 676
 ---
 
@@ -690,9 +690,9 @@ matching negative-cache tombstones immediately.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/pages` | List pages for the active site |
-| `POST` | `/api/v1/pages` | Create `{ slug, title, layoutConfig? }` |
+| `POST` | `/api/v1/pages` | Create `{ slug, title, layoutConfig? }`. `403 SOURCE_FORBIDDEN` when a section `source` names a collection the caller cannot read in full (every field, no row filter) |
 | `GET` | `/api/v1/pages/:id` | Get one page |
-| `PATCH` | `/api/v1/pages/:id` | Partial update (`slug` / `title` / `layoutConfig`) |
+| `PATCH` | `/api/v1/pages/:id` | Partial update (`slug` / `title` / `layoutConfig`). `403 SOURCE_FORBIDDEN` when the new layout adds a `source` on a collection the caller cannot read in full; sources the page already had are not re-checked |
 | `DELETE` | `/api/v1/pages/:id` | Delete page |
 
 Slug shape matches the Delivery guard (`^[a-z0-9]+(?:[/_-][a-z0-9]+)*$`, ≤200).

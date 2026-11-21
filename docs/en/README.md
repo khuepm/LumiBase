@@ -1,13 +1,13 @@
 ---
-version: 14
-lastUpdated: 2026-11-19T06:06:21.741Z
+version: 16
+lastUpdated: 2026-11-21T01:11:43.867Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 547f0fc4783b9045
+sourceHash: 92956ee527b6c902
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T06:06:21.741Z
-codeVerifiedHash: 547f0fc4783b9045
+codeVerified: 2026-11-21T01:11:43.867Z
+codeVerifiedHash: 92956ee527b6c902
 codeVerifiedClaims: 4
 ---
 
@@ -15,23 +15,30 @@ codeVerifiedClaims: 4
 
 Technical documentation for LumiBase — an Edge-native **Content Operating System (Content OS)**: where AI agents *operate* content while humans set intent, define taste, and hold ultimate accountability. **Runs on both Cloudflare Workers and self-hosted Docker** through a shared runtime abstraction layer.
 
-> As of **v0.5.0**, LumiBase is redefined from a *Content Management System* → a *Content Operating System*: the unit of work is **intent (intent/SLO)**, content is **continuously reconciled** toward the desired state, agents earn **autonomy by level (L0–L4)**, and every byte of content has **provenance**. See [ai-native-vision.md](./ai-native-vision.md).
+> As of **v0.5.0**, LumiBase moves from a *Content Management System* to a *Content Operating System*. Specifically:
+>
+> - **The unit of work is intent (intent/SLO):** you declare the desired state, for example "every published product must have an image and a description".
+> - **The system continuously reconciles** content against that state and corrects drift on its own.
+> - **Agents earn autonomy by level (L0–L4)**, expanded step by step as they prove trustworthy.
+> - **Every piece of content has provenance:** a record of what produced it and which sources it was based on.
+>
+> See [ai-native-vision.md](./ai-native-vision.md).
 
 > Goal: surpass Directus in **No-code Collection Builder**, **field-level / JSON-policy Permissions**, a **Raw editor for every field**, a **safe Extension SDK (with a signed Marketplace)**, **Display Templates**, **Realtime WebSocket**, and an **AI-First Copilot (HITL)** — while keeping LumiBase's Edge-native, Multi-tenant DNA but allowing self-hosting on Docker when needed.
 
 ## Quick start
 
 - [getting-started.md](./getting-started.md) — Bootstrap a new LumiBase project with `npm create lumibase@next` (the `create-lumibase` CLI): the preselected `nextjs` template builds a Next.js website with the CMS + Studio and seeded content behind it, while `default`/`cloudflare` build a Hono + Drizzle starter. The page also says when you need **no** scaffold at all — just `npm install lumibase`.
-- [cli/index.md](./cli/index.md) — The `lumibase` CLI: `init` (scaffold a project), `types` (generate types from a running CMS), `doctor` (check configuration and connectivity).
+- [cli/](./cli/) — The `lumibase` CLI: `init` (scaffold a project), `types` (generate types from a running CMS), `doctor` (check configuration and connectivity).
 
 ## Tutorials
 
-- [tutorials/index.md](./tutorials/index.md) — Catalog of end-to-end tutorials for newcomers.
+- [tutorials/](./tutorials/) — Catalog of end-to-end tutorials for newcomers.
 - [tutorials/nextjs-quickstart.md](./tutorials/nextjs-quickstart.md) — **Render LumiBase content in a Next.js app**: run the CMS locally, create a `posts` collection, then fetch & render with the official `lumibase` package (plain `fetch` is shown afterwards as an alternative). This is the by-hand version of what the `nextjs` template scaffolds for you.
 
 ## Agent Setup (for AI agents)
 
-- [agent-setup/index.md](./agent-setup/index.md) — The hub page for setting up AI agents for LumiBase.
+- [agent-setup/](./agent-setup/) — The hub page for setting up AI agents for LumiBase.
 - [agent-setup/prompt.md](./agent-setup/prompt.md) — Machine-readable instructions for agents to fetch and execute directly.
 - [agent-setup/claude-code.md](./agent-setup/claude-code.md) · [cursor.md](./agent-setup/cursor.md) · [github-copilot.md](./agent-setup/github-copilot.md) · [codex.md](./agent-setup/codex.md) · [windsurf.md](./agent-setup/windsurf.md) — Per-agent guides.
 - [llms.txt](../llms.txt) — Index of all docs for LLMs. [en/llms.txt](./llms.txt) — Index of the English docs.
@@ -44,7 +51,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
 - **Architecture**
   - [architecture/overview.md](./architecture/overview.md) — Overall tech stack, layers, modules, runtime abstraction.
   - [architecture/page-hydration.md](./architecture/page-hydration.md) — The page-hydration API contract.
-  - [architecture/decisions/index.md](./architecture/decisions/index.md) — Architecture Decision Records (ADR-001 through ADR-008).
+  - [architecture/decisions/](./architecture/decisions/) — Architecture Decision Records (ADR-001 through ADR-008).
 - **Data model**
   - [data-model.md](./data-model.md) — Core schema (sites, collections, fields, relations, permissions, presets, translations, files, revisions, activity, webhooks, extensions, **flows, ai_approvals, materialized_collections, translation_memory, glossary**).
 - **Core features** (`features/`)
@@ -96,7 +103,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
   - Setup: [Debezium+Kafka](./cdc/setup-debezium-kafka.md) · [Materialized Engine](./cdc/setup-materialized-engine.md) · [Airbyte](./cdc/setup-airbyte.md).
   - Deployment: [Docker Compose / managed services](./cdc/deployment-docker-compose.md) · [Cloudflare Workers (edge only)](./cdc/deployment-cloudflare-workers.md).
 - **SDK** (`sdk/`)
-  - [sdk/index.md](./sdk/index.md) — SDK overview.
+  - [sdk/](./sdk/) — SDK overview.
   - [sdk/javascript.md](./sdk/javascript.md) — The full JS/TS SDK (auth, items, files, realtime, AI Copilot, Flows).
   - [sdk/typegen.md](./sdk/typegen.md) — Generate TypeScript types from the live schema.
 - **API**
@@ -137,7 +144,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
   - Per-market: [EU GDPR/ePrivacy](./compliance/market-eu-gdpr.md) · [US CCPA/CPRA & CAN-SPAM](./compliance/market-us.md) · [Vietnam PDPD & content licensing](./compliance/market-vietnam.md) · [Google & Apple store policy](./compliance/provider-google-apple.md).
   - [compliance/gap-analysis.md](./compliance/gap-analysis.md) — Right ↔ LumiBase feature mapping (✅/⚠️/❌) + [implementation-checklist.md](./compliance/implementation-checklist.md).
 - **Contributing** (`contributing/`)
-  - [contributing/index.md](./contributing/index.md) — Setup, branching, commit conventions, PR checklist.
+  - [contributing/](./contributing/) — Setup, branching, commit conventions, PR checklist.
   - [contributing/code-style.md](./contributing/code-style.md) — TypeScript, naming, service patterns.
   - [contributing/testing.md](./contributing/testing.md) — Vitest unit, property-based, and integration tests.
   - [contributing/extension-dev.md](./contributing/extension-dev.md) — Build custom extensions (interface, display, operation, hook, endpoint).

@@ -3,7 +3,7 @@ import { Archivo, Literata, DM_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-import CosmicBackground from "@/components/CosmicBackground";
+import SiteBackground from "@/components/SiteBackground";
 import SmoothScroll from "@/components/scroll/SmoothScroll";
 import Analytics from "@/components/analytics/Analytics";
 import { resolveMeasurementId } from "@lumibase/analytics-consent";
@@ -107,11 +107,11 @@ export default function RootLayout({
         />
       </head>
       <body className={`${archivo.className} text-foreground antialiased`}>
-        <CosmicBackground />
+        <SiteBackground />
         <SmoothScroll>
           <div className="relative z-[1]">
             <Header />
-            <main className="min-h-screen">{children}</main>
+            <main id="main-content" className="min-h-screen">{children}</main>
             <Footer />
           </div>
         </SmoothScroll>
