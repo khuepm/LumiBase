@@ -10,6 +10,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { SLUG_MAX_LENGTH } from '../services/identifier-guard';
 import { PageService, PageServiceError } from '../services/page-service';
+import { permissionServiceForRequest } from '../services/item-service-factory';
 import { formatSafeError } from '@lumibase/contracts/utils';
 
 export const pagesRouter = new Hono<AppEnv>();
@@ -39,6 +40,7 @@ function buildService(c: Context<AppEnv>) {
     db: c.get('db'),
     siteId: c.get('siteId'),
     cache: c.get('runtime').cache,
+    permissions: permissionServiceForRequest(c),
   });
 }
 

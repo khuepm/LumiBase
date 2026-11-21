@@ -131,6 +131,28 @@ function publishWindowClause(): SQL | undefined {
   );
 }
 
+/**
+ * Fields a public page must never carry: encrypted fields (stored as
+ * ciphertext) and anything classified pii/phi. Delivery has no caller to
+ * decrypt for or to authorise, so these are left out rather than masked.
+ */
+async function withheldFieldNames(db: Variables['db'], collectionId: string): Promise<string[]> {
+  const rows = await db
+    .select({ name: schema.fields.name, encrypted: schema.fields.encrypted, classification: schema.fields.classification })
+    .from(schema.fields)
+    .where(eq(schema.fields.collectionId, collectionId));
+  return (Array.isArray(rows) ? rows : [])
+    .filter((f) => f && typeof f.name === 'string' && (f.encrypted === true || f.classification === 'pii' || f.classification === 'phi'))
+    .map((f) => f.name);
+}
+
+function withoutFields(row: DeliveryItemRow, names: string[]): DeliveryItemRow {
+  if (names.length === 0 || !row.data || typeof row.data !== 'object' || Array.isArray(row.data)) return row;
+  const data = { ...(row.data as Record<string, unknown>) };
+  for (const name of names) delete data[name];
+  return { ...row, data };
+}
+
 function serializeItem(
   row: DeliveryItemRow,
   seo?: { jsonLdType?: string },
@@ -265,7 +287,10 @@ async function hydrateSection(
       and(
         eq(schema.items.siteId, siteId),
         eq(schema.items.collectionId, collection.id),
-        eq(schema.items.status, section.source.status ?? 'published'),
+        // Public delivery serves published items only. `source.status` is not
+        // honoured: a page is readable by anyone, so it must never become a
+        // way to publish drafts.
+        eq(schema.items.status, 'published'),
         isNull(schema.items.deletedAt),
         // Publish_Window filter (Req 7.5): only items currently in window.
         publishWindowClause(),
@@ -282,7 +307,8 @@ async function hydrateSection(
   const seoOption = section.source.seo
     ? { jsonLdType: typeof section.source.seo === 'object' ? section.source.seo.jsonLdType : undefined }
     : undefined;
-  const items = rows.map((row) => serializeItem(row as DeliveryItemRow, seoOption));
+  const withheld = rows.length > 0 ? await withheldFieldNames(db, collection.id) : [];
+  const items = rows.map((row) => serializeItem(withoutFields(row as DeliveryItemRow, withheld), seoOption));
 
   if (withProvenance) {
     const provenance = await loadProvenance(

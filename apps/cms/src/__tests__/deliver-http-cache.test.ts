@@ -109,7 +109,7 @@ describe('GET /deliver/page — HTTP caching', () => {
 
     const body = (await res.json()) as { sections: Array<{ data: { items: unknown[] } }> };
     expect(body.sections[0]?.data.items).toHaveLength(1);
-    expect(db.selectCount()).toBe(4); // page + fingerprint + collection + items
+    expect(db.selectCount()).toBe(5); // page + fingerprint + collection + items + withheld fields
   });
 
   it('answers a matching If-None-Match with 304 WITHOUT hydrating sections (Req 1.3; Property P2)', async () => {
@@ -154,8 +154,9 @@ describe('GET /deliver/page — HTTP caching', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('private, no-store');
     expect(res.headers.get('etag')).toBeNull();
-    // Credentialed path skips the fingerprint aggregate entirely.
-    expect(db.selectCount()).toBe(3);
+    // Credentialed path skips the fingerprint aggregate entirely
+    // (page + collection + items + withheld fields).
+    expect(db.selectCount()).toBe(4);
   });
 
   it('marks 404 responses no-store', async () => {

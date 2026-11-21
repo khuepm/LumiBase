@@ -1,14 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:02:08.528Z
+version: 3
+lastUpdated: 2026-11-20T05:35:06.536Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f0f9348fb05a5190
+sourceHash: b9fec6046c5c723e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:02:08.528Z
-codeVerifiedHash: f0f9348fb05a5190
-codeVerifiedClaims: 2
+codeVerified: 2026-11-20T05:35:06.536Z
+codeVerifiedHash: b9fec6046c5c723e
+codeVerifiedClaims: 6
 ---
 
 # Hợp đồng API Page Hydration
@@ -38,7 +38,9 @@ Các phần (section) có thể khai báo một nguồn dữ liệu (data source
 }
 ```
 
-Trình phân giải phân phối (delivery resolver) giới hạn truy vấn theo `site_id`, mặc định thành `status: "published"` cho phân phối công khai, giới hạn `limit` tối đa 50 mục, và hợp nhất các dòng đã điền dữ liệu (hydrated rows) vào `data.items`. Chỉ đặt `source.status` khi một trang công khai cố ý cần trạng thái mục khác.
+Trình phân giải phân phối (delivery resolver) giới hạn truy vấn theo `site_id`, chỉ trả các mục đã xuất bản (`source.status` bị bỏ qua), giới hạn `limit` tối đa 50 mục, và hợp nhất các dòng đã điền dữ liệu (hydrated rows) vào `data.items`. Field mã hoá và field được phân loại `pii` hoặc `phi` bị loại khỏi mọi mục: trang là công khai, nên delivery không có người gọi nào để giải mã thay.
+
+Người ghi trang chỉ được gắn `source` vào một collection mà họ đọc được toàn bộ: quyền đọc trên mọi field và không có bộ lọc dòng. Nếu không, `POST /api/v1/pages` và `PATCH /api/v1/pages/:id` trả `403 SOURCE_FORBIDDEN`. Các liên kết mà trang đã có thì không bị kiểm tra lại, nên editor vẫn sửa được trang mà quản trị viên đã gắn vào một collection.
 
 ### Cấu trúc phản hồi JSON dự kiến:
 ```json
