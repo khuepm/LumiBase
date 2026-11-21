@@ -30,6 +30,8 @@ function fakeDb(state: { sites: string[]; files: Record<string, string[]>; versi
           return Object.assign(Promise.resolve(result), { where: () => Promise.resolve(rows(table)) });
         },
       }),
+      // Stale upload claims are dropped per site (#993); none exist here.
+      delete: () => ({ where: () => ({ returning: () => Promise.resolve([]) }) }),
     } as unknown as Database,
   };
 }
