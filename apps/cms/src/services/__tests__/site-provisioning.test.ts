@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryCacheProvider } from '@lumibase/runtime';
 import type { Database } from '@lumibase/database';
 import { finalizeSiteProvisioning } from '../site-provisioning';
@@ -28,4 +28,21 @@ it('still clears the negative entry if optional extension reconciliation fails',
   await cache.setNegative(negativeSiteKey('new'));
   await finalizeSiteProvisioning({} as Database, {} as never, { cache } as never, 'new');
   expect(await cache.getEntry(negativeSiteKey('new'))).toEqual({ state: 'miss' });
+});
+
+describe('shouldRequireAdminMfa (#987)', () => {
+  it('follows the explicit env value first', async () => {
+    const { shouldRequireAdminMfa } = await import('../site-provisioning');
+    expect(shouldRequireAdminMfa({ LUMIBASE_ADMIN_REQUIRE_MFA: 'true' }, false)).toBe(true);
+    expect(shouldRequireAdminMfa({ LUMIBASE_ADMIN_REQUIRE_MFA: '0', LUMIBASE_ENV: 'production' }, true)).toBe(false);
+  });
+
+  it('defaults on in production only when encryption is configured', async () => {
+    const { shouldRequireAdminMfa } = await import('../site-provisioning');
+    expect(shouldRequireAdminMfa({ LUMIBASE_ENV: 'production' }, true)).toBe(true);
+    expect(shouldRequireAdminMfa({ NODE_ENV: 'production' }, true)).toBe(true);
+    expect(shouldRequireAdminMfa({ LUMIBASE_ENV: 'production' }, false)).toBe(false);
+    expect(shouldRequireAdminMfa({ LUMIBASE_ENV: 'development' }, true)).toBe(false);
+    expect(shouldRequireAdminMfa({}, true)).toBe(false);
+  });
 });

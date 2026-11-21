@@ -1,14 +1,14 @@
 ---
-version: 17
-lastUpdated: 2026-11-20T06:00:19.858Z
+version: 18
+lastUpdated: 2026-11-21T00:02:58.713Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 7fc825daaf3681e3
+sourceHash: e3b0be70412db75d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-20T06:00:19.858Z
-codeVerifiedHash: 7fc825daaf3681e3
-codeVerifiedClaims: 122
+codeVerified: 2026-11-21T00:02:58.713Z
+codeVerifiedHash: e3b0be70412db75d
+codeVerifiedClaims: 132
 ---
 
 # User Management Best Practices
@@ -531,6 +531,26 @@ client không phải Studio. Quy tắc:
   giới hạn chúng bằng policy và thời hạn riêng. Request ẩn danh (role public)
   không có session nên cũng không bị ảnh hưởng.
 - `appAccess` không đổi: vẫn chỉ được kiểm trên bề mặt Studio.
+- Các lệnh đọc lúc khởi động của Studio (`GET /permissions/me`,
+  `GET /me/preferences`, `GET /me/admin-path`) cũng mở cho người dùng chưa
+  đăng ký, để Studio tải được và điều hướng họ.
+- Mỗi `403 TFA_REQUIRED` cho biết lý do trong `errors[0].details.reason`:
+  `enrollment_required` (đăng ký một yếu tố) hoặc `verification_required` (đăng
+  nhập lại bằng yếu tố đó). Studio dùng nó: trường hợp đầu đưa người dùng tới
+  **Settings → Security** kèm một banner, trường hợp sau đăng xuất họ về màn
+  hình đăng nhập kèm một thông báo. Sau khi đăng ký, session vẫn chỉ có mật
+  khẩu, nên request kế tiếp trả `verification_required` và người dùng đăng nhập
+  thêm một lần bằng yếu tố mới.
+
+**MFA cho Administrator lúc setup.** Wizard setup gắn một policy
+**Administrator MFA** (key `administrator_mfa`, `enforceTfa: true`, không cấp
+quyền nào khác) vào role Administrator khi `LUMIBASE_ADMIN_REQUIRE_MFA` là
+`true`, hoặc, khi biến đó không được đặt, ở production (`LUMIBASE_ENV` hoặc
+`NODE_ENV` là `production`) và đã cấu hình khoá mã hoá — thiếu khoá thì không
+đăng ký TOTP được. `LUMIBASE_ADMIN_REQUIRE_MFA=false` tắt nó. Muốn bỏ về sau,
+gỡ hoặc xoá policy trong Settings → Access. Các site tạo sau này từ một
+organization không có policy này; hãy tự thêm `enforceTfa` vào policy của
+chúng.
 
 **Yếu tố thứ hai qua các lần gia hạn.** Family refresh token ghi lại `amr` của
 lần đăng nhập (`lumibase_refresh_tokens.amr`, migration `0044`), nên

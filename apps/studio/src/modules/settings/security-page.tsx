@@ -126,6 +126,8 @@ export function SecuritySettingsPage() {
     onError: (err: Error) => setMessage(err.message),
   });
 
+  const tfaRequired = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tfa') === 'required';
+
   return (
     <div className="mx-auto max-w-2xl space-y-6 p-6">
       <header className="space-y-1">
@@ -137,6 +139,16 @@ export function SecuritySettingsPage() {
           Manage two-factor authentication, your password and the devices signed in to your account, and review your security history.
         </p>
       </header>
+
+      {tfaRequired ? (
+        // Sent here by the API client after a `403 TFA_REQUIRED` (#987).
+        <div role="status" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
+          <p className="font-medium">Two-factor authentication is required for your role.</p>
+          <p>
+            Set up an authenticator app or a passkey below. Then sign out and sign in again with it: the rest of the Studio stays closed until your session has used a second factor.
+          </p>
+        </div>
+      ) : null}
 
       {message ? (
         <p role="alert" className="text-sm text-red-600">{message}</p>

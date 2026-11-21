@@ -1,11 +1,11 @@
 ---
-version: 17
-lastUpdated: 2026-11-20T06:00:19.858Z
+version: 18
+lastUpdated: 2026-11-21T00:02:58.713Z
 sourceLang: en
-contentHash: 7fc825daaf3681e3
-codeVerified: 2026-11-20T06:00:19.858Z
-codeVerifiedHash: 7fc825daaf3681e3
-codeVerifiedClaims: 122
+contentHash: e3b0be70412db75d
+codeVerified: 2026-11-21T00:02:58.713Z
+codeVerifiedHash: e3b0be70412db75d
+codeVerifiedClaims: 132
 ---
 
 # User Management Best Practices
@@ -525,6 +525,26 @@ could still write content from a non-Studio client. The rules:
   `enforceTfa`; restrict them with their own policies and expiry. Anonymous
   (public-role) requests have no session and are not affected either.
 - `appAccess` is unchanged: it is still checked only on the Studio surface.
+- The Studio's boot reads (`GET /permissions/me`, `GET /me/preferences`,
+  `GET /me/admin-path`) are also open to an un-enrolled user, so the Studio
+  can load and route them.
+- Each `403 TFA_REQUIRED` says why in `errors[0].details.reason`:
+  `enrollment_required` (enrol a factor) or `verification_required` (sign in
+  again with it). The Studio uses it: the first sends the user to
+  **Settings → Security** with a banner, the second signs them out to the
+  login screen with a notice. After enrolling, the session is still
+  password-only, so the next request answers `verification_required` and the
+  user signs in once more with the new factor.
+
+**Administrator MFA at setup.** The setup wizard binds an **Administrator
+MFA** policy (key `administrator_mfa`, `enforceTfa: true`, no other access)
+to the Administrator role when `LUMIBASE_ADMIN_REQUIRE_MFA` is `true`, or,
+when that variable is unset, in production (`LUMIBASE_ENV` or `NODE_ENV` is
+`production`) with an encryption key configured — without one TOTP enrolment
+is not available. `LUMIBASE_ADMIN_REQUIRE_MFA=false` turns it off. To drop it
+later, detach or delete the policy in Settings → Access. Sites created later
+from an organization do not get the policy; add `enforceTfa` to their
+policies yourself.
 
 **Second factor across renewal.** The refresh-token family records the
 login's `amr` (`lumibase_refresh_tokens.amr`, migration `0044`), so

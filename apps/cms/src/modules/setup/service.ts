@@ -1,6 +1,6 @@
 import type { RuntimeContext } from '@lumibase/runtime';
 import type { AppEnv } from '../../env';
-import { provisionSite, finalizeSiteProvisioning } from '../../services/site-provisioning';
+import { ensureAdministratorMfaPolicy, finalizeSiteProvisioning, provisionSite, shouldRequireAdminMfa } from '../../services/site-provisioning';
 /**
  * SetupService — implements the three public surfaces of the Setup
  * Wizard backend (design §6.5):
@@ -664,6 +664,13 @@ export class SetupService {
           allowExisting: true,
         });
 
+        // ── 8a. Administrator MFA (#987): in production, with encryption
+        //        configured, the first admin enrols a second factor before
+        //        the Studio opens. `LUMIBASE_ADMIN_REQUIRE_MFA` overrides.
+        if (shouldRequireAdminMfa(this.adminMfaEnv(), this.deps.encryptionAvailable)) {
+          await ensureAdministratorMfaPolicy(tx, DEFAULT_SITE_ID, provisioned.administratorRoleId);
+        }
+
         // ── 8b. Seed the agent role library (Setup Impact Registry #1;
         //        content-os Req 10.3). Without this, `agent_roles` stays
         //        empty until the first `GET /agent/roles` lazily seeds it,
@@ -1082,6 +1089,13 @@ export class SetupService {
    * through the secret-masking, budget-bounded, never-throwing logger
    * (task 11.1).
    */
+  /** Bindings on Workers; `process.env` on Node, where `deps.env` may be absent. */
+  private adminMfaEnv(): Readonly<Record<string, unknown>> {
+    const bindings = (this.deps.env ?? {}) as unknown as Record<string, unknown>;
+    const proc = typeof process !== 'undefined' ? (process.env as Record<string, unknown>) : {};
+    return { ...proc, ...bindings };
+  }
+
   private resolveAuditLogger(): AuditLoggerLike {
     return this.deps.audit ?? new AuditLogger({ db: this.deps.db });
   }

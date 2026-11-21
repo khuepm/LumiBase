@@ -172,15 +172,17 @@ async function tfaDenial(
 ): Promise<Response | null> {
   const user = await loadUserTfaState(c.get('db'), userId);
   if (!user.enrolled && isTfaEnrollmentRequest(c.req.method, c.req.path)) return null;
+  // `reason` tells a client what to do (#987): enroll a factor, or sign in
+  // again with the one it has.
   if (!user.enrolled) {
     return c.json(
-      { errors: [{ code: 'TFA_REQUIRED', message: 'Two-factor authentication enrollment is required for this account.' }] },
+      { errors: [{ code: 'TFA_REQUIRED', message: 'Two-factor authentication enrollment is required for this account.', details: { reason: 'enrollment_required' } }] },
       403,
     );
   }
   if (!isSessionTfaVerified(auth)) {
     return c.json(
-      { errors: [{ code: 'TFA_REQUIRED', message: 'A two-factor verified session is required for this account.' }] },
+      { errors: [{ code: 'TFA_REQUIRED', message: 'A two-factor verified session is required for this account.', details: { reason: 'verification_required' } }] },
       403,
     );
   }
@@ -259,6 +261,11 @@ async function loadUserTfaState(db: AppEnv['Variables']['db'], userId: string): 
  * method + path pairs, so nothing else under `/me` slips through.
  */
 const TFA_ENROLLMENT_REQUESTS = new Set([
+  // Read-only boot calls, so the Studio can render its shell and route the
+  // user to Settings → Security instead of failing every screen (#987).
+  'GET /api/v1/permissions/me',
+  'GET /api/v1/me/preferences',
+  'GET /api/v1/me/admin-path',
   'GET /api/v1/me/tfa',
   'POST /api/v1/me/tfa/setup',
   'POST /api/v1/me/tfa/confirm',

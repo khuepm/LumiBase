@@ -1,11 +1,11 @@
 ---
-version: 25
-lastUpdated: 2026-11-20T06:00:20.157Z
+version: 26
+lastUpdated: 2026-11-21T00:02:59.252Z
 sourceLang: en
-contentHash: 75d93ea567aa7414
-codeVerified: 2026-11-20T06:00:20.157Z
-codeVerifiedHash: 75d93ea567aa7414
-codeVerifiedClaims: 100
+contentHash: 218ef196a56c5775
+codeVerified: 2026-11-21T00:02:59.252Z
+codeVerifiedHash: 218ef196a56c5775
+codeVerifiedClaims: 102
 ---
 
 # Environment Variables Reference
@@ -49,6 +49,7 @@ public/setup routes to it in production. See
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ | **on in production**, off elsewhere | Makes `POST /api/v1/setup/complete` demand a one-time setup token. `true` / `1` / `yes` turns it on, `false` / `0` / `no` turns it off on purpose (automated provisioning). Unset, it is on when `LUMIBASE_ENV` or `NODE_ENV` is `production` (#992) or when `LUMIBASE_SETUP_TOKEN` is set — otherwise whoever reaches the port first creates the admin account. Node/Docker mints the token at startup and prints it once as `[lumibase-cms] SETUP_TOKEN=…`. |
+| `LUMIBASE_ADMIN_REQUIRE_MFA` | ✗ | **on in production** with an encryption key, off elsewhere | Whether the setup wizard binds an `enforceTfa` "Administrator MFA" policy to the Administrator role (#987), so the first admin enrols a second factor before using the Studio. `true` / `1` / `yes` on (passkeys work without an encryption key), `false` / `0` / `no` off. Read once, at setup. |
 | `PASSWORD_PBKDF2_ITERATIONS` | ✗ (Node/Docker) | `100000` | PBKDF2 work factor for new password hashes, 100,000–2,000,000; logins re-hash older passwords up to it (#994). Ignored on Cloudflare Workers (capped at 100,000 by Web Crypto) — do not raise it if the database may later be served by Workers. |
 | `API_KEY_DEFAULT_TTL_DAYS` | ✗ | `90` | Lifetime of an API key created without `expiresAt` (#994). `0` restores the old never-expires default; an explicit `"expiresAt": null` always creates a non-expiring key. |
 | `FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME` | ✗ | off | `true` lets `FILE_UPLOAD_ALLOWED_MIME_TYPES` admit types outside the upload catalogue, which are accepted without content sniffing (#993). Reported by `lumibase doctor --security`. |

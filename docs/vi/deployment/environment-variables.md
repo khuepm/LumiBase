@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 25
-lastUpdated: 2026-11-20T06:00:20.157Z
+version: 26
+lastUpdated: 2026-11-21T00:02:59.252Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 75d93ea567aa7414
+sourceHash: 218ef196a56c5775
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-20T06:00:20.157Z
-codeVerifiedHash: 75d93ea567aa7414
-codeVerifiedClaims: 100
+codeVerified: 2026-11-21T00:02:59.252Z
+codeVerifiedHash: 218ef196a56c5775
+codeVerifiedClaims: 102
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -53,6 +53,7 @@ trong build artifact.
 | Biến | Bắt buộc | Mặc định | Mô tả |
 |------|----------|----------|-------|
 | `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ | **bật ở production**, tắt ở nơi khác | Khiến `POST /api/v1/setup/complete` đòi một setup token dùng một lần. `true` / `1` / `yes` bật, `false` / `0` / `no` tắt có chủ đích (provisioning tự động). Khi không đặt, cổng bật nếu `LUMIBASE_ENV` hoặc `NODE_ENV` là `production` (#992) hoặc khi `LUMIBASE_SETUP_TOKEN` được đặt — nếu không, ai chạm tới cổng trước sẽ tạo được tài khoản admin. Node/Docker sinh token lúc khởi động và in một lần dạng `[lumibase-cms] SETUP_TOKEN=…`. |
+| `LUMIBASE_ADMIN_REQUIRE_MFA` | ✗ | **bật ở production** khi có khoá mã hoá, tắt ở nơi khác | Wizard setup có gắn policy `enforceTfa` "Administrator MFA" vào role Administrator hay không (#987), để admin đầu tiên đăng ký yếu tố thứ hai trước khi dùng Studio. `true` / `1` / `yes` bật (passkey dùng được khi không có khoá mã hoá), `false` / `0` / `no` tắt. Chỉ đọc một lần, lúc setup. |
 | `PASSWORD_PBKDF2_ITERATIONS` | ✗ (Node/Docker) | `100000` | Mức chi phí PBKDF2 cho hash mật khẩu mới, 100.000–2.000.000; khi đăng nhập, mật khẩu cũ được băm lại lên mức này (#994). Bị bỏ qua trên Cloudflare Workers (Web Crypto giới hạn ở 100.000) — đừng nâng nếu database sau này có thể được phục vụ bởi Workers. |
 | `API_KEY_DEFAULT_TTL_DAYS` | ✗ | `90` | Thời hạn của API key tạo mà không có `expiresAt` (#994). `0` khôi phục mặc định cũ là không bao giờ hết hạn; `"expiresAt": null` tường minh luôn tạo key không hết hạn. |
 | `FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME` | ✗ | tắt | `true` cho phép `FILE_UPLOAD_ALLOWED_MIME_TYPES` nhận các loại ngoài catalogue upload, vốn được nhận mà không dò nội dung (#993). `lumibase doctor --security` sẽ báo cáo. |
