@@ -108,6 +108,32 @@ const CASES: Array<{
   args: Record<string, unknown>;
   expected: Record<string, unknown>;
 }> = [
+  // Clarification questions (#710, B208): harness-only, so a wrong name here
+  // would leave an IDE agent on stdio unable to ask at all.
+  {
+    tool: 'ask_user',
+    skill: 'askUser',
+    args: {
+      question: 'Formal or casual tone for the newsletter?',
+      options: ['formal', 'casual'],
+      allow_free_text: false,
+      context: 'Weekly newsletter',
+      timeout_minutes: 120,
+    },
+    expected: {
+      question: 'Formal or casual tone for the newsletter?',
+      options: ['formal', 'casual'],
+      allowFreeText: false,
+      context: 'Weekly newsletter',
+      timeoutMinutes: 120,
+    },
+  },
+  {
+    tool: 'get_user_answer',
+    skill: 'getUserAnswer',
+    args: { question_id: 'q_123' },
+    expected: { questionId: 'q_123' },
+  },
   {
     tool: 'create_relation',
     skill: 'createRelation',
@@ -195,6 +221,9 @@ describe('newly governed tools · routing', () => {
   it('covers exactly the tools this change routed, each with a canonical contract', () => {
     expect(CASES.map((c) => c.tool).sort()).toEqual(
       [
+        // #710, B208
+        'ask_user',
+        'get_user_answer',
         'create_intent',
         'create_relation',
         'create_webhook',
@@ -345,5 +374,39 @@ describe('stdio SDK layer · what happens to an unknown argument before the disp
     expect(rpc).toHaveLength(1);
     expect(rpc[0]!.name).toBe('updateWebhook');
     expect(rpc[0]!.arguments).toEqual({ id: 'wh_1', status: 'inactive' });
+  });
+});
+
+describe('ask_user / get_user_answer without the governed endpoint (#710, B208)', () => {
+  it('refuse instead of falling back to a REST call that does not exist', async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const record = (method: string) => (path: string) => {
+      calls.push({ method, path });
+      return Promise.resolve({ ok: true });
+    };
+    const client = {
+      get: vi.fn(record('GET')),
+      post: vi.fn(record('POST')),
+      patch: vi.fn(record('PATCH')),
+      put: vi.fn(record('PUT')),
+      delete: vi.fn(record('DELETE')),
+      // The site has contentOs.mcp off: the probe fails, mode `auto` falls back.
+      jsonRpc: vi.fn(() => Promise.reject(Object.assign(new Error('MCP disabled'), { name: 'McpUnavailableError' }))),
+    } as unknown as LumiBaseClient;
+    const handlers = new Map<string, Handler>();
+    registerAllTools(
+      { registerTool: (name: string, _config: unknown, handler: Handler) => handlers.set(name, handler) } as never,
+      client,
+      { dispatcher: new GovernedDispatcher(client, { mode: 'auto', warn: () => undefined }) },
+    );
+    for (const tool of ['ask_user', 'get_user_answer']) {
+      const result = (await handlers.get(tool)!({ question: 'Which locale?', question_id: 'q_1' })) as {
+        isError?: boolean;
+        content: Array<{ text: string }>;
+      };
+      expect(result.isError, tool).toBe(true);
+      expect(result.content[0]!.text).toContain('governed harness');
+    }
+    expect(calls.filter((c) => c.method !== 'GET')).toEqual([]);
   });
 });

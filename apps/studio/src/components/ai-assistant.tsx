@@ -17,9 +17,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MessageCircle, Send, X, Loader2, Plus, ChevronDown, Trash2 } from 'lucide-react';
+import { MessageCircle, Send, X, Loader2, Plus, ChevronDown, Trash2, Paperclip, Upload, FileText, Image as ImageIcon } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { getActiveSite, getActiveToken } from '@/lib/api';
+import { getActiveSite, getActiveToken, getApiClient } from '@/lib/api';
+import { useMediaPicker } from '@/modules/files/media-picker';
 import { getApiBaseUrl } from '@/lib/api-base';
 
 interface ChatMessage {
@@ -27,6 +28,32 @@ interface ChatMessage {
   text: string;
   status?: string;
   approvalId?: string;
+  /** Files sent with a user turn (#709): names only, the bytes are never kept. */
+  attachments?: ChatAttachment[];
+}
+
+/** A media-library file attached to the next turn (#709). */
+export interface ChatAttachment {
+  fileId: string;
+  name: string;
+  mimeType: string;
+}
+
+/** What the model accepts as input; mirrors `AI_ATTACHMENT_LIMITS` in the CMS. */
+export const ATTACHMENT_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf'] as const;
+export const MAX_ATTACHMENTS = 4;
+
+/** Adds `next` to `current` without duplicates, capped at {@link MAX_ATTACHMENTS}. */
+export function mergeAttachments(current: ChatAttachment[], next: ChatAttachment[]): ChatAttachment[] {
+  const seen = new Set(current.map((a) => a.fileId));
+  const merged = [...current];
+  for (const attachment of next) {
+    if (merged.length >= MAX_ATTACHMENTS) break;
+    if (!(ATTACHMENT_MIME_TYPES as readonly string[]).includes(attachment.mimeType) || seen.has(attachment.fileId)) continue;
+    seen.add(attachment.fileId);
+    merged.push(attachment);
+  }
+  return merged;
 }
 
 interface ConversationSummary {
@@ -69,7 +96,57 @@ export function AIAssistant() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [showConvDropdown, setShowConvDropdown] = useState(false);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [uploading, setUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const openMediaPicker = useMediaPicker();
+
+  async function pickFromLibrary() {
+    if (!openMediaPicker) return;
+    const picked = await openMediaPicker({
+      multiple: true,
+      allowedMimeTypes: [...ATTACHMENT_MIME_TYPES],
+      max: Math.max(1, MAX_ATTACHMENTS - attachments.length),
+    });
+    if (!picked) return;
+    setAttachments((prev) =>
+      mergeAttachments(prev, picked.map((f) => ({ fileId: f.id, name: f.filenameDownload, mimeType: f.mime }))),
+    );
+  }
+
+  /** Upload from the device into the media library, then attach (#709). */
+  async function uploadAndAttach(list: FileList | null) {
+    const chosen = Array.from(list ?? []).slice(0, MAX_ATTACHMENTS - attachments.length);
+    if (chosen.length === 0) return;
+    setUploading(true);
+    try {
+      const client = getApiClient();
+      const added: ChatAttachment[] = [];
+      for (const file of chosen) {
+        const { data: presigned } = await client.files.getPresignedUrl(file.name);
+        const put = await fetch(presigned.url, {
+          method: 'PUT',
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          body: file,
+        });
+        if (!put.ok) throw new Error(`Upload of "${file.name}" failed (${put.status}).`);
+        const { data } = await client.files.create({
+          filenameDisk: presigned.key,
+          filenameDownload: file.name,
+          mime: file.type || 'application/octet-stream',
+          filesize: file.size,
+        });
+        added.push({ fileId: data.id, name: data.filenameDownload, mimeType: data.mime });
+      }
+      setAttachments((prev) => mergeAttachments(prev, added));
+    } catch (err) {
+      addMessage({ role: 'assistant', text: err instanceof Error ? err.message : 'Upload failed.' });
+    } finally {
+      setUploading(false);
+      if (uploadInputRef.current) uploadInputRef.current.value = '';
+    }
+  }
 
   const addMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg].slice(-MAX_MESSAGES));
@@ -109,7 +186,11 @@ export function AIAssistant() {
       );
       if (res.ok) {
         const body = (await res.json()) as {
-          data: Array<{ role: string; content: string; metadata?: { status?: string; approvalId?: string } }>;
+          data: Array<{
+            role: string;
+            content: string;
+            metadata?: { status?: string; approvalId?: string; attachments?: ChatAttachment[] };
+          }>;
         };
         const loaded: ChatMessage[] = body.data
           .filter((m) => m.role === 'user' || m.role === 'assistant')
@@ -118,6 +199,7 @@ export function AIAssistant() {
             text: m.content,
             status: m.metadata?.status,
             approvalId: m.metadata?.approvalId,
+            ...(m.metadata?.attachments?.length ? { attachments: m.metadata.attachments } : {}),
           }));
         setMessages(loaded.slice(-MAX_MESSAGES));
         setConversationId(convId);
@@ -153,9 +235,15 @@ export function AIAssistant() {
     const trimmed = input.trim();
     if (!trimmed || loading) return;
 
-    const userMessage: ChatMessage = { role: 'user', text: trimmed };
+    const sending = attachments;
+    const userMessage: ChatMessage = {
+      role: 'user',
+      text: trimmed,
+      ...(sending.length > 0 ? { attachments: sending } : {}),
+    };
     addMessage(userMessage);
     setInput('');
+    setAttachments([]);
     setLoading(true);
     scrollToBottom();
 
@@ -169,6 +257,7 @@ export function AIAssistant() {
         body: JSON.stringify({
           message: trimmed,
           ...(conversationId ? { conversationId } : {}),
+          ...(sending.length > 0 ? { attachments: sending.map((a) => ({ fileId: a.fileId })) } : {}),
         }),
       });
 
@@ -220,7 +309,7 @@ export function AIAssistant() {
       // Refresh conversations list
       void loadConversations();
     }
-  }, [input, loading, addMessage, scrollToBottom, conversationId]);
+  }, [input, loading, attachments, addMessage, scrollToBottom, conversationId]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -229,7 +318,8 @@ export function AIAssistant() {
     }
   };
 
-  const isSendDisabled = !input.trim() || loading;
+  const isSendDisabled = !input.trim() || loading || uploading;
+  const canAttachMore = attachments.length < MAX_ATTACHMENTS && !uploading;
 
   return (
     <>
@@ -240,11 +330,12 @@ export function AIAssistant() {
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          'fixed z-50 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-colors',
+          'fixed bottom-24 z-50 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-colors md:bottom-6',
           'bg-primary text-primary-foreground hover:bg-primary/90',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         )}
-        style={{ bottom: 24, insetInlineEnd: 24 }}
+        // Above the mobile bottom nav (md:hidden, ~64px); 24px from the edge on desktop.
+        style={{ insetInlineEnd: 24 }}
       >
         {open ? (
           <X className="h-5 w-5" aria-hidden="true" />
@@ -259,11 +350,11 @@ export function AIAssistant() {
           role="dialog"
           aria-label="AI Assistant"
           className={cn(
-            'fixed z-50 flex flex-col rounded-lg border shadow-xl',
+            'fixed bottom-40 z-50 flex max-w-[calc(100vw-48px)] flex-col rounded-lg border shadow-xl md:bottom-[84px]',
             'bg-background/80 backdrop-blur-xl',
             'animate-in fade-in-0 slide-in-from-bottom-2',
           )}
-          style={{ bottom: 84, insetInlineEnd: 24, width: 320, height: 480 }}
+          style={{ insetInlineEnd: 24, width: 320, height: 480 }}
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b px-4 py-3">
@@ -369,6 +460,20 @@ export function AIAssistant() {
                     )}
                   >
                     <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                    {msg.attachments && msg.attachments.length > 0 && (
+                      <ul className="mt-1 space-y-0.5 text-[10px] opacity-80" aria-label="Attached files">
+                        {msg.attachments.map((a) => (
+                          <li key={a.fileId} className="flex items-center gap-1 truncate">
+                            {a.mimeType === 'application/pdf' ? (
+                              <FileText className="h-3 w-3 shrink-0" aria-hidden="true" />
+                            ) : (
+                              <ImageIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
+                            )}
+                            <span className="truncate">{a.name}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     {msg.status === 'pending_approval' && (
                       <span className="mt-1 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
                         pending_approval
@@ -389,7 +494,67 @@ export function AIAssistant() {
 
           {/* Input area */}
           <div className="border-t px-3 py-2">
+            {attachments.length > 0 && (
+              <ul className="mb-2 flex flex-wrap gap-1" aria-label="Files to send">
+                {attachments.map((a) => (
+                  <li
+                    key={a.fileId}
+                    className="flex max-w-full items-center gap-1 rounded border bg-muted px-1.5 py-0.5 text-[10px]"
+                  >
+                    {a.mimeType === 'application/pdf' ? (
+                      <FileText className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    ) : (
+                      <ImageIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    )}
+                    <span className="max-w-[140px] truncate">{a.name}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${a.name}`}
+                      onClick={() => setAttachments((prev) => prev.filter((p) => p.fileId !== a.fileId))}
+                      className="rounded p-0.5 hover:bg-background"
+                    >
+                      <X className="h-3 w-3" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="flex items-end gap-2">
+              {openMediaPicker && (
+                <button
+                  type="button"
+                  aria-label="Attach an image or PDF from the media library"
+                  title="Attach from media library"
+                  disabled={!canAttachMore}
+                  onClick={() => void pickFromLibrary()}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Paperclip className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              )}
+              <button
+                type="button"
+                aria-label="Upload an image or PDF and attach it"
+                title="Upload and attach"
+                disabled={!canAttachMore}
+                onClick={() => uploadInputRef.current?.click()}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {uploading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Upload className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
+              </button>
+              <input
+                ref={uploadInputRef}
+                type="file"
+                multiple
+                accept={ATTACHMENT_MIME_TYPES.join(',')}
+                className="hidden"
+                data-testid="ai-attachment-upload"
+                onChange={(e) => void uploadAndAttach(e.target.files)}
+              />
               <textarea
                 aria-label="Message input"
                 placeholder="Ask the AI…"

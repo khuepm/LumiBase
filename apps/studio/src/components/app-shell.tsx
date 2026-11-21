@@ -22,6 +22,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { NotificationsPanel } from '@/components/notifications-panel';
+import { AIAssistant } from '@/components/ai-assistant';
 import { ReleaseUpdateNotice } from '@/components/release-update-notice';
 import { ConnectionStatusDot } from '@/components/connection-status-dot';
 import { MissionControlBadge, ModuleNavItem, type ModuleDef } from '@/components/module-nav-item';
@@ -322,6 +323,9 @@ export function AppShell({ children }: AppShellProps) {
 
       {/* Mobile Bottom Nav — replaces the sidebar on small screens */}
       <BottomNav activeModule={activeModule} adminBase={adminBase} />
+
+      {/* Copilot chat (floating). Images / PDFs can be attached to a turn (#709). */}
+      <AIAssistant />
 
       {paletteOpen && (
         <Suspense fallback={null}>

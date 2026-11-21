@@ -1,13 +1,13 @@
 ---
-version: 15
-lastUpdated: 2026-11-19T05:19:35.652Z
+version: 16
+lastUpdated: 2026-11-21T01:11:43.504Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: d2cc106e6be514ec
+sourceHash: 3c9315791668407c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T05:19:35.652Z
-codeVerifiedHash: d2cc106e6be514ec
+codeVerified: 2026-11-21T01:11:43.504Z
+codeVerifiedHash: 3c9315791668407c
 codeVerifiedClaims: 4
 ---
 
@@ -81,6 +81,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
   - [agent-harness-layer.md](./features/agent-harness-layer.md) — Agent goals, runs, tools, memory, approvals, artifacts, evaluations, and app generation governance.
   - [site-skills.md](./features/site-skills.md) — Site Skills: versioned playbooks injected into agent runs, skills-as-code CLI, MCP prompts.
   - [agent-receipts.md](./features/agent-receipts.md) — Agent receipts: runs, approvals, overrides, cost, drift and autonomy over a window; alert thresholds and CSV export.
+  - [chat-agent.md](./features/chat-agent.md) — Chat agent: the Content Agent from Slack (mention, slash command, Approve / Reject buttons) or a signed generic webhook, running as the linked LumiBase user.
   - [locale-generator.md](./features/locale-generator.md) — Locale generator: add a locale in one step; machine translations wait in a review queue.
   - [external-action-tools.md](./features/external-action-tools.md) — Governed agent tools whose effect lands outside the CMS: declared risk, human-only approval, per-site secrets.
   - [runtime-abstraction.md](./features/runtime-abstraction.md) — The `@lumibase/runtime` layer that allows running on Cloudflare and Docker.

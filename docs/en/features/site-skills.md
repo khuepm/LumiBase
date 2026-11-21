@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-11-12T18:43:32.411Z
+version: 3
+lastUpdated: 2026-11-19T04:35:27.253Z
 sourceLang: en
-contentHash: ef3117c0b3b07b7c
-codeVerified: 2026-11-12T18:43:32.411Z
-codeVerifiedHash: ef3117c0b3b07b7c
-codeVerifiedClaims: 24
+contentHash: 39159c84ee68906c
+codeVerified: 2026-11-19T04:35:27.253Z
+codeVerifiedHash: 39159c84ee68906c
+codeVerifiedClaims: 26
 ---
 
 # Site Skills
@@ -184,6 +184,28 @@ activate content you did not see.
   retrieved documents and chat messages can never become a skill, and they
   keep entering prompts as untrusted data.
 
+### Agent proposals
+
+An agent may **propose** a skill through the governed harness tool
+`proposeSiteSkill`, which the HTTP MCP endpoint also lists. The arguments are the
+front matter fields plus `body` and a required `rationale` — why the agent
+thinks the playbook is needed (for example, the corrections editors keep
+making).
+
+- The tool is `dangerous: true` and needs `config:write`. Below autopilot
+  (L1–L3) a proposal always parks in the approval queue; nothing is written
+  until a human approves it. An agent writing instructions for itself without
+  review would be an escalation.
+- An approved proposal creates a **draft**, never an active skill. Activating
+  it is a separate human step in Studio or over REST.
+- The version trail names the agent (`authorLabel` `agent:proposeSiteSkill`,
+  no `authorId`) and the change note carries the rationale.
+- A proposal cannot overwrite an existing skill: a duplicate slug fails at
+  execution and changes nothing. To change a skill, a human edits it.
+- Invalid input (a slug that is not kebab-case, a reserved slug such as
+  `import`, a body over 12,000 characters, an unknown field) is refused with
+  `VALIDATION` before anything is parked.
+
 ## API
 
 All routes are under `/api/v1/agent/skills`. `:id` accepts the id or the slug.
@@ -257,6 +279,16 @@ principal that resolves to a control-plane admin for the site. For anyone else
 each skill's `surfaces` and `requiredCapabilities` still filter what an admin
 sees. A prompt the caller may not see and a prompt that does not exist answer
 identically. Organization-plane calls (`org:*`) do not offer prompts.
+
+The stdio server (`packages/mcp-server`) forwards the same prompts. At startup
+it calls `prompts/list` on the HTTP endpoint with its configured token and
+registers each prompt it gets back; every `prompts/get` is forwarded to the
+endpoint, so the access rules above are applied there, never in the stdio
+process. Nothing is registered when the endpoint is unavailable (the
+`contentOs.mcp` flag is off), in ops-only mode (`LUMIBASE_OPS_TOKEN` without
+`LUMIBASE_TOKEN`), or for an organization
+token not pinned to a site. A skill activated after startup appears after the
+stdio server restarts.
 
 ## Multi-tenancy
 

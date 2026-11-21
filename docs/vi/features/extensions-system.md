@@ -1,11 +1,11 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 5
-lastUpdated: 2026-11-19T20:13:28.035Z
+version: 6
+lastUpdated: 2026-11-21T11:15:33.714Z
 sourceLang: vi
-contentHash: 06e7b733bca02fe8
-codeVerified: 2026-11-19T20:13:28.035Z
-codeVerifiedHash: 06e7b733bca02fe8
+contentHash: 49923aaa838060ad
+codeVerified: 2026-11-21T11:15:33.714Z
+codeVerifiedHash: 49923aaa838060ad
 codeVerifiedClaims: 6
 ---
 
@@ -301,6 +301,8 @@ const appendNote = defineTool({ name: 'appendNote', capability: 'items:write', r
 export default (ctx) => ({ mcp: defineMcp({ tools: [appendNote] }) });
 // mcpManifest({ tools: [appendNote] }) sinh khối `mcp` cho manifest lúc build.
 ```
+
+`inputSchema` phải là object schema mà harness thực thi được: mỗi property có `type` JSON (hoặc không có), `required` chỉ nêu property đã khai, `enum` là mảng và các giới hạn số là số (#716). Ngoài ra đều bị từ chối lúc cài.
 
 **Cấp quyền.** Mỗi khối chỉ được cung cấp khi dòng extension đã cài được cấp capability tương ứng: `mcp:tools`, `mcp:prompts`, `mcp:resources`. Khối `mcp` sai định dạng bị từ chối lúc cài (`400`); dòng cũ sai định dạng bị bỏ qua lúc chạy, không làm sập endpoint MCP của site.
 

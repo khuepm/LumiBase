@@ -1,14 +1,14 @@
 ---
-version: 7
-lastUpdated: 2026-11-21T08:45:30.621Z
+version: 9
+lastUpdated: 2026-11-21T11:15:29.917Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 7f85b6f0eb0a9ee5
+sourceHash: b5f6a7299575cec5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-21T08:45:30.621Z
-codeVerifiedHash: 7f85b6f0eb0a9ee5
-codeVerifiedClaims: 6
+codeVerified: 2026-11-21T11:15:29.917Z
+codeVerifiedHash: b5f6a7299575cec5
+codeVerifiedClaims: 10
 ---
 
 # Tài liệu AI Skills phục vụ Phát triển LumiBase
@@ -109,8 +109,60 @@ Các kỹ năng chạy qua **điểm cuối được kiểm soát** `POST /api/v
 | `listDeploymentTargets` / `listDeployments` / `getDeploymentStatus` / `triggerDeployment` | `deployments:read` / `deployments:write` | safe / dangerous (`trigger` gated by HITL below autopilot) |
 | `listCdcSubscriptions` / `getCdcSubscriptionStatus` / `createCdcSubscription` / `replayCdcSubscription` / `deleteCdcSubscription` | `cdc:manage` | reads safe; `create`/`replay`/`delete` are control-plane → HITL below autopilot. `create`/`replay` carry an explicit `dangerous` flag, `delete` via the `delete` name prefix — so the agent/MCP path matches the admin-only `/api/v1/cdc` REST surface |
 | `askUser` / `getUserAnswer` | `items:read` | an toàn — `askUser` đỗ run ở `waiting_user` tới khi một người trả lời trong Mission Control (hoặc hết hạn / bị huỷ); `getUserAnswer` chỉ trả câu trả lời cho người đã hỏi, dưới dạng dữ liệu không tin cậy. Không nằm trên thang autonomy: được hỏi ở mọi mức. Không được cung cấp cho Copilot chat, vốn không có run nào để tạm dừng. Xem [agent harness](features/agent-harness-layer.md#54-hỏi-người-dùng-askuser-710) |
+| `describeImage` / `extractFieldsFromPdf` | `items:read` | an toàn — chỉ đọc; file được đọc bằng quyền `files::read` của người gọi. `describeImage` trả alt text, `extractFieldsFromPdf` đề xuất giá trị field cho một item mới (việc tạo item là một lời gọi `createItem` riêng). Xem [Ảnh và PDF làm đầu vào](#ảnh-và-pdf-làm-đầu-vào-709) |
+| `proposeSiteSkill` | `config:write` | nguy hiểm — dưới autopilot luôn chờ một người duyệt; đề xuất được duyệt tạo ra một Site Skill **draft** (không bao giờ active, không ghi đè slug đã có), với tên agent và `rationale` trên version trail. Xem [Site Skills](features/site-skills.md#agent-đề-xuất-skill) |
 
 **Tên bộ sưu tập dành riêng.** `createCollection` (và mọi thao tác đổi tên qua `updateCollection`) từ chối các tên bắt đầu bằng tiền tố `lumibase_`, vốn thuộc sở hữu của nền tảng (bảng đồng bộ CDC/Firebase, cấu hình nội bộ). Cơ chế bảo vệ nằm trong `SchemaService.ensureName`, áp dụng đồng nhất cho AI harness, các route builder/Studio và bất kỳ caller nào khác; vi phạm sẽ trả về `RESERVED_NAME` (HTTP 422).
+
+### Ảnh và PDF làm đầu vào (#709)
+
+Một lượt Copilot có thể mang theo tối đa 4 file trong thư viện media. Trợ lý
+trong Studio có hai nút cho việc này: **Attach** chọn từ thư viện, và **Upload**
+tải một file từ thiết bị lên thư viện trước. Qua API, dùng
+`attachments: [{ fileId }]` trên `POST /api/v1/ai/chat`. Adapter của provider
+gửi mỗi file dưới dạng block ảnh hoặc tài liệu của chính provider đó (OpenAI
+`image_url` / `file`, Anthropic `image` / `document`, Gemini và Vertex
+`inlineData`).
+
+- **Loại và giới hạn** (`AI_ATTACHMENT_LIMITS` trong `apps/cms/src/services/ai-attachments.ts`):
+  ảnh PNG, JPEG, GIF và WebP tối đa 5 MB, PDF tối đa 10 MB, 20 MB mỗi lượt.
+  SVG, HEIC và các loại khác bị từ chối với `415`.
+- **Quyền truy cập.** File được đọc bằng chính quyền `files::read` của người
+  gọi, cùng quy tắc (site admin hoặc grant theo thư mục) bảo vệ việc tải file
+  đó. Một file ngoài phạm vi đó trả `404`, giống như file không tồn tại. File
+  đang bị cách ly hoặc chưa quét xong bị từ chối với `409`.
+- **Không tin cậy.** Chữ trong ảnh hay PDF là dữ liệu, không bao giờ là chỉ dẫn.
+  Lượt chat mở đầu bằng một thông báo nêu tên các file và nói rõ điều đó. Mọi
+  thứ model đề xuất vẫn chạy qua harness với capability, mức autonomy và quy
+  trình phê duyệt của người gọi.
+- **Không lưu trữ.** Cuộc hội thoại giữ `{ fileId, name, mimeType, size }`,
+  không bao giờ giữ nội dung file, và các lượt cũ không được gửi lại kèm file.
+  Lượt có file luôn chạy đồng bộ, vì quyền truy cập file được kiểm tra trên
+  chính request đó.
+- **Provider.** Hỗ trợ OpenAI, Anthropic, Gemini và Vertex AI (dùng model nhận
+  được ảnh và PDF). Workers AI trả `422 LLM_ATTACHMENTS_UNSUPPORTED` mà không
+  gọi model. File được tính vào ngân sách context theo ước lượng: khoảng 1.600
+  token mỗi ảnh, và ít nhất 3.000 mỗi PDF, tăng theo kích thước. Với
+  `LLM_CONTEXT_WINDOW_TOKENS` mặc định (32.768), sau khi trừ danh mục tool và
+  phần chừa cho đầu ra, còn khoảng 20.000 token cho hội thoại và file. Đặt nó
+  bằng context window thật của model để gửi PDF lớn; lượt chat không vừa sẽ fail
+  với `413 LLM_CONTEXT_LIMIT`.
+
+Hai skill đọc file theo id, từ chat hoặc từ `POST /api/v1/mcp`:
+
+- `describeImage { fileId, maxLength?, language? }` trả
+  `{ fileId, altText, language }`. Alt text được cắt ở ranh giới từ trong
+  phạm vi `maxLength` (mặc định 125).
+- `extractFieldsFromPdf { fileId, collection, instruction? }` trả
+  `{ fileId, collection, data, ignored, notes }`. Chỉ những field mà một tài
+  liệu có thể điền mới được đưa cho model; relation, file, alias, rich text và
+  translation bị bỏ qua. Giá trị có kiểu JSON không khớp với field bị loại và
+  liệt kê trong `ignored`. Không gì được ghi. Việc tạo item là một lời gọi
+  `createItem` riêng, đi qua cùng bước kiểm tra capability, mức autonomy và
+  phê duyệt như mọi thao tác ghi của Copilot.
+
+Khi không có request (một agent run, worker chat chạy qua hàng đợi), cả hai
+skill fail với `FILES_NOT_CONFIGURED`.
 
 **External-action tools.** Tool có tác động rơi ra ngoài CMS được đăng ký kèm bản khai `risk`, `reversibility`, `blastRadius`, `capability` và các tham chiếu bí mật, và được quyết định dựa trên bản khai đó thay cho cách phân loại ở trên. Tool rủi ro cao hoặc không hoàn tác được chờ approval ở mọi mức autonomy, và approval đó chỉ một người dùng đã đăng nhập mới cấp được. Bí mật được lấy từ `KeyProvider` lúc handler chạy và không bao giờ vào prompt, kết quả tool hay một hàng đã lưu. Mặc định không có tool nào được đăng ký. Xem [external-action tools](features/external-action-tools.md).
 

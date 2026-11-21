@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CdcOperationSchema, CdcSubscriptionKindSchema } from '../schemas/cdc-feed';
+import { DeploymentStatusSchema } from '../schemas/deployment';
 
 /**
  * Nguồn schema **chuẩn duy nhất** cho agent tool (governed MCP contract, #454).
@@ -145,9 +146,9 @@ const CRON_5_FIELD = /^(\S+\s+){4}\S+$/;
 /**
  * Schema theo **tên skill** trong `CORE_SKILLS`.
  *
- * Chỉ phủ các skill **ghi** — đó là chỗ validation ngăn được side effect. Skill
- * đọc chưa có schema thì harness bỏ qua validation (fail-open **có chủ ý**, để
- * không phá hành vi read đang chạy); xem `requiresValidation` bên dưới.
+ * Phủ mọi skill ghi và, từ B204 (#716), cả các skill đọc từng quảng bá
+ * `{type:"object"}`. Skill nào còn thiếu schema thì harness bỏ qua validation
+ * (fail-open có chủ ý cho skill đọc mới chưa được khai).
  */
 export const AgentToolSchemas = {
   aiContentAssist: z.object({
@@ -478,8 +479,107 @@ export const AgentToolSchemas = {
         seen.add(option);
       });
     }),
+  /**
+   * An agent proposes a new Site Skill (#712, B201). Always parked for a human
+   * (the skill is `dangerous`) and, once approved, created as a **draft**: an
+   * admin still has to activate it. Limits mirror the site-skill API.
+   */
+  proposeSiteSkill: z
+    .object({
+      slug: z
+        .string()
+        .min(1)
+        .max(64)
+        .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'slug must be lowercase letters, digits and single hyphens')
+        .refine((slug) => !['import', 'export', 'match'].includes(slug), 'slug is reserved'),
+      name: z.string().trim().min(1).max(120),
+      description: z.string().trim().max(500).optional(),
+      body: z.string().min(1).max(12_000).describe('The playbook in Markdown.'),
+      triggers: z.array(z.string().trim().min(1).max(80)).max(32).optional(),
+      surfaces: z.array(z.enum(['copilot', 'generation', 'mcp'])).max(3).optional(),
+      tools: z.array(z.string().trim().min(1).max(120)).max(64).optional(),
+      collections: z.array(z.string().trim().min(1).max(120)).max(64).optional(),
+      rationale: z.string().trim().min(1).max(1000).describe('Why the agent proposes this playbook; shown to the approver.'),
+    })
+    .strict(),
+  // ── read skills (B204, #716) ─────────────────────────────────────────────
+  // These advertised `{type:"object"}`, so a client could not learn that
+  // `listItems` needs `collection`. Each schema lists exactly the keys the
+  // handler reads; one source for what `tools/list` advertises and what the
+  // harness validates. Collection names stay `id` (not `slug`): a read must
+  // reach a legacy collection whose name predates the snake_case rule.
+  listItems: z
+    .object({
+      collection: id.describe('Collection to read.'),
+      limit: z.number().int().min(1).max(200).optional().describe('Page size (default 25, at most 200).'),
+      offset: z.number().int().min(0).optional(),
+    })
+    .strict(),
+  listCollections: z.object({}).strict(),
+  listRelations: z.object({}).strict(),
+  listRoles: z.object({}).strict(),
+  listPolicies: z.object({}).strict(),
+  listUsers: z.object({}).strict(),
+  listTeams: z.object({}).strict(),
+  listApiKeys: z.object({}).strict(),
+  listFlows: z.object({}).strict(),
+  listIntents: z.object({}).strict(),
+  listExtensions: z.object({}).strict(),
+  listWebhooks: z.object({}).strict(),
+  listCdcSubscriptions: z.object({}).strict(),
+  listDeploymentTargets: z.object({}).strict(),
+  listSettings: z.object({ scope: z.string().min(1).optional() }).strict(),
+  listTranslations: z
+    .object({ namespace: z.string().min(1).optional(), language: z.string().min(1).optional() })
+    .strict(),
+  listDeployments: z
+    .object({ targetId: id.optional(), status: DeploymentStatusSchema.optional() })
+    .strict(),
+  getDeploymentStatus: z.object({ deploymentId: id }).strict(),
+  getCdcSubscriptionStatus: z.object({ subscriptionId: id }).strict(),
+  aiSuggestField: z
+    .object({
+      collection: id,
+      description: z.string().min(1),
+      maxSuggestions: z.number().int().min(1).max(20).optional(),
+    })
+    .strict(),
+  generateApiDocs: z.object({ collections: z.array(id).optional() }).strict(),
+  generateSeedData: z
+    .object({ collection: id, count: z.number().int().min(1).max(20).optional() })
+    .strict(),
+  listVersions: z.object({ collection: id, itemId: id }).strict(),
+  compareVersion: z.object({ collection: id, itemId: id, key: id }).strict(),
+  generateAppSpec: z
+    .object({ collections: z.array(id).optional(), targetApp: z.string().min(1).optional() })
+    .strict(),
   /** Reads the outcome of an `askUser` question this caller asked. */
   getUserAnswer: z.object({ questionId: id }).strict(),
+
+  // ── Files as model input (#709) ────────────────────────────────────────
+  /** Alt text for a media-library image. Read-only: nothing is written. */
+  describeImage: z
+    .object({
+      fileId: id,
+      /** Character cap of the alt text (default 125, the common screen-reader guidance). */
+      maxLength: z.number().int().min(20).max(500).optional(),
+      /** BCP 47 tag of the language to write in; default English. */
+      language: z.string().min(2).max(35).optional(),
+    })
+    .strict(),
+  /**
+   * Proposed field values for a new item of `collection`, read from a PDF.
+   * Read-only: creating the item is a separate `createItem` call, which goes
+   * through the usual capability check and HITL.
+   */
+  extractFieldsFromPdf: z
+    .object({
+      fileId: id,
+      collection: slug,
+      /** Extra guidance, e.g. "the invoice total is on page 2". */
+      instruction: z.string().max(1000).optional(),
+    })
+    .strict(),
 } as const satisfies Record<string, z.ZodType>;
 
 export type AgentToolName = keyof typeof AgentToolSchemas;
@@ -526,4 +626,40 @@ export function jsonSchemaFor(name: string): Record<string, unknown> | undefined
 /** Mọi tên skill đã có schema chuẩn. */
 export function agentToolNamesWithSchema(): AgentToolName[] {
   return Object.keys(AgentToolSchemas) as AgentToolName[];
+}
+
+const JSON_TYPES = new Set(['string', 'number', 'integer', 'boolean', 'array', 'object', 'null']);
+
+/**
+ * Whether a JSON Schema is one the harness can both advertise and enforce
+ * with its closed argument validator: an object schema whose properties are objects with a known
+ * `type` (or none), `required` names declared properties, `enum` is an array
+ * and numeric bounds are numbers. Used for per-site `agent_tools` overrides
+ * (B205) and extension tool declarations (#715): neither may put a schema on
+ * `tools/list` that is invalid or that the harness would not enforce.
+ */
+export function isEnforceableObjectSchema(schema: unknown): schema is Record<string, unknown> {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return false;
+  const root = schema as Record<string, unknown>;
+  if (root['type'] !== 'object') return false;
+  const properties = root['properties'] ?? {};
+  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return false;
+  for (const spec of Object.values(properties as Record<string, unknown>)) {
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return false;
+    const property = spec as Record<string, unknown>;
+    const type = property['type'];
+    if (type !== undefined) {
+      const types = Array.isArray(type) ? type : [type];
+      if (types.length === 0 || types.some((t) => typeof t !== 'string' || !JSON_TYPES.has(t))) return false;
+    }
+    if (property['enum'] !== undefined && !Array.isArray(property['enum'])) return false;
+    for (const bound of ['minimum', 'maximum', 'maxLength', 'minLength']) {
+      if (property[bound] !== undefined && typeof property[bound] !== 'number') return false;
+    }
+  }
+  const required = root['required'] ?? [];
+  if (!Array.isArray(required) || required.some((r) => typeof r !== 'string' || !Object.hasOwn(properties as object, r))) {
+    return false;
+  }
+  return true;
 }

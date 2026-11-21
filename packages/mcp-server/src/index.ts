@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { LumiBaseClient, configFromEnv } from './client.js';
 import { registerAllTools } from './tools/index.js';
 import { registerExtensionTools } from './tools/extension-tools.js';
+import { registerPromptForwarding } from './tools/prompts.js';
 
 async function main() {
   const config = configFromEnv();
@@ -17,6 +18,9 @@ async function main() {
   // Extension tools are per site and installed at runtime (#715): discovered
   // from the governed endpoint, every call forwarded to the harness.
   if (!config.opsOnly) await registerExtensionTools(server, client);
+  // Site Skills and extension prompts (#712 B200): discovered from the governed
+  // endpoint, every prompts/get forwarded to it.
+  if (!config.opsOnly) await registerPromptForwarding(server, client);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

@@ -21,6 +21,7 @@ export * from './domains';
 export * from './external-auth';
 export * from './pageviews';
 export * from './git-integration';
+export * from './chat-agent';
 export * from './imports';
 export * from './ops';
 export * from './activation';

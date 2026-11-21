@@ -3822,6 +3822,19 @@ paths:
               properties:
                 message: { type: string, maxLength: 2000 }
                 conversationId: { type: string, nullable: true }
+                attachments:
+                  type: array
+                  maxItems: 4
+                  description: >-
+                    Media-library images (PNG, JPEG, GIF, WebP; ≤ 5 MB each) or PDFs (≤ 10 MB each)
+                    sent to the model with this turn, read with the caller's files read access.
+                    20 MB per turn. A turn with files always runs synchronously.
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [fileId]
+                    properties:
+                      fileId: { type: string, maxLength: 64 }
       responses:
         '200':
           description: AI response
@@ -3833,6 +3846,36 @@ paths:
                   data: { $ref: '#/components/schemas/AIChatResponse' }
         '400':
           description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: An attachment was sent but the caller has no files read access (FORBIDDEN)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: An attached file does not exist or is outside the caller's file access (NOT_FOUND)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: An attached file is quarantined, not yet scanned or missing from storage (FILE_NOT_AVAILABLE)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413':
+          description: Attachments over the size or count limit (ATTACHMENT_TOO_LARGE), or the request exceeds the model context (LLM_CONTEXT_LIMIT)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '415':
+          description: An attached file is not an image or PDF the model accepts (UNSUPPORTED_MEDIA_TYPE)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: The configured provider does not accept image or PDF input (LLM_ATTACHMENTS_UNSUPPORTED)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -4998,8 +5041,15 @@ paths:
   /agent/approvals:
     get:
       summary: List generalized agent approvals
-      description: askUser questions (kind = question) are excluded; see /agent/questions.
-      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      description: >-
+        Newest first, at most 100 rows, filtered by status (default pending).
+        askUser questions (kind = question) are excluded; see /agent/questions.
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [pending, deciding, approved, rejected, expired, failed, all], default: pending }
       responses:
         '200':
           description: OK
@@ -5011,6 +5061,7 @@ paths:
                   data:
                     type: array
                     items: { $ref: '#/components/schemas/AgentApproval' }
+        '400': { description: VALIDATION (unknown status) }
 
   /agent/approvals/{id}/decide:
     parameters:
@@ -6273,6 +6324,172 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /chat-agent/integrations:
+    get:
+      tags: [Chat Agent]
+      summary: List chat integrations (Slack / signed webhook) with their endpoints; never returns secrets (site-admin, #711)
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      responses:
+        '200': { description: OK }
+        '403': { description: Not a site admin }
+    post:
+      tags: [Chat Agent]
+      summary: Install a chat integration (site-admin, #711)
+      description: >-
+        Slack needs externalId (workspace team id) and signingSecret, optionally botToken (xoxb-).
+        A webhook integration generates its signing secret and returns it once.
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [provider, name]
+              properties:
+                provider: { type: string, enum: [slack, webhook] }
+                name: { type: string, maxLength: 120 }
+                externalId: { type: string, pattern: '^[A-Z0-9]{3,32}$' }
+                signingSecret: { type: string, minLength: 16, maxLength: 256 }
+                botToken: { type: string, pattern: '^xoxb-' }
+      responses:
+        '201': { description: Installed; `signingSecret` present once for a webhook integration }
+        '400': { description: Validation error }
+        '500': { description: ENCRYPTION_KEY not configured }
+  /chat-agent/integrations/{id}:
+    patch:
+      tags: [Chat Agent]
+      summary: Update name, enabled, externalId, signingSecret or botToken (null removes it)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { description: Not found }
+    delete:
+      tags: [Chat Agent]
+      summary: Uninstall (links and events are removed with it)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Deleted }
+  /chat-agent/integrations/{id}/rotate-secret:
+    post:
+      tags: [Chat Agent]
+      summary: Webhook integration only — new signing secret, returned once
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+  /chat-agent/integrations/{id}/links:
+    get:
+      tags: [Chat Agent]
+      summary: Chat users linked to LumiBase users
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+  /chat-agent/integrations/{id}/links/{externalUserId}:
+    put:
+      tags: [Chat Agent]
+      summary: Link a chat user to a member of the site
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: externalUserId, in: path, required: true, schema: { type: string, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [userId], properties: { userId: { type: string } } }
+      responses:
+        '200': { description: Linked }
+        '400': { description: userId is not a member of the site }
+    delete:
+      tags: [Chat Agent]
+      summary: Unlink a chat user
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: externalUserId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Unlinked }
+        '404': { description: No such link }
+  /chat-agent/slack/{siteId}/{integrationId}/{kind}:
+    post:
+      tags: [Chat Agent]
+      summary: Public Slack endpoints (events | commands | interactions), verified by X-Slack-Signature
+      description: >-
+        events — url_verification and app_mention (a Copilot turn as the linked user, replied in the thread);
+        commands — slash command, answered via response_url; interactions — Approve / Reject buttons,
+        decided as the clicking user's link. 401 INVALID_SIGNATURE, 403 WRONG_WORKSPACE, 404 NOT_FOUND.
+      security: []
+      parameters:
+        - { name: siteId, in: path, required: true, schema: { type: string } }
+        - { name: integrationId, in: path, required: true, schema: { type: string } }
+        - { name: kind, in: path, required: true, schema: { type: string, enum: [events, commands, interactions] } }
+        - { name: X-Slack-Signature, in: header, required: true, schema: { type: string } }
+        - { name: X-Slack-Request-Timestamp, in: header, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Acknowledged }
+        '401': { description: Invalid or stale signature }
+        '403': { description: Event from another Slack workspace }
+        '404': { description: Unknown, disabled, other-provider or other-site integration }
+  /chat-agent/webhook/{siteId}/{integrationId}/messages:
+    post:
+      tags: [Chat Agent]
+      summary: Signed generic chat webhook — one Copilot turn as the linked user (synchronous)
+      security: []
+      parameters:
+        - { name: siteId, in: path, required: true, schema: { type: string } }
+        - { name: integrationId, in: path, required: true, schema: { type: string } }
+        - { name: X-Lumibase-Signature, in: header, required: true, schema: { type: string }, description: 'v1=hex(HMAC-SHA256(secret, ts + "." + body))' }
+        - { name: X-Lumibase-Timestamp, in: header, required: true, schema: { type: string } }
+        - { name: X-Lumibase-Delivery, in: header, required: false, schema: { type: string, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [userId, text]
+              properties:
+                userId: { type: string, maxLength: 128 }
+                text: { type: string, maxLength: 2000 }
+                threadId: { type: string, maxLength: 200 }
+      responses:
+        '200': { description: Copilot result plus threadId }
+        '401': { description: Invalid signature }
+        '403': { description: USER_NOT_LINKED }
+        '409': { description: DUPLICATE_DELIVERY }
+  /chat-agent/webhook/{siteId}/{integrationId}/approvals/{approvalId}/decide:
+    post:
+      tags: [Chat Agent]
+      summary: Signed generic chat webhook — decide an approval as the linked user
+      security: []
+      parameters:
+        - { name: siteId, in: path, required: true, schema: { type: string } }
+        - { name: integrationId, in: path, required: true, schema: { type: string } }
+        - { name: approvalId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [userId, decision]
+              properties:
+                userId: { type: string, maxLength: 128 }
+                decision: { type: string, enum: [approved, rejected] }
+      responses:
+        '200': { description: Decided }
+        '403': { description: USER_NOT_LINKED, or the linked user may not decide it }
   /integrations/git:
     get:
       tags: [Git Integration]

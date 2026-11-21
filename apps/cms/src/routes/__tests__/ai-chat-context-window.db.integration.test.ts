@@ -46,7 +46,15 @@ const SITE = 'site_582_ctx';
 const OTHER_SITE = 'site_582_other';
 const ADMIN = 'usr_582_admin';
 const ADMIN_ROLE = 'role_582_admin';
-const ENV = { LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'sk-test-582-canary-not-a-key' };
+// The window under test is the message cap (COPILOT_HISTORY_MAX_MESSAGES), not the
+// token budget: the default 32k budget is mostly spent on the tool catalogue, so
+// every new skill would otherwise trim this history further. Budget trimming is
+// covered by the unit tests of `boundLLMContext`.
+const ENV = {
+  LLM_PROVIDER: 'openai',
+  OPENAI_API_KEY: 'sk-test-582-canary-not-a-key',
+  LLM_CONTEXT_WINDOW_TOKENS: '128000',
+};
 
 interface SentBody {
   messages: Array<{ role: string; content: string }>;

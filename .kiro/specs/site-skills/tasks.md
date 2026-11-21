@@ -10,7 +10,7 @@
 - [x] 8. Docs song ngữ (`features/site-skills`, API spec, data model, CLI, MCP), CHANGELOG, Setup Impact Registry, backlog
 - [ ] 9. Benchmark chất lượng output với model thật (eval dataset "house style": so output có/không có skill). Cần LLM key trong CI — chưa có. Owner: maintainer.
 - [ ] 10. Marketplace listing type `skill` (backlog B199).
-- [ ] 11. stdio MCP server (`packages/mcp-server`) chuyển tiếp `prompts/*` (backlog B200).
-- [ ] 12. Agent đề xuất skill qua harness tool có HITL (backlog B201).
+- [x] 11. stdio MCP server (`packages/mcp-server`) chuyển tiếp `prompts/*` (backlog B200). `src/tools/prompts.ts`; test `src/__tests__/prompts.test.ts` (client MCP thật qua InMemoryTransport).
+- [x] 12. Agent đề xuất skill qua harness tool có HITL (backlog B201). `proposeSiteSkill` (`dangerous: true`, `config:write`) → draft; test `apps/cms/src/services/__tests__/propose-site-skill.db.integration.test.ts` (Postgres thật).
 - [x] 13. Review #781: MCP prompts chỉ cho control-plane admin; mọi thao tác ghi cần admin (gỡ `skills:write`, `RISK_REQUIRES_ADMIN`); ghi trong transaction; trần thân = ngân sách 12.000; import không đổi skill active nếu thiếu `updateActive`; `expectedVersion`/`version` (409 `VERSION_MISMATCH`); không xoá skill đã từng active; trigger Copilot theo các lượt gần nhất; sửa `\"` trong list inline, chuẩn hoá thân ở JSON API, sanitiser thẻ có khoảng trắng. Test: `site-skills-access.db.integration.test.ts` (chuỗi middleware thật) + các mục mới trong `site-skills.db.integration.test.ts`, `site-skill-service.test.ts`
 - [ ] 14. Tác giả skill được uỷ quyền, không phải admin (backlog B214).

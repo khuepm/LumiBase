@@ -320,6 +320,40 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
 
   // ── POST-GA Task #3 — RAG Skills ─────────────────────────────────────────
 
+  describeImage: {
+    name: 'describeImage',
+    description:
+      'Writes alt text for an image in the media library (PNG, JPEG, GIF or WebP). ' +
+      'Read-only: returns the text, writes nothing. To store it, update the field or file metadata afterwards.',
+    parameters: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Media-library file id of the image.' },
+        maxLength: { type: 'integer', description: 'Maximum characters of the alt text (20-500, default 125).' },
+        language: { type: 'string', description: 'BCP 47 language tag to write in (default en).' },
+      },
+      required: ['fileId'],
+    },
+    requiredCapabilities: ['items:read'],
+  },
+
+  extractFieldsFromPdf: {
+    name: 'extractFieldsFromPdf',
+    description:
+      'Reads a PDF from the media library and proposes field values for a new item of a collection. ' +
+      'Read-only: returns the proposed data. Create the item afterwards with createItem, which may need approval.',
+    parameters: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Media-library file id of the PDF.' },
+        collection: { type: 'string', description: 'Collection whose fields to fill.' },
+        instruction: { type: 'string', description: 'Optional extra guidance for the extraction.' },
+      },
+      required: ['fileId', 'collection'],
+    },
+    requiredCapabilities: ['items:read'],
+  },
+
   aiSuggestField: {
     name: 'aiSuggestField',
     description:
@@ -803,6 +837,27 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
     description: 'List site settings, optionally filtered by scope.',
     parameters: { type: 'object', properties: { scope: { type: 'string' } }, required: [] },
     requiredCapabilities: ['config:read'],
+  },
+  proposeSiteSkill: {
+    name: 'proposeSiteSkill',
+    description:
+      'Propose a new site playbook (Site Skill) — house rules written for agents. A human approves it; it is then created as a draft that an admin activates.',
+    parameters: {
+      type: 'object',
+      properties: {
+        slug: { type: 'string', description: 'Lowercase letters, digits and single hyphens, e.g. "house-style".' },
+        name: { type: 'string' },
+        description: { type: 'string' },
+        body: { type: 'string', description: 'The playbook in Markdown (at most 12000 characters).' },
+        triggers: { type: 'array', items: { type: 'string' } },
+        surfaces: { type: 'array', items: { type: 'string', enum: ['copilot', 'generation', 'mcp'] } },
+        tools: { type: 'array', items: { type: 'string' } },
+        collections: { type: 'array', items: { type: 'string' } },
+        rationale: { type: 'string', description: 'Why this playbook is needed; shown to the approver.' },
+      },
+      required: ['slug', 'name', 'body', 'rationale'],
+    },
+    requiredCapabilities: ['config:write'],
   },
   upsertSetting: {
     name: 'upsertSetting',

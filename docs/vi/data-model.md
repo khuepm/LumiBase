@@ -1,13 +1,13 @@
 ---
-version: 28
-lastUpdated: 2026-11-21T09:19:59.126Z
+version: 29
+lastUpdated: 2026-11-21T11:15:33.231Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 7882282901381d84
+sourceHash: c8ca26a711f9d1f8
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-21T09:19:59.126Z
-codeVerifiedHash: 7882282901381d84
+codeVerified: 2026-11-21T11:15:33.231Z
+codeVerifiedHash: c8ca26a711f9d1f8
 codeVerifiedClaims: 24
 ---
 
@@ -598,6 +598,22 @@ môi trường preview tạm thời và provenance commit↔content. Mọi bản
 
 Token + webhook secret được mã hoá at rest qua `CryptoService` (AES-GCM, AAD ràng
 buộc vào `{ siteId, integrationId, field }`); plaintext không bao giờ được lưu.
+
+## 11e. Chat agent (`chat-agent.ts`)
+
+Content Agent truy cập từ Slack hoặc từ một webhook chung có chữ ký (#711). Cả ba
+bảng đều có `site_id` (cascade) và được đăng ký cho RLS. Migration
+`0046_chat_agent`.
+
+| Bảng (vật lý) | Mục đích | Cột chính |
+|-------|---------|-------------|
+| `lumibase_chat_integrations` | Mỗi dòng là một Slack app hoặc webhook đã cài | `provider` (slack\|webhook), `name`, `external_id` (`team_id` của workspace Slack), `signing_secret_enc`, `bot_token_enc`, `enabled` |
+| `lumibase_chat_user_links` | User chat → user LumiBase của cùng site | unique `(integration_id, external_user_id)`; `user_id` |
+| `lumibase_chat_events` | Event đã nhận: chống xử lý trùng và thread → conversation | unique `(integration_id, event_key)`; `thread_key`, `external_user_id`, `conversation_id`, `status` |
+
+Signing secret và bot token được mã hoá at rest qua `CryptoService`
+(AES-GCM, AAD ràng buộc vào `{ siteId, collection: 'chat_integrations', field, recordId }`).
+Một liên kết chỉ có hiệu lực khi user của nó vẫn là thành viên của site.
 
 ## 12. Indexing & RLS
 

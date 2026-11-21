@@ -93,13 +93,13 @@ describe('AISecureHarness - execute', () => {
   });
 
   it('should return executed for safe skill with sufficient capabilities', async () => {
-    const result = await harness.execute('listItems', {}, ['items:read']);
+    const result = await harness.execute('listItems', { collection: 'posts' }, ['items:read']);
     expect(result.status).toBe('executed');
     expect(result.data).toEqual({ items: [] });
   });
 
   it('should return executed for safe skill with wildcard capability', async () => {
-    const result = await harness.execute('listItems', {}, ['*']);
+    const result = await harness.execute('listItems', { collection: 'posts' }, ['*']);
     // listItems is safe (items:read, not mutating schema capability, not delete*)
     // But wait — with wildcard, capabilities pass. listItems is safe → executed
     expect(result.status).toBe('executed');
@@ -129,7 +129,7 @@ describe('AISecureHarness - runSkill', () => {
   });
 
   it('should return success with data for a valid skill', async () => {
-    const result = await harness.runSkill('listItems', {});
+    const result = await harness.runSkill('listItems', { collection: 'posts' });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data).toEqual({ items: [] });
@@ -151,7 +151,7 @@ describe('AISecureHarness - runSkill', () => {
       throw new Error('Database connection failed');
     };
 
-    const result = await harness.runSkill('listItems', {});
+    const result = await harness.runSkill('listItems', { collection: 'posts' });
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error).toBe('Database connection failed');
@@ -173,7 +173,7 @@ describe('AISecureHarness - runSkill', () => {
     // Use fake timers to avoid waiting 30s in tests
     vi.useFakeTimers();
 
-    const resultPromise = harness.runSkill('listItems', {});
+    const resultPromise = harness.runSkill('listItems', { collection: 'posts' });
 
     // Advance time past the 30s timeout
     await vi.advanceTimersByTimeAsync(31_000);

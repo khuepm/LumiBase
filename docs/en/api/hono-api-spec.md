@@ -1,11 +1,11 @@
 ---
-version: 66
-lastUpdated: 2026-11-21T11:04:16.006Z
+version: 67
+lastUpdated: 2026-11-21T11:15:30.153Z
 sourceLang: en
-contentHash: 49608a0a77208a74
-codeVerified: 2026-11-21T11:04:16.006Z
-codeVerifiedHash: 49608a0a77208a74
-codeVerifiedClaims: 656
+contentHash: 3ad25bf1998638d4
+codeVerified: 2026-11-21T11:15:30.153Z
+codeVerifiedHash: 3ad25bf1998638d4
+codeVerifiedClaims: 678
 ---
 
 # Hono API Specification — LumiBase
@@ -1279,6 +1279,21 @@ X-Lumi-Site: <siteId>
 { "message": "Create a collection called 'products' with title, price, and status fields" }
 ```
 
+**Attaching images and PDFs** (#709). `attachments` sends up to 4 media-library
+files with the turn. Accepted types are PNG, JPEG, GIF and WebP images (≤ 5 MB
+each) and PDFs (≤ 10 MB each), 20 MB per turn. Files are read with the caller's
+own `files::read` access. The stored message keeps `{ fileId, name, mimeType, size }`
+in `metadata.attachments`, never the bytes, and older turns are not re-sent with
+their files. A turn with files always runs synchronously, even with
+`Prefer: respond-async`. The response echoes `attachments`. Errors:
+`403 FORBIDDEN` (no file access), `404 NOT_FOUND`, `409 FILE_NOT_AVAILABLE`
+(quarantined, not yet scanned or missing bytes), `413 ATTACHMENT_TOO_LARGE`,
+`415 UNSUPPORTED_MEDIA_TYPE`, `422 LLM_ATTACHMENTS_UNSUPPORTED` (Workers AI).
+See [AI skills → Images and PDFs](../ai-skills.md#images-and-pdfs-as-input-709).
+```json
+{ "message": "Write alt text for this image", "attachments": [{ "fileId": "f_8Kq2" }] }
+```
+
 **Safe skill response:**
 ```json
 {
@@ -1425,7 +1440,7 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `POST` | `/api/v1/locale-generation/suggestions/:id/decide` | `{ decision: 'approve', text? }` \| `{ decision: 'reject' }`. Approval writes through the reviewer's item service (RBAC, validation, revision); `{ status: 'stale' }` when the source changed or the locale was already written; `409 ALREADY_DECIDED`; `422` when the write is refused (the suggestion stays pending) |
 | `POST` | `/api/v1/locale-generation/suggestions/decide-bulk` | `{ decision, locale, ids?, jobId?, collection?, limit? ≤ 200 }` → `{ approved, rejected, stale, failed, processed, failures }` |
 | `GET/POST` | `/api/v1/agent/staged[...]` | Veto window: pending stagings enriched with `approvalId/collection/itemId/patch/agentRole` from the staging revision (null fields when the staging is gone); `POST :id/veto` discards a staging |
-| `GET` | `/api/v1/agent/approvals` | Approval inbox (`status` filter; defaults to `pending`) |
+| `GET` | `/api/v1/agent/approvals` | Approval inbox, newest first, at most 100 rows. `?status=pending` (default) \| `deciding` \| `approved` \| `rejected` \| `expired` \| `failed` \| `all`; any other value → `400 VALIDATION`. `askUser` questions are never listed (see `/questions`) |
 | `POST` | `/api/v1/agent/approvals/:id/decide` | Human decision on a parked action. Body `{ decision: 'approved' \| 'rejected', reason? }`; needs `approvals:decide` (403 otherwise), `404` for an unknown or other-tenant id, `409` when the approval already left `pending`. On `approved` the harness owns the state transition, so execution and the status write happen once. Execution re-resolves **the requester's** current rights and runs with `requester ∩ decider`: an approval whose requester was since revoked, demoted or removed is denied, and one with no recorded requester (parked before provenance existed) is denied with `APPROVAL_PROVENANCE_MISSING`. An approval stored with `approvalPolicy: human_required` (every [external-action tool](../features/external-action-tools.md)) is released only by a signed-in user: an API key, a connector token or an agent gets `409 EXECUTION_FAILED` carrying `HUMAN_APPROVAL_REQUIRED`, and the approval stays `pending` |
 | `POST` | `/api/v1/agent/approvals/:id/reopen` | Return a `failed` approval to `pending` so it can be decided again. Body `{ reason }` is **required** and audited; needs `approvals:decide`. A skill that reached a service and then failed is parked rather than re-offered, because retrying could repeat a non-idempotent write — this is the deliberate way back. A `veto` approval whose staged patch is already live (a commit that died after applying it) answers `409 VETO_ALREADY_APPLIED` instead, since reopening would apply it twice |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Agent-as-reviewer decision (needs `review:<domain>`; self-review forbidden) |
@@ -1821,6 +1836,46 @@ on PR open/sync LumiBase seeds an ephemeral site (`${siteId}__pr-${number}`)
 served at `/api/v1/deliver/page/${ephemeralSiteId}/...`; on close/merge it is
 torn down. CI failure records an `agent_incident` (role `git-sync`) + a
 `git_ci_failed` audit entry.
+
+---
+
+## 12d. Chat agent (Slack / generic webhook)
+
+The Content Agent from a chat tool (#711). A message from a **linked** chat user
+runs one Copilot turn (`POST /api/v1/ai/chat`) **as that LumiBase user**, with
+their capabilities, autonomy level, approvals and audit trail. An approval is
+decided as the linked user who clicks it. Admin routes need site admin and
+`ENCRYPTION_KEY`; secrets are stored encrypted and never returned, except the
+generated webhook secret, which appears once in the create (and rotate)
+response. See [Chat agent](../features/chat-agent.md).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/chat-agent/integrations` | List integrations with their `endpoints` (no secrets) |
+| `POST` | `/api/v1/chat-agent/integrations` | Install `{ provider (slack\|webhook), name, externalId?, signingSecret?, botToken? }`. Slack needs `externalId` (workspace `team_id`) and `signingSecret`; a webhook generates its secret → `201` with `signingSecret` once |
+| `PATCH` | `/api/v1/chat-agent/integrations/:id` | Update `name`, `enabled`, `externalId`, `signingSecret`, `botToken` (`null` removes it) |
+| `POST` | `/api/v1/chat-agent/integrations/:id/rotate-secret` | Webhook only: new `signingSecret` (shown once); the old one stops verifying |
+| `DELETE` | `/api/v1/chat-agent/integrations/:id` | Uninstall (links and events are removed with it) |
+| `GET` | `/api/v1/chat-agent/integrations/:id/links` | Linked chat users |
+| `PUT` | `/api/v1/chat-agent/integrations/:id/links/:externalUserId` | Link `{ userId }` (must be a member of the site; `400` otherwise) |
+| `DELETE` | `/api/v1/chat-agent/integrations/:id/links/:externalUserId` | Unlink |
+
+Public (no session; signature-verified; the site and integration are in the path):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/chat-agent/slack/:siteId/:integrationId/events` | Slack Events API: `url_verification`; `app_mention` → turn as the linked user, reply in the thread (`chat.postMessage`, bot token). Acks at once; idempotent by `event_id` |
+| `POST` | `/api/v1/chat-agent/slack/:siteId/:integrationId/commands` | Slash command → ephemeral "Working on it…", answer via `response_url` |
+| `POST` | `/api/v1/chat-agent/slack/:siteId/:integrationId/interactions` | Approve / Reject buttons → `POST /ai/approvals/:id/decide` as the clicking user's link |
+| `POST` | `/api/v1/chat-agent/webhook/:siteId/:integrationId/messages` | `{ userId, text, threadId? }` → synchronous Copilot result (`+ threadId`). Optional `X-Lumibase-Delivery` makes it idempotent (`409 DUPLICATE_DELIVERY`) |
+| `POST` | `/api/v1/chat-agent/webhook/:siteId/:integrationId/approvals/:approvalId/decide` | `{ userId, decision: approved\|rejected }` → decided as the linked user |
+
+Signatures: Slack `X-Slack-Signature: v0=hex(HMAC-SHA256(secret, "v0:" + ts + ":" + body))`
+with `X-Slack-Request-Timestamp`; webhook `X-Lumibase-Signature: v1=hex(HMAC-SHA256(secret, ts + "." + body))`
+with `X-Lumibase-Timestamp`. Both refuse a timestamp more than 300 s away.
+Errors: `401 INVALID_SIGNATURE`, `403 WRONG_WORKSPACE` (Slack `team_id` differs),
+`403 USER_NOT_LINKED` (webhook), `404 NOT_FOUND` (unknown, disabled, other-provider
+or other-site integration), `500 SECRET_UNAVAILABLE`.
 
 ---
 
