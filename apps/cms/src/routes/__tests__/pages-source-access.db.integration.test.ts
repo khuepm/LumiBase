@@ -5,6 +5,7 @@ import {
   collections,
   fields,
   items,
+  pages,
   permissions as permissionsTable,
   policies,
   rolePolicies,
@@ -123,8 +124,9 @@ describe.skipIf(!hasDbIntegrationUrl)('page sources — DB integration', () => {
   }
 
   it('serves published items only, even when the source asks for drafts', async () => {
-    const { res } = await createPage({ slug: 'drafts', title: 'Drafts', layoutConfig: layout({ collection: 'posts', status: 'draft' }) });
-    expect(res.status).toBe(201);
+    // Page writes refuse a non-published status (#1006); a page stored before
+    // that still carries one, so store it directly.
+    await db.insert(pages).values({ siteId: SITE, slug: 'drafts', title: 'Drafts', layoutConfig: layout({ collection: 'posts', status: 'draft' }) });
 
     const page = await app.request(`/api/v1/deliver/page/${SITE}/drafts`);
     expect(page.status).toBe(200);

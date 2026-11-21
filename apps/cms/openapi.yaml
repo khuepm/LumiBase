@@ -3756,6 +3756,16 @@ paths:
         - { name: id, in: path, required: true, schema: { type: string } }
         - { name: x-lumibase-preview, in: header, required: false, schema: { type: string } }
       responses: { '200': { description: OK }, '401': { description: Token rejected }, '404': { description: Not visible } }
+  /deliver/preview/{site_id}/page/{slug}:
+    get:
+      summary: Public — a page with every section source read through the preview token's overlay (#1006)
+      description: The only read that shows unpublished items on a page. Public `GET /deliver/page` serves published items only.
+      security: []
+      parameters:
+        - { name: site_id, in: path, required: true, schema: { type: string } }
+        - { name: slug, in: path, required: true, schema: { type: string } }
+        - { name: x-lumibase-preview, in: header, required: false, schema: { type: string } }
+      responses: { '200': { description: 'OK ({ data: { page, sections }, meta }; Cache-Control: private, no-store)' }, '401': { description: Token rejected }, '404': { description: Page not found } }
   /permissions/me:
     parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
     get:

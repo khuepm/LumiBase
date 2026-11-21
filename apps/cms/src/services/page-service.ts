@@ -13,6 +13,7 @@ import type { CacheProvider } from '@lumibase/runtime';
 import { isValidSlug } from './identifier-guard';
 import { forgetNegative, negativePageKey } from './negative-cache';
 import type { PermissionService } from './permission-service';
+import type { ValidationIssue } from './validation';
 
 export type PageRow = typeof pages.$inferSelect;
 
@@ -33,6 +34,8 @@ export class PageServiceError extends Error {
     readonly code: string,
     message: string,
     readonly status: 400 | 403 | 404 | 409 = 400,
+    /** One entry per problem, each with a `field` path (e.g. `sections.0.source.status`). */
+    readonly issues: ValidationIssue[] = [],
   ) {
     super(message);
     this.name = 'PageServiceError';
@@ -67,6 +70,31 @@ export function pageSourceCollections(layout: unknown): Set<string> {
   return names;
 }
 
+/**
+ * A section `source` may only ask for published items (#1006), in any layout
+ * shape. Public delivery never honours another status, so storing one would
+ * only promise drafts the page cannot show; refusing it at write time keeps a
+ * stored layout honest about what anonymous readers get. Drafts are previewed
+ * through a signed preview token instead (`GET /deliver/preview/:site/page/:slug`).
+ */
+export function unpublishedSourceIssues(layout: unknown): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const sections = isRecord(layout) && Array.isArray(layout.sections) ? layout.sections : [];
+  sections.forEach((section, index) => {
+    const source = isRecord(section) ? section.source : undefined;
+    if (!isRecord(source) || !('status' in source)) return;
+    if (source.status === 'published') return;
+    issues.push({
+      field: `sections.${index}.source.status`,
+      path: ['sections', index, 'source', 'status'],
+      code: 'VALIDATION',
+      message:
+        'A section source can only deliver published items. Remove "status" or set it to "published"; preview drafts with a preview token.',
+    });
+  });
+  return issues;
+}
+
 export class PageService {
   constructor(private readonly deps: PageServiceDeps) {}
 
@@ -91,6 +119,7 @@ export class PageService {
     if (!input.title.trim()) {
       throw new PageServiceError('VALIDATION', 'title is required');
     }
+    this.assertPublishedSources(input.layoutConfig);
     await this.assertSourcesReadable(input.layoutConfig, undefined);
 
     const id = nanoid();
@@ -129,6 +158,7 @@ export class PageService {
       throw new PageServiceError('VALIDATION', 'title is required');
     }
     if (input.layoutConfig !== undefined) {
+      this.assertPublishedSources(input.layoutConfig);
       await this.assertSourcesReadable(input.layoutConfig, existing.layoutConfig);
     }
 
@@ -169,6 +199,13 @@ export class PageService {
       .delete(pages)
       .where(and(eq(pages.id, id), scopeSite(pages.siteId, this.deps.siteId)));
     // Do not write a tombstone here — deliver miss path owns setNegative.
+  }
+
+  private assertPublishedSources(layout: unknown): void {
+    const issues = unpublishedSourceIssues(layout);
+    if (issues.length > 0) {
+      throw new PageServiceError('VALIDATION', issues[0]!.message, 400, issues);
+    }
   }
 
   /**

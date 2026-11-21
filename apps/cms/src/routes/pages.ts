@@ -48,7 +48,12 @@ function toError(err: unknown) {
   if (err instanceof PageServiceError) {
     return {
       status: err.status,
-      body: { errors: [{ code: err.code, message: err.message }] },
+      body: {
+        errors:
+          err.issues.length > 0
+            ? err.issues.map((i) => ({ code: i.code, message: i.message, field: i.field }))
+            : [{ code: err.code, message: err.message }],
+      },
     };
   }
   console.error('[pages] unexpected error', formatSafeError(err));

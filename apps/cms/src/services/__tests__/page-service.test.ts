@@ -5,7 +5,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryCacheProvider } from '@lumibase/runtime';
-import { PageService, PageServiceError } from '../page-service';
+import { PageService, PageServiceError, unpublishedSourceIssues } from '../page-service';
 import { negativePageKey } from '../negative-cache';
 
 type PageRow = {
@@ -142,5 +142,28 @@ describe('PageService forgetNegative (B16)', () => {
     expect(row.slug).toBe('home');
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+});
+
+describe('unpublishedSourceIssues (#1006)', () => {
+  it('flags every section source whose status is not published, with its path', () => {
+    const issues = unpublishedSourceIssues({
+      sections: [
+        { id: 'a', component: 'list', source: { collection: 'posts' } },
+        { id: 'b', component: 'list', source: { collection: 'posts', status: 'published' } },
+        { id: 'c', component: 'list', source: { collection: 'posts', status: 'draft' } },
+        { id: 'd', component: 'list', source: { collection: 'posts', status: null } },
+        { id: 'e', component: 'hero' },
+        'not a section',
+      ],
+    });
+    expect(issues.map((i) => i.field)).toEqual(['sections.2.source.status', 'sections.3.source.status']);
+    expect(issues.every((i) => i.code === 'VALIDATION')).toBe(true);
+  });
+
+  it('accepts layouts without sections or sources', () => {
+    expect(unpublishedSourceIssues(undefined)).toEqual([]);
+    expect(unpublishedSourceIssues({ sections: 'x' })).toEqual([]);
+    expect(unpublishedSourceIssues({ version: 1, sections: [] })).toEqual([]);
   });
 });
