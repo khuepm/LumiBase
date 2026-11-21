@@ -1,7 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { collections, fields, items, pages, sites, type Database } from '@lumibase/database';
+import { collections, fields, items, pages, roles, sites, users, userSites, type Database } from '@lumibase/database';
 import { selectPageSections } from '@lumibase/contracts';
 import type { AppEnv } from '../../env';
 import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
@@ -22,6 +22,12 @@ import { pagesRouter } from '../pages';
 
 const SITE = 'site_pages_composer_it';
 const OTHER = 'site_pages_composer_other_it';
+/**
+ * The writer is a site administrator: section `source`s are only accepted from
+ * a writer who can read the bound collection in full (SOURCE_FORBIDDEN, covered
+ * by pages-source-access). This suite is about layout validation, not access.
+ */
+const ADMIN = 'usr_pages_composer_admin';
 
 type Errors = { errors: Array<{ code: string; message: string; field?: string }> };
 
@@ -34,6 +40,7 @@ describe.skipIf(!hasDbIntegrationUrl)('page composer (DB integration)', () => {
       (c as unknown as { env: Record<string, unknown> }).env = {};
       c.set('db', db);
       c.set('siteId', siteId);
+      c.set('auth', { userId: ADMIN, email: `${ADMIN}@x.dev`, roles: [], raw: {} } as unknown as AppEnv['Variables']['auth']);
       c.set('runtime', { cache: undefined } as unknown as AppEnv['Variables']['runtime']);
       await next();
     });
@@ -66,6 +73,7 @@ describe.skipIf(!hasDbIntegrationUrl)('page composer (DB integration)', () => {
   afterAll(async () => {
     if (!db) return;
     for (const s of [SITE, OTHER]) await db.delete(sites).where(eq(sites.id, s)).catch(() => undefined);
+    await db.delete(users).where(eq(users.id, ADMIN)).catch(() => undefined);
   });
 
   beforeEach(async () => {
@@ -74,6 +82,14 @@ describe.skipIf(!hasDbIntegrationUrl)('page composer (DB integration)', () => {
       await db
         .insert(sites)
         .values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: s, name: s });
+    }
+    await db.insert(users).values({ id: ADMIN, email: 'pages-composer-admin@x.dev', status: 'active' }).onConflictDoNothing();
+    for (const s of [SITE, OTHER]) {
+      const [role] = await db
+        .insert(roles)
+        .values({ siteId: s, name: 'Admin', adminAccess: true, appAccess: true })
+        .returning({ id: roles.id });
+      await db.insert(userSites).values({ userId: ADMIN, siteId: s, roleId: role!.id });
     }
     await collection(SITE, 'hero', { pageBlock: true }, [
       { name: 'title', type: 'string', required: true },
