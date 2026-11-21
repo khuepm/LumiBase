@@ -1,7 +1,6 @@
 import { patchSchema } from '../utils/patch-schema';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import { SignJWT, jwtVerify } from 'jose';
 import type { AppEnv, Bindings } from '../env';
 import { requireSiteAdmin } from '../middleware/site-admin';
 import { validateUploadFilename } from '@lumibase/contracts/schemas';
@@ -25,6 +24,19 @@ import { filesContext, resolveFilesAccess, type FilesContext } from '../services
 import { buildFolderTree, checkFolderMove, descendantIds, type FolderRow } from '../services/files/folder-tree';
 import { stripGpsMetadata } from '../services/files/media-metadata';
 import { isServable, runFileScan } from '../modules/malware-scan';
+import {
+  filesKeyPrefix,
+  getUploadJwtSecret,
+  isSiteStorageKey,
+  signUploadToken,
+  verifyUploadToken,
+  type UploadTokenPayload,
+} from '../services/files/upload-token';
+import { claimPrincipal, uploadClaimsFor } from '../services/files/upload-claims';
+import { systemDbFor } from '../middleware/db';
+import { nanoid } from 'nanoid';
+
+export { filesKeyPrefix, isSiteStorageKey };
 
 /**
  * /files — the digital asset library (#670).
@@ -37,38 +49,6 @@ import { isServable, runFileScan } from '../modules/malware-scan';
  * `/files/upload/*` is authorised by its token, not by a session.
  */
 export const filesRouter = new Hono<AppEnv>();
-
-const uploadTokenPayloadSchema = z.object({
-  key: z.string().min(1),
-  siteId: z.string().min(1),
-});
-
-type UploadTokenPayload = z.infer<typeof uploadTokenPayloadSchema>;
-
-function getUploadJwtSecret(env: Bindings): string | null {
-  return env.JWT_SECRET || process.env.JWT_SECRET || null;
-}
-
-// Helper to sign upload token
-async function signUploadToken(payload: UploadTokenPayload, secret: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const secretKey = encoder.encode(secret);
-  return new SignJWT(payload)
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('15m')
-    .sign(secretKey);
-}
-
-// Helper to verify upload token
-async function verifyUploadToken(token: string, secret: string): Promise<UploadTokenPayload> {
-  const encoder = new TextEncoder();
-  const secretKey = encoder.encode(secret);
-  const { payload } = await jwtVerify(token, secretKey, {
-    algorithms: ['HS256'],
-  });
-  return uploadTokenPayloadSchema.parse(payload);
-}
 
 // --- helpers ---------------------------------------------------------------
 
@@ -217,7 +197,15 @@ filesRouter.post('/presigned-url', async (c) => {
     );
   }
 
-  const key = `${Date.now()}_${filename}`;
+  // The key is registrable only by the principal that asked for it (#993).
+  const principal = claimPrincipal(c.get('auth'));
+  if (!principal) return forbidden(c, 'create');
+
+  // Site-scoped key (#993): the bucket is shared, so the key carries its site.
+  // The random part makes a key unguessable; the claim below is what makes it
+  // single-owner and single-use.
+  const key = `${filesKeyPrefix(siteId)}${Date.now()}_${nanoid(12)}_${filename}`;
+  await uploadClaimsFor(c.get('db')).issue(siteId, key, principal);
   const token = await signUploadToken({ key, siteId }, jwtSecret);
 
   const urlObj = new URL(c.req.url);
@@ -249,13 +237,18 @@ filesRouter.put('/upload/:key', async (c) => {
     );
   }
 
+  let payload: UploadTokenPayload;
   try {
-    const payload = await verifyUploadToken(token, jwtSecret);
-    if (payload.key !== key) {
-      return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Invalid upload token parameters.' }] }, 403);
-    }
-  } catch (err) {
+    payload = await verifyUploadToken(token, jwtSecret);
+  } catch {
     return c.json({ errors: [{ code: 'UNAUTHORIZED', message: 'Expired or invalid upload token.' }] }, 401);
+  }
+  // The token is the only authority on this path (it is exempt from
+  // `withTenant`): it binds one key AND one site, and the key must lie in that
+  // site's storage namespace (#993), so bytes can never land in another
+  // tenant's objects.
+  if (payload.key !== key || !key.startsWith(filesKeyPrefix(payload.siteId))) {
+    return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Invalid upload token parameters.' }] }, 403);
   }
 
   const runtime = c.get('runtime');
@@ -266,10 +259,28 @@ filesRouter.put('/upload/:key', async (c) => {
     return c.json({ errors: [{ code: 'BAD_REQUEST', message: 'No body provided.' }] }, 400);
   }
 
+  // One upload at a time, and none once the key is registered (#993): a
+  // replayed token cannot replace the bytes behind a file record that was
+  // already registered and scanned. This path has no tenant middleware, so it
+  // reads the claim on the system connection, scoped by the token's site.
+  const claims = uploadClaimsFor(systemDbFor(c));
+  const begun = await claims.beginUpload(payload.siteId, key);
+  if (begun === 'missing') {
+    return c.json({ errors: [{ code: 'UPLOAD_CLAIM_MISSING', message: 'This upload URL is no longer valid; request a new one.' }] }, 403);
+  }
+  if (begun === 'registered') {
+    return c.json({ errors: [{ code: 'UPLOAD_ALREADY_REGISTERED', message: 'This key belongs to a registered file; replace it through PUT /files/:id/content.' }] }, 409);
+  }
+  if (begun === 'busy') {
+    return c.json({ errors: [{ code: 'UPLOAD_IN_PROGRESS', message: 'Another upload to this key is in progress.' }] }, 409);
+  }
+
   try {
     await runtime.storage.put(key, body, { 'content-type': contentType });
+    await claims.finishUpload(payload.siteId, key, true);
     return c.json({ data: { success: true, key } });
   } catch (err: unknown) {
+    await claims.finishUpload(payload.siteId, key, false).catch(() => undefined);
     const errorMsg = err instanceof Error ? err.message : String(err);
     return c.json({ errors: [{ code: 'STORAGE_ERROR', message: `Failed to upload file to storage: ${errorMsg}` }] }, 500);
   }
@@ -474,20 +485,48 @@ filesRouter.post('/', async (c) => {
   if (g instanceof Response) return g;
   try {
     const input = fileCreateSchema.parse(await readJson(c));
+    // A record may only point at this site's own storage (#993). The bucket is
+    // shared between tenants: without this, a member could register another
+    // site's object key and then read, replace or delete those bytes through
+    // `/files/:id/content`.
+    if (!isSiteStorageKey(g.ctx.siteId, input.filenameDisk)) {
+      return fail(c, 400, 'FILENAME_DISK_OUT_OF_SCOPE', 'filenameDisk must be a key issued for this site (use POST /files/presigned-url).');
+    }
     const userId = c.get('auth')?.userId ?? null;
     const folder = input.folder ?? null;
     if (folder && !(await g.ctx.repo.listFolders()).some((f) => f.id === folder)) {
       return fail(c, 400, 'FOLDER_NOT_FOUND', 'Folder not found.');
     }
     if (!canPlaceInFolder(g.access, folder, g.folders, userId)) return forbidden(c, 'create');
+    // The key must be one this principal was issued and has uploaded, and not
+    // yet registered (#993). A key is an identifier, not a secret: without
+    // this, a member could register another file's key under a folder they
+    // control and then read, replace or delete the other file's bytes.
+    const principal = claimPrincipal(c.get('auth'));
+    if (!principal) return forbidden(c, 'create');
+    const claims = uploadClaimsFor(c.get('db'));
+    const claimed = await claims.register(g.ctx.siteId, input.filenameDisk, principal);
+    if (claimed === 'not_uploaded') {
+      return fail(c, 409, 'UPLOAD_NOT_COMPLETE', 'Upload the bytes with the signed URL before registering the file.');
+    }
+    if (claimed !== 'ok') {
+      return fail(c, 400, 'UPLOAD_CLAIM_INVALID', 'filenameDisk must be a key issued to you by POST /files/presigned-url, uploaded and not yet registered.');
+    }
     const svc = service(g.ctx);
-    const row = await g.ctx.repo.insert({
-      ...input,
-      folder,
-      uploadedBy: userId,
-      storage: 'r2',
-      scanStatus: svc.initialScanStatus(),
-    });
+    let row: Awaited<ReturnType<typeof g.ctx.repo.insert>>;
+    try {
+      row = await g.ctx.repo.insert({
+        ...input,
+        folder,
+        uploadedBy: userId,
+        storage: 'r2',
+        scanStatus: svc.initialScanStatus(),
+      });
+    } catch (err) {
+      // Give the claim back so the client can retry the registration.
+      await claims.unregister(g.ctx.siteId, input.filenameDisk).catch(() => undefined);
+      throw err;
+    }
     recordUsage({ kind: USAGE_KINDS.storageBytes, quantity: input.filesize, unit: 'bytes', attributes: { source: 'files', op: 'add' } });
     const { file, duplicates: dupes } = await svc.ingestRegistered(row);
     scheduleScan(c, g.ctx, file);
@@ -742,7 +781,10 @@ filesRouter.on(['GET', 'HEAD'], '/:id/content', async (c) => {
     const headers: Record<string, string> = {
       ETag: etag,
       'Cache-Control':
-        pinned && pinned === String(file.version) ? 'public, max-age=31536000, immutable' : 'public, max-age=300, must-revalidate',
+        // Authorization-bound bytes (#993): a shared cache must never serve
+        // them to another caller, so browsers may cache them but proxies and
+        // CDNs may not.
+        pinned && pinned === String(file.version) ? 'private, max-age=31536000, immutable' : 'private, max-age=300, must-revalidate',
       'Cache-Tag': fileCacheTag(g.ctx.siteId, file.id),
       'X-Lumi-File-Version': String(file.version),
       ...userContentHeaders(file.mime, file.filenameDownload),

@@ -1,11 +1,11 @@
 ---
-version: 14
-lastUpdated: 2026-11-19T20:14:14.794Z
+version: 15
+lastUpdated: 2026-11-21T13:48:07.601Z
 sourceLang: en
-contentHash: 06dfc7c670a5651a
-codeVerified: 2026-11-19T20:14:14.794Z
-codeVerifiedHash: 06dfc7c670a5651a
-codeVerifiedClaims: 6
+contentHash: 2de5057c280a0d71
+codeVerified: 2026-11-21T13:48:07.601Z
+codeVerifiedHash: 2de5057c280a0d71
+codeVerifiedClaims: 8
 ---
 
 # Dependency Overrides & Patches
@@ -194,6 +194,25 @@ degrade into one that always passes.
 **When it fires, do not silence it.** Either raise the override to meet the
 manifests, or lower the manifests to admit the override. Leaving them apart is
 the bug.
+
+## Install scripts and CI actions (#995)
+
+**Dependency lifecycle scripts run only for an allowlist.** `onlyBuiltDependencies`
+(in both `package.json` → `pnpm` and `pnpm-workspace.yaml`, kept equal by
+`pnpm settings:check`) lists the packages whose `preinstall` / `install` /
+`postinstall` scripts may run: `esbuild`, `msgpackr-extract`, `workerd`.
+Everything else installs without running its scripts — for example
+`@scarf/scarf`, which phones home at install time. A new native dependency
+that really needs its build step is added to both lists in review.
+
+**Every third-party GitHub Action is pinned to a commit SHA**
+(`uses: owner/repo@<sha> # vX.Y.Z`). A tag can be moved by whoever controls
+the action's repository; a SHA cannot. Dependabot's `github-actions` updates
+keep the SHA and the version comment current, and
+`scripts/__tests__/workflow-action-pins.test.mjs` (part of `check:all`) fails on
+an unpinned `uses:`. The private `apps/marketplace` submodule is the one CI
+install that resolves without a frozen lockfile; the workflows say so where it
+happens.
 
 ## Dependabot note
 

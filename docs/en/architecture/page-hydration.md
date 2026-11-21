@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:02:08.528Z
+version: 4
+lastUpdated: 2026-11-21T00:04:47.630Z
 sourceLang: en
-contentHash: f0f9348fb05a5190
-codeVerified: 2026-08-02T19:02:08.528Z
-codeVerifiedHash: f0f9348fb05a5190
-codeVerifiedClaims: 2
+contentHash: 5e14579546207248
+codeVerified: 2026-11-21T00:04:47.630Z
+codeVerifiedHash: 5e14579546207248
+codeVerifiedClaims: 8
 ---
 
 # Page Hydration API Contract
@@ -35,10 +35,30 @@ Sections can declare a data source:
 }
 ```
 
-The delivery resolver scopes the query by `site_id`, defaults to
-`status: "published"` for public delivery, clamps `limit` to 50 items, and
-merges the hydrated rows into `data.items`. Set `source.status` only when a
-public page intentionally needs a different item status.
+The delivery resolver scopes the query by `site_id`, serves published items
+only, in every layout shape (`source.status` is never honoured), clamps `limit`
+to 50 items, and merges the
+hydrated rows into `data.items`. Encrypted fields and fields classified `pii`
+or `phi` are left out of every item: a page is public, so delivery has no
+caller to decrypt for.
+
+A page writer can only bind a `source` to a collection they can read in full:
+a read permission on every field with no row filter. `POST /api/v1/pages` and
+`PATCH /api/v1/pages/:id` answer `403 SOURCE_FORBIDDEN` otherwise. Bindings a
+page already has are not re-checked, so an editor can still change a page an
+administrator bound to a collection.
+
+A `source` cannot ask for drafts (#1006). `POST` and `PATCH` refuse a
+`source.status` other than `published` with `400 VALIDATION`, one error per
+section with its `field` path (`sections.1.source.status`). A page stored
+before that rule keeps its layout, and delivery ignores the stored status, so
+no migration is needed; saving the layout again without it clears the error.
+`?preview=true` and `?draft=true` on the public route only skip caches: they
+never unlock drafts. To see a page with unpublished items, read it through a
+preview token, `GET /api/v1/deliver/preview/:site_id/page/:slug` (see
+[visual editing](../features/visual-editing.md)): each source then shows live
+items plus the token's draft, version or release, read with the token
+creator's permissions, and the response is `private, no-store`.
 
 ### Expected JSON Response Structure:
 ```json

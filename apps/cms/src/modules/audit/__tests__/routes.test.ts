@@ -119,6 +119,12 @@ describe('parseAuditLogQuery', () => {
     }
   });
 
+  it('accepts admin_change as an event filter (#988)', () => {
+    const parsed = parseAuditLogQuery({ event: 'admin_change' });
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.filter.event).toBe('admin_change');
+  });
+
   it('accepts a known event and rejects an unknown one', () => {
     const known = parseAuditLogQuery({ event: AUDIT_EVENTS[0] });
     expect(known.ok).toBe(true);

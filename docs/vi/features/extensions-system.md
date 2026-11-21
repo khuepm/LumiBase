@@ -1,11 +1,11 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 4
-lastUpdated: 2026-11-15T19:28:29.361Z
+version: 5
+lastUpdated: 2026-11-19T20:13:28.035Z
 sourceLang: vi
-contentHash: 70cc0629da389101
-codeVerified: 2026-11-15T19:28:29.361Z
-codeVerifiedHash: 70cc0629da389101
+contentHash: 06e7b733bca02fe8
+codeVerified: 2026-11-19T20:13:28.035Z
+codeVerifiedHash: 06e7b733bca02fe8
 codeVerifiedClaims: 6
 ---
 
@@ -66,6 +66,10 @@ Extension chỉ được dùng API ứng với capability đã khai báo; gọi 
 - `fetch` toàn cục bị thay bằng `ctx.fetch` chỉ allow host whitelist.
 - Timeout: 5s per hook; memory cap qua Workers limit.
 - Versioning: cài nhiều version, switch active.
+- Handler của extension `endpoint` (`/api/v1/extensions/<name>/*`) chỉ nhận `ctx`: **không** có env binding của CMS, execution context hay header `Authorization` / `Cookie` / `X-Lumi-Api-Key` của người gọi, và thấy đúng sub-path của nó (`/api/v1/extensions/search/a/b` → `/a/b`) (#990).
+- Đổi `bundleUrl` hoặc `version` của một extension đã cài sẽ kiểm lại chữ ký trước khi lưu; dưới chính sách `require` (mặc định), bundle mới không verify được thì bị từ chối và bản cũ tiếp tục chạy (#990).
+- Studio chỉ import bundle UI khi SHA-256 của nó khớp `bundleSha256` đã ghi nhận (#990).
+- Đây là cổng capability, không phải ranh giới cách ly: mã của bundle chạy trong process của CMS. Xem [ADR-015](../architecture/decisions/adr-015-extension-isolation.md).
 
 ## 4. Hook events
 

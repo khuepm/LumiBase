@@ -18,7 +18,8 @@
  *   apps/cms/src/config/production.ts         required vars, dev values, AES key, sslmode, CORS `*`
  *   apps/cms/src/config/cors.ts               allowlist semantics (loopback reflected outside prod)
  *   apps/cms/src/services/auth/refresh-token.ts  REFRESH_COOKIE_SAMESITE/SECURE/DOMAIN
- *   apps/cms/src/modules/setup/setup-token.ts LUMIBASE_REQUIRE_SETUP_TOKEN (true|1|yes)
+ *   apps/cms/src/modules/setup/setup-token.ts LUMIBASE_REQUIRE_SETUP_TOKEN (true|1|yes on, false|0|no off,
+ *                                             else on in production or with LUMIBASE_SETUP_TOKEN ≥ 24 chars)
  *   apps/cms/src/config/db-rls.ts             LUMIBASE_DB_RLS (off|enforce, else fail closed)
  *   apps/cms/src/middleware/rate-limit.ts     LUMIBASE_API_RATE_LIMIT, LUMIBASE_RATE_LIMIT_FAIL_CLOSED
  *   apps/cms/src/middleware/auth.ts           LUMIBASE_DEV_AUTH (`dev:` tokens)
@@ -116,6 +117,10 @@ function isLoopbackOrigin(origin: string): boolean {
 
 function isTrue(v: string | undefined): boolean {
   return v === 'true' || v === '1' || v === 'yes';
+}
+
+function isFalse(v: string | undefined): boolean {
+  return v === 'false' || v === '0' || v === 'no';
 }
 
 export interface SecurityCheckOptions {
@@ -326,14 +331,34 @@ export function runSecurityChecks(env: ProjectEnv, options: SecurityCheckOptions
   }
 
   // ── First-run setup gate (Node/Docker only) ────────────────────────────
-  if (env.runtime === 'docker' && !isTrue(val('LUMIBASE_REQUIRE_SETUP_TOKEN'))) {
+  // Mirrors `isSetupTokenRequired` in the CMS (#992): an explicit value wins;
+  // otherwise an operator token or a production environment turns it on.
+  const setupFlag = val('LUMIBASE_REQUIRE_SETUP_TOKEN');
+  const realProd = val('NODE_ENV') === 'production' || val('LUMIBASE_ENV') === 'production';
+  const operatorToken = (val('LUMIBASE_SETUP_TOKEN')?.length ?? 0) >= 24;
+  const setupGateOn = isTrue(setupFlag) || (!isFalse(setupFlag) && (operatorToken || realProd));
+  if (env.runtime === 'docker' && !setupGateOn) {
     add({
       id: 'setup-token-off',
       severity: prodOr('warning', 'info'),
       rule: 'An instance reachable before its first admin exists should require the one-time setup token.',
-      message: 'LUMIBASE_REQUIRE_SETUP_TOKEN is off: whoever reaches /setup first claims the admin account.',
-      fix: 'Set LUMIBASE_REQUIRE_SETUP_TOKEN=true; the CMS prints SETUP_TOKEN=… once at startup.',
+      message: isFalse(setupFlag)
+        ? 'LUMIBASE_REQUIRE_SETUP_TOKEN=false turns the setup gate off: whoever reaches /setup first claims the admin account.'
+        : 'The setup gate is off outside production: whoever reaches /setup first claims the admin account.',
+      fix: 'Remove LUMIBASE_REQUIRE_SETUP_TOKEN=false (the gate is on by default in production) or set it to true; the CMS prints SETUP_TOKEN=… once at startup.',
       keys: ['LUMIBASE_REQUIRE_SETUP_TOKEN'],
+    });
+  }
+
+  // ── Upload type allowlist (#993) ───────────────────────────────────────
+  if (isTrue(val('FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME'))) {
+    add({
+      id: 'upload-uncatalogued-mime',
+      severity: prodOr('warning', 'info'),
+      rule: 'Uploads should be limited to the catalogued types, which are content-sniffed and extension-checked.',
+      message: 'FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME is on: FILE_UPLOAD_ALLOWED_MIME_TYPES may admit archives, HTML or scripts without content sniffing.',
+      fix: 'Remove FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME and keep FILE_UPLOAD_ALLOWED_MIME_TYPES to catalogued types.',
+      keys: ['FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME', 'FILE_UPLOAD_ALLOWED_MIME_TYPES'],
     });
   }
 

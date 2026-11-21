@@ -1,14 +1,14 @@
 ---
-version: 14
-lastUpdated: 2026-11-19T20:14:14.794Z
+version: 15
+lastUpdated: 2026-11-21T13:48:07.601Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 06dfc7c670a5651a
+sourceHash: 2de5057c280a0d71
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T20:14:14.794Z
-codeVerifiedHash: 06dfc7c670a5651a
-codeVerifiedClaims: 6
+codeVerified: 2026-11-21T13:48:07.601Z
+codeVerifiedHash: 2de5057c280a0d71
+codeVerifiedClaims: 8
 ---
 
 # Dependency Overrides & Patches (Ghi đè và vá dependency)
@@ -193,6 +193,25 @@ một guard luôn-xanh.
 
 **Khi nó nổ, đừng làm nó im.** Hoặc nâng override cho khớp manifest, hoặc hạ
 manifest để nhận override. Để hai bên lệch nhau chính là cái bug.
+
+## Script cài đặt và action của CI (#995)
+
+**Lifecycle script của dependency chỉ chạy với một allowlist.** `onlyBuiltDependencies`
+(có ở cả `package.json` → `pnpm` và `pnpm-workspace.yaml`, được
+`pnpm settings:check` giữ cho bằng nhau) liệt kê các gói được phép chạy script
+`preinstall` / `install` / `postinstall`: `esbuild`, `msgpackr-extract`,
+`workerd`. Mọi gói khác được cài mà không chạy script — ví dụ `@scarf/scarf`,
+gói gửi dữ liệu ra ngoài lúc cài. Một dependency native mới thật sự cần bước
+build sẽ được thêm vào cả hai danh sách qua review.
+
+**Mọi GitHub Action của bên thứ ba được pin theo SHA commit**
+(`uses: owner/repo@<sha> # vX.Y.Z`). Tag có thể bị dời bởi bất kỳ ai kiểm soát
+repo của action; SHA thì không. Cập nhật `github-actions` của Dependabot giữ cho
+SHA và chú thích phiên bản luôn mới, và
+`scripts/__tests__/workflow-action-pins.test.mjs` (nằm trong `check:all`) báo lỗi
+khi có `uses:` chưa pin. Submodule riêng tư `apps/marketplace` là lần cài duy
+nhất trong CI phân giải mà không dùng lockfile cố định; các workflow ghi rõ điều
+đó tại chỗ.
 
 ## Ghi chú Dependabot
 

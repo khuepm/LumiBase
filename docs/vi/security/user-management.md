@@ -1,14 +1,14 @@
 ---
-version: 15
-lastUpdated: 2026-11-17T19:23:30.212Z
+version: 18
+lastUpdated: 2026-11-21T00:02:58.713Z
 sourceLang: en
 translatedFrom: en
-sourceHash: c4cf5c68f57e9896
+sourceHash: e3b0be70412db75d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T19:23:30.212Z
-codeVerifiedHash: c4cf5c68f57e9896
-codeVerifiedClaims: 122
+codeVerified: 2026-11-21T00:02:58.713Z
+codeVerifiedHash: e3b0be70412db75d
+codeVerifiedClaims: 132
 ---
 
 # User Management Best Practices
@@ -243,7 +243,7 @@ Visitor (Next.js)            CMS                              Email
 
 | Endpoint | Auth | Ghi chú |
 |----------|------|-------|
-| `POST /api/v1/auth/register` | public | Tạo `subscriber`, `status=invited`. Rate-limit theo IP. Trả về `202` chung (không enumeration). |
+| `POST /api/v1/auth/register` | public | Tạo `subscriber`, `status=invited`. Rate-limit theo IP. Trả về `202` chung (không enumeration). Site đặt `auth.registration` là `{ "enabled": false }` sẽ trả `403 REGISTRATION_DISABLED` trước mọi xử lý khác (#994). |
 | `POST /api/v1/auth/verify-email` | public | Body `{token}` (hoặc `?token=`). Lật `invited`→`active`. Idempotent (`already_verified`). |
 | `POST /api/v1/auth/login` | public | Phát JWT `frontend`/`studio`. Bị gate bởi `status='active'`, LoginGuard, bộ dò bất thường. |
 | `POST /api/v1/auth/resend-verification` | public | Body `{email}`. Rate-limit theo IP. `202` chung; chỉ gửi lại link kích hoạt cho một tài khoản dựa-trên-mật-khẩu chưa active (khôi phục khi mất email). |
@@ -251,6 +251,14 @@ Visitor (Next.js)            CMS                              Email
 | `POST /api/v1/auth/reset-password` | public | Body `{token,password}`. Tiêu thụ một token `password-reset` stateless (TTL 1h), đặt hash mật khẩu mới, và revoke tất cả refresh token. |
 | `POST /api/v1/auth/refresh` | public | Xoay refresh token được trình ra (cookie hoặc body `{refreshToken}`) → access JWT mới + refresh token đã xoay. Việc dùng lại một token đã revoke sẽ revoke toàn bộ family. |
 | `POST /api/v1/auth/logout` | public | Revoke family của refresh token được trình ra và xóa cookie. Idempotent. |
+
+**Mức chi phí băm mật khẩu (#994).** Mật khẩu dùng PBKDF2-SHA256, mặc định
+100.000 vòng. `PASSWORD_PBKDF2_ITERATIONS` nâng mức chi phí cho hash mới trên
+Node/Docker (100.000–2.000.000), và một lần đăng nhập thành công sẽ băm lại mật
+khẩu đang lưu ở mức thấp hơn; nhánh "email không tồn tại" dùng một hash giả cùng
+chi phí để thời gian đăng nhập không lộ email nào có thật. Cloudflare Workers
+giữ ở 100.000 vì Web Crypto của nó từ chối mức cao hơn — đừng nâng giá trị này
+trên bản Docker nếu database sau này có thể được phục vụ bởi Workers.
 | `POST /api/v1/me/change-password` | bearer | Body `{currentPassword,newPassword}`. Xác minh mật khẩu hiện tại, đặt hash mới, revoke tất cả refresh token. |
 | `GET /api/v1/me/sessions` | bearer | Các session đang hoạt động của caller (refresh token còn sống), đã redact. |
 | `DELETE /api/v1/me/sessions/:id` | bearer | Revoke một trong các session của chính caller (`:id` = `sessionId`); có hiệu lực ngay. |
@@ -505,6 +513,51 @@ request, và tháo 2FA thu hồi refresh token của site hiện tại. Các env
 `/auth/login` trả `methods` trong phản hồi `mfa_required`. Mã khôi phục dùng
 chung với TOTP. Xem [Passkey](./passkeys.md).
 
+**`enforceTfa` áp dụng ở đâu.** Một policy có `enforceTfa: true` yêu cầu
+session đã verify TFA trên **mọi** route mà session đó gọi tới — items, files,
+media, flows, imports, releases, AI và MCP cũng như API quản trị Studio — bất
+kể client là gì (Studio, SDK, script hay `curl`). Trước #987, phép kiểm chỉ
+chạy với request tự nhận là Studio hoặc đi vào một prefix quản trị Studio, nên
+một user chưa đăng ký 2FA dưới policy `enforceTfa` vẫn ghi được nội dung từ
+client không phải Studio. Quy tắc:
+
+- User bắt buộc có 2FA nhưng chưa đăng ký chỉ gọi được các endpoint đăng ký
+  (`/me/tfa`, `/me/tfa/setup`, `/me/tfa/confirm`, `/me/passkeys`,
+  `/me/passkeys/registration-options`); mọi request khác trả
+  `403 TFA_REQUIRED`.
+- User đã đăng ký cần một session có token mang `tfaVerified` (hoặc `amr` có
+  `totp` / `webauthn`); session chỉ có mật khẩu trả `403 TFA_REQUIRED`.
+- API key là credential không tương tác và **không** chịu `enforceTfa`; hãy
+  giới hạn chúng bằng policy và thời hạn riêng. Request ẩn danh (role public)
+  không có session nên cũng không bị ảnh hưởng.
+- `appAccess` không đổi: vẫn chỉ được kiểm trên bề mặt Studio.
+- Các lệnh đọc lúc khởi động của Studio (`GET /permissions/me`,
+  `GET /me/preferences`, `GET /me/admin-path`) cũng mở cho người dùng chưa
+  đăng ký, để Studio tải được và điều hướng họ.
+- Mỗi `403 TFA_REQUIRED` cho biết lý do trong `errors[0].details.reason`:
+  `enrollment_required` (đăng ký một yếu tố) hoặc `verification_required` (đăng
+  nhập lại bằng yếu tố đó). Studio dùng nó: trường hợp đầu đưa người dùng tới
+  **Settings → Security** kèm một banner, trường hợp sau đăng xuất họ về màn
+  hình đăng nhập kèm một thông báo. Sau khi đăng ký, session vẫn chỉ có mật
+  khẩu, nên request kế tiếp trả `verification_required` và người dùng đăng nhập
+  thêm một lần bằng yếu tố mới.
+
+**MFA cho Administrator lúc setup.** Wizard setup gắn một policy
+**Administrator MFA** (key `administrator_mfa`, `enforceTfa: true`, không cấp
+quyền nào khác) vào role Administrator khi `LUMIBASE_ADMIN_REQUIRE_MFA` là
+`true`, hoặc, khi biến đó không được đặt, ở production (`LUMIBASE_ENV` hoặc
+`NODE_ENV` là `production`) và đã cấu hình khoá mã hoá — thiếu khoá thì không
+đăng ký TOTP được. `LUMIBASE_ADMIN_REQUIRE_MFA=false` tắt nó. Muốn bỏ về sau,
+gỡ hoặc xoá policy trong Settings → Access. Các site tạo sau này từ một
+organization không có policy này; hãy tự thêm `enforceTfa` vào policy của
+chúng.
+
+**Yếu tố thứ hai qua các lần gia hạn.** Family refresh token ghi lại `amr` của
+lần đăng nhập (`lumibase_refresh_tokens.amr`, migration `0044`), nên
+`/auth/refresh` cấp lại `tfaVerified` + `amr` cho session bắt đầu bằng TOTP
+hoặc passkey. Family tạo trước `0044` gia hạn không kèm claim này — những user
+đó đăng nhập lại một lần để bắt đầu family có mang nó.
+
 ## 5. Onboarding staff (KHÔNG dùng tự phục vụ)
 
 Staff được tạo **invite-only**:
@@ -517,7 +570,7 @@ POST /api/v1/users/invite     (requireSiteAdmin)
 Việc này tạo/liên kết user với một role Studio (`appAccess: true`) và gửi một
 email mời best-effort. Cưỡng chế TFA trên các admin role qua một policy với
 `enforceTfa: true` (`withStudioAccess` khi đó yêu cầu một session đã verify
-TFA).
+TFA trên mọi route, không chỉ trong Studio — xem §4f).
 
 ---
 

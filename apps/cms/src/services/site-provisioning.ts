@@ -1,4 +1,4 @@
-import { roles, sites, userSites, type Database } from '@lumibase/database';
+import { policies, rolePolicies, roles, sites, userSites, type Database } from '@lumibase/database';
 import type { RuntimeContext } from '@lumibase/runtime';
 import { and, eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
@@ -23,6 +23,49 @@ export async function upsertSiteRole(db: ProvisionDb, siteId: string, kind: 'adm
   if (!existing) throw new Error(`Could not provision ${kind} role`);
   return existing.id;
 }
+/** Env knob for the Administrator MFA policy created at setup (#987). */
+export const ADMIN_REQUIRE_MFA_ENV = 'LUMIBASE_ADMIN_REQUIRE_MFA';
+export const ADMINISTRATOR_MFA_POLICY_KEY = 'administrator_mfa';
+
+/**
+ * Whether setup binds an `enforceTfa` policy to the Administrator role (#987).
+ *   1. `LUMIBASE_ADMIN_REQUIRE_MFA` decides when set: `true`/`1`/`yes` on,
+ *      `false`/`0`/`no` off.
+ *   2. Otherwise on in production (`LUMIBASE_ENV` or `NODE_ENV`), but only
+ *      when the encryption key is configured: without it TOTP enrolment is
+ *      unavailable, and a default that strands the first admin is worse than
+ *      none. Passkeys work either way, so the explicit `true` still applies.
+ */
+export function shouldRequireAdminMfa(env: Readonly<Record<string, unknown>>, encryptionAvailable: boolean): boolean {
+  const v = env[ADMIN_REQUIRE_MFA_ENV];
+  if (v === 'true' || v === '1' || v === 'yes') return true;
+  if (v === 'false' || v === '0' || v === 'no') return false;
+  const production = env.LUMIBASE_ENV === 'production' || env.NODE_ENV === 'production';
+  return production && encryptionAvailable;
+}
+
+/**
+ * Bind an "Administrator MFA" policy to `roleId`: it grants nothing, it only
+ * sets `enforceTfa`, so removing it (Settings → Access) is the opt-out.
+ * Idempotent on the policy's `(site_id, key)` and the role binding.
+ */
+export async function ensureAdministratorMfaPolicy(db: ProvisionDb, siteId: string, roleId: string): Promise<string> {
+  const [created] = await db.insert(policies).values({
+    siteId, key: ADMINISTRATOR_MFA_POLICY_KEY, name: 'Administrator MFA',
+    description: 'Requires a two-factor verified session for administrators. Created during setup.',
+    icon: 'shield', adminAccess: false, appAccess: false, enforceTfa: true,
+  }).onConflictDoNothing().returning({ id: policies.id });
+  let policyId = created?.id;
+  if (!policyId) {
+    const [existing] = await db.select({ id: policies.id }).from(policies)
+      .where(and(eq(policies.siteId, siteId), eq(policies.key, ADMINISTRATOR_MFA_POLICY_KEY))).limit(1);
+    if (!existing) throw new Error('Could not provision the Administrator MFA policy');
+    policyId = existing.id;
+  }
+  await db.insert(rolePolicies).values({ roleId, policyId, priority: 100 }).onConflictDoNothing();
+  return policyId;
+}
+
 /** Called inside the caller's transaction; external effects run after commit. */
 export async function provisionSite(db: ProvisionDb, input: {
   id?: string; name: string; organizationId: string; creatorUserId?: string;

@@ -1,11 +1,11 @@
 ---
-version: 23
-lastUpdated: 2026-11-16T20:34:21.726Z
+version: 27
+lastUpdated: 2026-11-21T00:28:03.227Z
 sourceLang: en
-contentHash: 58d9b567a0d582fc
-codeVerified: 2026-11-16T20:34:21.726Z
-codeVerifiedHash: 58d9b567a0d582fc
-codeVerifiedClaims: 98
+contentHash: 474ca884dbb2b4af
+codeVerified: 2026-11-21T00:28:03.227Z
+codeVerifiedHash: 474ca884dbb2b4af
+codeVerifiedClaims: 102
 ---
 
 # Environment Variables Reference
@@ -48,7 +48,13 @@ public/setup routes to it in production. See
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ (Node/Docker only) | off | `true`, `1` or `yes` makes `POST /api/v1/setup/complete` demand a one-time setup token. Turn it on for any instance that someone other than you can reach before setup is finished — otherwise whoever reaches the port first creates the admin account. |
+| `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ | **on in production**, off elsewhere | Makes `POST /api/v1/setup/complete` demand a one-time setup token. `true` / `1` / `yes` turns it on, `false` / `0` / `no` turns it off on purpose (automated provisioning). Unset, it is on when `LUMIBASE_ENV` or `NODE_ENV` is `production` (#992) or when `LUMIBASE_SETUP_TOKEN` is set — otherwise whoever reaches the port first creates the admin account. Node/Docker mints the token at startup and prints it once as `[lumibase-cms] SETUP_TOKEN=…`. |
+| `LUMIBASE_ADMIN_REQUIRE_MFA` | ✗ | **on in production** with an encryption key, off elsewhere | Whether the setup wizard binds an `enforceTfa` "Administrator MFA" policy to the Administrator role (#987), so the first admin enrols a second factor before using the Studio. `true` / `1` / `yes` on (passkeys work without an encryption key), `false` / `0` / `no` off. Read once, at setup. |
+| `EXTENSION_RUNTIME` | ✗ (Node/Docker) | **`process` in production**, `in-process` elsewhere | Where server extensions run (#990, ADR-015). `process`: each extension in its own child process with an empty environment and Node's permission model; its `ctx` calls are checked by the CMS. `in-process`: inside the CMS process. Ignored on Cloudflare Workers (always in process). |
+| `PASSWORD_PBKDF2_ITERATIONS` | ✗ (Node/Docker) | `100000` | PBKDF2 work factor for new password hashes, 100,000–2,000,000; logins re-hash older passwords up to it (#994). Ignored on Cloudflare Workers (capped at 100,000 by Web Crypto) — do not raise it if the database may later be served by Workers. |
+| `API_KEY_DEFAULT_TTL_DAYS` | ✗ | `90` | Lifetime of an API key created without `expiresAt` (#994). `0` restores the old never-expires default; an explicit `"expiresAt": null` always creates a non-expiring key. |
+| `FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME` | ✗ | off | `true` lets `FILE_UPLOAD_ALLOWED_MIME_TYPES` admit types outside the upload catalogue, which are accepted without content sniffing (#993). Reported by `lumibase doctor --security`. |
+| `LUMIBASE_SETUP_TOKEN` | ✗ (secret) | — | Your own setup token, at least 24 characters (`openssl rand -base64 32`); a shorter value is ignored. Required to complete setup on **Cloudflare Workers** in production (`wrangler secret put LUMIBASE_SETUP_TOKEN`), which have no startup step to mint one. On Node/Docker it replaces the minted token. Remove it once setup is done. |
 
 With the flag on, every process that serves HTTP (`LUMIBASE_PROCESS_ROLE` `web` or
 `all`) mints the token as it starts, before it accepts requests, and prints it once:

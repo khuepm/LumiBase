@@ -25,6 +25,7 @@ const stub = vi.hoisted(() => ({
   revokeOtherSessions: vi.fn(),
   revokeAllRefreshTokens: vi.fn(),
   audit: vi.fn(),
+  issueRefreshToken: vi.fn(),
 }));
 
 vi.mock('@simplewebauthn/server', async (importOriginal) => {
@@ -40,7 +41,10 @@ vi.mock('../../services/auth/refresh-token', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/auth/refresh-token')>();
   return {
     ...actual,
-    issueRefreshToken: async () => ({ token: 'refresh-token', expiresAt: new Date(Date.now() + 60_000) }),
+    issueRefreshToken: async (...args: unknown[]) => {
+      stub.issueRefreshToken(...args);
+      return { token: 'refresh-token', expiresAt: new Date(Date.now() + 60_000) };
+    },
     revokeOtherSessions: stub.revokeOtherSessions,
     revokeAllRefreshTokens: stub.revokeAllRefreshTokens,
   };
@@ -155,6 +159,8 @@ describe('passkey as second factor', () => {
     const body = await res.json() as { data: { token: string; refreshToken: string } };
     const claims = decodeJwt(body.data.token);
     expect(claims).toMatchObject({ userId: 'usr_staff', siteId: 'site-a', tfaVerified: true, amr: ['pwd', 'webauthn'], tokenVersion: 3 });
+    // The refresh family remembers the second factor, so renewal stays TFA-verified (#987).
+    expect(stub.issueRefreshToken.mock.calls.at(-1)?.[1]).toMatchObject({ amr: ['pwd', 'webauthn'] });
     expect(typeof claims.sid).toBe('string');
     expect(claims.aud).toBe(TOKEN_AUDIENCE.studio);
     expect(isSessionTfaVerified({ raw: claims } as AuthPrincipal)).toBe(true);

@@ -90,7 +90,7 @@ export interface AutonomyServiceDeps {
 export interface IncidentInput {
   agentRole: string;
   capability?: string | null;
-  source: 'veto' | 'eval_fail' | 'human_report' | 'load_guard' | 'runtime_error';
+  source: 'veto' | 'eval_fail' | 'human_report' | 'load_guard' | 'runtime_error' | 'content_integrity';
   severity?: 'low' | 'medium' | 'high';
   runId?: string | null;
   detail?: Record<string, unknown>;

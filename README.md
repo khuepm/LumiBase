@@ -120,7 +120,7 @@ That gives you the **API** on `:1989`. The development compose image mounts sour
 
 ```bash
 cp docker/.env.example docker/.env      # set JWT_SECRET; DATABASE_SSL_MODE=disable for the bundled Postgres
-LUMIBASE_VERSION=2.1.0 docker compose \
+LUMIBASE_VERSION=2.2.0 docker compose \
   -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
@@ -161,12 +161,12 @@ Full documentation lives in [`docs/`](./docs/en/README.md); the task roadmap is 
 
 Every release must pass a green GitHub Actions CI run before it can be published or deployed. The required CI gate runs on every pull request and every push to `main`, and includes dependency installation with the locked pnpm version, version policy validation, typechecking, tests, lint for the current stable allowlist, and the production build.
 
-Current release: `v2.1.0` (`2026-11-16`) — three completed epics: security hardening (sessions and devices, passkeys, member social login, password policy, security history), deployment and hosting (Helm chart, one-click Render deploy, deploy permissions and promotion, Astro/SvelteKit starters, live OpenAPI) and content modeling (geopoint, timezone-aware datetimes, dynamic zones, hierarchical collections, form layout); plus the ops diagnostics plane and Cloudflare Workers parity for background jobs. Back up PostgreSQL, apply migrations `0026`–`0034` and re-apply `rls-policies.sql` before starting the new CMS. The public API and SDK follow the [versioning policy](docs/en/contributing/versioning-policy.md). Jev decision/review/automation APIs and the Studio M2A JSON helper remain experimental. See the [changelog](CHANGELOG.md) and [upgrade guide](docs/en/operations/upgrades.md) before upgrading from 0.x.
+Current release: `v2.2.0` (`2026-11-21`) — a new storybook home page with the Lumi mascot; rich text (block editor, sanitised HTML/Markdown); live preview and visual editing; editorial UX (publication state, duplicate, manual ordering, release validation); digital asset management (versions, folders, bulk upload, media picker, optional malware scanning); extension MCP tools, agent receipts and a locale translation generator; release flags; typegen configs plus Vue/Svelte/Astro adapters; and content-integrity security hardening (page-builder permissions, `enforceTfa` on every route, out-of-process extensions, site-scoped single-owner uploads). Back up PostgreSQL, apply migrations `0035`–`0045` and re-apply `rls-policies.sql` before starting the new CMS; `0035` rebuilds the items primary key under an exclusive lock, so run it in a maintenance window on large tables. The public API and SDK follow the [versioning policy](docs/en/contributing/versioning-policy.md). Jev decision/review/automation APIs and the Studio M2A JSON helper remain experimental. See the [changelog](CHANGELOG.md) and [upgrade guide](docs/en/operations/upgrades.md) before upgrading from 0.x.
 
 Every release before this one is summarised in [`CHANGELOG.md`](./CHANGELOG.md), including the **`v0.5.0` Content OS foundation** — intents/SLOs, control-loop reconciliation, the L0–L4 trust ledger, the veto window, the four-scope kill switch, the tenant constitution, provenance-first revisions, the multi-agent newsroom, and Studio Mission Control. That foundation remains the baseline every later release builds upon, not replaces.
 
 ```bash
-LUMIBASE_VERSION=2.1.0 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+LUMIBASE_VERSION=2.2.0 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
 See [`CHANGELOG.md`](./CHANGELOG.md) for upgrade steps, rollback notes, compatibility details, and backup guidance.

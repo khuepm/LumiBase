@@ -1,14 +1,14 @@
 ---
 title: Mặc định an toàn và lumibase doctor --security
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-14T02:04:01.435Z
+version: 2
+lastUpdated: 2026-11-19T20:13:27.009Z
 translatedFrom: en
-sourceHash: 23ef15e31d018d14
+sourceHash: e7dbd2e5d6aabffd
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T02:04:01.435Z
-codeVerifiedHash: 23ef15e31d018d14
+codeVerified: 2026-11-19T20:13:27.009Z
+codeVerifiedHash: e7dbd2e5d6aabffd
 codeVerifiedClaims: 34
 ---
 
@@ -75,7 +75,7 @@ Quy tắc production được áp dụng khi `NODE_ENV` hoặc `LUMIBASE_ENV` l�
 | `cors-insecure-origin` | — / warning | origin `http://` hoặc loopback trên production |
 | `cookie-insecure` | info / critical | `REFRESH_COOKIE_SECURE=false` |
 | `cookie-samesite-none` / `cookie-samesite-invalid` | info / warning; warning | `REFRESH_COOKIE_SAMESITE` là `None`, hoặc một giá trị không hợp lệ |
-| `setup-token-off` | info / warning | `LUMIBASE_REQUIRE_SETUP_TOKEN` chưa bật (chỉ Node/Docker) |
+| `setup-token-off` | info / warning | Cổng setup đang tắt: `LUMIBASE_REQUIRE_SETUP_TOKEN=false`, hoặc không phải production và không có `LUMIBASE_SETUP_TOKEN` (chỉ Node/Docker; bật mặc định ở production từ #992) |
 | `rls-invalid` | critical / critical | `LUMIBASE_DB_RLS` không phải `off` hay `enforce` (CMS fail-closed) |
 | `rls-no-system-url` | critical / critical | `enforce` mà không có `DATABASE_SYSTEM_URL` (lỗi khi khởi động) |
 | `rls-off` | info / warning | chưa enforce RLS (chỉ Node/Docker) |

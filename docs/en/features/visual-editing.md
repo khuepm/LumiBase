@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-11-15T19:48:28.979Z
+version: 3
+lastUpdated: 2026-11-21T11:14:09.702Z
 sourceLang: en
-contentHash: 65a41201b56dc214
-codeVerified: 2026-11-15T19:48:28.979Z
-codeVerifiedHash: 65a41201b56dc214
-codeVerifiedClaims: 14
+contentHash: ccc2c4da73477f42
+codeVerified: 2026-11-21T11:14:09.702Z
+codeVerifiedHash: ccc2c4da73477f42
+codeVerifiedClaims: 18
 ---
 
 # Live preview & visual editing
@@ -18,7 +18,8 @@ codeVerifiedClaims: 14
 **Status:** shipped — preview tokens (V01), Studio preview pane (V02),
 `@lumibase/visual-editing` overlay (V03), version/release/locale preview (V04
 API), CSP and threat model (V05). Not yet: a "Preview release" button in the
-Studio (there is no release view yet — use the API), and the visual page
+Studio (the **Releases** page lists releases and their validation issues, but
+cannot open a preview of one yet — use the API), and the visual page
 composer (V06, post-v1).
 
 ## 1. How it fits together
@@ -99,9 +100,14 @@ Send the token in the `x-lumibase-preview` header (or `?__preview=`), from your
 GET /api/v1/deliver/preview/:site_id                         # what the token targets (+ the item)
 GET /api/v1/deliver/preview/:site_id/items/:collection        # live items + the preview overlay
 GET /api/v1/deliver/preview/:site_id/items/:collection/:id    # one item through the overlay
+GET /api/v1/deliver/preview/:site_id/page/:slug               # a page, its section sources through the overlay
 ```
 
-Responses are `private, no-store` and `noindex`. See
+Responses are `private, no-store` and `noindex`. The page read returns the same
+sections as `GET /deliver/page`, wrapped in `{ data, meta }`; each section
+`source` shows live items plus the token's draft, version or release. The
+public page route never shows unpublished items, whatever the layout says
+(#1006). See
 `examples/nextjs-blog` for a complete Next.js setup:
 `src/app/api/preview/route.ts` checks the token server-side, enables draft
 mode, keeps the token in an `httpOnly` cookie and redirects;

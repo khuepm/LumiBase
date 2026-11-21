@@ -392,12 +392,15 @@ export class AgentRunService {
       approvalId?: string | null;
       latencyMs?: number;
       cost?: Record<string, unknown>;
+      /** Re-classify the call (e.g. `autonomous_publish`, #991); unchanged when omitted. */
+      risk?: string;
     },
   ): Promise<void> {
     await this.db
       .update(agentToolCalls)
       .set({
         status: patch.status,
+        ...(patch.risk ? { risk: patch.risk } : {}),
         output: maskSecrets(patch.output ?? {}) as Record<string, unknown>,
         error: patch.error ?? null,
         approvalId: patch.approvalId ?? null,
