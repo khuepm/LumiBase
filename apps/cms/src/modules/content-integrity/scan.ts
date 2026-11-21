@@ -16,7 +16,7 @@
  * Only the URL's host and file extension are reported, never the content.
  */
 
-export type ContentIntegritySignalKind = 'download_link' | 'offsite_seo_url' | 'publish_burst';
+export type ContentIntegritySignalKind = 'download_link' | 'offsite_seo_url' | 'publish_burst' | 'first_publish_by_principal';
 
 export interface ContentIntegritySignal {
   kind: ContentIntegritySignalKind;
@@ -28,6 +28,8 @@ export interface ContentIntegritySignal {
   extension?: string;
   /** Publish count in the window, for `publish_burst`. */
   count?: number;
+  /** Account that published for the first time, for `first_publish_by_principal`. */
+  userId?: string;
 }
 
 /** Extensions that run code or wrap code on a visitor's machine. */

@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-11-19T20:13:27.584Z
+version: 2
+lastUpdated: 2026-11-21T00:18:21.182Z
 sourceLang: en
-contentHash: ec71b5b95a014934
-codeVerified: 2026-11-19T20:13:27.584Z
-codeVerifiedHash: ec71b5b95a014934
-codeVerifiedClaims: 4
+contentHash: a2c80706d77224a3
+codeVerified: 2026-11-21T00:18:21.182Z
+codeVerifiedHash: a2c80706d77224a3
+codeVerifiedClaims: 8
 ---
 
 # Content integrity monitoring
@@ -27,6 +27,7 @@ is created or its layout changes (`modules/content-integrity/monitor.ts`):
 | `download_link` | Any string in the content — plain field, nested JSON, rich text, HTML — links to an archive or executable (`.zip`, `.js`, `.exe`, `.msi`, `.iso`, `.ps1`, `.vbs`, `.jar`, `.apk`, `.dmg`, …) on a host that is not the site's own. |
 | `offsite_seo_url` | A `canonical`, `og_url` / `og:url` or `twitter_url` value points at another host. Only checked once the site has at least one known host. |
 | `publish_burst` | Items first published across the site in the last `burstWindowMinutes` cross `burstThreshold` (alerts at the crossing and at each further multiple, not on every publish). |
+| `first_publish_by_principal` | A user account takes an item live for the first time and no other published item on the site was last written by that account. A stolen or long-dormant account's first publish is worth a look. API keys, agents and system writes are not checked. |
 
 "The site's own" hosts are the site's domains (`/api/v1/domains`) plus
 `allowedHosts`, compared by registrable domain, so `cms.acme.com` and
@@ -43,7 +44,7 @@ log API with `?event=content_integrity_alert`.
 Under the `unpublish` policy, an item carrying a `download_link` or
 `offsite_seo_url` signal is set back to `draft` before the write returns; its
 revision is kept and an `integrity_unpublish` activity row records it. A
-`publish_burst` only notifies: volume alone is not proof. Pages have no draft
+`publish_burst` or `first_publish_by_principal` only notifies: volume or novelty alone is not proof. Pages have no draft
 state, so they only notify.
 
 When the content came from an agent run, the monitor also records a
@@ -61,7 +62,9 @@ Site setting `contentIntegrity`, written by a site admin with `POST /api/v1/sett
   "action": "notify",
   "allowedHosts": ["cdn.acme-assets.net"],
   "burstThreshold": 25,
-  "burstWindowMinutes": 10
+  "burstWindowMinutes": 10,
+  "firstPublishSignal": true,
+  "weeklyDigest": true
 }
 ```
 
@@ -72,6 +75,28 @@ Site setting `contentIntegrity`, written by a site admin with `POST /api/v1/sett
 | `allowedHosts` | `[]` | Extra hosts that count as the site's own (a CDN, a download server). |
 | `burstThreshold` | `25` | First publishes in the window before a burst alert. |
 | `burstWindowMinutes` | `10` | Burst window. |
+| `firstPublishSignal` | `true` | `false` turns off `first_publish_by_principal`. |
+| `weeklyDigest` | `true` | `false` stops the weekly "what went live" notification. |
+
+Studio edits all of this in **Settings → Content integrity**.
+
+## What went live: the digest
+
+The scan only sees what it has a rule for. The digest is the check that does
+not depend on it: everything that went live, so a person can ask "do I
+recognise this?".
+
+- `GET /api/v1/admin/security/content-integrity/digest?days=7` (site admins;
+  `days` from 1 to 31) returns the items first published in the window, the
+  count per account that last wrote them (`published.byPrincipal`, with
+  emails), the latest 100 of them (`published.items`), and the window's alerts
+  by signal (`alerts.bySignal`). **Settings → Content integrity** shows the
+  last 7 days.
+- Once every 7 days, from the hourly scheduled job (Node and Workers), each
+  site administrator gets a Studio notification, "What went live this week",
+  with the same summary (`modules/content-integrity/digest.ts`). It is skipped
+  for a site where nothing went live and nothing alerted, or where `enabled`
+  or `weeklyDigest` is `false`.
 
 ## Multi-tenancy
 
@@ -90,6 +115,10 @@ Nothing is shared between tenants.
   failure is logged. It never blocks a write except by the `unpublish` action.
 - A bulk import that publishes many items will raise a `publish_burst` alert;
   raise `burstThreshold` for sites that publish in large batches.
+- `first_publish_by_principal` reads the item's last writer
+  (`user_updated`), not a publish history: an account that only ever edited
+  items someone else published counts as new. On a fresh site every
+  account's first publish raises it once.
 - Search indexes and realtime events emitted for the write before an
   `unpublish` are not retracted by the monitor; the next index sweep and the
   cache invalidation that follows the write correct them.

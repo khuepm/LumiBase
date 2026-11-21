@@ -19,12 +19,18 @@
  *
  * Policy lives in the site setting `contentIntegrity`:
  *   { enabled?: boolean, action?: 'notify' | 'unpublish',
- *     allowedHosts?: string[], burstThreshold?: number, burstWindowMinutes?: number }
+ *     allowedHosts?: string[], burstThreshold?: number, burstWindowMinutes?: number,
+ *     firstPublishSignal?: boolean, weeklyDigest?: boolean }
+ *
+ * `first_publish_by_principal` (#989) fires when a user account takes an item
+ * live and no other live item on the site was last written by that account:
+ * a stolen or dormant account's first publish is worth a look. Like a burst,
+ * it only notifies. The weekly "what went live" digest is `digest.ts`.
  *
  * The monitor never throws: a failure to check must not fail the write. It
  * fails open for that reason, and logs.
  */
-import { and, count, eq, gte, isNull } from 'drizzle-orm';
+import { and, count, eq, gte, isNotNull, isNull, ne } from 'drizzle-orm';
 import { agentRuns, items, scopeSite, settings, siteDomains, type Database } from '@lumibase/database';
 import { AuditLogger } from '../audit/logger';
 import { scanContent, type ContentIntegritySignal } from './scan';
@@ -38,6 +44,8 @@ export interface ContentIntegrityPolicy {
   allowedHosts: string[];
   burstThreshold: number;
   burstWindowMinutes: number;
+  firstPublishSignal: boolean;
+  weeklyDigest: boolean;
 }
 
 export const DEFAULT_CONTENT_INTEGRITY_POLICY: ContentIntegrityPolicy = {
@@ -46,6 +54,8 @@ export const DEFAULT_CONTENT_INTEGRITY_POLICY: ContentIntegrityPolicy = {
   allowedHosts: [],
   burstThreshold: 25,
   burstWindowMinutes: 10,
+  firstPublishSignal: true,
+  weeklyDigest: true,
 };
 
 export interface ContentIntegrityActor {
@@ -92,6 +102,8 @@ export function parseContentIntegrityPolicy(value: unknown): ContentIntegrityPol
       : [],
     burstThreshold: positive(raw.burstThreshold, DEFAULT_CONTENT_INTEGRITY_POLICY.burstThreshold),
     burstWindowMinutes: positive(raw.burstWindowMinutes, DEFAULT_CONTENT_INTEGRITY_POLICY.burstWindowMinutes),
+    firstPublishSignal: raw.firstPublishSignal !== false,
+    weeklyDigest: raw.weeklyDigest !== false,
   };
 }
 
@@ -113,10 +125,15 @@ export async function checkContentIntegrity(
       if (published > policy.burstThreshold && (published - policy.burstThreshold - 1) % policy.burstThreshold === 0) {
         signals.push({ kind: 'publish_burst', count: published });
       }
+      const userId = deps.actor.type === 'user' ? deps.actor.userId : null;
+      if (policy.firstPublishSignal && userId && !(await hasPublishedBefore(deps, userId, input.itemId))) {
+        signals.push({ kind: 'first_publish_by_principal', userId });
+      }
     }
     if (signals.length === 0) return NONE;
 
-    const contentSignal = signals.some((s) => s.kind !== 'publish_burst');
+    // Volume and novelty only notify; only what the content carries unpublishes.
+    const contentSignal = signals.some((s) => s.kind === 'download_link' || s.kind === 'offsite_seo_url');
     const unpublish = policy.action === 'unpublish' && contentSignal;
 
     await (deps.audit ?? defaultAudit(deps))({
@@ -167,6 +184,20 @@ async function recentFirstPublishes(deps: ContentIntegrityDeps, windowMinutes: n
     .from(items)
     .where(and(eq(items.siteId, deps.siteId), gte(items.firstPublishedAt, since), isNull(items.deletedAt)));
   return Number(row?.n ?? 0);
+}
+
+async function hasPublishedBefore(deps: ContentIntegrityDeps, userId: string, itemId: string): Promise<boolean> {
+  const [row] = await deps.db
+    .select({ id: items.id })
+    .from(items)
+    .where(and(
+      eq(items.siteId, deps.siteId),
+      eq(items.userUpdated, userId),
+      isNotNull(items.firstPublishedAt),
+      ne(items.id, itemId),
+    ))
+    .limit(1);
+  return Boolean(row);
 }
 
 async function demoteAgent(deps: ContentIntegrityDeps, input: ContentIntegrityInput, signals: ContentIntegritySignal[]): Promise<void> {

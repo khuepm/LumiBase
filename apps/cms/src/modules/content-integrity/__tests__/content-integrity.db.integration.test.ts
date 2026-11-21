@@ -1,6 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { activity, auditLog, collections, fields, items, settings, sites, type Database } from '@lumibase/database';
+import { activity, auditLog, collections, fields, items, notifications, roles, settings, sites, userSites, users, type Database } from '@lumibase/database';
+import { buildContentDigest, CONTENT_DIGEST_MARKER, runWeeklyContentDigest } from '../digest';
 import { ItemService } from '../../../services/item-service';
 import { connectDbIntegration, hasDbIntegrationUrl } from '../../../__tests__/helpers/db-harness';
 
@@ -70,5 +71,65 @@ describe.skipIf(!hasDbIntegrationUrl)('content integrity — DB integration', ()
     const svc = new ItemService({ db, siteId: SITE });
     await svc.create('articles', { data: lure });
     expect(await alerts()).toHaveLength(0);
+  });
+
+  async function makeUser(email: string, admin = false): Promise<string> {
+    await db.delete(users).where(eq(users.email, email));
+    const [u] = await db.insert(users).values({ email, status: 'active' }).returning({ id: users.id });
+    if (admin) {
+      const [role] = await db.insert(roles).values({ siteId: SITE, key: 'administrator', systemKey: 'administrator', name: 'Administrator', adminAccess: true, appAccess: true }).returning({ id: roles.id });
+      await db.insert(userSites).values({ userId: u!.id, siteId: SITE, roleId: role!.id });
+    }
+    return u!.id;
+  }
+
+  it('a user account\'s first publish on the site is flagged once (#989)', async () => {
+    const userId = await makeUser('ci-989-first@example.com');
+    const svc = new ItemService({ db, siteId: SITE, userId });
+    await svc.create('articles', { data: { title: 'One', body: 'plain' }, status: 'published' });
+    await svc.create('articles', { data: { title: 'Two', body: 'plain' }, status: 'published' });
+    const rows = await alerts();
+    expect(rows).toHaveLength(1);
+    expect(JSON.stringify(rows[0]!.metadata)).toContain('first_publish_by_principal');
+    expect((rows[0]!.metadata as { action: string }).action).toBe('notified');
+  });
+
+  it('firstPublishSignal: false turns the signal off', async () => {
+    await db.insert(settings).values({ siteId: SITE, key: 'contentIntegrity', value: { firstPublishSignal: false } });
+    const userId = await makeUser('ci-989-off@example.com');
+    await new ItemService({ db, siteId: SITE, userId }).create('articles', { data: { title: 'One', body: 'plain' }, status: 'published' });
+    expect(await alerts()).toHaveLength(0);
+  });
+
+  it('the digest lists what went live by account, and the alerts by signal', async () => {
+    const userId = await makeUser('ci-989-digest@example.com');
+    const svc = new ItemService({ db, siteId: SITE, userId });
+    await svc.create('articles', { data: lure, status: 'published' });
+    await svc.create('articles', { data: { title: 'Fine', body: 'plain' }, status: 'published' });
+    await svc.create('articles', { data: { title: 'Draft', body: 'plain' } });
+    const digest = await buildContentDigest({ db, siteId: SITE });
+    expect(digest.published.total).toBe(2);
+    expect(digest.published.byPrincipal).toEqual([{ userId, email: 'ci-989-digest@example.com', count: 2 }]);
+    expect(digest.published.items.map((i) => i.collection)).toEqual(['articles', 'articles']);
+    expect(digest.alerts.bySignal.download_link).toBe(1);
+    expect(digest.alerts.bySignal.first_publish_by_principal).toBe(1);
+  });
+
+  it('the weekly digest notifies site admins once per 7 days', async () => {
+    const adminId = await makeUser('ci-989-admin@example.com', true);
+    await new ItemService({ db, siteId: SITE }).create('articles', { data: { title: 'Live', body: 'plain' }, status: 'published' });
+    const sentTo = async () => db.select().from(notifications).where(and(eq(notifications.siteId, SITE), eq(notifications.collection, CONTENT_DIGEST_MARKER)));
+    await runWeeklyContentDigest({ db });
+    expect((await sentTo()).map((n) => n.recipient)).toEqual([adminId]);
+    await runWeeklyContentDigest({ db, now: Date.now() + 3 * 24 * 60 * 60 * 1000 });
+    expect(await sentTo()).toHaveLength(1);
+  });
+
+  it('weeklyDigest: false sends nothing', async () => {
+    await db.insert(settings).values({ siteId: SITE, key: 'contentIntegrity', value: { weeklyDigest: false } });
+    await makeUser('ci-989-admin2@example.com', true);
+    await new ItemService({ db, siteId: SITE }).create('articles', { data: { title: 'Live', body: 'plain' }, status: 'published' });
+    await runWeeklyContentDigest({ db });
+    expect(await db.select().from(notifications).where(eq(notifications.siteId, SITE))).toHaveLength(0);
   });
 });

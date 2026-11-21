@@ -197,6 +197,12 @@ export default Sentry.withSentry(
           runScheduledOrphanSweep({ db, storage: runtime.storage }),
         ),
       );
+      // Weekly "what went live" digest to site admins (#989).
+      ctx.waitUntil(
+        import('./modules/content-integrity/digest').then(({ runWeeklyContentDigest }) =>
+          runWeeklyContentDigest({ db, realtime: runtime.realtime }),
+        ),
+      );
       ctx.waitUntil(runScheduledReviewRunPurge(db, env.DECISION_REVIEW_RETENTION_DAYS));
       // Opt-in anonymous usage telemetry — same pass as the Docker hourly cron.
       // Off unless enabled AND an endpoint is set; then it is a no-op.

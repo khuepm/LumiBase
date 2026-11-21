@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-11-20T06:00:20.502Z
+version: 2
+lastUpdated: 2026-11-21T00:18:22.760Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 92d5703c50e83398
+sourceHash: 9c30ca4798fe43ef
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-20T06:00:20.502Z
-codeVerifiedHash: 92d5703c50e83398
+codeVerified: 2026-11-21T00:18:22.760Z
+codeVerifiedHash: 9c30ca4798fe43ef
 codeVerifiedClaims: 16
 ---
 
@@ -103,7 +103,8 @@ Các trang mà công cụ tìm kiếm index do frontend của bạn render. Hãy
 | Tín hiệu | Ở đâu |
 | --- | --- |
 | Thay đổi quản trị bất ngờ (extension, webhook, flow, setting, key, user) | Bộ lọc audit `admin_change` |
-| Link tải file, URL canonical ngoài site, đợt xuất bản dồn dập | Bộ lọc audit `content_integrity_alert` |
+| Link tải file, URL canonical ngoài site, đợt xuất bản dồn dập, lần xuất bản đầu của một tài khoản | Bộ lọc audit `content_integrity_alert` |
+| Mọi thứ đã lên live, theo tài khoản | Settings → Content integrity, và thông báo hằng tuần "What went live this week" |
 | Đăng nhập thất bại, khoá tài khoản, đăng nhập từ nơi mới | Sự kiện audit `login_failed`, `user_locked`, `anomaly_triggered` |
 | Hành động của agent đang chờ duyệt mà không ai yêu cầu | Mission Control → phê duyệt |
 | Truy vấn tìm kiếm bạn không nhận ra | Search Console (§3) |

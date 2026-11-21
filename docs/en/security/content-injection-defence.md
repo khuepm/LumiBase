@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-11-20T06:00:20.502Z
+version: 2
+lastUpdated: 2026-11-21T00:18:22.760Z
 sourceLang: en
-contentHash: 92d5703c50e83398
-codeVerified: 2026-11-20T06:00:20.502Z
-codeVerifiedHash: 92d5703c50e83398
+contentHash: 9c30ca4798fe43ef
+codeVerified: 2026-11-21T00:18:22.760Z
+codeVerifiedHash: 9c30ca4798fe43ef
 codeVerifiedClaims: 16
 ---
 
@@ -98,7 +98,8 @@ monthly and after every incident:
 | Signal | Where |
 | --- | --- |
 | Unexpected admin changes (extensions, webhooks, flows, settings, keys, users) | Audit filter `admin_change` |
-| Download links, off-site canonical URLs, publish bursts | Audit filter `content_integrity_alert` |
+| Download links, off-site canonical URLs, publish bursts, an account's first publish | Audit filter `content_integrity_alert` |
+| Everything that went live, by account | Settings → Content integrity, and the weekly "What went live this week" notification |
 | Failed logins, lockouts, logins from new places | Audit events `login_failed`, `user_locked`, `anomaly_triggered` |
 | Agent actions waiting for approval that nobody asked for | Mission Control → approvals |
 | Search queries you do not recognise | Search Console (§3) |

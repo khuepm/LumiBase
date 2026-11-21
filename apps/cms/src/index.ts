@@ -113,6 +113,7 @@ import { emailRouter } from './modules/email/routes';
 import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
 import { auditRouter } from './modules/audit/routes';
+import { contentIntegrityRouter } from './modules/content-integrity/routes';
 import { cdcRouter } from './modules/cdc';
 import { releaseFlagsRouter } from './modules/release-flags';
 import { cdcFeedRouter } from './modules/cdc/change-feed/routes';
@@ -405,6 +406,8 @@ api.route('/admin/social-providers', adminSocialProvidersRouter);
 // `withAuth`. Same disjoint-leaf-path coexistence the recovery router
 // relies on.
 api.route('/admin/security', auditRouter);
+// "What went live" digest (#989); disjoint leaf path, admin-gated inside.
+api.route('/admin/security', contentIntegrityRouter);
 api.route('/tm', tmRouter);
 // One-shot translation generator for a new locale (#714) — control plane.
 api.route('/locale-generation', localeGenerationRouter);

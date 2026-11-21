@@ -118,7 +118,8 @@ describe('checkContentIntegrity', () => {
 
 describe('parseContentIntegrityPolicy', () => {
   it('defaults safely and ignores junk', () => {
-    expect(parseContentIntegrityPolicy(undefined)).toEqual({ enabled: true, action: 'notify', allowedHosts: [], burstThreshold: 25, burstWindowMinutes: 10 });
+    expect(parseContentIntegrityPolicy(undefined)).toEqual({ enabled: true, action: 'notify', allowedHosts: [], burstThreshold: 25, burstWindowMinutes: 10, firstPublishSignal: true, weeklyDigest: true });
+    expect(parseContentIntegrityPolicy({ firstPublishSignal: false, weeklyDigest: false })).toMatchObject({ firstPublishSignal: false, weeklyDigest: false });
     expect(parseContentIntegrityPolicy({ action: 'delete', burstThreshold: -3, allowedHosts: ['a.com', 7] })).toMatchObject({ action: 'notify', burstThreshold: 25, allowedHosts: ['a.com'] });
   });
 });
