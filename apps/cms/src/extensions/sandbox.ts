@@ -27,8 +27,11 @@
  */
 
 import type { Database } from '@lumibase/database';
-import { validateOutboundUrl } from '../services/ssrf-guard';
+import { guardedFetch, validateOutboundUrl } from '../services/ssrf-guard';
 import { formatSafeError } from '@lumibase/contracts/utils';
+import {
+  acquireExtensionProcess, ctxDispatcher, evictExtensionProcesses, processKey, remoteModule, resolveExtensionRuntime,
+} from './host/process-host';
 import {
   devBuildAppliesToSite,
   devExtensionRegistry,
@@ -229,6 +232,12 @@ export class ExtensionSandbox {
     // Build capability-checked proxy context passed to the extension.
     const ctx = this.buildCtx(caps, opts.name);
 
+    // Out-of-process host on Node (#990): same gates above, same ctx below,
+    // but the bundle runs in a child process with no env and no host state.
+    if (resolveExtensionRuntime(this.env as unknown as Record<string, unknown>) === 'process') {
+      return this.loadInProcessHost(opts, ctx);
+    }
+
     try {
       const mod = await this.importWithTimeout(opts.bundleUrl, opts.timeoutMs ?? 5000);
 
@@ -270,14 +279,59 @@ export class ExtensionSandbox {
     }
   }
 
-  /** Evict an extension from the cache (e.g. after update). */
-  evict(name: string): void {
-    this.cache.delete(name);
+  private async loadInProcessHost(opts: SandboxLoadOptions, ctx: ReturnType<ExtensionSandbox['buildCtx']>): Promise<ExtensionModule | null> {
+    const bundleGuard = validateExtensionBundleUrl(opts.bundleUrl);
+    if (!bundleGuard.allowed) {
+      console.error(`[extension-sandbox] refused to load "${opts.name}": ${bundleGuard.reason ?? 'bundle URL not allowed'}`);
+      return null;
+    }
+    const dispatch = ctxDispatcher(ctx as unknown as Parameters<typeof ctxDispatcher>[0]);
+    try {
+      const key = processKey(opts.siteId, opts.name, opts.bundleUrl);
+      const proc = await acquireExtensionProcess({
+        key,
+        // The child has no network authority of ours and Node cannot import
+        // an https URL: the host downloads the (trusted, verified) bundle and
+        // hands the child its source.
+        url: await this.fetchBundleSource(opts.bundleUrl),
+        name: opts.name,
+        dispatch,
+        timeoutMs: opts.timeoutMs ?? 5000,
+      });
+      const mod = remoteModule(proc, dispatch) as unknown as ExtensionModule;
+      this.cache.set(opts.name, mod);
+      return mod;
+    } catch (err) {
+      console.error(`[extension-sandbox] failed to load "${opts.name}" out of process`, formatSafeError(err));
+      return null;
+    }
   }
 
-  /** Evict all cached extensions. */
+  /**
+   * The bundle as a `data:` URL for the out-of-process host: downloaded
+   * through the SSRF guard (DNS re-checked), redirects refused, at most 5 MB.
+   */
+  protected async fetchBundleSource(bundleUrl: string): Promise<string> {
+    if (bundleUrl.startsWith('data:')) return bundleUrl;
+    const res = await guardedFetch(bundleUrl, { redirect: 'error' }, { allowLocalhost: isLoopbackUrl(bundleUrl), allowPrivateNetwork: isLoopbackUrl(bundleUrl) });
+    if (!res.ok) throw new SandboxLoadError(bundleUrl, `bundle download failed with HTTP ${res.status}`);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.byteLength > MAX_REMOTE_BUNDLE_BYTES) throw new SandboxLoadError(bundleUrl, 'bundle is larger than 5 MB');
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return `data:text/javascript;base64,${btoa(binary)}`;
+  }
+
+  /** Evict an extension from the cache (e.g. after update), and end its host processes. */
+  evict(name: string): void {
+    this.cache.delete(name);
+    void evictExtensionProcesses(name);
+  }
+
+  /** Evict all cached extensions, and end every host process. */
   evictAll(): void {
     this.cache.clear();
+    void evictExtensionProcesses();
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -463,6 +517,18 @@ export class ExtensionSandbox {
   }
 }
 
+
+const MAX_REMOTE_BUNDLE_BYTES = 5 * 1024 * 1024;
+
+/** `http://localhost` bundles are allowed by the trust policy (local development). */
+function isLoopbackUrl(raw: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(raw);
+    return protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname);
+  } catch {
+    return false;
+  }
+}
 
 function requestInfoToUrl(input: RequestInfo): string {
   if (typeof input === 'string') return input;

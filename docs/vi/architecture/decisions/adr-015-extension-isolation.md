@@ -1,20 +1,20 @@
 ---
-version: 1
-lastUpdated: 2026-11-19T20:13:27.270Z
+version: 2
+lastUpdated: 2026-11-21T00:28:02.151Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 67a1126eba46851a
+sourceHash: b74d0223ad19ed41
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T20:13:27.270Z
-codeVerifiedHash: 67a1126eba46851a
-codeVerifiedClaims: 8
+codeVerified: 2026-11-21T00:28:02.151Z
+codeVerifiedHash: b74d0223ad19ed41
+codeVerifiedClaims: 16
 ---
 
 # ADR-015: Cách ly mã của extension
 
 **Date:** 2026-11-19  
-**Status:** Proposed
+**Status:** Accepted (Node / Docker); Workers vẫn chạy trong process
 
 ## Context
 
@@ -57,31 +57,57 @@ khớp SHA-256 đã ghi nhận (`importVerifiedBundle` trong
 | D. `worker_threads` + RPC qua message port cho `ctx` | — | ✓ một phần (chung process, không chung heap) | vừa phải; không giới hạn cứng bộ nhớ/CPU |
 | E. Extension host ngoài process (HTTP/RPC, container riêng) | qua service binding | ✓ | thêm một service phải vận hành; mạnh nhất trên Node |
 
-## Decision (đề xuất)
+## Decision
 
-1. **Giữ phương án A làm mặc định**, kèm phần gia cố của #990, và ghi rõ rằng
-   extension chạy với chính quyền hạn của CMS. Cài một extension là một lần
-   deploy mã.
-2. **Hướng tới phương án B trên Cloudflare và phương án E trên Docker** cho
-   extension `hook` và `endpoint`, sau cùng một interface: host gọi một
-   `ExtensionRuntime` (`invokeHook`, `handleRequest`) với request `ctx` đã
-   serialise, và phía bị cách ly gọi ngược lại qua RPC cho các thao tác
-   `items` / `db` / `kv`, mỗi thao tác được kiểm phía host theo capability đã
-   cấp cho extension.
-3. Không chọn C hay D: C không chạy được trên Workers, còn D dùng chung process
+1. **Trên Node / Docker, chạy extension `hook` và `endpoint` ngoài process
+   (một dạng nhẹ của phương án E): mỗi site, extension và bundle một child
+   process**, do CMS fork (`apps/cms/src/extensions/host/process-host.ts`,
+   child `host/child.ts`, build thành `dist/extension-host.cjs`). Child khởi
+   động với:
+   - môi trường rỗng, nên không có `DATABASE_URL`, `JWT_SECRET` hay key nhà
+     cung cấp nào;
+   - permission model của Node (`--permission`): không ghi file, không tạo
+     child process, không worker thread, không native addon, và chỉ đọc file
+     trong thư mục của script host;
+   - giới hạn heap 128 MB;
+   - không có kết nối database và không có state module nào của CMS.
+
+   `ctx` của extension là một proxy: mọi lời gọi `items` / `db` / `fetch` /
+   `kv` / `env` đi qua IPC về host và được trả lời bởi chính ctx đã kiểm
+   capability như trước, gắn với request đã thực hiện lời gọi. Hook, tool MCP,
+   subscriber CDC và request tới endpoint được chuyển tiếp theo cùng cách. Host
+   tải bundle (allowlist origin, chữ ký, SSRF guard, tối đa 5 MB) và đưa mã
+   nguồn cho child. Một child bị kết thúc khi nạp lỗi, khi một lời gọi chạy quá
+   10 giây, khi extension được cập nhật, hoặc khi CMS thoát.
+2. **`EXTENSION_RUNTIME` chọn chế độ này**: `process` hoặc `in-process`; khi
+   không đặt, là `process` ở production (`LUMIBASE_ENV` hoặc `NODE_ENV` =
+   `production`) và `in-process` ở nơi khác, để môi trường phát triển và test
+   vẫn chỉ có một process.
+3. **Cloudflare Workers vẫn chạy trong process** (phương án A với các cổng
+   nguồn gốc). Một isolate cho mỗi request đã là lớp cách ly của nền tảng và
+   Workers không fork được; phương án B (Workers for Platforms) vẫn là hướng đi
+   nếu một bản triển khai cần cách ly theo từng extension ở đó.
+4. Không chọn C hay D: C không chạy được trên Workers, còn D dùng chung process
    nên không giới hạn được điều gì quan trọng ở đây.
-
-Phần triển khai tiếp theo được theo dõi trong epic #985; ADR này giữ trạng thái
-**Proposed** cho tới khi interface `ExtensionRuntime` được đưa vào.
 
 ## Consequences
 
-- Cho tới lúc đó, ranh giới là nguồn gốc (allowlist origin + chữ ký + admin),
-  và audit trail (`admin_change` cho cài / cập nhật / bật, #988) là cách phát
-  hiện một extension bất thường.
-- Extension cần secret của host phải dùng các khoá `EXTENSION_*` qua `ctx.env`
-  (capability `env:read`); nó không còn đọc được chúng từ binding của handler.
+- Trên Node ở production, extension không còn đọc được secret của CMS, ghi
+  file, tạo process hay vá các phép kiểm capability của host; những gì nó làm
+  được là những gì capability đã khai báo cho phép `ctx` làm.
+- Permission model không bao phủ mạng: mã trong child vẫn mở được kết nối riêng,
+  nhưng không có credential nào của CMS. Hãy giới hạn egress ở tầng container
+  nếu điều đó quan trọng.
+- Ngoài process, `ctx.env.EXTENSION_X` là một promise (cần `await`), `ctx.fetch`
+  trả về bản sao của response (tối đa 5 MB), `ctx.logger` của CDC là console
+  của child, và factory của extension chạy một lần cho mỗi child thay vì mỗi
+  request. Tham số và kết quả phải structured-clone được.
+- Bundle `https` từ xa nay nạp được trên Node: host tải nó về, điều mà
+  `import()` của Node không làm được.
+- Xác minh chữ ký vẫn chạy trong host trước mỗi lần nạp. Lần tải sau đó là một
+  lần fetch thứ hai, nên một server trả lời hai lần khác nhau sẽ không bị phát
+  hiện; hãy ghim bundle vào một origin bạn kiểm soát.
 - Kiểm tra toàn vẹn của Studio bắt được bundle bị thay ở URL của nó, nhưng không
   bắt được server trả lời request kiểm tra và lần import module khác nhau; đóng
   khe hở đó cần import qua `blob:` và do đó cần `blob:` trong `script-src` của
-  CSP Studio, việc này để lại cho cùng đợt tiếp theo.
+  CSP Studio, việc này vẫn để lại sau.

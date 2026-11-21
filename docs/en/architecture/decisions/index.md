@@ -1,8 +1,8 @@
 ---
-version: 5
-lastUpdated: 2026-11-19T20:13:35.124Z
+version: 6
+lastUpdated: 2026-11-21T00:28:04.489Z
 sourceLang: en
-contentHash: a0172d32e25dfe85
+contentHash: b0d5b41e59619a84
 ---
 
 # Architecture Decision Records (ADR)
@@ -27,7 +27,7 @@ LumiBase follows the [ADR pattern](https://adr.github.io/) to document significa
 | [ADR-012](./adr-012-remove-cdc-cache-invalidator.md) | Remove CDC CacheInvalidator (superseded by tag purge at API write path) | Accepted |
 | [ADR-013](./adr-013-organization-plane.md) | Organization plane (tenant hierarchy and scope-typed credentials) | Proposed |
 | [ADR-014](./adr-014-preview-bridge-threat-model.md) | Live preview bridge — preview tokens, framing and postMessage threat model | Accepted |
-| [ADR-015](./adr-015-extension-isolation.md) | Extension code isolation (in-process today; Workers for Platforms / out-of-process host as the target) | Proposed |
+| [ADR-015](./adr-015-extension-isolation.md) | Extension code isolation (out-of-process host on Node; Workers stay in process) | Accepted |
 
 ## Template
 

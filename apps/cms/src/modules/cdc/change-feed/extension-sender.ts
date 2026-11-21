@@ -158,6 +158,7 @@ export class SandboxCdcSubscriberLoader implements CdcSubscriberLoader {
     const mod = await sandbox.load({
       name: row.name,
       bundleUrl: row.bundleUrl,
+      siteId: row.siteId,
       capabilities,
     });
     const subscriber = (

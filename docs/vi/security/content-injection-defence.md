@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-11-21T00:18:22.760Z
+version: 3
+lastUpdated: 2026-11-21T00:28:04.283Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 9c30ca4798fe43ef
+sourceHash: caac29248d95f271
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-21T00:18:22.760Z
-codeVerifiedHash: 9c30ca4798fe43ef
+codeVerified: 2026-11-21T00:28:04.283Z
+codeVerifiedHash: caac29248d95f271
 codeVerifiedClaims: 16
 ---
 
@@ -47,7 +47,7 @@ vẫn là việc của frontend, và phải làm gì vào ngày có điều bấ
 | Đặc quyền tối thiểu | Chỉ cấp `lumibase_pages` cho người sửa trang; giới hạn bằng rule theo dòng. Giữ extension và API key cho admin. Agent không thể cài extension, tạo key, hay đổi setting, role hoặc webhook mà không có người, ở mọi mức autonomy. |
 | Giám sát toàn vẹn | Lọc tab audit bảo mật theo `admin_change` (ai đổi gì, từ đâu) và `content_integrity_alert` (nội dung đáng ngờ đã lên live). |
 | Kiểm soát upload file | Giữ `FILE_UPLOAD_ALLOWED_MIME_TYPES` trong catalogue; mặc định không upload được file nén và script. |
-| Vá lỗi và thành phần tin cậy | Extension chỉ nạp từ `EXTENSION_BUNDLE_ORIGINS` với chữ ký hợp lệ; đổi bundle sẽ được kiểm lại. |
+| Vá lỗi và thành phần tin cậy | Extension chỉ nạp từ `EXTENSION_BUNDLE_ORIGINS` với chữ ký hợp lệ; đổi bundle sẽ được kiểm lại. Trên Node ở production, mỗi extension chạy trong process riêng, không có secret của CMS (`EXTENSION_RUNTIME`, [ADR-015](../architecture/decisions/adr-015-extension-isolation.md)). |
 | Tập trung bằng chứng | Xuất audit log (`GET /api/v1/admin/security/audit-log/export`) ra nơi lưu trữ ngoài CMS. |
 
 Chạy `lumibase doctor --security` với môi trường production của bạn; lệnh này

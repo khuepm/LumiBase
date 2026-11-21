@@ -1,17 +1,17 @@
 ---
-version: 1
-lastUpdated: 2026-11-19T20:13:27.270Z
+version: 2
+lastUpdated: 2026-11-21T00:28:02.151Z
 sourceLang: en
-contentHash: 67a1126eba46851a
-codeVerified: 2026-11-19T20:13:27.270Z
-codeVerifiedHash: 67a1126eba46851a
-codeVerifiedClaims: 8
+contentHash: b74d0223ad19ed41
+codeVerified: 2026-11-21T00:28:02.151Z
+codeVerifiedHash: b74d0223ad19ed41
+codeVerifiedClaims: 16
 ---
 
 # ADR-015: Extension code isolation
 
 **Date:** 2026-11-19  
-**Status:** Proposed
+**Status:** Accepted (Node / Docker); Workers stay in process
 
 ## Context
 
@@ -55,32 +55,55 @@ do not match the recorded SHA-256 (`importVerifiedBundle` in
 | D. `worker_threads` + message-port RPC for `ctx` | — | ✓ partial (shares the process, not the heap) | moderate; no memory/CPU hard limits |
 | E. Out-of-process extension host (HTTP/RPC, own container) | via service binding | ✓ | an extra service to run; strongest on Node |
 
-## Decision (proposed)
+## Decision
 
-1. **Keep option A as the default**, with the #990 hardening, and document
-   plainly that extensions run with the CMS's own authority. Installing one is
-   a code deployment.
-2. **Target option B on Cloudflare and option E on Docker** for `hook` and
-   `endpoint` extensions, behind one interface: the host calls an
-   `ExtensionRuntime` (`invokeHook`, `handleRequest`) with a serialised `ctx`
-   request, and the isolated side calls back over RPC for `items` / `db` /
-   `kv` operations, each checked against the extension's granted capabilities
-   on the host side.
-3. Do not adopt C or D: C cannot run on Workers, and D shares the process, so
+1. **On Node / Docker, run `hook` and `endpoint` extensions out of process
+   (a lighter option E): one child process per site, extension and bundle**,
+   forked by the CMS (`apps/cms/src/extensions/host/process-host.ts`, child
+   `host/child.ts`, built to `dist/extension-host.cjs`). The child starts with:
+   - an empty environment, so no `DATABASE_URL`, `JWT_SECRET` or provider key;
+   - Node's permission model (`--permission`): no file writes, no child
+     processes, no worker threads, no native addons, and file reads only in
+     the host script's directory;
+   - a 128 MB heap cap;
+   - no database connection and no CMS module state.
+
+   The extension's `ctx` is a proxy: every `items` / `db` / `fetch` / `kv` /
+   `env` call goes over IPC to the host and is answered by the same
+   capability-checked ctx as before, bound to the request that made the call.
+   Hooks, MCP tools, CDC subscribers and endpoint requests are forwarded the
+   same way. The host downloads the bundle (origin allowlist, signature, SSRF
+   guard, at most 5 MB) and hands the child its source. A child is killed on a
+   load failure, a call that runs past 10 s, an update of the extension, or
+   CMS exit.
+2. **`EXTENSION_RUNTIME` selects it**: `process` or `in-process`; unset, it is
+   `process` in production (`LUMIBASE_ENV` or `NODE_ENV` = `production`) and
+   `in-process` elsewhere, so development and tests keep one process.
+3. **Cloudflare Workers stay in process** (option A with the provenance gates).
+   An isolate per request is already the platform's isolation and Workers
+   cannot fork; option B (Workers for Platforms) remains the path if a
+   deployment needs per-extension isolation there.
+4. Do not adopt C or D: C cannot run on Workers, and D shares the process, so
    it limits nothing that matters here.
-
-The follow-up implementation is tracked under epic #985; this ADR stays
-**Proposed** until the `ExtensionRuntime` interface lands.
 
 ## Consequences
 
-- Until then, the boundary is provenance (origin allowlist + signature +
-  admin), and the audit trail (`admin_change` for install / update / enable,
-  #988) is how an unexpected extension is noticed.
-- An extension that needs host secrets must use `EXTENSION_*` keys through
-  `ctx.env` (capability `env:read`); it can no longer read them from the
-  handler's bindings.
+- On Node in production, an extension can no longer read the CMS's secrets,
+  write files, spawn processes or patch the host's capability checks; what it
+  can do is what its declared capabilities let `ctx` do.
+- The permission model does not cover the network: code in the child can open
+  its own connections, without any of the CMS's credentials. Restrict egress
+  at the container level if that matters.
+- Out of process, `ctx.env.EXTENSION_X` is a promise (`await` it), `ctx.fetch`
+  returns a copy of the response (at most 5 MB), the CDC `ctx.logger` is the
+  child's console, and the extension factory runs once per child rather than
+  once per request. Arguments and results must be structured-cloneable.
+- A remote `https` bundle now loads on Node: the host downloads it, which a
+  Node `import()` could not.
+- Signature verification still runs before every load in the host. The
+  download that follows it is a second fetch, so a server that answers the two
+  differently is not caught; pin bundles to an origin you control.
 - Studio's integrity check catches a bundle replaced at its URL, but not a
   server that answers the verification fetch and the module import
   differently; closing that needs a `blob:` import and therefore `blob:` in the
-  Studio CSP `script-src`, which is deferred to the same follow-up.
+  Studio CSP `script-src`, which is deferred.
