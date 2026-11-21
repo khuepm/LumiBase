@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Shell contract for draft review (Jev J08, #515; `apps/shell/README.md`
+ * Shell contract for draft review (Jev J08, #515; `apps/studio/NATIVE_HOST_CONTRACT.md`
  * "Contracts future work must not break", C1/C2).
  *
  * The bundled desktop/mobile shell serves the Studio from `tauri://localhost`,

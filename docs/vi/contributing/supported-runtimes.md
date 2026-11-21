@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-15T16:45:24.249Z
+version: 2
+lastUpdated: 2026-11-19T20:14:14.711Z
 translatedFrom: en
-sourceHash: ee3c803e9107939d
+sourceHash: 28c5440e76258171
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T16:45:24.249Z
-codeVerifiedHash: ee3c803e9107939d
+codeVerified: 2026-11-19T20:14:14.711Z
+codeVerifiedHash: 28c5440e76258171
 codeVerifiedClaims: 10
 ---
 
@@ -165,7 +165,7 @@ Studio được build bằng Vite 8 và dùng build target mặc định của V
 | Safari (macOS và iOS) | 16.4 |
 
 Trình duyệt cũ hơn **không được hỗ trợ**: bundle dùng cú pháp mà chúng không
-parse được. Shell desktop và mobile (`apps/shell`, Tauri) nạp cùng bản build đó
+parse được. Ứng dụng desktop và mobile (shell Tauri) nạp cùng bản build đó
 trong webview của nền tảng, nên cùng mức sàn áp dụng.
 
 ## Giá trị được ghim

@@ -13,35 +13,14 @@ const ROOT_PACKAGE_PATH = path.join(REPO_ROOT, 'package.json');
 const APP_PACKAGE_PATHS = [
   'apps/cms/package.json',
   'apps/studio/package.json',
-  'apps/shell/package.json',
   'apps/docs/package.json',
   'apps/landing/package.json',
   'apps/consumer/package.json',
 ];
 
-// The Tauri shell carries the release version in three files that are not
-// package.json, so the package sweep above cannot see them. tauri.conf.json is
-// the value the desktop auto-updater compares against, which is why drifting
-// here is not cosmetic — v0.24.1 exists solely to repair that drift after
-// v0.24.0 shipped with stale metadata. Syncing them here rather than by hand
-// is what keeps that from recurring.
+// Files that carry the release version outside a package.json, so the package
+// sweep above cannot see them.
 const EXTRA_VERSION_FILES = [
-  {
-    path: 'apps/shell/src-tauri/tauri.conf.json',
-    // Top-level "version" — the first such key in the file.
-    pattern: /^(\s*"version"\s*:\s*")([^"]*)(")/m,
-  },
-  {
-    path: 'apps/shell/src-tauri/Cargo.toml',
-    // [package] version — the first bare `version = "…"` at column 0.
-    pattern: /^(version\s*=\s*")([^"]*)(")/m,
-  },
-  {
-    path: 'apps/shell/src-tauri/Cargo.lock',
-    // Only the lumibase-shell entry; every other [[package]] block pins a
-    // third-party crate whose version must not be touched.
-    pattern: /^(name = "lumibase-shell"\nversion = ")([^"]*)(")/m,
-  },
   // The Helm chart (#742) is versioned with the release: its appVersion is the
   // image tag it deploys by default, and the release workflow refuses to push
   // a chart whose version does not match the tag.

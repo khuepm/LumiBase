@@ -40,7 +40,7 @@ pnpm lint                  # several packages stub this and exit 0
 pnpm -F @lumibase/cms test src/services/__tests__/item-service-encryption.test.ts   # focused run
 
 # build
-pnpm build                 # all except @lumibase/shell
+pnpm build                 # all workspace packages
 pnpm -F @lumibase/cms build          # wrangler dry-run → dist (Workers)
 pnpm -F @lumibase/cms build:node     # esbuild → dist/serve.cjs (Docker)
 

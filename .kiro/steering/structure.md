@@ -27,7 +27,6 @@ Turborepo monorepo, pnpm workspaces (`pnpm-workspace.yaml`). Root version in `pa
 | `docs` | `@lumibase/docs` | Docs site (CF Pages) |
 | `landing` | `@lumibase/landing` | Marketing site, Next.js `output: 'export'` (static) |
 | `marketplace` | `@lumibase/marketplace` | Extension marketplace site |
-| `shell` | `@lumibase/shell` | Tauri 2 desktop/mobile wrapper around Studio |
 
 ### apps/cms/src
 
