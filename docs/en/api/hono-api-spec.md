@@ -1,10 +1,10 @@
 ---
-version: 64
-lastUpdated: 2026-11-20T06:08:32.859Z
+version: 65
+lastUpdated: 2026-11-21T09:19:19.662Z
 sourceLang: en
-contentHash: 8ecdceb3b3dddb4d
-codeVerified: 2026-11-20T06:08:32.859Z
-codeVerifiedHash: 8ecdceb3b3dddb4d
+contentHash: fb409e935b1afaf8
+codeVerified: 2026-11-21T09:19:19.662Z
+codeVerifiedHash: fb409e935b1afaf8
 codeVerifiedClaims: 654
 ---
 
@@ -1062,7 +1062,12 @@ script/executable payload (polyglot) and rejected. The allowlist + cap resolve
 upload type catalogue unless FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME=true) → default`;
 the signed upload path uses the token's site. Presigned keys are site-scoped
 (`sites/<siteId>/files/…`) and `POST /api/v1/files` refuses a `filenameDisk`
-outside the caller's site (`400 FILENAME_DISK_OUT_OF_SCOPE`, #993). See
+outside the caller's site (`400 FILENAME_DISK_OUT_OF_SCOPE`, #993). Each
+presigned key is claimed by the principal that asked for it: only that
+principal can register it, once and only after its bytes were uploaded
+(`400 UPLOAD_CLAIM_INVALID`, `409 UPLOAD_NOT_COMPLETE`), and a registered key
+refuses further signed PUTs (`409 UPLOAD_ALREADY_REGISTERED`; replace through
+`PUT /api/v1/files/:id/content`). See
 the feature spec `.kiro/specs/upload-file-controls/` and
 `docs/en/security/runtime-security-guards-plan.md` §3 for the full guarantees.
 

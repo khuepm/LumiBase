@@ -11,12 +11,18 @@ vi.mock('../../services/files/files-context', () => ({
   },
 }));
 
+vi.mock('../../services/files/upload-claims', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/files/upload-claims')>();
+  return { ...actual, uploadClaimsFor: () => ({ issue: async () => undefined }) };
+});
+
 const { filesRouter } = await import('../files');
 
 function app() {
   const a = new Hono<AppEnv>();
   a.use('*', async (c, next) => {
     c.set('siteId', 'site_1');
+    c.set('auth', { userId: 'u1', roles: [], raw: {} } as AppEnv['Variables']['auth']);
     await next();
   });
   a.route('/api/v1/files', filesRouter);
@@ -48,7 +54,7 @@ describe('POST /files/presigned-url filename hygiene (#740)', () => {
     expect(res.status).toBe(200);
     const { data } = (await res.json()) as { data: { url: string; key: string } };
     // Site-scoped key (#993).
-    expect(data.key).toMatch(/^sites\/site_1\/files\/\d+_my photo\.png$/);
+    expect(data.key).toMatch(/^sites\/site_1\/files\/\d{13}_[A-Za-z0-9_-]{12}_my photo\.png$/);
     expect(data.url).toContain(`/api/v1/files/upload/${encodeURIComponent(data.key)}?token=`);
   });
 });

@@ -1,10 +1,10 @@
 ---
-version: 5
+version: 6
 sourceLang: en
-lastUpdated: 2026-11-21T00:02:59.060Z
-contentHash: 82417fcc383b6530
-codeVerified: 2026-11-21T00:02:59.060Z
-codeVerifiedHash: 82417fcc383b6530
+lastUpdated: 2026-11-21T09:19:22.356Z
+contentHash: 0a85a6f248399396
+codeVerified: 2026-11-21T09:19:22.356Z
+codeVerifiedHash: 0a85a6f248399396
 codeVerifiedClaims: 16
 ---
 
@@ -53,6 +53,23 @@ own). `POST /api/v1/files` refuses a `filenameDisk` outside the caller's site
 with `400 FILENAME_DISK_OUT_OF_SCOPE` — before this, a member could register
 another site's object key and read, replace or delete its bytes through
 `/files/:id/content`. Records created earlier keep their keys.
+
+**A presigned key has one owner and is used once (#993).** A key is an
+identifier, not a secret, so the site prefix alone is not enough: a member
+could otherwise register a key another file in a private folder already uses
+and read, replace or delete those bytes through their own record. Each key
+`POST /api/v1/files/presigned-url` issues (now `sites/<siteId>/files/<ts>_<random>_<name>`)
+has a claim row (`lumibase_upload_claims`) bound to the site and the principal
+that asked for it, moving `issued` → `uploading` → `uploaded` → `registered`
+with one conditional update per step. Only one signed PUT runs at a time
+(`409 UPLOAD_IN_PROGRESS`); `POST /api/v1/files` registers the key only for
+that principal, once, after the upload finished (`400 UPLOAD_CLAIM_INVALID`,
+`409 UPLOAD_NOT_COMPLETE`); and a registered key refuses every further signed
+PUT (`409 UPLOAD_ALREADY_REGISTERED`), so replaying the token cannot swap the
+bytes behind a file that was scanned clean. Replace a registered file through
+`PUT /api/v1/files/:id/content`, which re-runs the guard and the scan. A key
+with no claim (issued before this change) cannot be registered: request a new
+upload URL. Claims are removed by the hourly sweep after 24 hours.
 
 **Unregistered uploads are swept (#993).** A presigned upload that is never
 registered with `POST /api/v1/files` leaves an object no file points to. Once

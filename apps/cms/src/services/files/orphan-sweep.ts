@@ -21,6 +21,7 @@ import { eq } from 'drizzle-orm';
 import { fileVersions, files, sites, type Database } from '@lumibase/database';
 import type { StorageProvider } from '@lumibase/runtime';
 import { filesKeyPrefix } from './upload-token';
+import { dbUploadClaims } from './upload-claims';
 
 export const ORPHAN_GRACE_MS = 24 * 60 * 60 * 1000;
 export const ORPHAN_MAX_DELETES_PER_RUN = 1000;
@@ -56,6 +57,9 @@ export async function sweepOrphanedUploads(deps: OrphanSweepDeps): Promise<Orpha
   for (const { id: siteId } of siteRows) {
     if (result.deleted >= budget) break;
     result.sites += 1;
+    // Claims older than the grace period are spent: their signed URL expired
+    // long ago, and an unregistered key's bytes are swept below (#993).
+    await dbUploadClaims(deps.db).sweep(siteId, new Date(now - grace));
     const { keys } = await deps.storage.list(filesKeyPrefix(siteId));
     if (keys.length === 0) continue;
     result.scanned += keys.length;

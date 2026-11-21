@@ -1,11 +1,11 @@
 ---
-version: 27
-lastUpdated: 2026-11-19T19:39:17.514Z
+version: 28
+lastUpdated: 2026-11-21T09:19:59.126Z
 sourceLang: en
-contentHash: 5cdf539385b09e64
-codeVerified: 2026-11-19T19:39:17.514Z
-codeVerifiedHash: 5cdf539385b09e64
-codeVerifiedClaims: 22
+contentHash: 7882282901381d84
+codeVerified: 2026-11-21T09:19:59.126Z
+codeVerifiedHash: 7882282901381d84
+codeVerifiedClaims: 24
 ---
 
 # Data Model (Drizzle / Postgres)
@@ -30,7 +30,7 @@ Schema files are split by domain:
 | `core.ts` | `lumibase_organizations`, `lumibase_organization_members`, `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
-| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_upload_claims`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
@@ -297,6 +297,10 @@ When seeding local/staging/prod, seed system collection permissions explicitly. 
 
 ### `folders`
 - `id`, `siteId`, `name`, `parent`. Paths, sub-trees and cycle checks are derived in `apps/cms/src/services/files/folder-tree.ts`.
+
+### `upload_claims`
+- `siteId`, `storageKey` (primary key together), `principal` (`user:<id>` or `api_key:<id>`), `state` (`issued` → `uploading` → `uploaded` → `registered`), `createdAt`, `expiresAt`. Migration `0045`.
+- One row per key `POST /files/presigned-url` issues (#993): only that principal can register the key, once, after its upload finished, and a registered key refuses further signed PUTs. Swept after 24 hours. See [upload security](./security/upload-security.md).
 
 ## 5. UX state (`platform.ts`)
 

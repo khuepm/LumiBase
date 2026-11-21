@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 63
-lastUpdated: 2026-11-20T06:08:32.859Z
+version: 64
+lastUpdated: 2026-11-21T09:19:19.662Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8ecdceb3b3dddb4d
+sourceHash: fb409e935b1afaf8
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-20T06:08:32.859Z
-codeVerifiedHash: 8ecdceb3b3dddb4d
+codeVerified: 2026-11-21T09:19:19.662Z
+codeVerifiedHash: fb409e935b1afaf8
 codeVerifiedClaims: 654
 ---
 
@@ -906,7 +906,7 @@ Tại `/media/:key`, các tham số biến đổi được xác thực đối v�
 
 **Quyền truy cập `/api/v1/files`.** Site admin có toàn quyền; thành viên khác cần một policy permission `files` mà rule của nó được đánh giá trên từng file theo `folder`, `folder_path`, `uploaded_by`, `mime` và `id` (phân quyền theo thư mục). Xem `docs/en/features/digital-asset-management.md` (epic #670).
 
-**Chính sách upload (`/api/v1/uploads/config`).** Được thực thi bởi bộ bảo vệ `file-upload-policy` trên mọi bề mặt upload (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`, `PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`): role public không thể upload; body bị giới hạn dung lượng trên độ dài byte thực tế; MIME được khai báo phải nằm trong danh sách cho phép và khớp với đuôi file; bytes thô được kiểm tra nội dung (magic bytes) và các file thực thi / SVG nội dung hoạt động bị từ chối; hình ảnh raster được quét payload script/executable chèn vào (polyglot) và bị từ chối. Danh sách cho phép + giới hạn giải quyết `per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*, bị giới hạn theo catalogue loại upload trừ khi FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME=true) → default`; đường upload ký sẵn dùng site của token. Key presigned gắn theo site (`sites/<siteId>/files/…`) và `POST /api/v1/files` từ chối `filenameDisk` nằm ngoài site của người gọi (`400 FILENAME_DISK_OUT_OF_SCOPE`, #993). Xem spec tính năng `.kiro/specs/upload-file-controls/` và `docs/en/security/runtime-security-guards-plan.md` §3 để biết các đảm bảo đầy đủ.
+**Chính sách upload (`/api/v1/uploads/config`).** Được thực thi bởi bộ bảo vệ `file-upload-policy` trên mọi bề mặt upload (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`, `PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`): role public không thể upload; body bị giới hạn dung lượng trên độ dài byte thực tế; MIME được khai báo phải nằm trong danh sách cho phép và khớp với đuôi file; bytes thô được kiểm tra nội dung (magic bytes) và các file thực thi / SVG nội dung hoạt động bị từ chối; hình ảnh raster được quét payload script/executable chèn vào (polyglot) và bị từ chối. Danh sách cho phép + giới hạn giải quyết `per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*, bị giới hạn theo catalogue loại upload trừ khi FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME=true) → default`; đường upload ký sẵn dùng site của token. Key presigned gắn theo site (`sites/<siteId>/files/…`) và `POST /api/v1/files` từ chối `filenameDisk` nằm ngoài site của người gọi (`400 FILENAME_DISK_OUT_OF_SCOPE`, #993). Mỗi key presigned được gắn với principal đã xin nó: chỉ principal đó đăng ký được key, một lần và chỉ sau khi bytes đã upload xong (`400 UPLOAD_CLAIM_INVALID`, `409 UPLOAD_NOT_COMPLETE`), và key đã đăng ký từ chối mọi PUT ký sẵn tiếp theo (`409 UPLOAD_ALREADY_REGISTERED`; thay file qua `PUT /api/v1/files/:id/content`). Xem spec tính năng `.kiro/specs/upload-file-controls/` và `docs/en/security/runtime-security-guards-plan.md` §3 để biết các đảm bảo đầy đủ.
 
 ```
 GET  /api/v1/uploads/config

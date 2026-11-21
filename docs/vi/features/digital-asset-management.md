@@ -1,13 +1,13 @@
 ---
-version: 2
+version: 3
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-11-15T19:50:20.465Z
-sourceHash: efd74f0a8a1ef504
-codeVerified: 2026-11-15T19:50:20.465Z
-codeVerifiedHash: efd74f0a8a1ef504
+lastUpdated: 2026-11-21T09:19:22.119Z
+sourceHash: cbfdcdc63e111b7b
+codeVerified: 2026-11-21T09:19:22.119Z
+codeVerifiedHash: cbfdcdc63e111b7b
 codeVerifiedClaims: 30
 ---
 
@@ -102,8 +102,9 @@ If-Match: "v3"            # optional — 409 VERSION_CONFLICT when stale
   [bảo mật upload](../security/upload-security.md).
 
 **Phân phối theo id.** `GET /api/v1/files/:id/content` trả byte hiện tại, dùng
-cùng quyền `files:read`. Response mặc định là revalidate
-(`max-age=300, must-revalidate`). URL ghim bằng `?v=<version>` là `immutable`
+cùng quyền `files:read`. Bytes gắn với quyền truy cập, nên mọi response đều là
+`private` (trình duyệt được cache, cache dùng chung hay CDN thì không). Response
+mặc định là revalidate (`private, max-age=300, must-revalidate`). URL ghim bằng `?v=<version>` là `immutable`
 trong một năm: thay file làm tăng version, nên URL đã ghim không bao giờ trả
 byte cũ. Response mang `ETag`, `Cache-Tag` và `X-Lumi-File-Version`.
 

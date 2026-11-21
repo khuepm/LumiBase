@@ -1,11 +1,20 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import { SignJWT } from 'jose';
 
 import type { StorageProvider } from '@lumibase/runtime';
 
 import type { AppEnv } from '../env';
-import { filesRouter } from '../routes/files';
+import { MemoryUploadClaims } from '../services/files/__tests__/memory-upload-claims';
+
+const claimsState = vi.hoisted(() => ({ store: null as unknown }));
+vi.mock('../services/files/upload-claims', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/files/upload-claims')>();
+  return { ...actual, uploadClaimsFor: () => claimsState.store };
+});
+vi.mock('../middleware/db', () => ({ systemDbFor: () => ({}) }));
+
+const { filesRouter } = await import('../routes/files');
 
 const JWT_SECRET = 'test-upload-secret';
 const encoder = new TextEncoder();
@@ -47,8 +56,11 @@ function buildApp(writes: StoredWrite[]): Hono<AppEnv> {
 describe('files upload token validation', () => {
   const originalJwtSecret = process.env.JWT_SECRET;
 
+  let claims: MemoryUploadClaims;
   beforeEach(() => {
     delete process.env.JWT_SECRET;
+    claims = new MemoryUploadClaims();
+    claimsState.store = claims;
   });
 
   afterEach(() => {
@@ -106,6 +118,7 @@ describe('files upload token validation', () => {
     const app = buildApp(writes);
     const key = 'sites/site-1/files/asset.txt';
     const token = await signUploadPayload({ key, siteId: 'site-1' });
+    await claims.issue('site-1', key, 'user:u1');
 
     const response = await app.request(
       `/files/upload/${encodeURIComponent(key)}?token=${encodeURIComponent(token)}`,
@@ -142,6 +155,34 @@ describe('files upload token validation', () => {
       { JWT_SECRET },
     );
     expect(response.status).toBe(403);
+    expect(writes).toEqual([]);
+  });
+  it('refuses a valid token whose key has no claim (#993)', async () => {
+    const writes: StoredWrite[] = [];
+    const key = 'sites/site-1/files/unclaimed.txt';
+    const token = await signUploadPayload({ key, siteId: 'site-1' });
+    const response = await buildApp(writes).request(
+      `/files/upload/${encodeURIComponent(key)}?token=${encodeURIComponent(token)}`,
+      { method: 'PUT', body: 'X' },
+      { JWT_SECRET },
+    );
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as { errors: Array<{ code: string }> }).errors[0]!.code).toBe('UPLOAD_CLAIM_MISSING');
+    expect(writes).toEqual([]);
+  });
+
+  it('refuses a replayed PUT once the key is registered (#993)', async () => {
+    const writes: StoredWrite[] = [];
+    const key = 'sites/site-1/files/registered.txt';
+    const token = await signUploadPayload({ key, siteId: 'site-1' });
+    claims.seedUploaded('site-1', key, 'user:u1');
+    expect(await claims.register('site-1', key, 'user:u1')).toBe('ok');
+    const response = await buildApp(writes).request(
+      `/files/upload/${encodeURIComponent(key)}?token=${encodeURIComponent(token)}`,
+      { method: 'PUT', body: 'REPLACED' },
+      { JWT_SECRET },
+    );
+    expect(response.status).toBe(409);
     expect(writes).toEqual([]);
   });
 });
