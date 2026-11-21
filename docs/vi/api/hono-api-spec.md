@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 64
-lastUpdated: 2026-11-21T09:19:19.662Z
+version: 65
+lastUpdated: 2026-11-21T11:04:16.006Z
 sourceLang: en
 translatedFrom: en
-sourceHash: fb409e935b1afaf8
+sourceHash: 49608a0a77208a74
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-21T09:19:19.662Z
-codeVerifiedHash: fb409e935b1afaf8
-codeVerifiedClaims: 654
+codeVerified: 2026-11-21T11:04:16.006Z
+codeVerifiedHash: 49608a0a77208a74
+codeVerifiedClaims: 656
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -612,9 +612,9 @@ CRUD đã xác thực Studio trên `lumibase_pages` (được tiêu thụ bởi 
 | Phương thức | Đường dẫn | Mô tả |
 |--------|------|-------------|
 | `GET` | `/api/v1/pages` | Liệt kê các trang của site đang hoạt động |
-| `POST` | `/api/v1/pages` | Tạo `{ slug, title, layoutConfig? }`. `403 SOURCE_FORBIDDEN` khi một `source` của section trỏ tới collection mà người gọi không đọc được toàn bộ (mọi field, không có bộ lọc dòng) |
+| `POST` | `/api/v1/pages` | Tạo `{ slug, title, layoutConfig? }`. `400 VALIDATION` (`field: sections.N.source.status`) khi một `source` của section đòi status khác `published` (#1006). `403 SOURCE_FORBIDDEN` khi một `source` của section trỏ tới collection mà người gọi không đọc được toàn bộ (mọi field, không có bộ lọc dòng) |
 | `GET` | `/api/v1/pages/:id` | Lấy chi tiết một trang |
-| `PATCH` | `/api/v1/pages/:id` | Cập nhật một phần (`slug` / `title` / `layoutConfig`). `403 SOURCE_FORBIDDEN` khi layout mới thêm `source` trên collection mà người gọi không đọc được toàn bộ; các source trang đã có thì không kiểm tra lại |
+| `PATCH` | `/api/v1/pages/:id` | Cập nhật một phần (`slug` / `title` / `layoutConfig`). `400 VALIDATION` khi `source.status` không phải published, như khi tạo. `403 SOURCE_FORBIDDEN` khi layout mới thêm `source` trên collection mà người gọi không đọc được toàn bộ; các source trang đã có thì không kiểm tra lại |
 | `DELETE` | `/api/v1/pages/:id` | Xóa trang |
 
 Định dạng slug khớp với quy tắc kiểm tra của Delivery (`^[a-z0-9]+(?:[/_-][a-z0-9]+)*$`, ≤200).
@@ -810,6 +810,7 @@ hướng dẫn: [Live preview & visual editing](../features/visual-editing.md).
 | `GET` | `/api/v1/deliver/preview/:site_id` | Public: token nhắm tới gì (+ item / thành viên release) |
 | `GET` | `/api/v1/deliver/preview/:site_id/items/:collection` | Public: item đang live + overlay của token (`?limit=&offset=`, tối đa 100) |
 | `GET` | `/api/v1/deliver/preview/:site_id/items/:collection/:id` | Public: một item qua overlay |
+| `GET` | `/api/v1/deliver/preview/:site_id/page/:slug` | Public: một trang, mỗi `source` của section được đọc qua overlay (`{ data: { page, sections }, meta }`). Đây là cách đọc duy nhất hiện item chưa xuất bản trên trang |
 
 **Body khi mint** — một item (+ `versionKey` tuỳ chọn) hoặc một release:
 ```json
