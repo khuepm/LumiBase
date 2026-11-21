@@ -1,0 +1,9 @@
+{
+  "active": true,
+  "version": "2.2.0",
+  "since": "2026-11-20",
+  "tracking": "https://github.com/khuepm/LumiBase/issues/890",
+  "policy": ".kiro/steering/release-freeze.md",
+  "allowedTypes": ["fix", "security", "perf", "test", "docs", "chore", "ci", "build", "revert", "release"],
+  "exceptionLabels": ["security"]
+}

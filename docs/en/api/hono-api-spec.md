@@ -1,11 +1,11 @@
 ---
-version: 65
-lastUpdated: 2026-11-21T09:19:19.662Z
+version: 66
+lastUpdated: 2026-11-21T11:04:16.006Z
 sourceLang: en
-contentHash: fb409e935b1afaf8
-codeVerified: 2026-11-21T09:19:19.662Z
-codeVerifiedHash: fb409e935b1afaf8
-codeVerifiedClaims: 654
+contentHash: 49608a0a77208a74
+codeVerified: 2026-11-21T11:04:16.006Z
+codeVerifiedHash: 49608a0a77208a74
+codeVerifiedClaims: 656
 ---
 
 # Hono API Specification — LumiBase
@@ -694,9 +694,9 @@ matching negative-cache tombstones immediately.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/pages` | List pages for the active site |
-| `POST` | `/api/v1/pages` | Create `{ slug, title, layoutConfig? }`. `403 SOURCE_FORBIDDEN` when a section `source` names a collection the caller cannot read in full (every field, no row filter) |
+| `POST` | `/api/v1/pages` | Create `{ slug, title, layoutConfig? }`. `400 VALIDATION` (`field: sections.N.source.status`) when a section `source` asks for a status other than `published` (#1006). `403 SOURCE_FORBIDDEN` when a section `source` names a collection the caller cannot read in full (every field, no row filter) |
 | `GET` | `/api/v1/pages/:id` | Get one page |
-| `PATCH` | `/api/v1/pages/:id` | Partial update (`slug` / `title` / `layoutConfig`). `403 SOURCE_FORBIDDEN` when the new layout adds a `source` on a collection the caller cannot read in full; sources the page already had are not re-checked |
+| `PATCH` | `/api/v1/pages/:id` | Partial update (`slug` / `title` / `layoutConfig`). `400 VALIDATION` for a non-published `source.status`, as on create. `403 SOURCE_FORBIDDEN` when the new layout adds a `source` on a collection the caller cannot read in full; sources the page already had are not re-checked |
 | `DELETE` | `/api/v1/pages/:id` | Delete page |
 
 Slug shape matches the Delivery guard (`^[a-z0-9]+(?:[/_-][a-z0-9]+)*$`, ≤200).
@@ -948,6 +948,7 @@ guide: [Live preview & visual editing](../features/visual-editing.md).
 | `GET` | `/api/v1/deliver/preview/:site_id` | Public: what the token targets (+ the item / release members) |
 | `GET` | `/api/v1/deliver/preview/:site_id/items/:collection` | Public: live items + the token's overlay (`?limit=&offset=`, max 100) |
 | `GET` | `/api/v1/deliver/preview/:site_id/items/:collection/:id` | Public: one item through the overlay |
+| `GET` | `/api/v1/deliver/preview/:site_id/page/:slug` | Public: a page, each section `source` read through the overlay (`{ data: { page, sections }, meta }`). The only read that shows unpublished items on a page |
 
 **Mint body** — an item (+ optional `versionKey`) or a release:
 ```json

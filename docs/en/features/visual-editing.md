@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-11-21T08:34:26.859Z
+version: 3
+lastUpdated: 2026-11-21T11:14:09.702Z
 sourceLang: en
-contentHash: 97ba2f621ab44d33
-codeVerified: 2026-11-21T08:34:26.859Z
-codeVerifiedHash: 97ba2f621ab44d33
-codeVerifiedClaims: 14
+contentHash: ccc2c4da73477f42
+codeVerified: 2026-11-21T11:14:09.702Z
+codeVerifiedHash: ccc2c4da73477f42
+codeVerifiedClaims: 18
 ---
 
 # Live preview & visual editing
@@ -100,9 +100,14 @@ Send the token in the `x-lumibase-preview` header (or `?__preview=`), from your
 GET /api/v1/deliver/preview/:site_id                         # what the token targets (+ the item)
 GET /api/v1/deliver/preview/:site_id/items/:collection        # live items + the preview overlay
 GET /api/v1/deliver/preview/:site_id/items/:collection/:id    # one item through the overlay
+GET /api/v1/deliver/preview/:site_id/page/:slug               # a page, its section sources through the overlay
 ```
 
-Responses are `private, no-store` and `noindex`. See
+Responses are `private, no-store` and `noindex`. The page read returns the same
+sections as `GET /deliver/page`, wrapped in `{ data, meta }`; each section
+`source` shows live items plus the token's draft, version or release. The
+public page route never shows unpublished items, whatever the layout says
+(#1006). See
 `examples/nextjs-blog` for a complete Next.js setup:
 `src/app/api/preview/route.ts` checks the token server-side, enables draft
 mode, keeps the token in an `httpOnly` cookie and redirects;
