@@ -18,6 +18,8 @@ import { cdcSubscriptions, extensions, type Database } from '@lumibase/database'
 import type { CdcEventEnvelope } from '@lumibase/contracts/schemas';
 import type { CacheProvider } from '@lumibase/runtime';
 import { ExtensionSandbox } from '../../../extensions/sandbox';
+import { buildSandboxVerifyOptions } from '../../../services/extension-verifier';
+import type { Bindings } from '../../../env';
 import type { DispatchableSubscription, EnvelopeSender } from './dispatcher';
 import type { WebhookSendOutcome } from './webhook-sender';
 import { invalidateFeedFlagCache } from './outbox-writer';
@@ -158,7 +160,11 @@ export class SandboxCdcSubscriberLoader implements CdcSubscriberLoader {
     const mod = await sandbox.load({
       name: row.name,
       bundleUrl: row.bundleUrl,
+      siteId: row.siteId,
       capabilities,
+      // The same signature / SHA-256 gate as every other load path (#990
+      // review): CDC subscribers used to load without it.
+      ...buildSandboxVerifyOptions(row, this.db, this.env as unknown as Bindings),
     });
     const subscriber = (
       mod as unknown as {

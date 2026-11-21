@@ -17,8 +17,10 @@
 import type { Database } from '@lumibase/database';
 import {
   REQUIRE_SETUP_TOKEN_ENV,
-  isSetupTokenRequired,
+  SETUP_TOKEN_ENV,
+  operatorSetupToken,
   printSetupTokenIfRequired,
+  shouldMintSetupToken,
 } from './setup-token';
 
 export type SetupTokenStartupOutcome = Awaited<ReturnType<typeof printSetupTokenIfRequired>>;
@@ -59,7 +61,9 @@ export async function runSetupTokenStartup(
   try {
     outcome = await printSetupTokenIfRequired({
       db: deps.db,
-      requireSetupToken: isSetupTokenRequired(deps.env),
+      // An operator-provided token (`LUMIBASE_SETUP_TOKEN`) replaces the
+      // minted one, so nothing is printed when it is set (#992).
+      requireSetupToken: shouldMintSetupToken(deps.env),
       print: log,
     });
   } catch (err) {
@@ -70,7 +74,9 @@ export async function runSetupTokenStartup(
     );
   }
 
-  if (outcome === 'minted') {
+  if (outcome === 'not_required' && operatorSetupToken(deps.env)) {
+    log(`[lumibase-cms] Setup is gated by the operator-provided ${SETUP_TOKEN_ENV}; no token is minted.`);
+  } else if (outcome === 'minted') {
     log(
       '[lumibase-cms] Setup is gated by the one-time token above. It is printed once and ' +
         'not stored in plaintext — keep it until setup is complete.',

@@ -73,6 +73,7 @@ import { nanoid } from 'nanoid';
 import { ExtensionSandbox, type ExtensionActorDataAccess } from '../extensions/sandbox';
 import { HookDispatcher } from '../extensions/hook-dispatcher';
 import { buildSandboxVerifyOptions } from './extension-verifier';
+import { checkContentIntegrity, type ContentIntegrityActor } from '../modules/content-integrity/monitor';
 import type { Bindings } from '../env';
 import {
   OutboxWriter,
@@ -1362,6 +1363,9 @@ export class ItemService {
     });
     const storedData = row.data;
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
+    // Before any fan-out (search, realtime, sync, flows, CDC), so an item the
+    // integrity policy sends back to draft is never announced as published.
+    await this.contentIntegrityGate(collectionName, row, row.status === 'published');
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>, storedData);
     await this.publishRealtimeEvent(collectionName, 'create', row.id);
     await this.dispatchFirebaseSync(collectionName, 'create', row.id, row.data as Record<string, unknown>);
@@ -1598,6 +1602,13 @@ export class ItemService {
     if (!row) throw new ItemServiceError('UPDATE_FAILED', 'Failed to update item.');
     const storedData = row.data;
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
+    // Before any fan-out, as on create. A first publish is this write moving
+    // `firstPublishedAt` from unset to set — not any save within a minute of it.
+    await this.contentIntegrityGate(
+      collectionName,
+      row,
+      rawRow.firstPublishedAt == null && row.firstPublishedAt != null,
+    );
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>, storedData);
     await this.publishRealtimeEvent(collectionName, 'update', row.id);
     await this.dispatchFirebaseSync(collectionName, 'update', row.id, row.data as Record<string, unknown>);
@@ -3029,6 +3040,50 @@ export class ItemService {
       await this.invalidateContentCache(collection);
     }
     return collections;
+  }
+
+  /**
+   * Content-integrity check for content that is live after this write (#989,
+   * see modules/content-integrity). Under the site's `unpublish` policy, an
+   * item carrying a download link or an off-site SEO URL goes back to draft
+   * here — its revision is kept — and the returned row says so. Never throws.
+   */
+  private async contentIntegrityGate(
+    collectionName: string,
+    row: { id: string; status: string; data: unknown },
+    firstPublish: boolean,
+  ): Promise<void> {
+    if (row.status !== 'published') return;
+    const actor: ContentIntegrityActor =
+      this.provenance.authorType === 'agent'
+        ? { type: 'agent', runId: this.provenance.runId ?? null }
+        : this.deps.cdcActor?.type === 'api_key'
+          ? { type: 'api_key' }
+          : this.deps.userId
+            ? { type: 'user', userId: this.deps.userId }
+            : { type: 'system' };
+    const outcome = await checkContentIntegrity(
+      { db: this.deps.db, siteId: this.deps.siteId, actor },
+      { collection: collectionName, itemId: row.id, content: row.data, firstPublish },
+    );
+    if (!outcome.unpublish) return;
+    try {
+      await this.deps.db
+        .update(items)
+        .set({ status: 'draft', updatedAt: new Date() })
+        .where(and(eq(items.siteId, this.deps.siteId), eq(items.id, row.id)));
+      await this.deps.db.insert(activity).values({
+        siteId: this.deps.siteId,
+        action: 'integrity_unpublish',
+        userId: null,
+        collection: collectionName,
+        itemId: row.id,
+        payload: { signals: outcome.signals },
+      });
+      row.status = 'draft';
+    } catch (err) {
+      console.error('[content-integrity] unpublish failed', formatSafeError(err));
+    }
   }
 
   /** Per-write invalidation: immediate normally, deferred while coalescing. */

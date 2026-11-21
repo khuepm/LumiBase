@@ -194,9 +194,10 @@ describe('SecurityAuditTab — filter UI', () => {
 
     const select = screen.getByLabelText('Event') as HTMLSelectElement;
     const options = within(select).getAllByRole('option');
-    // "All events" + 15 codes.
+    // "All events" + the 15 Req 15.1 codes + admin_change (#988).
     expect(options).toHaveLength(AUDIT_EVENT_CODES.length + 1);
     expect(options[0]).toHaveTextContent('All events');
+    expect(AUDIT_EVENT_CODES).toContain('admin_change');
     for (const code of AUDIT_EVENT_CODES) {
       expect(within(select).getByRole('option', { name: code })).toBeInTheDocument();
     }

@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:09:39.809Z
+version: 2
+lastUpdated: 2026-11-19T20:13:26.504Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2bdc828c1f456441
+sourceHash: 5cf4663bdf7f640c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:09:39.809Z
-codeVerifiedHash: 2bdc828c1f456441
-codeVerifiedClaims: 2
+codeVerified: 2026-11-19T20:13:26.504Z
+codeVerifiedHash: 5cf4663bdf7f640c
+codeVerifiedClaims: 4
 ---
 
 # Cloudflare Deployment
@@ -69,6 +69,21 @@ Sau khi triển khai, hãy xác minh:
 ```bash
 curl -fsS https://<worker-host>/health
 ```
+
+**Setup token cho lần chạy đầu.** Ở production, setup wizard đòi một token
+dùng một lần (#992), để không ai tìm thấy Worker trước bạn chiếm được tài khoản
+admin. Workers không có bước khởi động để sinh và in token, nên hãy tự đặt token
+trước khi mở wizard, nhập nó ở màn hình đầu tiên của wizard, và xoá nó sau khi
+setup xong:
+
+```bash
+openssl rand -base64 32 | pnpm exec wrangler secret put LUMIBASE_SETUP_TOKEN --env production
+# sau khi setup:
+pnpm exec wrangler secret delete LUMIBASE_SETUP_TOKEN --env production
+```
+
+Thiếu nó thì `POST /api/v1/setup/complete` trả `503 SETUP_TOKEN_NOT_ISSUED`.
+`LUMIBASE_REQUIRE_SETUP_TOKEN=false` tắt cổng này có chủ đích.
 
 ## Documentation Site
 

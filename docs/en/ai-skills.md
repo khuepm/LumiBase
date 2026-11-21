@@ -1,10 +1,10 @@
 ---
-version: 8
-lastUpdated: 2026-11-19T17:22:20.645Z
+version: 9
+lastUpdated: 2026-11-21T11:15:29.917Z
 sourceLang: en
-contentHash: b98c8eed97b5b035
-codeVerified: 2026-11-19T17:22:20.645Z
-codeVerifiedHash: b98c8eed97b5b035
+contentHash: b5f6a7299575cec5
+codeVerified: 2026-11-21T11:15:29.917Z
+codeVerifiedHash: b5f6a7299575cec5
 codeVerifiedClaims: 10
 ---
 
@@ -76,6 +76,10 @@ Copy the following sections into your AI assistant's system prompt or project RE
 Skills run through the **governed endpoint** `POST /api/v1/mcp` (gated by the per-site `contentOs.mcp` flag) via `AISecureHarness.execute`, inheriting every guard: kill switch → capability check → autonomy L0–L4 → veto window → HITL approval → audit.
 
 **Risk classification.** A skill is dangerous (HITL/autonomy-gated) when it (a) sets the `dangerous` flag, (b) requires a mutating `schema:*` capability, or (c) is named `delete*`. Item CRUD stays non-dangerous. Irreversible skills (`deleteCollection`, `deleteField`, `deleteRole`, `deletePolicy`, `deleteRelation`, `revokeApiKey`, `removeUser`) are hard-capped at autonomy **L2** and never run on autopilot.
+
+**Never autonomous (#991).** Skills that extend the system's own privileges or code share the same L2 ceiling and are always treated as dangerous, so they park for a human at every level (or are refused at L0): `installExtension`, `updateExtension`, `uninstallExtension`, `createApiKey`, `rotateApiKey`, `createWebhook`, `updateWebhook`, `createFlow`, `upsertSetting`, `deleteSetting`, `createRole`, `createPolicy`, `inviteUser`, `updateUser` (`NEVER_AUTONOMOUS_SKILLS` in `ai-harness.ts`). Earned autonomy covers content operations, not these.
+
+**Publishing at L4 (#991).** A publication an agent makes on its own — `createItem` with `status: 'published'`, a status change, or a patch on a live item — must also pass the active tenant constitution (its blocking evaluators, run against the resulting content) and stay within the role's hourly publish budget: `budget.maxPublishesPerHour` on the intent, default 30. The budget holds under concurrency: each publish reserves its slot under a per-site, per-role database lock before it runs, so parallel runs on any number of workers cannot exceed it, and a publish that fails gives its slot back. Either failing parks the call for approval with `riskReason` `constitution_blocked` or `publish_budget_exceeded` instead of executing. Agent-authored content that the content-integrity monitor flags records a `content_integrity` incident, which demotes the role (see [Content integrity](./security/content-integrity.md)).
 
 | Skill | Capability | Risk |
 |-------|-----------|------|

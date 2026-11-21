@@ -1,0 +1,14 @@
+-- 0044_refresh_token_amr — keep the second factor across session renewal (#987).
+--
+-- A refresh-token family now remembers the authentication methods (`amr`) the
+-- login that started it proved, so `/auth/refresh` can re-issue an access token
+-- that is still TFA-verified. Without it every renewal dropped `tfaVerified`,
+-- and a policy with `enforceTfa` refused an enrolled user once the first access
+-- token expired.
+--
+-- Additive only: one nullable column, no backfill. Families minted before this
+-- migration carry NULL and renew without the TFA claim (the pre-#987
+-- behaviour); signing in again starts a family that carries it. Re-runnable
+-- (IF NOT EXISTS). Rollback:
+--   ALTER TABLE lumibase_refresh_tokens DROP COLUMN IF EXISTS amr;
+ALTER TABLE "lumibase_refresh_tokens" ADD COLUMN IF NOT EXISTS "amr" jsonb;

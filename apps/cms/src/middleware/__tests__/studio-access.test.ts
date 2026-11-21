@@ -148,6 +148,9 @@ describe('withStudioAccess', () => {
   });
 
   it('continues to leave unmarked content API calls to downstream permission checks', async () => {
+    // The bundle is consulted only for `enforceTfa` (#987); `appAccess` is
+    // still not required outside the Studio surface.
+    bundleMock.mockResolvedValue(bundle({ appAccess: false, tfaRequired: false }));
     const res = await createApp().request('/api/v1/items/articles', {
       method: 'POST',
       body: JSON.stringify({ title: 'Hello' }),
@@ -155,6 +158,5 @@ describe('withStudioAccess', () => {
 
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ ok: true });
-    expect(bundleMock).not.toHaveBeenCalled();
   });
 });

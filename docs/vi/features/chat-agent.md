@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-11-19T05:28:32.976Z
+version: 2
+lastUpdated: 2026-11-21T11:15:33.556Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 149c3ea6d9602be3
+sourceHash: b948a82ec27aa617
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-19T05:28:32.976Z
-codeVerifiedHash: 149c3ea6d9602be3
+codeVerified: 2026-11-21T11:15:33.556Z
+codeVerifiedHash: b948a82ec27aa617
 codeVerifiedClaims: 14
 ---
 
@@ -144,7 +144,7 @@ cũ ngừng xác minh được ngay.
 
 ## Nâng cấp
 
-Migration `0044_chat_agent` thêm ba bảng và không thay đổi gì có sẵn. Áp lại
+Migration `0046_chat_agent` thêm ba bảng và không thay đổi gì có sẵn. Áp lại
 `rls-policies.sql` sau khi migrate, như sau mọi lần nâng cấp. Đặt
 `ENCRYPTION_KEY` (vốn đã bắt buộc với Git integration) trước khi cài một
 integration.

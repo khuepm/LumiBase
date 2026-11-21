@@ -6,7 +6,7 @@ import type { PermissionBundle } from '../services/permission-service';
 import { auditSecurityGuardDenied } from './security-audit';
 
 // /api/v1/orgs uses its own organization guard; NEVER add it to this site list.
-const CONTROL_PLANE_PATHS = [
+export const CONTROL_PLANE_PATHS = [
   '/api/v1/access',
   '/api/v1/api-keys',
   '/api/v1/admin',

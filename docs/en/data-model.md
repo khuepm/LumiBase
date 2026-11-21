@@ -1,11 +1,11 @@
 ---
-version: 27
-lastUpdated: 2026-11-19T05:28:34.996Z
+version: 29
+lastUpdated: 2026-11-21T11:15:33.231Z
 sourceLang: en
-contentHash: ca41a43b338b0d35
-codeVerified: 2026-11-19T05:28:34.996Z
-codeVerifiedHash: ca41a43b338b0d35
-codeVerifiedClaims: 22
+contentHash: c8ca26a711f9d1f8
+codeVerified: 2026-11-21T11:15:33.231Z
+codeVerifiedHash: c8ca26a711f9d1f8
+codeVerifiedClaims: 24
 ---
 
 # Data Model (Drizzle / Postgres)
@@ -30,7 +30,7 @@ Schema files are split by domain:
 | `core.ts` | `lumibase_organizations`, `lumibase_organization_members`, `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
-| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_upload_claims`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
@@ -269,8 +269,9 @@ SDK generation uses this manifest to emit base collection interfaces and `Collec
 - `id`, `siteId`, `policyId`, `collection`, `action` (`create`/`read`/`update`/`delete`/`share`), `permissions jsonb` (row-level rule DSL), `validation jsonb`, `presets jsonb`, `fields text[]` (field-level allow list, `*` = all).
 
 ### `refresh_tokens` (migration `0005`, physical `lumibase_refresh_tokens`)
-- `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — plaintext never stored), `familyId` (rotation chain), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `createdAt`.
+- `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — plaintext never stored), `familyId` (rotation chain), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `amr` (jsonb, nullable — migration `0044`), `createdAt`.
 - Rotating, revocable session-renewal tokens. Reuse of a revoked row revokes the whole `familyId` (theft detection). Swept on the hourly cron once expired. See [`security/user-management.md`](./security/user-management.md) §4d.
+- `amr` records the authentication methods the login proved (`["pwd","totp"]`, `["webauthn"]`, …) and is copied to every rotation, so `/auth/refresh` keeps `tfaVerified` for a second-factor session (#987). NULL for single-factor logins and for families minted before `0044`. See §4f of the same guide.
 
 ### `user_passkeys` (migration `0031`, physical `lumibase_user_passkeys`)
 - `id` (nanoid), `userId`, `credentialId` (base64url, unique), `publicKey` (COSE public key), `counter`, `transports`, `aaguid`, `name`, `deviceType`, `backedUp`, `rpId`, `createdAt`, `lastUsedAt`, `updatedAt`.
@@ -296,6 +297,10 @@ When seeding local/staging/prod, seed system collection permissions explicitly. 
 
 ### `folders`
 - `id`, `siteId`, `name`, `parent`. Paths, sub-trees and cycle checks are derived in `apps/cms/src/services/files/folder-tree.ts`.
+
+### `upload_claims`
+- `siteId`, `storageKey` (primary key together), `principal` (`user:<id>` or `api_key:<id>`), `state` (`issued` → `uploading` → `uploaded` → `registered`), `createdAt`, `expiresAt`. Migration `0045`.
+- One row per key `POST /files/presigned-url` issues (#993): only that principal can register the key, once, after its upload finished, and a registered key refuses further signed PUTs. Swept after 24 hours. See [upload security](./security/upload-security.md).
 
 ## 5. UX state (`platform.ts`)
 
@@ -595,7 +600,7 @@ AAD-bound to `{ siteId, integrationId, field }`); plaintext is never stored.
 
 The Content Agent reached from Slack or a signed generic webhook (#711). All
 three tables carry `site_id` (cascade) and are registered for RLS. Migration
-`0044_chat_agent`.
+`0046_chat_agent`.
 
 | Table (physical) | Purpose | Key columns |
 |-------|---------|-------------|

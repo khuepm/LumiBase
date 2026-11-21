@@ -1,0 +1,48 @@
+name: Release freeze
+
+# While .github/release-freeze.json is active, main only takes work that
+# finishes the release being stabilised: fixes, tests, docs, chore/ci/build,
+# reverts and the release PR. Features, epic branches, epic release PRs and
+# breaking changes are blocked; security fixes are the exception.
+# Policy: .kiro/steering/release-freeze.md
+#
+# The config and the script are read from the BASE branch, so a PR cannot
+# lift the freeze for itself by editing them. Make this check required in the
+# branch protection of main for it to actually block a merge.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  freeze:
+    name: release-freeze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          sparse-checkout: |
+            .nvmrc
+            .github/release-freeze.json
+            scripts/check-release-freeze.mjs
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Check PR against the release freeze
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          # The PR that introduces the freeze runs against a base without it.
+          if [ ! -f scripts/check-release-freeze.mjs ] || [ ! -f .github/release-freeze.json ]; then
+            echo "release-freeze: base branch has no freeze config yet — nothing to enforce"
+            exit 0
+          fi
+          node scripts/check-release-freeze.mjs

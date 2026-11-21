@@ -252,6 +252,14 @@ async function main() {
       async () => {
         await runScheduledRotation(rotatorDb);
         void runScheduledRefreshTokenPrune(rotatorDb);
+        // Unregistered presigned uploads older than a day (#993).
+        void import('./services/files/orphan-sweep').then(({ runScheduledOrphanSweep }) =>
+          runScheduledOrphanSweep({ db: rotatorDb, storage: runtime.storage }),
+        );
+        // Weekly "what went live" digest to site admins (#989).
+        void import('./modules/content-integrity/digest').then(({ runWeeklyContentDigest }) =>
+          runWeeklyContentDigest({ db: rotatorDb, realtime: runtime.realtime }),
+        );
         void runScheduledReviewRunPurge(rotatorDb, process.env.DECISION_REVIEW_RETENTION_DAYS);
         // Opt-in anonymous usage telemetry. Off unless the operator enabled it
         // AND named an endpoint; when off it touches neither DB nor network.

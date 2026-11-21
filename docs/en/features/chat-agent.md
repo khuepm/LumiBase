@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-11-19T05:28:32.976Z
+version: 2
+lastUpdated: 2026-11-21T11:15:33.556Z
 sourceLang: en
-contentHash: 149c3ea6d9602be3
-codeVerified: 2026-11-19T05:28:32.976Z
-codeVerifiedHash: 149c3ea6d9602be3
+contentHash: b948a82ec27aa617
+codeVerified: 2026-11-21T11:15:33.556Z
+codeVerifiedHash: b948a82ec27aa617
 codeVerifiedClaims: 14
 ---
 
@@ -142,7 +142,7 @@ and the old one stops verifying at once.
 
 ## Upgrading
 
-Migration `0044_chat_agent` adds the three tables and changes nothing that
+Migration `0046_chat_agent` adds the three tables and changes nothing that
 exists. Re-apply `rls-policies.sql` after migrating, as after every upgrade.
 Set `ENCRYPTION_KEY` (already required by Git integrations) before installing
 an integration.

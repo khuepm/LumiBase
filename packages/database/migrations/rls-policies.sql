@@ -124,6 +124,10 @@ DECLARE
     -- Background collection imports (#726). Requests read/write their own site;
     -- the resume tick claims jobs across sites on the system connection.
     'lumibase_import_jobs', 'lumibase_import_chunks',
+    -- Presigned upload claims (#993). Presign and register run on the request
+    -- connection; the signed PUT (no tenant middleware) and the orphan sweep use
+    -- the system connection, scoped by site_id.
+    'lumibase_upload_claims',
     -- Locale generator (#714): jobs + review queue. Requests read/write their
     -- own site; the resume tick claims jobs across sites on the system connection.
     'lumibase_locale_generation_jobs', 'lumibase_translation_suggestions',

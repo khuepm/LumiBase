@@ -1,10 +1,10 @@
 ---
-version: 2
+version: 3
 sourceLang: en
-lastUpdated: 2026-11-15T19:50:20.465Z
-contentHash: efd74f0a8a1ef504
-codeVerified: 2026-11-15T19:50:20.465Z
-codeVerifiedHash: efd74f0a8a1ef504
+lastUpdated: 2026-11-21T09:19:22.119Z
+contentHash: cbfdcdc63e111b7b
+codeVerified: 2026-11-21T09:19:22.119Z
+codeVerifiedHash: cbfdcdc63e111b7b
 codeVerifiedClaims: 30
 ---
 
@@ -102,8 +102,10 @@ If-Match: "v3"            # optional — 409 VERSION_CONFLICT when stale
   [upload security](../security/upload-security.md).
 
 **Delivery by id.** `GET /api/v1/files/:id/content` serves the current bytes,
-using the same `files:read` permission. The default response is revalidating
-(`max-age=300, must-revalidate`). A URL pinned with `?v=<version>` is
+using the same `files:read` permission. The bytes are authorization-bound, so
+every response is `private` (a browser may cache it, a shared cache or CDN may
+not). The default response is revalidating
+(`private, max-age=300, must-revalidate`). A URL pinned with `?v=<version>` is
 `immutable` for a year: a replace bumps the version, so a pinned URL can
 never serve stale bytes. Responses carry `ETag`, `Cache-Tag` and
 `X-Lumi-File-Version`.

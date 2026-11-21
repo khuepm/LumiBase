@@ -1,4 +1,4 @@
--- 0044_chat_agent — Content Agent from chat tools (#711, epic #671 A03).
+-- 0046_chat_agent — Content Agent from chat tools (#711, epic #671 A03).
 --
 -- Three new site-scoped tables; additive only, no backfill:
 --   lumibase_chat_integrations  one installed Slack app / signed webhook per row;

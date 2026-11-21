@@ -28,6 +28,15 @@ packages:
 # Justification + removal trigger for every entry below:
 #   docs/en/security/dependency-overrides.md
 
+# Dependency lifecycle scripts run ONLY for these packages (#995). Anything
+# else that ships an install/postinstall script is installed without running
+# it — e.g. @scarf/scarf (install-time telemetry). A new native dependency that
+# genuinely needs its build step is added here deliberately, in review.
+onlyBuiltDependencies:
+  - "esbuild"
+  - "msgpackr-extract"
+  - "workerd"
+
 overrides:
   "@graphql-tools/utils@11": "^12.0.3"
   "@types/react": "19.3.0"

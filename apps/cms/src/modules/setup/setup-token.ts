@@ -123,17 +123,64 @@ export async function verifySetupToken(
 export const REQUIRE_SETUP_TOKEN_ENV = 'LUMIBASE_REQUIRE_SETUP_TOKEN';
 
 /**
- * Whether `LUMIBASE_REQUIRE_SETUP_TOKEN` is on in `env`.
+ * Environment key for an operator-provided setup token (#992). The only way
+ * to gate setup on Cloudflare Workers, which have no startup step to mint
+ * and print one: `wrangler secret put LUMIBASE_SETUP_TOKEN`. On Node/Docker
+ * it replaces the minted token. At least {@link MIN_OPERATOR_TOKEN_LENGTH}
+ * characters; a shorter value is ignored (and setup reports
+ * `SETUP_TOKEN_NOT_ISSUED`) rather than accepted as a weak gate.
+ */
+export const SETUP_TOKEN_ENV = 'LUMIBASE_SETUP_TOKEN';
+export const MIN_OPERATOR_TOKEN_LENGTH = 24;
+
+/** The operator-provided setup token, or `null` when unset or too short. */
+export function operatorSetupToken(env: Readonly<Record<string, unknown>>): string | null {
+  const v = env[SETUP_TOKEN_ENV];
+  if (typeof v !== 'string') return null;
+  const token = v.trim();
+  return token.length >= MIN_OPERATOR_TOKEN_LENGTH ? token : null;
+}
+
+/** True when `LUMIBASE_ENV` or `NODE_ENV` is exactly `production`. */
+function isProductionEnv(env: Readonly<Record<string, unknown>>): boolean {
+  return env.LUMIBASE_ENV === 'production' || env.NODE_ENV === 'production';
+}
+
+/**
+ * Whether the setup-token gate is on for `env`.
  *
- * Accepts `true`, `1` and `yes` — exactly what the request path accepted
- * before this parser existed, so no deployment changes meaning. Takes a
- * plain record so it works for `process.env` (Node) and `c.env` (both
- * runtimes) without touching either runtime's bindings.
+ *   1. `LUMIBASE_REQUIRE_SETUP_TOKEN` decides when set to a recognised value:
+ *      `true` / `1` / `yes` → on; `false` / `0` / `no` → off (the explicit
+ *      opt-out for automated provisioning).
+ *   2. Otherwise an operator token (`LUMIBASE_SETUP_TOKEN`) turns it on.
+ *   3. Otherwise it is **on in production** (`LUMIBASE_ENV` or `NODE_ENV` is
+ *      `production`) and off elsewhere (#992). A network-reachable instance
+ *      that has not finished setup must be claimable by its operator only;
+ *      local development keeps the zero-friction flow.
+ *
+ * Takes a plain record so it works for `process.env` (Node) and `c.env` (both
+ * runtimes). The side that checks a token and the side that mints one both
+ * call it, so they can never disagree (#470).
  */
 export function isSetupTokenRequired(env: Readonly<Record<string, unknown>>): boolean {
   const v = env[REQUIRE_SETUP_TOKEN_ENV];
-  if (typeof v !== 'string') return false;
-  return v === 'true' || v === '1' || v === 'yes';
+  if (v === 'true' || v === '1' || v === 'yes') return true;
+  if (v === 'false' || v === '0' || v === 'no') return false;
+  if (operatorSetupToken(env)) return true;
+  return isProductionEnv(env);
+}
+
+/**
+ * Whether this process should mint and print a token at startup: the gate is
+ * on and the operator has not supplied one.
+ */
+export function shouldMintSetupToken(env: Readonly<Record<string, unknown>>): boolean {
+  return isSetupTokenRequired(env) && operatorSetupToken(env) === null;
+}
+
+/** `sha256(token)` hex — the stored form of a setup token. */
+export async function hashSetupToken(token: string): Promise<string> {
+  return sha256Hex(token);
 }
 
 // ── startup wiring ──────────────────────────────────────────────────────

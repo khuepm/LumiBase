@@ -321,6 +321,32 @@ describe('SetupService.complete() → audit events (Req 15.1)', () => {
     }
   });
 
+  describe('operator-provided token (LUMIBASE_SETUP_TOKEN, #992)', () => {
+    const OPERATOR = 'op-token-0123456789abcdefghijkl';
+    const service = () => new SetupService({
+      db: makeFakeDb({ state: 'uninitialized', setupTokenHash: null, adminPath: null }) as never,
+      requireSetupToken: true,
+      operatorSetupToken: OPERATOR,
+      smtpAvailable: false, encryptionAvailable: true,
+      audit: makeSpyAudit().audit,
+    });
+
+    it('is a token source on its own: no stored hash is not SETUP_TOKEN_NOT_ISSUED', async () => {
+      const outcome = await service().complete({ ...makeInput(), setupToken: 'wrong-guess' }, { requestId: 'req-op-1' });
+      expect(outcome).toEqual({ ok: false, error: { code: 'SETUP_TOKEN_INVALID' } });
+    });
+
+    it('still requires the caller to send it', async () => {
+      const outcome = await service().complete(makeInput(), { requestId: 'req-op-2' });
+      expect(outcome).toEqual({ ok: false, error: { code: 'SETUP_TOKEN_REQUIRED' } });
+    });
+
+    it('accepts the matching token', async () => {
+      const outcome = await service().complete({ ...makeInput(), setupToken: OPERATOR }, { requestId: 'req-op-3' });
+      expect(outcome.ok).toBe(true);
+    });
+  });
+
   it('completes successfully with the default AuditLogger (no spy injected)', async () => {
     // Backward-compat: with no `audit` dep, complete() falls back to a
     // real AuditLogger bound to the same db. The fake DB's audit_log

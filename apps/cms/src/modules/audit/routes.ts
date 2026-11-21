@@ -132,8 +132,8 @@
  *
  * ── Filters (design §10.3) ───────────────────────────────────────────────
  *
- *   - `event` — validated against the {@link AUDIT_EVENTS} vocabulary
- *     exported by `logger.ts`. An unknown event is rejected with 400
+ *   - `event` — validated against the {@link FILTERABLE_AUDIT_EVENTS}
+ *     vocabulary exported by `logger.ts` (Req 15.1 + `admin_change`). An unknown event is rejected with 400
  *     VALIDATION_ERROR ("validate event enum").
  *   - `email` — lower-cased + trimmed via {@link normalizeEmail} (the
  *     SAME canonicaliser the LoginGuard uses for `email_lower`), then
@@ -173,7 +173,7 @@ import { auditLog, type Database } from '@lumibase/database';
 
 import type { AppEnv } from '../../env';
 import { normalizeEmail } from '../login-guard/email-normalize';
-import { AUDIT_EVENTS, type AuditLogEntry } from './logger';
+import { FILTERABLE_AUDIT_EVENTS, type AuditLogEntry } from './logger';
 
 // ── constants ──────────────────────────────────────────────────────────
 
@@ -205,7 +205,7 @@ export const EXPORT_BATCH_SIZE = 500;
 export const EXPORT_MAX_ROWS = 100_000;
 
 /** Known event codes, frozen as a Set for O(1) enum validation. */
-const KNOWN_EVENTS: ReadonlySet<string> = new Set(AUDIT_EVENTS);
+const KNOWN_EVENTS: ReadonlySet<string> = new Set(FILTERABLE_AUDIT_EVENTS);
 
 // ── cursor codec (pure, exported for unit tests) ─────────────────────────
 
@@ -290,7 +290,7 @@ export function decodeCursor(
 export interface AuditLogFilter {
   /** Active tenant/site id; set by route handlers before executing DB reads. */
   readonly siteId?: string;
-  /** Exact `event` match; one of {@link AUDIT_EVENTS}. */
+  /** Exact `event` match; one of {@link FILTERABLE_AUDIT_EVENTS}. */
   readonly event?: string;
   /** Lower-cased email matched against actorEmail OR targetEmail. */
   readonly email?: string;

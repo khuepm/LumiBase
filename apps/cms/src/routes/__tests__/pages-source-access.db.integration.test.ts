@@ -5,6 +5,7 @@ import {
   collections,
   fields,
   items,
+  pages,
   permissions as permissionsTable,
   policies,
   rolePolicies,
@@ -95,6 +96,9 @@ describe.skipIf(!hasDbIntegrationUrl)('page sources — DB integration', () => {
       await db.insert(policies).values({ siteId: SITE, name: 'Editor', adminAccess: false, appAccess: true }).returning({ id: policies.id })
     )[0]!.id;
     await db.insert(permissionsTable).values([
+      // Page-builder access itself (#986): the editor may edit pages; what is
+      // under test is which collections a section may take its data from.
+      ...(['read', 'create', 'update'] as const).map((action) => ({ siteId: SITE, policyId: editorPolicy, collection: 'lumibase_pages', action, fields: ['*'] })),
       { siteId: SITE, policyId: editorPolicy, collection: 'posts', action: 'read', fields: ['*'] },
       { siteId: SITE, policyId: editorPolicy, collection: 'people', action: 'read', fields: ['title'] },
       { siteId: SITE, policyId: editorPolicy, collection: 'notes', action: 'read', fields: ['*'], permissions: { title: { _eq: 'mine' } } },
@@ -123,8 +127,9 @@ describe.skipIf(!hasDbIntegrationUrl)('page sources — DB integration', () => {
   }
 
   it('serves published items only, even when the source asks for drafts', async () => {
-    const { res } = await createPage({ slug: 'drafts', title: 'Drafts', layoutConfig: layout({ collection: 'posts', status: 'draft' }) });
-    expect(res.status).toBe(201);
+    // Page writes refuse a non-published status (#1006); a page stored before
+    // that still carries one, so store it directly.
+    await db.insert(pages).values({ siteId: SITE, slug: 'drafts', title: 'Drafts', layoutConfig: layout({ collection: 'posts', status: 'draft' }) });
 
     const page = await app.request(`/api/v1/deliver/page/${SITE}/drafts`);
     expect(page.status).toBe(200);
