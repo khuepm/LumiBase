@@ -79,9 +79,9 @@
     "glob": "^14.0.6",
     "husky": "^9.1.7",
     "js-yaml": "^5.5.0",
-    "turbo": "^2.11.11",
+    "turbo": "^2.11.13",
     "typescript": "^5.6.2",
-    "wrangler": "^4.161.0"
+    "wrangler": "^4.165.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
