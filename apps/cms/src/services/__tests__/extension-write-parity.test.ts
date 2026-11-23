@@ -115,4 +115,55 @@ describe('extension write boundary', () => {
     expect(can).not.toHaveBeenCalled();
     restoreMissing();
   });
+
+  describe('install and update carry signature metadata (B228)', () => {
+    const meta = { bundleSha256: 'B'.repeat(64), signature: 'c2ln', publisherKeyId: 'pub-1', signatureAlg: 'ed25519' as const };
+
+    it('verifies a direct install against the signature metadata in the body and stores it', async () => {
+      allow();
+      const inserted: unknown[] = [];
+      const db = {
+        insert: () => ({ values: (v: unknown) => { inserted.push(v); return { returning: async () => [] }; } }),
+      } as unknown as Database;
+      const verify = vi.spyOn(ExtensionVerifierService.prototype, 'verifyByMetadata').mockResolvedValue({ ok: true, isOfficial: false, reason: 'ok' });
+      await new ExtensionsService({ db, siteId: ctx.siteId, permissionCtx: ctx }).installExtension({ ...input, ...meta });
+      // The hash is normalised to lower case, as the verifier compares it.
+      const normalised = { ...meta, bundleSha256: 'b'.repeat(64) };
+      expect(verify).toHaveBeenCalledWith('third-party', expect.objectContaining({ bundleUrl: input.bundleUrl, ...normalised }));
+      expect(inserted[0]).toMatchObject(normalised);
+    });
+
+    it('says what is missing when a signed install has no metadata', async () => {
+      allow();
+      const db = { insert: vi.fn() } as unknown as Database;
+      vi.spyOn(ExtensionVerifierService.prototype, 'verifyByMetadata').mockResolvedValue({ ok: false, isOfficial: false, reason: 'missing-fields' });
+      await expect(new ExtensionsService({ db, siteId: ctx.siteId, permissionCtx: ctx }).installExtension(input))
+        .rejects.toMatchObject({ code: 'SIGNATURE_REQUIRED', message: expect.stringMatching(/bundleSha256, signature/) });
+    });
+
+    it('verifies a new bundle against the NEW metadata, and re-verifies a metadata-only change', async () => {
+      allow();
+      const row = { ...input, id: 'ext-a', siteId: ctx.siteId, enabled: true, isOfficial: false, verifiedAt: new Date(0), capabilities: [],
+        bundleSha256: 'a'.repeat(64), signature: 'old', publisherKeyId: 'pub-0', signatureAlg: 'ed25519' };
+      const db = {
+        select: () => ({ from: () => ({ where: () => ({ limit: async () => [row] }) }) }),
+        update: () => ({ set: (v: unknown) => ({ where: () => ({ returning: async () => [{ ...row, ...(v as object) }] }) }) }),
+      } as unknown as Database;
+      vi.spyOn(ExtensionSandbox.prototype, 'evict').mockImplementation(() => {});
+      const verify = vi.spyOn(ExtensionVerifierService.prototype, 'verifyByMetadata').mockResolvedValue({ ok: true, isOfficial: false, reason: 'ok' });
+      const service = new ExtensionsService({ db, siteId: ctx.siteId, permissionCtx: ctx });
+      await service.updateExtension('ext-a', { bundleUrl: 'https://example.com/v2.js', ...meta });
+      expect(verify).toHaveBeenLastCalledWith('third-party', expect.objectContaining({ bundleUrl: 'https://example.com/v2.js', bundleSha256: 'b'.repeat(64), signature: 'c2ln' }));
+      verify.mockClear();
+      await service.updateExtension('ext-a', { signature: 'new-sig' });
+      expect(verify).toHaveBeenCalledWith('third-party', expect.objectContaining({ signature: 'new-sig', bundleSha256: 'a'.repeat(64) }));
+    });
+
+    it('refuses a malformed hash or an unsupported algorithm', async () => {
+      allow();
+      const service = new ExtensionsService({ db: {} as Database, siteId: ctx.siteId, permissionCtx: ctx });
+      await expect(service.installExtension({ ...input, bundleSha256: 'xyz' })).rejects.toThrow();
+      await expect(service.installExtension({ ...input, ...meta, signatureAlg: 'rsa-pss-sha256' as never })).rejects.toThrow();
+    });
+  });
 });
