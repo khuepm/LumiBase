@@ -1,10 +1,10 @@
 ---
-version: 28
-lastUpdated: 2026-11-21T12:08:31.276Z
+version: 29
+lastUpdated: 2026-11-23T15:00:08.272Z
 sourceLang: en
-contentHash: 305405771bb1e9c7
-codeVerified: 2026-11-21T12:08:31.276Z
-codeVerifiedHash: 305405771bb1e9c7
+contentHash: 4d08d55068c60af9
+codeVerified: 2026-11-23T15:00:08.272Z
+codeVerifiedHash: 4d08d55068c60af9
 codeVerifiedClaims: 104
 ---
 
@@ -52,7 +52,8 @@ public/setup routes to it in production. See
 | `LUMIBASE_ADMIN_REQUIRE_MFA` | ✗ | **on in production** with an encryption key, off elsewhere | Whether the setup wizard binds an `enforceTfa` "Administrator MFA" policy to the Administrator role (#987), so the first admin enrols a second factor before using the Studio. `true` / `1` / `yes` on (passkeys work without an encryption key), `false` / `0` / `no` off. Read once, at setup. |
 | `EXTENSION_RUNTIME` | ✗ (Node/Docker) | **`process` in production**, `in-process` elsewhere | Where server extensions run (#990, ADR-015). `process`: each extension in its own child process with an empty environment and Node's permission model; its `ctx` calls are checked by the CMS. `in-process`: inside the CMS process. Ignored on Cloudflare Workers (always in process). |
 | `LUMIBASE_EGRESS_RESTRICTED` | ✗ | off | Set it to `true` once the CMS's outbound traffic cannot reach cloud metadata or private networks (#1009, ADR-015). The Helm chart sets it with `networkPolicy.egress.restrict`; elsewhere set it after adding firewall, Docker network or egress-proxy rules. Without it, production with `EXTENSION_BUNDLE_ORIGINS` logs a startup warning and `lumibase doctor --security` reports `extension-egress-unrestricted`. It only records the fact; it restricts nothing itself. |
-| `PASSWORD_PBKDF2_ITERATIONS` | ✗ (Node/Docker) | `100000` | PBKDF2 work factor for new password hashes, 100,000–2,000,000; logins re-hash older passwords up to it (#994). Ignored on Cloudflare Workers (capped at 100,000 by Web Crypto) — do not raise it if the database may later be served by Workers. |
+| `PASSWORD_HASH_SCHEME` | ✗ | **`scrypt` on Node/Docker**, `pbkdf2` on Workers | Scheme for new password hashes (B230): `scrypt` (memory-hard, N=2^15 r=8 p=3) or `pbkdf2`. A login re-hashes a password stored with another scheme or a lower cost. Every stored hash verifies on every runtime; on Workers scrypt runs in JavaScript (~300 ms of CPU per login), so set `scrypt` there only on a plan whose CPU limit allows it. |
+| `PASSWORD_PBKDF2_ITERATIONS` | ✗ | `100000` | PBKDF2 work factor for new hashes when the scheme is `pbkdf2`, 100,000–2,000,000; logins re-hash older passwords up to it (#994). New PBKDF2 hashes on Cloudflare Workers stay at 100,000 (Web Crypto's limit), but Workers verify higher-iteration hashes in JavaScript, so moving a database there locks nobody out (B230). |
 | `API_KEY_DEFAULT_TTL_DAYS` | ✗ | `90` | Lifetime of an API key created without `expiresAt` (#994). `0` restores the old never-expires default; an explicit `"expiresAt": null` always creates a non-expiring key. |
 | `FILE_UPLOAD_ALLOW_UNCATALOGUED_MIME` | ✗ | off | `true` lets `FILE_UPLOAD_ALLOWED_MIME_TYPES` admit types outside the upload catalogue, which are accepted without content sniffing (#993). Reported by `lumibase doctor --security`. |
 | `LUMIBASE_SETUP_TOKEN` | ✗ (secret) | — | Your own setup token, at least 24 characters (`openssl rand -base64 32`); a shorter value is ignored. Required to complete setup on **Cloudflare Workers** in production (`wrangler secret put LUMIBASE_SETUP_TOKEN`), which have no startup step to mint one. On Node/Docker it replaces the minted token. Remove it once setup is done. |
