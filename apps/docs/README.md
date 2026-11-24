@@ -99,7 +99,7 @@ Cloudflare Pages uses [`public/_redirects`](./public/_redirects) to route all di
 Wrangler does not support `account_id` inside a Pages `wrangler.toml`; pass the account through the environment when the local login cannot resolve it automatically.
 
 ```bash
-export CLOUDFLARE_ACCOUNT_ID=792c8e28da56d9568474df5fcf00cfc7
+export CLOUDFLARE_ACCOUNT_ID=f614081e1f55d02892cb3babd4fb0068
 pnpm --filter @lumibase/docs build
 pnpm docs:deploy
 ```
@@ -107,6 +107,6 @@ pnpm docs:deploy
 Equivalent Wrangler command:
 
 ```bash
-CLOUDFLARE_ACCOUNT_ID=792c8e28da56d9568474df5fcf00cfc7 \
+CLOUDFLARE_ACCOUNT_ID=f614081e1f55d02892cb3babd4fb0068 \
 wrangler pages deploy dist --project-name lumibase-docs --branch main --cwd apps/docs
 ```

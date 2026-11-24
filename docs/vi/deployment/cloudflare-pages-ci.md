@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-10-13T19:47:38.305Z
+version: 3
+lastUpdated: 2026-11-24T17:09:58.872Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ea64d1bb9cfe0d79
+sourceHash: a3573cdc345de028
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-17T15:52:19.373Z
-codeVerifiedHash: ea64d1bb9cfe0d79
+codeVerified: 2026-11-24T17:09:58.872Z
+codeVerifiedHash: a3573cdc345de028
 codeVerifiedClaims: 4
 ---
 
@@ -30,7 +30,7 @@ nhân bản release v0.4.7 trông như đã deploy trong khi production vẫn gi
 
 | Secret | Giá trị |
 |---|---|
-| `CLOUDFLARE_ACCOUNT_ID` | `792c8e28da56d9568474df5fcf00cfc7` |
+| `CLOUDFLARE_ACCOUNT_ID` | `f614081e1f55d02892cb3babd4fb0068` |
 | `CLOUDFLARE_API_TOKEN` | Một API token có scope (tạo ở dưới) |
 
 ## 1. Tạo Cloudflare API token
@@ -47,14 +47,14 @@ Các permission cần thiết (bao gồm cả Pages + deploy CMS Worker):
 | User | Memberships | Read |
 
 Account Resources: chọn account sở hữu `lumibase.dev` / `docs.lumibase.dev`
-(account id `792c8e28…`).
+(account id `f614081e…`).
 
 Copy token vừa sinh ra (chỉ hiện một lần).
 
 ## 2. Thêm secret vào GitHub
 
 ```bash
-gh secret set CLOUDFLARE_ACCOUNT_ID --body "792c8e28da56d9568474df5fcf00cfc7"
+gh secret set CLOUDFLARE_ACCOUNT_ID --body "f614081e1f55d02892cb3babd4fb0068"
 gh secret set CLOUDFLARE_API_TOKEN  # dán token khi được hỏi
 ```
 
