@@ -438,7 +438,7 @@ new_sqlite_classes = ["PageviewCounter"]
 
 [[env.production.hyperdrive]]
 binding = "HYPERDRIVE"
-id = "6ab50691143d4cfaa338d103125b77f3"
+id = "e7fe43fa6ce84c27ab6048d3c04e1910"
 
 # Optional system-role Hyperdrive (B130). Only needed with LUMIBASE_DB_RLS=enforce:
 # point it at a role with BYPASSRLS; scheduled/queue handlers and system routes use it.
@@ -449,7 +449,7 @@ id = "6ab50691143d4cfaa338d103125b77f3"
 
 [[env.production.kv_namespaces]]
 binding = "CONFIG_CACHE"
-id = "c303408c8d134b75b957926c9457b9e0"
+id = "c51fda7acd504f3aa7793b55c0d665eb"
 
 [[env.production.r2_buckets]]
 binding = "MEDIA"
