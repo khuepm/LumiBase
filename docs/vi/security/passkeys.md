@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 4
-lastUpdated: 2026-11-15T15:27:03.615Z
+version: 5
+lastUpdated: 2026-11-19T20:14:14.456Z
 translatedFrom: en
-sourceHash: 1a727fb726aa330f
+sourceHash: 1afa920bbeeca9f8
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T15:27:03.615Z
-codeVerifiedHash: 1a727fb726aa330f
+codeVerified: 2026-11-19T20:14:14.456Z
+codeVerifiedHash: 1afa920bbeeca9f8
 codeVerifiedClaims: 48
 ---
 
@@ -165,10 +165,10 @@ Studio giải thích điều này thay vì đề nghị thêm passkey. Logic ph�
 
 ## 6. Ứng dụng desktop và mobile
 
-Shell Tauri (`apps/shell`) tải Studio từ `tauri://localhost` trong WKWebView,
+Ứng dụng desktop và mobile (một shell Tauri) tải Studio từ `tauri://localhost` trong WKWebView,
 WebView2 hoặc WebKitGTK. Ở đó WebAuthn hoặc không có, hoặc gắn với một origin mà
 không RP ID nào khớp, nên Studio ẩn mọi điều khiển passkey trong shell (hợp đồng
-C5 trong `apps/shell/README.md`). Mật khẩu, TOTP và mã khôi phục vẫn hoạt động;
+C5 trong `apps/studio/NATIVE_HOST_CONTRACT.md`). Mật khẩu, TOTP và mã khôi phục vẫn hoạt động;
 người dùng chỉ có passkey đăng nhập bằng mã khôi phục trong ứng dụng, hoặc dùng
 trình duyệt. Passkey đăng ký trong trình duyệt vẫn dùng được trong trình duyệt đó.
 

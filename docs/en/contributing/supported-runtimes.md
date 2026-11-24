@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-15T16:45:24.249Z
-contentHash: ee3c803e9107939d
-codeVerified: 2026-11-15T16:45:24.249Z
-codeVerifiedHash: ee3c803e9107939d
+version: 2
+lastUpdated: 2026-11-19T20:14:14.711Z
+contentHash: 28c5440e76258171
+codeVerified: 2026-11-19T20:14:14.711Z
+codeVerifiedHash: 28c5440e76258171
 codeVerifiedClaims: 10
 ---
 
@@ -161,7 +161,7 @@ Studio is built with Vite 8 and uses Vite's default build target,
 | Safari (macOS and iOS) | 16.4 |
 
 Older browsers are **unsupported**: the bundle uses syntax they cannot parse. The
-desktop and mobile shells (`apps/shell`, Tauri) load the same build in the
+desktop and mobile apps (Tauri shells) load the same build in the
 platform webview, so the same floor applies.
 
 ## Pinned values

@@ -3,7 +3,7 @@
  *
  * The Tauri shell registers the `lumibase://` scheme and forwards every opened
  * URL to the SPA as a `shell://deep-link` event (contract C8 in
- * `apps/shell/README.md`). Until now nothing consumed it. This module maps
+ * `apps/studio/NATIVE_HOST_CONTRACT.md`). Until now nothing consumed it. This module maps
  * the intent form of those URLs onto the same `/intent/{action}?…` route the
  * browser uses:
  *

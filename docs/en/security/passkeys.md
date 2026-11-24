@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 4
-lastUpdated: 2026-11-15T15:27:03.615Z
-contentHash: 1a727fb726aa330f
-codeVerified: 2026-11-15T15:27:03.615Z
-codeVerifiedHash: 1a727fb726aa330f
+version: 5
+lastUpdated: 2026-11-19T20:14:14.456Z
+contentHash: 1afa920bbeeca9f8
+codeVerified: 2026-11-19T20:14:14.456Z
+codeVerifiedHash: 1afa920bbeeca9f8
 codeVerifiedClaims: 48
 ---
 
@@ -165,10 +165,10 @@ to add a passkey. The resolution lives in
 
 ## 6. Desktop and mobile app
 
-The Tauri shell (`apps/shell`) loads the Studio from `tauri://localhost` in
+The desktop and mobile app (a Tauri shell) loads the Studio from `tauri://localhost` in
 WKWebView, WebView2 or WebKitGTK. WebAuthn is either missing there or bound to
 an origin no RP ID can match, so the Studio hides every passkey control inside
-the shell (contract C5 in `apps/shell/README.md`). Password, TOTP and recovery
+the shell (contract C5 in `apps/studio/NATIVE_HOST_CONTRACT.md`). Password, TOTP and recovery
 codes keep working; a passkey-only user signs in with a recovery code in the
 app, or uses a browser. Passkeys registered in a browser still work in that
 browser.
