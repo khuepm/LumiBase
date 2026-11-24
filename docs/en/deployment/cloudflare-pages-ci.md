@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-11-24T17:09:58.872Z
+version: 4
+lastUpdated: 2026-11-24T17:12:14.598Z
 sourceLang: en
-contentHash: a3573cdc345de028
-codeVerified: 2026-11-24T17:09:58.872Z
-codeVerifiedHash: a3573cdc345de028
+contentHash: 40b6d29d4842c2b9
+codeVerified: 2026-11-24T17:12:14.598Z
+codeVerifiedHash: 40b6d29d4842c2b9
 codeVerifiedClaims: 4
 ---
 
@@ -28,7 +28,7 @@ production stayed on the previous build.
 
 | Secret | Value |
 |---|---|
-| `CLOUDFLARE_ACCOUNT_ID` | `f614081e1f55d02892cb3babd4fb0068` |
+| `CLOUDFLARE_ACCOUNT_ID` | `<your-cloudflare-account-id>` |
 | `CLOUDFLARE_API_TOKEN` | A scoped API token (create below) |
 
 ## 1. Create the Cloudflare API token
@@ -45,14 +45,14 @@ Permissions needed (covers Pages + the CMS Worker deploy):
 | User | Memberships | Read |
 
 Account Resources: include the account that owns `lumibase.dev` /
-`docs.lumibase.dev` (account id `f614081e…`).
+`docs.lumibase.dev`.
 
 Copy the generated token (shown once).
 
 ## 2. Add the secrets to GitHub
 
 ```bash
-gh secret set CLOUDFLARE_ACCOUNT_ID --body "f614081e1f55d02892cb3babd4fb0068"
+gh secret set CLOUDFLARE_ACCOUNT_ID --body "<your-cloudflare-account-id>"
 gh secret set CLOUDFLARE_API_TOKEN  # paste the token when prompted
 ```
 
