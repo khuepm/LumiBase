@@ -13,7 +13,7 @@ describe('base snapshot (design §14.4)', () => {
   it('replaces encrypted values by a SHA-256 marker and never keeps the plaintext', async () => {
     const snap = await snapshotData({ title: 'x', ssn: '123-45', empty: null }, new Set(['ssn', 'empty']));
     expect(snap.title).toBe('x');
-    expect(snap.empty).toBeNull();
+    expect(snap).not.toHaveProperty('empty');
     expect(snap.ssn).toEqual({ $enc: expect.stringMatching(/^[0-9a-f]{64}$/) });
     expect(JSON.stringify(snap)).not.toContain('123-45');
   });

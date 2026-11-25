@@ -1222,6 +1222,15 @@ export class ItemService {
       /** Tree collections (#749): parent item id; null/absent = root. */
       parentId?: string | null;
     },
+    opts: {
+      /**
+       * Create under this exact id instead of the collection's generated key.
+       * Content Environments (#853): an item created in an environment is
+       * promoted to its origin with the SAME id (design §14.9), whatever the
+       * key type. Taken ids answer `409 ITEM_ID_EXISTS` as usual.
+       */
+      fixedId?: string;
+    } = {},
   ) {
     const coll = await this.resolveCollection(collectionName);
     const tree = parseTreeConfig(coll.meta);
@@ -1301,12 +1310,12 @@ export class ItemService {
     this.assertPermissionValidation(perm, finalCreateSnapshot);
     // Allocate the record id up front so AAD-bound encryption can reference it
     // before the row is flushed (Req 2.3). Matches the schema's nanoid default.
-    const recordId = primaryKey.id ?? nanoid();
+    const recordId = opts.fixedId ?? primaryKey.id ?? nanoid();
     const { publishAt, unpublishAt } = normalizePublishWindow(payload.publishAt, payload.unpublishAt);
     const cryptoOut: CryptoRecordOpts = {};
     const encryptedData = await this.processCrypto(collectionName, data, 'encrypt', recordId, true, false, undefined, cryptoOut);
-    if (primaryKey.id) {
-      await this.assertItemIdAvailable(primaryKey.id);
+    if (primaryKey.id || opts.fixedId) {
+      await this.assertItemIdAvailable(recordId);
     }
     const row = await runSiteTransaction(this.deps.db, this.deps.siteId, async (tx) => {
       const placement = tree

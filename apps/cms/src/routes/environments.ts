@@ -35,6 +35,8 @@ import { EnvironmentError } from '../services/environments/errors';
 import { EnvironmentService, toEnvironmentView } from '../services/environments/environment-service';
 import { driveFork, type ForkDeps } from '../services/environments/fork';
 import { promoteSchema } from '../services/environments/schema-promote';
+import { MAX_ITEMS_PER_RUN, promoteContent } from '../services/environments/content-promote';
+import { itemServiceForRequest } from '../services/item-service-factory';
 import { environmentMergeRuns } from '@lumibase/database';
 import { and, desc, eq } from 'drizzle-orm';
 
@@ -194,6 +196,47 @@ environmentsRouter.get('/:key/merge-runs', async (c) => {
       .orderBy(desc(environmentMergeRuns.startedAt))
       .limit(100);
     return c.json({ data: runs });
+  } catch (err) {
+    return environmentError(c, err);
+  }
+});
+
+const contentPromoteSchema = z
+  .object({
+    dryRun: z.boolean().default(true),
+    items: z
+      .array(z.object({ collection: z.string().min(1).max(100), itemId: z.string().min(1).max(200) }).strict())
+      .max(MAX_ITEMS_PER_RUN)
+      .optional(),
+  })
+  .strict();
+
+environmentsRouter.post('/:key/promote/content', async (c) => {
+  const parsed = contentPromoteSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return validation(c, parsed.error);
+  try {
+    const service = environmentServiceFor(c);
+    const { env } = await service.loadPair(c.req.param('key'));
+    const runtime = c.get('runtime');
+    const result = await promoteContent(
+      {
+        db: c.get('db'),
+        systemDb: systemDbFor(c),
+        userId: c.get('auth')!.userId!,
+        keyProvider: runtime?.keys,
+        encryptionKey: forkDepsFor(c).encryptionKey,
+        // The caller's own origin ItemService: RBAC, validation, editorial gate,
+        // pinned fields and hooks apply exactly as for a normal edit (Req 8.7).
+        // Revisions name the environment and the run as their source (Req 12.3).
+        originItems: ({ environmentId, mergeRunId }) =>
+          itemServiceForRequest(c, {
+            provenance: { authorType: 'human', sources: [{ type: 'environment', environmentId, mergeRunId }] },
+          }),
+      },
+      env,
+      parsed.data,
+    );
+    return c.json({ data: result });
   } catch (err) {
     return environmentError(c, err);
   }

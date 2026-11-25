@@ -52,14 +52,14 @@ export function isEncryptedMarker(value: unknown): value is { $enc: string } {
 
 /**
  * The comparable form of an item's plaintext `data`: encrypted fields become
- * `{ $enc: sha256 }` (null and absent stay as they are, so "cleared" is still a
- * visible change).
+ * `{ $enc: sha256 }`. A top-level `null` counts as absent — a promote clears
+ * a field by writing `null`, and the two must hash the same.
  */
 export async function snapshotData(data: ItemData, encryptedFields: ReadonlySet<string>): Promise<ItemData> {
   const out: ItemData = {};
   for (const [key, value] of Object.entries(data ?? {})) {
-    if (value === undefined) continue;
-    if (encryptedFields.has(key) && value !== null) {
+    if (value === undefined || value === null) continue;
+    if (encryptedFields.has(key)) {
       out[key] = { $enc: await sha256Hex(canonicalJson(value)) };
     } else {
       out[key] = value;
