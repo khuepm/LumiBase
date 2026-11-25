@@ -5021,6 +5021,148 @@ paths:
         '200': { description: Decision recorded }
         '409': { description: Already processed, or NOT_AN_APPROVAL for an askUser question id }
 
+  /environments:
+    get:
+      summary: List the content environments of this site (#853)
+      description: >-
+        Behind the content-environments release flag (404 while off). Site
+        administrators, staff users only (API keys get 403 STAFF_USER_REQUIRED).
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      responses:
+        '200': { description: OK }
+        '403': { description: STAFF_USER_REQUIRED or FORBIDDEN }
+        '404': { description: Release flag off }
+    post:
+      summary: Fork this site into a content environment (#853)
+      description: >-
+        Creates a child site and copies the schema, access model, non-secret
+        settings, side systems (inactive), file metadata and the items in
+        contentScope. Runs in resumable steps; answers 202 with status forking.
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [key, name]
+              properties:
+                key: { type: string, pattern: '^[a-z][a-z0-9-]{0,38}[a-z0-9]$' }
+                name: { type: string, maxLength: 120 }
+                contentScope:
+                  type: object
+                  required: [mode]
+                  properties:
+                    mode: { type: string, enum: [none, all, collections] }
+                    collections: { type: array, items: { type: string }, maxItems: 200 }
+      responses:
+        '202': { description: Fork started }
+        '400': { description: VALIDATION or UNKNOWN_COLLECTION }
+        '409': { description: ENVIRONMENT_KEY_TAKEN, ENVIRONMENT_LIMIT_REACHED, ENVIRONMENT_TOO_LARGE or ENVIRONMENT_NESTING_UNSUPPORTED }
+
+  /environments/{key}:
+    get:
+      summary: Read a content environment with originChanged and changedItems (#853)
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: key, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { description: Unknown key or another site's environment }
+    delete:
+      summary: Delete a content environment and its child site (#853)
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: key, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Deleted }
+        '404': { description: Not found }
+        '409': { description: ENVIRONMENT_BUSY }
+
+  /environments/{key}/retry:
+    post:
+      summary: Resume a failed fork from its cursor (#853)
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: key, in: path, required: true, schema: { type: string } }
+      responses:
+        '202': { description: Fork resumed }
+        '409': { description: ENVIRONMENT_NOT_RETRYABLE }
+
+  /environments/{key}/promote/schema:
+    post:
+      summary: Plan or apply a schema promote from the environment to this site (#853)
+      description: >-
+        Rows are matched by lineage. dryRun (default true) returns the plan.
+        An apply runs in one transaction and cannot be undone.
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: key, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                dryRun: { type: boolean, default: true }
+                resolutions:
+                  type: array
+                  items:
+                    type: object
+                    required: [kind, key, take]
+                    properties:
+                      kind: { type: string, enum: [collection, field, relation] }
+                      key: { type: string }
+                      take: { type: string, enum: [origin, environment] }
+                confirmRiskyChange: { type: boolean }
+                migrationPlans: { type: object, additionalProperties: { type: object } }
+      responses:
+        '200': { description: Plan, or the applied plan with mergeRunId }
+        '409': { description: ENVIRONMENT_BUSY or ENVIRONMENT_NOT_READY }
+        '422': { description: UNRESOLVED_CONFLICTS, RISKY_CHANGE_UNCONFIRMED, MIGRATION_PLAN_REQUIRED or a blocked change }
+
+  /environments/{key}/promote/content:
+    post:
+      summary: Plan or apply a one-way content promote (#853)
+      description: >-
+        An item the origin changed after the fork is a conflict and is never
+        overwritten. Writes use the caller's permissions and If-Match.
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: key, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                dryRun: { type: boolean, default: true }
+                items:
+                  type: array
+                  maxItems: 2000
+                  items:
+                    type: object
+                    required: [collection, itemId]
+                    properties:
+                      collection: { type: string }
+                      itemId: { type: string }
+      responses:
+        '200': { description: Plan, or per-item outcomes with mergeRunId }
+        '409': { description: ENVIRONMENT_BUSY or ENVIRONMENT_NOT_READY }
+
+  /environments/{key}/merge-runs:
+    get:
+      summary: Applied promotes of an environment, newest first (#853)
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: key, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { description: Not found }
+
   /locale-generation/jobs:
     get:
       summary: List locale generation jobs (#714)
