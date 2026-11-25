@@ -25,7 +25,7 @@ import { RevisionsPanel } from './revisions-panel';
 import { RawJsonPanel } from './raw-json-panel';
 import { VersionPanel } from './version-panel';
 import { DependentRecordsDialog, type DependentGroup } from './dependent-records-dialog';
-import { isPreconditionFailed } from './save-conflict';
+import { changedFields, isPreconditionFailed, saveFieldChanges } from './save-conflict';
 import { TranslationMode } from './translation-mode';
 import { translatableFields, tmLearnEntries } from './translatable-fields';
 import { useSiteLocalesState } from './use-site-locales';
@@ -99,7 +99,7 @@ function ItemEditor({
   const [tab, setTab] = useState<Tab>('fields');
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
   // Item version the current draft is based on; sent as `If-Match` on save.
-  const [baseVersion, setBaseVersion] = useState<number | undefined>(undefined);
+  const [base, setBase] = useState<ItemRow | null>(null);
   // Translation mode (translation-memory-ui): the site's default is the source
   // locale; the user picks a target to translate into.
   const { locales, isLoaded: localesLoaded } = useSiteLocalesState();
@@ -221,7 +221,7 @@ function ItemEditor({
     },
   });
 
-  // Hydrate draft from server data once. `baseVersion` pins the version the
+  // Hydrate draft from server data once. the base snapshot pins the version the
   // draft was built from, so a background refetch cannot silently move the
   // save's `If-Match` forward and overwrite someone else's edit.
   useEffect(() => {
@@ -229,7 +229,7 @@ function ItemEditor({
       setDraft({ ...(itemQuery.data.data as Record<string, unknown>) });
       setPublishAt(isoToLocalInput(itemQuery.data.publishAt));
       setUnpublishAt(isoToLocalInput(itemQuery.data.unpublishAt));
-      setBaseVersion(itemQuery.data.version);
+      setBase(itemQuery.data);
     }
   }, [itemQuery.data, draft]);
 
@@ -289,29 +289,31 @@ function ItemEditor({
   });
 
   const isDirty = useMemo(() => {
-    if (!itemQuery.data || draft === null) return false;
-    if (!jsonEqual(draft, itemQuery.data.data ?? {})) return true;
+    if (!base || draft === null) return false;
+    if (!jsonEqual(draft, base.data ?? {})) return true;
     return (
-      publishAt !== isoToLocalInput(itemQuery.data.publishAt) ||
-      unpublishAt !== isoToLocalInput(itemQuery.data.unpublishAt)
+      publishAt !== isoToLocalInput(base.publishAt) ||
+      unpublishAt !== isoToLocalInput(base.unpublishAt)
     );
-  }, [draft, itemQuery.data, publishAt, unpublishAt]);
+  }, [draft, base, publishAt, unpublishAt]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (!draft) return null;
+      if (!draft || !base) return null;
       // Same required rule as the server (PATCH = partial), so the form can
       // flag the field — and its tab — without a round trip.
       const missing = checkRequired(fields, draft, layout, true);
       if (Object.keys(missing).length > 0) throw requiredError(missing);
-      const res = await client.items(collection as never).patch(
-        id,
+      const api = client.items(collection as never);
+      const saved = await saveFieldChanges(
+        base,
         {
-          data: draft,
-          publishAt: localInputToIso(publishAt),
-          unpublishAt: localInputToIso(unpublishAt),
+          data: changedFields(base.data, draft),
+          ...(publishAt !== isoToLocalInput(base.publishAt) && { publishAt: localInputToIso(publishAt) }),
+          ...(unpublishAt !== isoToLocalInput(base.unpublishAt) && { unpublishAt: localInputToIso(unpublishAt) }),
         },
-        { ifMatch: baseVersion },
+        async () => (await api.detail(id)).data as ItemRow,
+        async (changes, ifMatch) => (await api.patch(id, changes, { ifMatch })).data as ItemRow,
       );
       // Learn human-edited translations into TM (Req 6.1). Best-effort: a TM
       // write failure must not fail the save that already succeeded.
@@ -328,15 +330,22 @@ function ItemEditor({
         );
         setLearnFields(new Set());
       }
-      return res.data as ItemRow;
+      return { saved, submitted: draft, publishAt, unpublishAt };
     },
     onError: (err: Error) => {
       setFieldErrors(validationErrorsFrom(err, fields.map((f) => f.name)));
     },
-    onSuccess: (saved) => {
+    onSuccess: (result) => {
       // The draft stays on screen after a save, so it is now based on the
       // version the server just wrote.
-      if (saved) setBaseVersion(saved.version);
+      if (result) {
+        const { saved, submitted } = result;
+        setBase(saved);
+        setDraft(current => current && { ...saved.data, ...changedFields(submitted, current) });
+        setPublishAt(current => current === result.publishAt ? isoToLocalInput(saved.publishAt) : current);
+        setUnpublishAt(current => current === result.unpublishAt ? isoToLocalInput(saved.unpublishAt) : current);
+        queryClient.setQueryData(['item', collection, id], saved);
+      }
       setFieldErrors({});
       queryClient.invalidateQueries({ queryKey: ['item', collection, id] });
       queryClient.invalidateQueries({ queryKey: ['items', collection] });

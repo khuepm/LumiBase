@@ -304,9 +304,7 @@ describe('draft review in the item editor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save & stay' }));
     await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
     expect(patch).toHaveBeenCalledWith('item_1', {
-      data: { title: 'Hello', body: 'World', category: 'sport' },
-      publishAt: null,
-      unpublishAt: null,
+      data: { category: 'sport' },
     }, { ifMatch: 7 });
 
     // Publish stays its own action: no status change, no editorial transition.
@@ -698,9 +696,7 @@ describe('draft-review pilot rollout (J09)', () => {
       await editAndSave();
 
       expect(patch).toHaveBeenCalledWith('item_1', {
-        data: { title: 'Hello again', body: 'World', category: '' },
-        publishAt: null,
-        unpublishAt: null,
+        data: { title: 'Hello again' },
       }, { ifMatch: 7 });
       expect(screen.queryByTestId('draft-review-panel')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Review draft' })).toBeNull();
