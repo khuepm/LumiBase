@@ -79,7 +79,8 @@
           "features/jev-automation",
           "features/jev-semantic-drift",
           "features/rls-request-scope",
-          "features/release-flags"
+          "features/release-flags",
+          "features/content-environments"
         ]
       },
       {

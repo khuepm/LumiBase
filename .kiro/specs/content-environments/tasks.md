@@ -17,54 +17,54 @@ Kế hoạch triển khai **Content Environments** theo 6 phase. Mỗi phase t�
 
 ### Phase B — Environment, Fork, cô lập
 
-- [ ] 2. Data model
-  - [ ] 2.1 Thêm `environments`, `environmentLineage`, `mergeRuns` vào `packages/database/src/schema/cms.ts` (nanoid, `site_id`, index/unique theo design) (Req 1.1, 1.2; design §2)
-  - [ ] 2.2 Migration **hand-written** + journal; số cấp lúc merge, cao hơn mọi nhánh đang mở; thêm RLS policy vào `rls-policies.sql` (Req 1.4, 1.5; design §2)
-  - [ ] 2.3 Feature flag `environments.enabled` + settings `environments.maxPerSite` (default 3) (Req 5.4, 14.1; design §13)
+- [x] 2. Data model
+  - [x] 2.1 Thêm `environments`, `environmentLineage`, `mergeRuns` vào `packages/database/src/schema/cms.ts` (nanoid, `site_id`, index/unique theo design) (Req 1.1, 1.2; design §2)
+  - [x] 2.2 Migration **hand-written** + journal; số cấp lúc merge, cao hơn mọi nhánh đang mở; thêm RLS policy vào `rls-policies.sql` (Req 1.4, 1.5; design §2)
+  - [x] 2.3 Feature flag `environments.enabled` + settings `environments.maxPerSite` (default 3) (Req 5.4, 14.1; design §13)
 
-- [ ] 3. EnvironmentService CRUD
-  - [ ] 3.1 `apps/cms/src/services/environment-service.ts`: constructor scoped Origin; nạp cặp (Origin, Environment) từ DB; assert cùng `organizationId` (Req 11.1, 11.2; design §11)
-  - [ ] 3.2 `create`: kiểm flag, limit, không lồng; transaction `provisionSite` + insert `environments(forking)`; enqueue sau commit (Req 1.3, 2.1, 2.9, 5.4; design §3.1)
-  - [ ] 3.3 `list`/`get` với `originChanged` + số item đã đổi có ngưỡng `truncated` (Req 5.1; design §5)
-  - [ ] 3.4 `delete`: chặn khi busy; xoá site con; audit (Req 5.2, 5.3, 12.1; design §5)
-  - [ ] 3.5 Route `routes/environments.ts` mount sau auth + site-admin; từ chối API key; test route-guard (Req 5.5, 11.4, 11.5; design §11)
+- [x] 3. EnvironmentService CRUD
+  - [x] 3.1 `apps/cms/src/services/environment-service.ts`: constructor scoped Origin; nạp cặp (Origin, Environment) từ DB; assert cùng `organizationId` (Req 11.1, 11.2; design §11)
+  - [x] 3.2 `create`: kiểm flag, limit, không lồng; transaction `provisionSite` + insert `environments(forking)`; enqueue sau commit (Req 1.3, 2.1, 2.9, 5.4; design §3.1)
+  - [x] 3.3 `list`/`get` với `originChanged` + số item đã đổi có ngưỡng `truncated` (Req 5.1; design §5)
+  - [x] 3.4 `delete`: chặn khi busy; xoá site con; audit (Req 5.2, 5.3, 12.1; design §5)
+  - [x] 3.5 Route `routes/environments.ts` mount sau auth + site-admin; từ chối API key; test route-guard (Req 5.5, 11.4, 11.5; design §11)
 
-- [ ] 4. Fork worker
-  - [ ] 4.1 Worker `environment-fork` trên `QueueProvider`, theo pha, ghi `forkCursor`, resumable (Req 2.6; design §3.1)
-  - [ ] 4.2 Copy schema + roles/permissions + settings không nhạy cảm, ghi lineage `collection|field|relation` (Req 2.2, 2.4; design §3.1)
-  - [ ] 4.3 Copy items lượt 1 theo `contentScope` (giữ id item — đã chốt, design §14.9; field mã hoá decrypt/encrypt lại qua `processCrypto`), ghi lineage `baseHash` + `baseSnapshot` cho mọi item (đã chốt, §14.4) (Req 2.3, 2.4; design §2.1, §3.2, §3.3)
-  - [ ] 4.4 Lượt 2 viết lại tham chiếu theo `relations` (chỉ file/folder nếu giữ id item — design §2.1); đánh dấu `external` (Req 2.5; design §3.2)
-  - [ ] 4.5 Files: copy metadata, dùng chung `filenameDisk`; quyết định object chỉ có ở `/media` (tiền tố theo site) — copy byte hay giới hạn v1; đường xoá dòng file hiện không xoá object nên không cần sửa (Req 3.1-3.3; design §3.4)
-  - [ ] 4.6 Danh sách loại trừ: API keys, secrets, sessions, audit, revisions, agent memory, trust ledger, setting `revalidation.targets`, pipeline Firebase Sync, materialized collections (Req 2.8; design §3.5)
-  - [ ] 4.7 Integration test trên Postgres thật: fork `all` và `collections[]`, relation m2o/m2m/m2a còn đúng, chạy lại sau lỗi không nhân bản, Origin không đổi một byte (Req 2.3-2.7)
+- [x] 4. Fork worker
+  - [x] 4.1 Worker `environment-fork` trên `QueueProvider`, theo pha, ghi `forkCursor`, resumable (Req 2.6; design §3.1)
+  - [x] 4.2 Copy schema + roles/permissions + settings không nhạy cảm, ghi lineage `collection|field|relation` (Req 2.2, 2.4; design §3.1)
+  - [x] 4.3 Copy items lượt 1 theo `contentScope` (giữ id item — đã chốt, design §14.9; field mã hoá decrypt/encrypt lại qua `processCrypto`), ghi lineage `baseHash` + `baseSnapshot` cho mọi item (đã chốt, §14.4) (Req 2.3, 2.4; design §2.1, §3.2, §3.3)
+  - [x] 4.4 Lượt 2 viết lại tham chiếu theo `relations` (chỉ file/folder nếu giữ id item — design §2.1); đánh dấu `external` (Req 2.5; design §3.2)
+  - [x] 4.5 Files: copy metadata, dùng chung `filenameDisk`; quyết định object chỉ có ở `/media` (tiền tố theo site) — copy byte hay giới hạn v1; đường xoá dòng file hiện không xoá object nên không cần sửa (Req 3.1-3.3; design §3.4)
+  - [x] 4.6 Danh sách loại trừ: API keys, secrets, sessions, audit, revisions, agent memory, trust ledger, setting `revalidation.targets`, pipeline Firebase Sync, materialized collections (Req 2.8; design §3.5)
+  - [x] 4.7 Integration test trên Postgres thật: fork `all` và `collections[]`, relation m2o/m2m/m2a còn đúng, chạy lại sau lỗi không nhân bản, Origin không đổi một byte (Req 2.3-2.7)
 
-- [ ] 5. Cô lập Side_System
-  - [ ] 5.1 Copy webhooks/flows/CDC/deployments ở trạng thái disabled, không secret; intents `paused`; extension của Environment luôn `enabled = false` sau fork — kể cả official extension mà `finalizeSiteProvisioning` tự cài (Req 4.1, 4.2; design §4 mục 1a)
-  - [ ] 5.2 `isEnvironment(siteId)` cache theo request; chặn tại **từng** điểm phát ra ngoài — `dispatchItemEvent`, `CdcDispatcher`, `dispatchFirebaseSync`, `runRevalidationDispatch`, email/push — vì không có dispatcher chung (Req 4.1-4.3; design §4)
-  - [ ] 5.3 Delivery: `X-Robots-Tag: noindex` cho site con; xác nhận cache key + search index tách theo `siteId` (Req 4.4; design §4)
-  - [ ] 5.4 Test: ghi item trong Environment không bắn webhook, không chạy flow, không tạo agent run của Origin (Req 4.1-4.3)
-  - [ ] 5.5 Studio: danh sách Environment, tạo/xoá, chuyển site, nhãn Environment cố định (Req 4.5, 5.1; design §11)
+- [x] 5. Cô lập Side_System
+  - [x] 5.1 Copy webhooks/flows/CDC/deployments ở trạng thái disabled, không secret; intents `paused`; extension của Environment luôn `enabled = false` sau fork — kể cả official extension mà `finalizeSiteProvisioning` tự cài (Req 4.1, 4.2; design §4 mục 1a)
+  - [x] 5.2 `isEnvironment(siteId)` cache theo request; chặn tại **từng** điểm phát ra ngoài — `dispatchItemEvent`, `CdcDispatcher`, `dispatchFirebaseSync`, `runRevalidationDispatch`, email/push — vì không có dispatcher chung (Req 4.1-4.3; design §4)
+  - [x] 5.3 Delivery: `X-Robots-Tag: noindex` cho site con; xác nhận cache key + search index tách theo `siteId` (Req 4.4; design §4)
+  - [x] 5.4 Test: ghi item trong Environment không bắn webhook, không chạy flow, không tạo agent run của Origin (Req 4.1-4.3)
+  - [x] 5.5 Studio: danh sách Environment, tạo/xoá, chuyển site, nhãn Environment cố định (Req 4.5, 5.1; design §11)
 
 ### Phase C — Schema_Promote
 
-- [ ] 6. Diff theo lineage
-  - [ ] 6.1 Remap manifest Environment sang không gian Origin; nhận rename qua lineage → `renameFrom` (Req 7.2; design §7)
-  - [ ] 6.2 Phát hiện schema conflict bằng `baseHash` của lineage schema (Req 7.4; design §7)
-  - [ ] 6.3 `promoteSchema({ dryRun })` trả Merge_Plan; apply qua `ConfigImportService(origin)`; yêu cầu `confirmRiskyChange` + `migrationPlan` cho thay đổi rủi ro (Req 7.1, 7.3, 7.5; design §7)
-  - [ ] 6.4 Cập nhật lineage sau apply; audit `environment_schema_promoted` (Req 7.6, 12.1)
-  - [ ] 6.5 Test: thêm field, rename field, đổi kiểu có migrationPlan chạy trên item tạo sau fork, conflict hai bên cùng sửa một field (Req 7.2-7.5)
+- [x] 6. Diff theo lineage
+  - [x] 6.1 Remap manifest Environment sang không gian Origin; nhận rename qua lineage → `renameFrom` (Req 7.2; design §7)
+  - [x] 6.2 Phát hiện schema conflict bằng `baseHash` của lineage schema (Req 7.4; design §7)
+  - [x] 6.3 `promoteSchema({ dryRun })` trả Merge_Plan; apply qua `ConfigImportService(origin)`; yêu cầu `confirmRiskyChange` + `migrationPlan` cho thay đổi rủi ro (Req 7.1, 7.3, 7.5; design §7)
+  - [x] 6.4 Cập nhật lineage sau apply; audit `environment_schema_promoted` (Req 7.6, 12.1)
+  - [x] 6.5 Test: thêm field, rename field, đổi kiểu có migrationPlan chạy trên item tạo sau fork, conflict hai bên cùng sửa một field (Req 7.2-7.5)
 
 ### Phase D — Content_Promote một chiều (điểm dừng của v1)
 
-- [ ] 7. Phân loại + áp dụng
-  - [ ] 7.1 Hàm thuần `classify(base, origin, env)` theo bảng design §8.1; so sánh ở không gian id Origin (Req 8.2; design §8.1)
-  - [ ] 7.2 Viết lại tham chiếu file/folder env → origin (item→item giữ nguyên vì cùng id — §14.9); phát hiện `DEPENDENCY_NOT_PROMOTED` (Req 8.3, 8.6; design §8.2)
-  - [ ] 7.3 Sắp thứ tự create → update → delete; xử lý vòng tham chiếu (Req 8.6; design §8.2)
-  - [ ] 7.4 Schema gate `SCHEMA_NOT_PROMOTED` (Req 8.5; design §8.2)
-  - [ ] 7.5 Pre-flight toàn bộ rồi ghi qua `ItemService(origin).patch` với Write_Precondition; cập nhật `baseHash`/`baseRevisionId` (Req 6.5, 8.3, 8.4, 8.7, 8.8, 10.2; design §8.2, §10.2)
-  - [ ] 7.6 Khoá `merging` + `merge_runs` + resume idempotent (Req 10.1, 10.3; design §10.1, §10.2)
-  - [ ] 7.7 Integration test: promote sạch, conflict bị bỏ qua không ghi đè, item mới tham chiếu item mới, editorial gate chặn, chạy lại sau lỗi (Req 8.3-8.8, 10.3)
-  - [ ] 7.8 (chuyển từ 10.1, §14.8) Studio: màn Merge_Plan chỉ đọc cho dry-run của Content_Promote — nhóm theo action, đếm, cờ `truncated` (Req 8.1, 8.8; design §9)
+- [x] 7. Phân loại + áp dụng
+  - [x] 7.1 Hàm thuần `classify(base, origin, env)` theo bảng design §8.1; so sánh ở không gian id Origin (Req 8.2; design §8.1)
+  - [x] 7.2 Viết lại tham chiếu file/folder env → origin (item→item giữ nguyên vì cùng id — §14.9); phát hiện `DEPENDENCY_NOT_PROMOTED` (Req 8.3, 8.6; design §8.2)
+  - [x] 7.3 Sắp thứ tự create → update → delete; xử lý vòng tham chiếu (Req 8.6; design §8.2)
+  - [x] 7.4 Schema gate `SCHEMA_NOT_PROMOTED` (Req 8.5; design §8.2)
+  - [x] 7.5 Pre-flight toàn bộ rồi ghi qua `ItemService(origin).patch` với Write_Precondition; cập nhật `baseHash`/`baseRevisionId` (Req 6.5, 8.3, 8.4, 8.7, 8.8, 10.2; design §8.2, §10.2)
+  - [x] 7.6 Khoá `merging` + `merge_runs` + resume idempotent (Req 10.1, 10.3; design §10.1, §10.2)
+  - [x] 7.7 Integration test: promote sạch, conflict bị bỏ qua không ghi đè, item mới tham chiếu item mới, editorial gate chặn, chạy lại sau lỗi (Req 8.3-8.8, 10.3)
+  - [x] 7.8 (chuyển từ 10.1, §14.8) Studio: màn Merge_Plan chỉ đọc cho dry-run của Content_Promote — nhóm theo action, đếm, cờ `truncated` (Req 8.1, 8.8; design §9)
 
 ### Phase E — Merge ba chiều, UI, hoàn tác (v1.1 — ngoài phạm vi v1, đã chốt §14.8)
 
@@ -85,19 +85,19 @@ Kế hoạch triển khai **Content Environments** theo 6 phase. Mỗi phase t�
 
 ### Phase F — Docs, Setup Impact, DoD
 
-- [ ] 11. Docs
-  - [ ] 11.1 `docs/en/api/hono-api-spec.md` + bản `docs/vi/`: các route `/environments*`, `ETag`/`If-Match`, mã lỗi mới (DoD §4, §4a)
-  - [ ] 11.2 `docs/en/data-model.md` + bản `docs/vi/`: ba bảng mới (DoD §4, §4a)
-  - [ ] 11.3 Trang feature `content-environments` ở cả hai locale: workflow fork → sửa → promote schema → promote/merge content → hoàn tác; giới hạn v1 (DoD §4a)
-  - [ ] 11.4 Chạy `docs:i18n:parity` → `verify` → `stamp-pair --verified` → `detect`; bỏ artifact detect (CLAUDE.md "Docs i18n")
-  - [ ] 11.5 CHANGELOG `[Unreleased]` + ghi chú migration
+- [x] 11. Docs
+  - [x] 11.1 `docs/en/api/hono-api-spec.md` + bản `docs/vi/`: các route `/environments*`, `ETag`/`If-Match`, mã lỗi mới (DoD §4, §4a)
+  - [x] 11.2 `docs/en/data-model.md` + bản `docs/vi/`: ba bảng mới (DoD §4, §4a)
+  - [x] 11.3 Trang feature `content-environments` ở cả hai locale: workflow fork → sửa → promote schema → promote/merge content → hoàn tác; giới hạn v1 (DoD §4a)
+  - [x] 11.4 Chạy `docs:i18n:parity` → `verify` → `stamp-pair --verified` → `detect`; bỏ artifact detect (CLAUDE.md "Docs i18n")
+  - [x] 11.5 CHANGELOG `[Unreleased]` + ghi chú migration
 
 - [ ] 12. Registry & DoD
-  - [ ] 12.1 **Setup Impact**: rà 6 câu hỏi, ghi dòng Registry (ID cấp lúc merge) (Req 14.2)
-  - [ ] 12.2 DoD §2b multi-tenant: rà mọi query của `EnvironmentService` và worker có lọc `site_id` (Req 11.2)
+  - [x] 12.1 **Setup Impact**: rà 6 câu hỏi, ghi dòng Registry (ID cấp lúc merge) (Req 14.2)
+  - [x] 12.2 DoD §2b multi-tenant: rà mọi query của `EnvironmentService` và worker có lọc `site_id` (Req 11.2)
   - [ ] 12.3 DoD §2d shell: xác nhận chuyển Environment không đổi contract của `apps/shell` (Req 14.3)
   - [ ] 12.4 DoD §5 tutorial impact: `If-Match` có ảnh hưởng ví dụ SDK/tutorial không
-  - [ ] 12.5 `turbo run typecheck` recursive + test đích trên Postgres local (Node 24)
+  - [x] 12.5 `turbo run typecheck` recursive + test đích trên Postgres local (Node 24)
 
 ---
 
@@ -194,7 +194,36 @@ Một phase chỉ được mở PR khi đạt đủ exit criteria của nó, và
 
 ## Implementation status
 
-**Phase A xong (2026-11-16), chờ review.** Phase B–D chưa bắt đầu; Phase B chờ #811 merge (G0).
+**Phase A xong (2026-11-16). Phase B, C, D xong (2026-11-25), PR vào `epic/853-content-environments`, chờ review.** Phase E (task 8–10) là v1.1, chưa bắt đầu. Phase F: docs, CHANGELOG, Setup Impact xong; 12.3 và 12.4 còn mở (xem dưới).
+
+### Phase B–D — những gì đã giao (2026-11-25)
+
+- Migration `0045_content_environments` (viết tay, additive) + journal + 3 bảng trong `rls-policies.sql`. Số migration và ID Setup Impact (`360`) là tạm, cấp lại lúc merge.
+- `services/environments/`: `environment-service.ts` (create/list/get/delete/retry), `fork.ts` (worker theo pha), `isolation.ts` (marker + guard), `schema-promote.ts`, `content-promote.ts`, `classify.ts`, `base.ts`, `file-refs.ts`, `lock.ts`. Route `routes/environments.ts`. Studio: Settings → Environments + `EnvironmentBanner`.
+- Test trên Postgres thật (Node 22 trong môi trường này): `fork.db.integration.test.ts` (6), `schema-promote.db.integration.test.ts` (5), `content-promote.db.integration.test.ts` (8), `pure.test.ts` (property test `classify`, hash), Studio `environments-page.test.tsx` (5).
+
+### Deviation so với design (có chủ đích)
+
+1. **`lumibase_environments.site_id` = Origin**, site con ở `environment_site_id` (design §2 ghi ngược lại). Lý do: dưới `LUMIBASE_DB_RLS=enforce`, kết nối scoped theo Origin phải thấy dòng để list/xoá/khoá. Lineage giữ `site_id` = site con như design.
+2. **Flag**: dùng release flag `content-environments` (#869, đã có sẵn trong registry, dark + siteToggle) thay cho settings `environments.enabled` (task 2.3). Route trả 404 khi tắt, đúng Req 14.1.
+3. **Không dùng `QueueProvider`** cho fork (task 4.1): dùng mẫu lease + cursor + tick mỗi phút như import (#726) và locale generation (#714) — không cần thêm queue binding trên Workers, chạy được cả hai runtime.
+4. **Marker `environment.origin`** (setting của site con, key `environment.*` bị settings API từ chối) cho `isEnvironmentSite` thay vì tra `lumibase_environments`: bảng đó thuộc Origin nên kết nối scoped theo site con (RLS enforce) không đọc được.
+5. **Side system (Req 4.1/4.2)**: webhooks/flows copy ở trạng thái inactive, không secret/header. CDC subscriptions, deployments và intents **không copy** (thay vì copy disabled) — v1 không có giá trị dùng chúng trong environment, và không copy là an toàn hơn. Email bảo mật (khoá tài khoản, …) không bị chặn: đó là bảo mật tài khoản, không phải side effect nội dung; push agent bị chặn tới khi bật `environments.sideEffects.notifications`.
+6. **Content_Promote chỉ promote `data`**; status/publish window/sort giữ của Origin (item tạo mới lấy status của environment qua editorial gate).
+7. **Pre-flight (Req 10.2)**: pre-flight trước lần ghi đầu gồm schema gate, dependency gate và lập lại kế hoạch khi đã giữ khoá. Permission/validation/editorial gate chạy ở từng lần ghi qua `ItemService` của người gọi; lỗi thành outcome `failed` của item đó (nguyên tử theo item, resumable theo lần chạy — đúng §10.2, chặt hơn §10.2 không được vì `ItemService` không nhận `tx`).
+8. **Đổi kiểu field (Req 7.5)**: `migrationPlan` được chuyển cho guard của `SchemaService`, nhưng `SchemaService` không thực thi plan (B213) — giá trị cũ không được chuyển đổi. Rename thì CÓ chuyển dữ liệu: `data[from]` → `data[to]` trong mọi item Origin của collection (cùng transaction, `version` tăng).
+9. **Bị chặn có lý do**: đổi tên collection, đổi tên field mã hoá (AAD chứa tên field), bật/tắt mã hoá, đổi field của relation.
+10. **Xoá environment đang `forking`** được phép khi không bước fork nào giữ lease (worker chết); Req 5.3 chỉ còn chặn khi lease đang giữ hoặc `merging`.
+11. `status = 'merged'` không dùng (environment quay về `ready` sau promote, `mergedAt` ghi lần promote nội dung gần nhất).
+12. `snapshotData` coi `null` ở top-level như vắng mặt (promote xoá field bằng cách ghi `null`).
+
+### Còn mở (gate chưa đạt đủ)
+
+- GB: fork 50 000 item trong ≤ 15 phút **chưa đo** (Docker và Workers); fork chỉ test với mã hoá shared-key, chưa test envelope; m2m/m2a chưa có fixture riêng (identity mapping không viết lại item→item nên rủi ro thấp); test chạy bằng role superuser — chưa chạy với RLS enforce.
+- GD/GC: kiểm quyền "user có quyền ở Environment nhưng không có quyền ghi ở Origin" chưa có test riêng (đi qua `ItemService` của người gọi).
+- 12.3 (shell DoD §2d): không đổi base URL/token; chưa thử trên bản desktop/mobile.
+- 12.4 (tutorial impact): chưa rà.
+- Gate GA còn mở từ Phase A (shell).
 
 Phase A — những gì đã giao:
 
