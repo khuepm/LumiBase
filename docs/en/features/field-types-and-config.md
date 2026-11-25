@@ -1,10 +1,10 @@
 ---
-version: 6
-lastUpdated: 2026-11-17T19:26:39.389Z
+version: 7
+lastUpdated: 2026-11-25T04:49:36.329Z
 sourceLang: en
-contentHash: bd2b3b94530b8811
-codeVerified: 2026-11-17T19:26:39.389Z
-codeVerifiedHash: bd2b3b94530b8811
+contentHash: 48cbd0d44f19c050
+codeVerified: 2026-11-25T04:49:36.329Z
+codeVerifiedHash: 48cbd0d44f19c050
 codeVerifiedClaims: 6
 ---
 
@@ -179,7 +179,9 @@ Generated base collection interfaces represent stored values. Generated `Collect
 The schema service classifies risky field mutations before apply:
 
 - Rename: use `renameFrom` and preserve current `type`/`interface` in the SDK rename helper.
-- Rename or type change with existing data: requires a `migrationPlan` that names a non-empty string `strategy` (for example `{ "strategy": "cast" }`), or `confirmRiskyChange: true`. An empty or strategy-less plan such as `{}` is refused with `409 FIELD_MIGRATION_REQUIRED`. The plan is not executed yet; it only confirms the change.
+- Rename or type change with existing data: requires a `migrationPlan` that names a non-empty string `strategy` (for example `{ "strategy": "cast" }`), or `confirmRiskyChange: true`. An empty or strategy-less plan such as `{}` is refused with `409 FIELD_MIGRATION_REQUIRED`. The plan itself is not executed; it only confirms the change.
+- Rename moves item data: in the same transaction as the field row, every item of the collection in the site (soft-deleted items included) has its value moved from `data[old]` to `data[new]`, and a pin on the old name moves to the new one. This holds for `renameField`, `updateField` with a new `name`, and `renameFrom` in `upsertField` or a full schema apply. Each moved item's `version` (its `ETag`) increments; no revision is written and `updatedAt` is unchanged, because the value itself is not edited. Older revisions keep the old key. Other sites are never touched.
+- Encrypted fields: renaming an encrypted field is refused with `409 ENCRYPTED_FIELD_RENAME_UNSUPPORTED` while any item (soft-deleted included) holds a value for it. The field name is part of the AES-GCM AAD (`{siteId}|{collection}|{field}|{recordId}`), so a moved ciphertext would no longer decrypt. An empty encrypted field renames normally.
 - Delete with existing data: requires an explicit destructive path. The SDK accepts delete options such as `confirmRiskyChange`, `migrationPlan`, `force`, and `backupToRevisions`.
 
 Schema diff reports `risk` and `runtimeImpact` so Studio and automation can require confirmation before destructive changes.
