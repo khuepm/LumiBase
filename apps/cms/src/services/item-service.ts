@@ -117,6 +117,7 @@ import {
   type TreeConfig,
   type TreeQuery,
 } from './tree-service';
+import { isEnvironmentSite } from './environments/isolation';
 
 const BULK_INSERT_CHUNK = 100;
 
@@ -2804,6 +2805,8 @@ export class ItemService {
     data: Record<string, unknown>,
   ): Promise<void> {
     if (!this.deps.encryptionKey) return;
+    // Content Environments (#853): an environment never syncs out.
+    if (await isEnvironmentSite(this.deps.db, this.deps.siteId)) return;
     try {
       const sync = new FirebaseSyncService({
         db: this.deps.db,
@@ -2814,6 +2817,48 @@ export class ItemService {
     } catch (err) {
       console.error('[item-service] firebase sync failed', { collection, itemId, err: formatSafeError(err) });
     }
+  }
+
+  /**
+   * Names of the collection's encrypted fields (empty when none, or when the
+   * collection is unknown). Content Environments (#853) snapshots these as
+   * hashes, never in clear.
+   */
+  async encryptedFieldNames(collectionName: string): Promise<Set<string>> {
+    const compiled = await this.schemaService.getCompiled(collectionName);
+    return new Set(compiled?.fields.filter((f) => f.encrypted).map((f) => f.name) ?? []);
+  }
+
+  /**
+   * Plaintext of a stored row's `data`, decrypted with THIS site's AAD and the
+   * row's own wrapped DEK. Internal: no masking, no `read_decrypted` check, no
+   * access audit — only for system copies between sites that never return the
+   * value to a caller (Content Environments fork/promote, #853). Fails closed
+   * (`DECRYPTION_FAILED`) rather than copying ciphertext.
+   */
+  async decryptStoredData(
+    collectionName: string,
+    recordId: string,
+    data: Record<string, unknown>,
+    dekWrapped: string | null,
+  ): Promise<Record<string, unknown>> {
+    return this.processCrypto(collectionName, data, 'decrypt', recordId, true, false, false, { dekWrapped });
+  }
+
+  /**
+   * Encrypt plaintext `data` for storage under THIS site (AAD carries the site
+   * id, so ciphertext of one site never decrypts in another). Returns the
+   * wrapped DEK to store when the site writes envelope records. Companion of
+   * {@link decryptStoredData}; same internal-only contract.
+   */
+  async encryptDataForStorage(
+    collectionName: string,
+    recordId: string,
+    data: Record<string, unknown>,
+  ): Promise<{ data: Record<string, unknown>; dekWrapped: string | null }> {
+    const out: CryptoRecordOpts = {};
+    const encrypted = await this.processCrypto(collectionName, data, 'encrypt', recordId, true, false, undefined, out);
+    return { data: encrypted, dekWrapped: out.wrappedDek ?? null };
   }
 
   private async processCrypto(

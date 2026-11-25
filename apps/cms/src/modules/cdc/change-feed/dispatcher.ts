@@ -42,6 +42,7 @@ import {
   type StoredChangeEvent,
 } from './feed-reader';
 import { WebhookSender, type WebhookSendOutcome } from './webhook-sender';
+import { isEnvironmentSite } from '../../../services/environments/isolation';
 
 export const CDC_DISPATCH_QUEUE = 'cdc-dispatch';
 export const DISPATCH_BATCH_SIZE = 100;
@@ -484,6 +485,11 @@ export function createWebhookEnvelopeSender(db: Database): EnvelopeSender {
     async deliver(sub, envelopes) {
       if (!sub.webhookId) {
         return { ok: false, httpStatus: null, errorMessage: 'Subscription has no webhook' };
+      }
+      // Content Environments (#853): an environment never delivers webhooks
+      // (fork copies them without a secret; this is the second line).
+      if (await isEnvironmentSite(db, sub.siteId)) {
+        return { ok: false, httpStatus: null, errorMessage: 'Environment sites do not deliver webhooks' };
       }
       const target = await loadWebhookTarget(db, sub.siteId, sub.webhookId);
       if (!target) {

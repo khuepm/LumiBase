@@ -138,6 +138,17 @@ export default Sentry.withSentry(
           )
           .catch(() => console.error('[locale-generation] tick failed')),
       );
+      // Resume Content Environments forks (#853), same lease guard as imports.
+      ctx.waitUntil(
+        import('./services/environments/fork')
+          .then(({ runEnvironmentForkTick }) =>
+            runEnvironmentForkTick(
+              { db, keyProvider: runtime.keys, encryptionKey: (env as unknown as Bindings).ENCRYPTION_KEY },
+              { budgetMs: 25_000 },
+            ),
+          )
+          .catch(() => console.error('[environments] fork tick failed')),
+      );
       return;
     }
 

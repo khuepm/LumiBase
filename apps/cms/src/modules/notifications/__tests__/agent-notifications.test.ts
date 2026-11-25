@@ -62,6 +62,8 @@ describe('emitAgentNotification', () => {
       { db, siteId: 'site_1', vapid: { publicKey: 'p', privateKey: 'd', subject: 'mailto:x' } },
       { kind: 'run', severity: 'info', title: 'run', body: 'done', entityId: 'r1' },
     );
-    expect((db as unknown as { select: ReturnType<typeof vi.fn> }).select).toHaveBeenCalledTimes(1);
+    // One read for the Content Environments marker (#853: an environment
+    // sends no push), one for the subscriptions.
+    expect((db as unknown as { select: ReturnType<typeof vi.fn> }).select).toHaveBeenCalledTimes(2);
   });
 });

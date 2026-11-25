@@ -16,6 +16,8 @@ const CONTROL_PLANE_PATHS = [
   '/api/v1/ai/automation',
   '/api/v1/cdc',
   '/api/v1/domains',
+  // Content Environments (#853): fork a site, promote schema/content back.
+  '/api/v1/environments',
   '/api/v1/flows',
   // Git integration: manage repo connections, OAuth, and GitOps sync (creates
   // agent goals) — admin-only. The PUBLIC webhook + OAuth-callback routes are

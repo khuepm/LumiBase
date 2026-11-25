@@ -4,6 +4,7 @@ import { formatSafeError } from '@lumibase/contracts/utils';
 import { and, eq } from 'drizzle-orm';
 import { runFlow, type FlowGraph } from './flow-service';
 import { queueAccepts } from './queue-routing';
+import { isEnvironmentSite } from './environments/isolation';
 
 /**
  * Flow event trigger (visual-flow-builder Req 1).
@@ -90,6 +91,9 @@ export async function dispatchItemEvent(deps: FlowDispatchDeps, event: ItemEvent
   const queue = deps.queue;
   if (!queueAccepts(queue, FLOW_EVENTS_QUEUE)) return;
   try {
+    // Content Environments (#853): an environment's writes never run flows.
+    // Fork copies flows inactive; this is the second line (fails closed).
+    if (await isEnvironmentSite(deps.db, deps.siteId)) return;
     const matched = await findActiveEventFlows(deps.db, deps.siteId, event.collection, event.action);
     if (matched.length === 0) return;
     await Promise.allSettled(

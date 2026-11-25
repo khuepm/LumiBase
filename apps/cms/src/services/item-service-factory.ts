@@ -187,7 +187,14 @@ export type SystemContextReason =
    * writes nothing to items (only drift rows). Sending content to the provider
    * is gated by the site's `aiDecisions.enabled` + `aiDecisions.drift`.
    */
-  | 'semantic-drift-scan';
+  | 'semantic-drift-scan'
+  /**
+   * Content Environments fork (#853): copies an origin's content into its
+   * environment's child site of the same organization. A site admin of the
+   * origin started the fork; the copy only decrypts/re-encrypts between the
+   * two sites and never returns a value to a caller.
+   */
+  | 'environment-fork';
 
 /**
  * Construct an ItemService that intentionally runs with system privileges

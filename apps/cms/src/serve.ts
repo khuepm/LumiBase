@@ -200,6 +200,7 @@ async function main() {
   let goalDispatchTask: ScheduledTask | undefined;
   let importTask: ScheduledTask | undefined;
   let localeJobTask: ScheduledTask | undefined;
+  let environmentForkTask: ScheduledTask | undefined;
   let loadGuardTimer: ReturnType<typeof setInterval> | undefined;
 
   if (runWorkers) {
@@ -670,6 +671,28 @@ async function main() {
     ),
   );
 
+  // ── Content Environments fork (#853) ────────────────────────────────────
+  // Same shape as imports: POST /environments drives the first steps; this
+  // tick resumes forks whose lease expired. Gated data-side: a fork row only
+  // exists once the `content-environments` release flag let a site create it.
+  const { runEnvironmentForkTick } = await import('./services/environments/fork');
+  environmentForkTask = cron.schedule(
+    '* * * * *',
+    leaderLockedCallback(
+      'environment-fork-resume',
+      55_000,
+      async () => {
+        await runEnvironmentForkTick(
+          { db: rotatorDb, keyProvider: runtime.keys, encryptionKey: process.env.ENCRYPTION_KEY },
+          { budgetMs: 50_000 },
+        ).catch((err) => {
+          console.error('[environments] fork tick failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
+
   const { runGoalDispatchTick } = await import('./services/goal-dispatch-service');
   const goalDispatchDeps = { db: rotatorDb, queue: runtime.queue };
   goalDispatchTask = cron.schedule(
@@ -785,6 +808,7 @@ async function main() {
     goalDispatchTask?.stop();
     importTask?.stop();
     localeJobTask?.stop();
+    environmentForkTask?.stop();
     extensionDevClient?.stop();
     if (runHttp) {
       pressureLimiter.stop();
