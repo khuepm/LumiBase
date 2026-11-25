@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { NotificationsPanel } from '@/components/notifications-panel';
 import { ReleaseUpdateNotice } from '@/components/release-update-notice';
+import { EnvironmentBanner } from '@/components/environment-banner';
 import { ConnectionStatusDot } from '@/components/connection-status-dot';
 import { MissionControlBadge, ModuleNavItem, type ModuleDef } from '@/components/module-nav-item';
 import { SearchPalette } from '@/components/search-palette';
@@ -310,6 +311,7 @@ export function AppShell({ children }: AppShellProps) {
           </div>
         </header>
 
+        <EnvironmentBanner />
         <main
           id="main-content"
           tabIndex={-1}

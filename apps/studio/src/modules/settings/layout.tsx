@@ -3,6 +3,7 @@ import { Link, useRouterState } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { getAdminBase } from '@/lib/admin-base';
+import { useEnvironmentsEnabled } from './environments-api';
 
 interface NavItem {
   id: string;
@@ -24,6 +25,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'site', label: 'Site', to: '/settings/site' },
       { id: 'domains', label: 'Domains', to: '/settings/domains' },
       { id: 'preview', label: 'Preview', to: '/settings/preview' },
+      { id: 'environments', label: 'Environments', to: '/settings/environments' },
       { id: 'uploads', label: 'Uploads', to: '/settings/uploads' },
       { id: 'ai-decisions', label: 'AI decisions', to: '/settings/ai-decisions' },
       { id: 'keyboard', label: 'Keyboard shortcuts', to: '/settings/keyboard' },
@@ -84,6 +86,8 @@ export function SettingsLayout({ children }: SettingsLayoutProps) {
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const { organization } = useOrganization();
   const showOrganization = organization?.role === 'owner' || organization?.role === 'admin';
+  // A dark feature stays out of the navigation until its release flag is on (#853).
+  const showEnvironments = useEnvironmentsEnabled();
 
   const adminBase = getAdminBase(location.pathname);
   const pathname = adminBase ? location.pathname.slice(adminBase.length) : location.pathname;
@@ -112,7 +116,7 @@ export function SettingsLayout({ children }: SettingsLayoutProps) {
             <ul>
               {(group.id === 'configuration' && showOrganization
                 ? [{ id: 'organization', label: 'Organization', to: '/settings/organization' }, ...group.items]
-                : group.items).map((item) => (
+                : group.items).filter((item) => item.id !== 'environments' || showEnvironments).map((item) => (
                 <li key={item.id}>
                   <Link
                     to={item.to}
