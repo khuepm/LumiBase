@@ -74,3 +74,49 @@ export function PreviewUrlSection({ collectionName }: { collectionName: string }
     </section>
   );
 }
+
+/**
+ * Collection `meta.pageBlock` (V06 #684): offer this collection as a block in
+ * the page composer. Its fields become the block's fields.
+ */
+export function PageBlockToggle({ collectionName }: { collectionName: string }) {
+  const client = getApiClient();
+  const queryClient = useQueryClient();
+  const collectionQuery = useQuery({
+    queryKey: ['collection', collectionName],
+    queryFn: async () => (await client.schema.getCollection(collectionName)).data,
+  });
+  const enabled = collectionQuery.data?.meta?.pageBlock === true;
+  const save = useMutation({
+    mutationFn: async (next: boolean) =>
+      client.schema.updateCollection(collectionName, {
+        meta: { ...(collectionQuery.data?.meta ?? {}), pageBlock: next },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['collection', collectionName] });
+      queryClient.invalidateQueries({ queryKey: ['page-blocks'] });
+    },
+  });
+  return (
+    <section>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={enabled}
+          disabled={!collectionQuery.data || save.isPending}
+          onChange={(e) => save.mutate(e.target.checked)}
+        />
+        Use as a page block
+      </label>
+      <p className="ms-6 text-xs text-muted-foreground">
+        Offers this collection in the page composer. Its fields are the block&apos;s fields; encrypted and pii/phi fields are not
+        available in blocks.
+      </p>
+      {save.error && (
+        <p role="alert" className="ms-6 mt-1 text-xs text-destructive">
+          Saving failed.
+        </p>
+      )}
+    </section>
+  );
+}

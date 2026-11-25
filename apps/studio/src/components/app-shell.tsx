@@ -4,6 +4,7 @@ import {
   Database,
   FileText,
   Layers,
+  LayoutTemplate,
   Settings,
   ShieldCheck,
   Users,
@@ -40,6 +41,7 @@ import { mePreferencesQueryOptions, permissionsQueryOptions } from '@/lib/me-que
 
 const MODULES: ModuleDef[] = [
   { id: 'content', label: 'Content', icon: FileText, to: '/' },
+  { id: 'pages', label: 'Pages', icon: LayoutTemplate, to: '/pages' },
   { id: 'files', label: 'Files', icon: Layers, to: '/files' },
   { id: 'users', label: 'Users', icon: Users, to: '/users' },
   { id: 'access', label: 'Access', icon: ShieldCheck, to: '/access' },
@@ -208,7 +210,9 @@ export function AppShell({ children }: AppShellProps) {
               ? 'users'
               : appPath.startsWith('/files')
                 ? 'files'
-                : 'content';
+                : appPath.startsWith('/pages')
+                  ? 'pages'
+                  : 'content';
 
   const handleLogout = () => {
     // Revoke server-side (best-effort), clear local tokens, then redirect.

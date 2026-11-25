@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-11-21T11:14:09.702Z
+version: 4
+lastUpdated: 2026-11-21T13:49:43.114Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ccc2c4da73477f42
+sourceHash: 03cee90deba0d489
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-21T11:14:09.702Z
-codeVerifiedHash: ccc2c4da73477f42
+codeVerified: 2026-11-21T13:49:43.114Z
+codeVerifiedHash: 03cee90deba0d489
 codeVerifiedClaims: 18
 ---
 
@@ -20,10 +20,8 @@ codeVerifiedClaims: 18
 
 **Status:** đã có — preview token (V01), khung preview trong Studio (V02),
 overlay `@lumibase/visual-editing` (V03), preview theo version/release/locale
-(V04, API), CSP và threat model (V05). Chưa có: nút "Preview release" trong
-Studio (trang **Releases** liệt kê các release và lỗi validation của chúng,
-nhưng chưa mở được preview của một release — dùng API), và trình dựng trang trực
-quan (V06, sau v1).
+(V04, gồm cả **Preview release** trong Studio), CSP và threat model (V05), và
+trình dựng trang trực quan (V06, xem [Page composer](./page-composer.md)).
 
 ## 1. Các phần ghép với nhau thế nào
 
@@ -59,7 +57,17 @@ Page rendered from the preview token  ◀──postMessage──▶  Studio (pat
 2. Mở một item và bấm **Preview**. Khung preview mở cạnh form:
    - kéo thanh chia, hoặc focus vào nó rồi dùng ←/→, Home/End, Enter (về mặc định);
    - chọn Desktop / Tablet (768 px) / Mobile (390 px);
-   - chỉnh sửa được đẩy sang trang (debounce 150 ms); lưu thì trang tải lại.
+   - chỉnh sửa được đẩy sang trang (debounce 150 ms); lưu thì trang tải lại;
+   - nếu item có content version, chọn một version ở **Version**: frame hiển
+     thị version đó (item liên quan có version cùng key cũng đọc từ version
+     đó). Khi đang chọn version, chỉnh sửa chưa lưu trên form không được đẩy
+     sang, vì form sửa chính item chứ không phải version.
+3. **Preview một release:** Releases (`/releases`, có link từ Content) → (release) → **Preview
+   release**. Tuỳ chọn chọn locale, rồi bấm **Create preview link**. Studio mint
+   một token gắn với release, và mỗi thành viên có collection đặt Preview URL
+   sẽ có link **Open preview** (`{release}` được điền sẵn). Mọi trang mở qua
+   link này hiển thị các item của release như khi xuất bản, phần còn lại như
+   đang live.
 
 ## 3. Settings → Preview
 

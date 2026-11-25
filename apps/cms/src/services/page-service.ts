@@ -11,15 +11,19 @@
  * changed must always be traceable to who changed it.
  */
 
-import { activity, pages, scopeSite, type Database } from '@lumibase/database';
-import { and, eq } from 'drizzle-orm';
+import { activity, collections, pages, scopeSite, type Database } from '@lumibase/database';
+import { isComposerLayout, PageLayoutSchema, type PageLayout } from '@lumibase/contracts';
+import { and, eq, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import type { CacheProvider } from '@lumibase/runtime';
+import type { CacheProvider, EdgeCacheProvider } from '@lumibase/runtime';
+import { hasBlocksFields, resolveBlockTemplates } from './blocks';
 import { isValidSlug } from './identifier-guard';
+import { invalidateDeliverTag } from './content-invalidation';
 import { forgetNegative, negativePageKey } from './negative-cache';
+import { SchemaService, type CompiledField } from './schema-service';
+import { validateItem, type ValidationIssue } from './validation';
 import { checkContentIntegrity } from '../modules/content-integrity/monitor';
 import type { PermissionService } from './permission-service';
-import type { ValidationIssue } from './validation';
 
 export type PageRow = typeof pages.$inferSelect;
 
@@ -48,10 +52,33 @@ export class PageServiceError extends Error {
   }
 }
 
+/** A registered page block (V06 #684): a collection with `meta.pageBlock: true`. */
+export interface PageBlockDefinition {
+  name: string;
+  label: string | null;
+  icon: string | null;
+  note: string | null;
+  fields: Array<{
+    name: string;
+    type: string;
+    interface: string;
+    label: string | null;
+    note: string | null;
+    required: boolean;
+    options: Record<string, unknown>;
+  }>;
+}
+
+/** Fields a block may not carry: block data is stored in clear in `layoutConfig`. */
+function sensitive(field: CompiledField): boolean {
+  return field.encrypted || field.classification === 'pii' || field.classification === 'phi';
+}
+
 export type PageServiceDeps = {
   db: Database;
   siteId: string;
   cache?: CacheProvider;
+  edgeCache?: EdgeCacheProvider | null;
   /** `users.id` of the caller, recorded on activity rows; null for API keys. */
   actorId?: string | null;
   /**
@@ -128,8 +155,142 @@ export class PageService {
     return row ?? null;
   }
 
+  private schema(): SchemaService {
+    return new SchemaService({ db: this.deps.db as never, siteId: this.deps.siteId, cache: this.deps.cache });
+  }
+
+  /** Names of the site's registered page blocks. */
+  private async pageBlockNames(): Promise<string[]> {
+    const rows = await this.deps.db
+      .select({ name: collections.name })
+      .from(collections)
+      .where(
+        and(
+          scopeSite(collections.siteId, this.deps.siteId),
+          sql`(${collections.meta}->>'pageBlock') = 'true'`,
+        ),
+      );
+    return rows.map((r) => r.name).sort();
+  }
+
+  /** The composer's palette: every registered page block with its fields. */
+  async listBlocks(): Promise<PageBlockDefinition[]> {
+    const schema = this.schema();
+    const out: PageBlockDefinition[] = [];
+    for (const name of await this.pageBlockNames()) {
+      const compiled = await schema.getCompiled(name);
+      if (!compiled) continue;
+      out.push({
+        name: compiled.name,
+        label: compiled.label,
+        icon: compiled.icon,
+        note: compiled.note,
+        fields: compiled.fields
+          .filter((f) => !f.hidden && !sensitive(f))
+          .map((f) => ({
+            name: f.name,
+            type: f.type,
+            interface: f.interface,
+            label: f.label,
+            note: f.note,
+            required: f.required,
+            options: f.options,
+          })),
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Validate a composer (v1) layout: its shape, that every section is a
+   * registered page block, each block's data against that block's fields
+   * (including nested `blocks` fields), and that every `source.collection`
+   * exists. Returns the normalised layout. Older free-form layouts (no
+   * `version`) are returned untouched.
+   */
+  async normaliseLayout(layoutConfig: Record<string, unknown>): Promise<Record<string, unknown>> {
+    if (!isComposerLayout(layoutConfig)) return layoutConfig;
+    const parsed = PageLayoutSchema.safeParse(layoutConfig);
+    if (!parsed.success) {
+      const issues: ValidationIssue[] = parsed.error.issues.map((i) => {
+        const path = i.path.filter((p): p is string | number => typeof p !== 'symbol');
+        return { field: path.join('.'), code: 'VALIDATION', message: i.message, path };
+      });
+      throw new PageServiceError('VALIDATION', 'The page layout is not valid.', 400, issues);
+    }
+    const layout: PageLayout = parsed.data;
+    const issues: ValidationIssue[] = [];
+    const blockNames = new Set(await this.pageBlockNames());
+    const schema = this.schema();
+    const compiledCache = new Map<string, Awaited<ReturnType<SchemaService['getCompiled']>>>();
+    const compiled = async (name: string) => {
+      if (!compiledCache.has(name)) compiledCache.set(name, await schema.getCompiled(name));
+      return compiledCache.get(name) ?? null;
+    };
+
+    for (const [index, section] of layout.sections.entries()) {
+      const at = (...rest: Array<string | number>) => ['sections', index, ...rest];
+      if (!blockNames.has(section.component)) {
+        issues.push({
+          field: at('component').join('.'),
+          code: 'UNKNOWN_BLOCK',
+          message: `"${section.component}" is not a registered page block.`,
+          path: at('component'),
+        });
+        continue;
+      }
+      const block = await compiled(section.component);
+      if (!block) continue;
+      const known = new Map(block.fields.map((f) => [f.name, f]));
+      for (const [key, value] of Object.entries(section.data)) {
+        const field = known.get(key);
+        if (!field) {
+          // Same rule as a `blocks` field: block data carries only the block's fields.
+          issues.push({
+            field: at('data', key).join('.'),
+            code: 'UNKNOWN_FIELD',
+            message: `Unknown field "${key}" for block "${section.component}".`,
+            path: at('data', key),
+          });
+          continue;
+        }
+        if (sensitive(field) && value !== null && value !== undefined) {
+          issues.push({
+            field: at('data', key).join('.'),
+            code: 'SENSITIVE_FIELD',
+            message: 'Encrypted or pii/phi fields are not supported in page blocks.',
+            path: at('data', key),
+          });
+        }
+      }
+      const blockTemplates = hasBlocksFields(block.fields)
+        ? await resolveBlockTemplates(block.fields, (name) => compiled(name))
+        : new Map<string, CompiledField[]>();
+      const result = validateItem(block.fields, section.data, { blockTemplates });
+      if (!result.ok) {
+        for (const issue of result.issues) {
+          const rest = issue.path ?? issue.field.split('.');
+          issues.push({ ...issue, field: at('data', ...rest).join('.'), path: at('data', ...rest) });
+        }
+      } else {
+        section.data = result.data;
+      }
+      if (section.source && !(await compiled(section.source.collection))) {
+        issues.push({
+          field: at('source', 'collection').join('.'),
+          code: 'UNKNOWN_COLLECTION',
+          message: `Collection "${section.source.collection}" does not exist.`,
+          path: at('source', 'collection'),
+        });
+      }
+    }
+    if (issues.length > 0) throw new PageServiceError('VALIDATION', 'The page layout is not valid.', 400, issues);
+    return layout as unknown as Record<string, unknown>;
+  }
+
   async create(input: CreatePageInput): Promise<PageRow> {
     this.assertSlug(input.slug);
+    const layoutConfig = input.layoutConfig ? await this.normaliseLayout(input.layoutConfig) : {};
     if (!input.title.trim()) {
       throw new PageServiceError('VALIDATION', 'title is required');
     }
@@ -146,7 +307,7 @@ export class PageService {
             siteId: this.deps.siteId,
             slug: input.slug,
             title: input.title.trim(),
-            layoutConfig: input.layoutConfig ?? {},
+            layoutConfig,
           })
           .returning();
         if (!inserted) {
@@ -156,6 +317,7 @@ export class PageService {
         return inserted;
       });
       await forgetNegative(this.deps.cache, negativePageKey(this.deps.siteId, row.slug));
+      await this.purgeDelivery();
       await this.integrityCheck(row);
       return row;
     } catch (err) {
@@ -176,6 +338,7 @@ export class PageService {
     if (input.title !== undefined && !input.title.trim()) {
       throw new PageServiceError('VALIDATION', 'title is required');
     }
+    const layoutConfig = input.layoutConfig !== undefined ? await this.normaliseLayout(input.layoutConfig) : undefined;
     if (input.layoutConfig !== undefined) {
       this.assertPublishedSources(input.layoutConfig);
       await this.assertSourcesReadable(input.layoutConfig, existing.layoutConfig);
@@ -190,7 +353,7 @@ export class PageService {
           .set({
             ...(input.slug !== undefined ? { slug: input.slug } : {}),
             ...(input.title !== undefined ? { title: input.title.trim() } : {}),
-            ...(input.layoutConfig !== undefined ? { layoutConfig: input.layoutConfig } : {}),
+            ...(layoutConfig !== undefined ? { layoutConfig } : {}),
             updatedAt: new Date(),
           })
           .where(and(eq(pages.id, id), scopeSite(pages.siteId, this.deps.siteId)))
@@ -208,6 +371,7 @@ export class PageService {
       if (previousSlug !== nextSlug) {
         await forgetNegative(this.deps.cache, negativePageKey(this.deps.siteId, previousSlug));
       }
+      await this.purgeDelivery();
       if (input.layoutConfig !== undefined) await this.integrityCheck(row);
       return row;
     } catch (err) {
@@ -229,6 +393,20 @@ export class PageService {
       await this.recordActivity(tx, 'delete', id, { before });
     });
     // Do not write a tombstone here — deliver miss path owns setNegative.
+    await this.purgeDelivery();
+  }
+
+  /**
+   * Drop this site's cached page payloads (app cache and edge) after a page
+   * write, so `/deliver/page` serves the new layout instead of the cached one
+   * for up to its TTL. Best-effort, like every other delivery purge.
+   */
+  private async purgeDelivery(): Promise<void> {
+    try {
+      await invalidateDeliverTag(this.deps.cache, this.deps.siteId, this.deps.edgeCache);
+    } catch {
+      // never fail the write over a cache purge
+    }
   }
 
   private assertPublishedSources(layout: unknown): void {

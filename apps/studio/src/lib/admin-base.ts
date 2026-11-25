@@ -23,6 +23,8 @@ const PREFIXABLE_SEGMENTS = new Set([
   'cdc',
   'settings',
   'recovery',
+  // Page composer (#684): `/{adminPath}/pages/:id`.
+  'pages',
   // Intent links (#759): `/{adminPath}/intent/edit?…`.
   'intent',
 ]);

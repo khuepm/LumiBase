@@ -1,11 +1,11 @@
 ---
-version: 66
-lastUpdated: 2026-11-21T11:04:16.006Z
+version: 67
+lastUpdated: 2026-11-21T13:49:40.031Z
 sourceLang: en
-contentHash: 49608a0a77208a74
-codeVerified: 2026-11-21T11:04:16.006Z
-codeVerifiedHash: 49608a0a77208a74
-codeVerifiedClaims: 656
+contentHash: 0ad5a26f5d2e38aa
+codeVerified: 2026-11-21T13:49:40.031Z
+codeVerifiedHash: 0ad5a26f5d2e38aa
+codeVerifiedClaims: 658
 ---
 
 # Hono API Specification — LumiBase
@@ -695,12 +695,23 @@ matching negative-cache tombstones immediately.
 |--------|------|-------------|
 | `GET` | `/api/v1/pages` | List pages for the active site |
 | `POST` | `/api/v1/pages` | Create `{ slug, title, layoutConfig? }`. `400 VALIDATION` (`field: sections.N.source.status`) when a section `source` asks for a status other than `published` (#1006). `403 SOURCE_FORBIDDEN` when a section `source` names a collection the caller cannot read in full (every field, no row filter) |
+| `GET` | `/api/v1/pages/blocks` | Registered page blocks (collections with `meta.pageBlock: true`) and their fields — the composer palette |
 | `GET` | `/api/v1/pages/:id` | Get one page |
 | `PATCH` | `/api/v1/pages/:id` | Partial update (`slug` / `title` / `layoutConfig`). `400 VALIDATION` for a non-published `source.status`, as on create. `403 SOURCE_FORBIDDEN` when the new layout adds a `source` on a collection the caller cannot read in full; sources the page already had are not re-checked |
 | `DELETE` | `/api/v1/pages/:id` | Delete page |
 
 Slug shape matches the Delivery guard (`^[a-z0-9]+(?:[/_-][a-z0-9]+)*$`, ≤200).
 
+**Composer layouts** (`layoutConfig.version: 1`, epic #667 V06) are validated on
+create and patch: every `sections[].component` must be a registered page block,
+`data` is validated against that block's fields (nested `blocks` fields
+included; unknown, encrypted and pii/phi fields are refused), regions must be
+declared in `regions`, and `source` reads published items only. Errors are
+`400` with one entry per problem, each carrying a `field` path such as
+`sections.2.data.title`. Layouts without `version` are stored as before, apart
+from the published-only `source.status` rule above (#1006). The
+format is described in [Page composer](../features/page-composer.md); delivery
+is unchanged.
 **Access (#986).** Pages are public once delivered, so every route needs a
 `lumibase_pages::<action>` permission (`read` / `create` / `update` /
 `delete`); site admins bypass. Without it the route answers

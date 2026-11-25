@@ -46,6 +46,7 @@ function buildService(c: Context<AppEnv>) {
     db: c.get('db'),
     siteId: c.get('siteId'),
     cache: c.get('runtime').cache,
+    edgeCache: c.get('runtime').edgeCache,
     actorId: c.get('auth')?.userId ?? null,
     permissions: permissionServiceForRequest(c),
   });
@@ -94,6 +95,12 @@ pagesRouter.get('/', async (c) => {
   const rows = await buildService(c).list();
   const data = access.admin ? rows : rows.filter((row) => canActOnPage(access, row));
   return c.json({ data });
+});
+
+/** The composer palette: registered page blocks (V06 #684). Before `/:id`. */
+pagesRouter.get('/blocks', async (c) => {
+  const data = await buildService(c).listBlocks();
+  return c.json({ data, meta: { total: data.length } });
 });
 
 pagesRouter.get('/:id', async (c) => {

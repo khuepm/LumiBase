@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { AlertTriangle, CheckCircle2, Globe, ListChecks } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Eye, Globe, ListChecks } from 'lucide-react';
 import { useState } from 'react';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { ReleasePreview } from './release-preview';
 
 /**
  * Content releases with a pre-publish validation summary (#692).
@@ -101,6 +102,7 @@ export function ReleaseDetail({ id }: { id: string }) {
   const client = getApiClient();
   const queryClient = useQueryClient();
   const [validation, setValidation] = useState<ReleaseValidation | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const detail = useQuery({
     queryKey: ['release', id],
     queryFn: async () =>
@@ -143,6 +145,16 @@ export function ReleaseDetail({ id }: { id: string }) {
         <div className="flex gap-2">
           <button
             type="button"
+            onClick={() => setPreviewOpen((v) => !v)}
+            aria-pressed={previewOpen}
+            disabled={release.items.length === 0}
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Preview release
+          </button>
+          <button
+            type="button"
             onClick={() => check.mutate()}
             disabled={check.isPending}
             className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
@@ -170,6 +182,8 @@ export function ReleaseDetail({ id }: { id: string }) {
           Publish result: <strong>{publish.data.status}</strong>
         </p>
       )}
+
+      {previewOpen && <ReleasePreview releaseId={release.id} items={release.items} />}
 
       {validation && (
         <ValidationSummary validation={validation} />
