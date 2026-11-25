@@ -23,6 +23,7 @@
 import { pushSubscriptions, type Database } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { readVapidKeys, sendWebPush, type VapidKeys } from './web-push';
+import { environmentNotificationsAllowed } from '../../services/environments/isolation';
 
 /** The operational event classes that produce a notification. */
 export type AgentNotificationKind = 'approval' | 'veto' | 'question' | 'incident' | 'goal' | 'run' | 'test';
@@ -120,6 +121,9 @@ async function publishInApp(deps: EmitNotificationDeps, notification: AgentNotif
 async function publishWebPush(deps: EmitNotificationDeps, notification: AgentNotification): Promise<void> {
   const vapid = deps.vapid ?? readVapidKeys(deps.env ?? {});
   if (!vapid) return;
+  // Content Environments (#853, Req 4.3): an environment sends no push until
+  // its admin turns `environments.sideEffects.notifications` on.
+  if (!(await environmentNotificationsAllowed(deps.db, deps.siteId))) return;
 
   let subs: Array<{ id: string; endpoint: string; p256dh: string; auth: string }>;
   try {

@@ -1,6 +1,6 @@
 import { settings, scopeSite } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { requireSiteAdmin } from '../middleware/site-admin';
@@ -18,6 +18,18 @@ export const settingsRouter = new Hono<AppEnv>();
 // `services/settings-redaction.ts`).
 settingsRouter.post('*', requireSiteAdmin());
 settingsRouter.delete('*', requireSiteAdmin());
+
+/**
+ * Keys owned by the platform, not by the site admin. `environment.origin`
+ * marks a Content Environment's child site (#853); the side-effect guards read
+ * it, so removing or forging it through this store must not be possible.
+ */
+export function isReservedSettingKey(key: string): boolean {
+  return key === 'environment' || key.startsWith('environment.');
+}
+
+const reserved = (c: Context<AppEnv>) =>
+  c.json({ errors: [{ code: 'SETTING_RESERVED', message: 'This settings key is managed by the platform.' }] }, 403);
 
 // Secret-bearing fields are redacted for every caller. The rule is shared with
 // the `listSettings` agent skill (`services/settings-redaction.ts`, #579).
@@ -68,6 +80,7 @@ settingsRouter.post('/', async (c) => {
   const db = c.get('db');
   const body = await c.req.json();
   const input = settingSchema.parse(body);
+  if (isReservedSettingKey(input.key)) return reserved(c);
 
   const [row] = await db
     .insert(settings)
@@ -92,6 +105,7 @@ settingsRouter.post('/', async (c) => {
 
 settingsRouter.delete('/:key', async (c) => {
   const key = c.req.param('key');
+  if (isReservedSettingKey(key)) return reserved(c);
   const siteId = c.get('siteId');
   const db = c.get('db');
 

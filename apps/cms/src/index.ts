@@ -11,6 +11,7 @@ import { withDb, withSystemDb } from './middleware/db';
 import { withLogger } from './middleware/logger';
 import { withRateLimit } from './middleware/rate-limit';
 import { withDeliverRateLimit } from './middleware/deliver-rate-limit';
+import { withEnvironmentNoindex } from './middleware/environment-noindex';
 import { withAiIpRateLimit } from './middleware/ai-ip-rate-limit';
 import { withRls } from './middleware/rls';
 import { withRuntime } from './middleware/runtime';
@@ -92,6 +93,7 @@ import { teamsRouter } from './routes/teams';
 import { translationsRouter } from './routes/translations';
 import { tmRouter } from './routes/translation-memory';
 import { localeGenerationRouter } from './routes/locale-generation';
+import { environmentsRouter } from './routes/environments';
 import { typegenRouter } from './routes/typegen';
 import { openApiRouter } from './routes/openapi';
 import { usersRouter } from './routes/users';
@@ -402,6 +404,8 @@ api.route('/admin/security', auditRouter);
 api.route('/tm', tmRouter);
 // One-shot translation generator for a new locale (#714) — control plane.
 api.route('/locale-generation', localeGenerationRouter);
+// Content Environments (#853) — control plane, release flag `content-environments`.
+api.route('/environments', environmentsRouter);
 api.route('/flows', flowsRouter);
 api.route('/marketplace', marketplaceRouter);
 api.route('/materialize', materializeRouter);
@@ -486,6 +490,8 @@ app.use('/api/v1/deliver/*', withEntitlement({
 // Separate mount so the rate-limit wiring line above stays exactly as the
 // security-guards wiring test pins it. Runs after the limiter.
 app.use('/api/v1/deliver/*', withDeliveryMilestone(deliverPathSiteId));
+// Content Environments (#853): an environment's delivery is never indexed.
+app.use('/api/v1/deliver/*', withEnvironmentNoindex(deliverPathSiteId));
 // Preview reads (epic #667): same public mount + limiter as delivery, site in
 // the path, token in the `x-lumibase-preview` header. Registered before
 // `deliverRouter` so its `/preview/*` leaf paths win.

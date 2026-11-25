@@ -1,10 +1,10 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 27
+lastUpdated: 2026-11-25T04:00:51.569Z
 sourceLang: en
-contentHash: 52465604769f9c24
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+contentHash: d32eb85a01a0ca1d
+codeVerified: 2026-11-25T04:00:51.569Z
+codeVerifiedHash: d32eb85a01a0ca1d
 codeVerifiedClaims: 22
 ---
 
@@ -590,6 +590,32 @@ ephemeral preview environments, and commit↔content provenance. All tables carr
 
 Tokens + webhook secrets are encrypted at rest via `CryptoService` (AES-GCM,
 AAD-bound to `{ siteId, integrationId, field }`); plaintext is never stored.
+
+## 11e. Content Environments (`environments.ts`, migration `0045`)
+
+An environment is a child site (an ordinary `sites` row in the origin's
+organization). Three tables pair it with its origin. See
+[Content Environments](./features/content-environments.md).
+
+### `lumibase_environments`
+- `id` (nanoid), `siteId` = the **origin** (FK cascade), `environmentSiteId` = the child site (unique, FK cascade), `key` (unique per origin), `name`.
+- `status` (`forking` | `ready` | `merging` | `failed` | `archived`, CHECK), `statusReason`, `contentScope` (jsonb `{ mode: 'none' | 'all' | 'collections', collections? }`).
+- `forkCursor` (jsonb: phase, collection index, last id, counts), `leaseOwner`, `leaseUntil` — the fork's resumable steps.
+- `forkedBy` (FK users, set null), `forkedAt`, `mergedAt` (last content promote), `createdAt`, `updatedAt`.
+- `site_id` is the origin, not the child, so an origin-scoped connection under `LUMIBASE_DB_RLS=enforce` can list and lock its environments.
+
+### `lumibase_environment_lineage`
+- `id`, `siteId` = the child site, `environmentId` (FK cascade), `kind` (`collection` | `field` | `relation` | `item` | `file` | `folder`, CHECK), `collection`.
+- `envRowId`, `originRowId` (null for a row created in the environment and not yet promoted). Items keep their id across the fork, so `envRowId = originRowId` for `item`.
+- `baseHash` (SHA-256 of `baseSnapshot`), `baseSnapshot` (the origin's state at fork time or at the last promote; encrypted values stored as `{ "$enc": "<sha256>" }`, never in clear), `baseRevisionId` (provenance only), `external` (a reference kept read-only: the origin item lies outside the content scope).
+- Unique `(environmentId, kind, envRowId)` and, where `originRowId` is not null, `(environmentId, kind, originRowId)`.
+
+### `lumibase_environment_merge_runs`
+- `id`, `siteId` = the origin, `environmentId`, `kind` (`schema` | `content`), `status` (`running` | `succeeded` | `failed`).
+- `plan` (jsonb, without item content), `outcomes` (jsonb `[{ collection, itemId, action, outcome, reason?, revisionId? }]`), `counts`, `error`, `startedBy`, `startedAt`, `finishedAt`.
+
+All three are in the RLS `site_isolation` list. The child site also carries the
+reserved setting `environment.origin` (`{ originSiteId, key }`).
 
 ## 12. Indexing & RLS
 

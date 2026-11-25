@@ -1,13 +1,13 @@
 ---
-version: 26
-lastUpdated: 2026-11-17T13:19:11.120Z
+version: 27
+lastUpdated: 2026-11-25T04:00:51.569Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 52465604769f9c24
+sourceHash: d32eb85a01a0ca1d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T13:19:11.120Z
-codeVerifiedHash: 52465604769f9c24
+codeVerified: 2026-11-25T04:00:51.569Z
+codeVerifiedHash: d32eb85a01a0ca1d
 codeVerifiedClaims: 22
 ---
 
@@ -593,6 +593,32 @@ môi trường preview tạm thời và provenance commit↔content. Mọi bản
 
 Token + webhook secret được mã hoá at rest qua `CryptoService` (AES-GCM, AAD ràng
 buộc vào `{ siteId, integrationId, field }`); plaintext không bao giờ được lưu.
+
+## 11e. Content Environments (`environments.ts`, migration `0045`)
+
+Một environment là một site con (một dòng `sites` bình thường trong
+organization của origin). Ba bảng ghép nó với origin. Xem
+[Content Environments](./features/content-environments.md).
+
+### `lumibase_environments`
+- `id` (nanoid), `siteId` = **origin** (FK cascade), `environmentSiteId` = site con (unique, FK cascade), `key` (unique trong mỗi origin), `name`.
+- `status` (`forking` | `ready` | `merging` | `failed` | `archived`, CHECK), `statusReason`, `contentScope` (jsonb `{ mode: 'none' | 'all' | 'collections', collections? }`).
+- `forkCursor` (jsonb: phase, chỉ số collection, id cuối, số đếm), `leaseOwner`, `leaseUntil` — các bước resumable của fork.
+- `forkedBy` (FK users, set null), `forkedAt`, `mergedAt` (lần content promote gần nhất), `createdAt`, `updatedAt`.
+- `site_id` là origin, không phải site con, để một kết nối scoped theo origin dưới `LUMIBASE_DB_RLS=enforce` liệt kê và khoá được các environment của nó.
+
+### `lumibase_environment_lineage`
+- `id`, `siteId` = site con, `environmentId` (FK cascade), `kind` (`collection` | `field` | `relation` | `item` | `file` | `folder`, CHECK), `collection`.
+- `envRowId`, `originRowId` (null cho dòng tạo trong environment và chưa được promote). Item giữ nguyên id khi fork, nên với `item` thì `envRowId = originRowId`.
+- `baseHash` (SHA-256 của `baseSnapshot`), `baseSnapshot` (trạng thái của origin lúc fork hoặc lúc promote gần nhất; giá trị mã hoá lưu dạng `{ "$enc": "<sha256>" }`, không bao giờ lưu rõ), `baseRevisionId` (chỉ để truy vết), `external` (tham chiếu chỉ đọc: item ở origin nằm ngoài phạm vi nội dung).
+- Unique `(environmentId, kind, envRowId)` và, khi `originRowId` khác null, `(environmentId, kind, originRowId)`.
+
+### `lumibase_environment_merge_runs`
+- `id`, `siteId` = origin, `environmentId`, `kind` (`schema` | `content`), `status` (`running` | `succeeded` | `failed`).
+- `plan` (jsonb, không kèm nội dung item), `outcomes` (jsonb `[{ collection, itemId, action, outcome, reason?, revisionId? }]`), `counts`, `error`, `startedBy`, `startedAt`, `finishedAt`.
+
+Cả ba bảng nằm trong danh sách RLS `site_isolation`. Site con còn mang setting
+dành riêng `environment.origin` (`{ originSiteId, key }`).
 
 ## 12. Indexing & RLS
 

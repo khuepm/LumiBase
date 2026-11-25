@@ -116,7 +116,20 @@ describe('platform seams — site → organization cache invalidation', () => {
         return /\.delete\(sites\)/.test(code) || /update\(sites\)\s*\.set\(\{[^}]*organizationId/.test(code);
       })
       .map((file) => relative(srcRoot, file));
-    expect(writers).toEqual([join('services', 'organization-operations.ts')]);
+    expect(writers.sort()).toEqual([
+      join('services', 'environments', 'environment-service.ts'),
+      join('services', 'organization-operations.ts'),
+    ]);
+  });
+
+  it('deleting a Content Environment invalidates the child site after the delete (#853)', () => {
+    const source = read('services/environments/environment-service.ts');
+    const start = source.indexOf('async delete(key: string)');
+    expect(start).toBeGreaterThan(-1);
+    const body = source.slice(start, source.indexOf('\n  }\n', start));
+    const del = body.indexOf('.delete(sites)');
+    expect(del).toBeGreaterThan(-1);
+    expect(body.indexOf('invalidateSiteOrganization(', del)).toBeGreaterThan(del);
   });
 });
 

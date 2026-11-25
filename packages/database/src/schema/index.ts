@@ -26,3 +26,4 @@ export * from './ops';
 export * from './activation';
 export * from './social-auth';
 export * from './locale-generation';
+export * from './environments';

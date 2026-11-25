@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 61
-lastUpdated: 2026-11-20T05:35:06.709Z
+version: 62
+lastUpdated: 2026-11-25T04:00:49.119Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a752c28a3a48bf3d
+sourceHash: cfc0ec0f76192584
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-20T05:35:06.709Z
-codeVerifiedHash: a752c28a3a48bf3d
-codeVerifiedClaims: 652
+codeVerified: 2026-11-25T04:00:49.119Z
+codeVerifiedHash: cfc0ec0f76192584
+codeVerifiedClaims: 664
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -823,6 +823,38 @@ Response: `Cache-Control: private, no-store`, `X-Robots-Tag: noindex, nofollow`,
 `Referrer-Policy: no-referrer`. Sự kiện audit: `preview.token_minted`,
 `preview.read`, `preview.token_rejected`, `preview.token_revoked`,
 `preview.tokens_rotated`, `preview.settings_updated`.
+
+---
+
+## 3d. Content Environments (#853)
+
+Fork một site thành một site con cô lập, rồi promote schema và nội dung về lại.
+Nằm sau release flag `content-environments` (mọi route trả `404` khi tắt),
+control-plane guard và `requireSiteAdmin()` trên site của request (origin). Chỉ
+staff user: API key bị từ chối với `403 STAFF_USER_REQUIRED`. Environment luôn
+được nạp dưới site của request, nên key của site khác là `404 NOT_FOUND`. Hướng
+dẫn: [Content Environments](../features/content-environments.md).
+
+| Method | Path | Mô tả |
+|---|---|---|
+| `GET` | `/api/v1/environments` | Các environment của site này: `{ data: [{ id, key, name, status, statusReason, siteId, originSiteId, contentScope, progress, forkedAt, mergedAt, createdAt, updatedAt }] }`. `siteId` là site con. |
+| `POST` | `/api/v1/environments` | Fork `{ key, name, contentScope }` → `202` với `status: "forking"`. `contentScope`: `{ mode: "none" }`, `{ mode: "all" }` hoặc `{ mode: "collections", collections }`. `400 VALIDATION`, `400 UNKNOWN_COLLECTION`, `409 ENVIRONMENT_KEY_TAKEN`, `409 ENVIRONMENT_LIMIT_REACHED` (setting `environments.maxPerSite`, mặc định 3), `409 ENVIRONMENT_TOO_LARGE` (setting `environments.maxItemsPerFork`, mặc định 50 000), `409 ENVIRONMENT_NESTING_UNSUPPORTED` |
+| `GET` | `/api/v1/environments/:key` | Chi tiết kèm `originChanged`, `changedItems` (tối đa 1 000) và `truncated` |
+| `DELETE` | `/api/v1/environments/:key` | Xoá site con. `409 ENVIRONMENT_BUSY` khi đang merging hoặc khi một bước fork đang giữ lease |
+| `POST` | `/api/v1/environments/:key/retry` | Chạy tiếp một fork `failed` từ cursor của nó (`202`). `409 ENVIRONMENT_NOT_RETRYABLE` |
+| `POST` | `/api/v1/environments/:key/promote/schema` | `{ dryRun = true, resolutions?, confirmRiskyChange?, migrationPlans? }` → `{ data: { dryRun, plan, mergeRunId?, applied? } }`. `plan.entries[]`: `{ kind, key, collection, action, renameFrom?, changes?, risk, requires?, reason? }`, `action` là một trong `unchanged`, `origin-only`, `create`, `update`, `rename`, `delete`, `conflict`, `blocked`. Lỗi khi áp dụng (`422`, `details.blockers`): `UNRESOLVED_CONFLICTS`, `RISKY_CHANGE_UNCONFIRMED`, `MIGRATION_PLAN_REQUIRED`, `COLLECTION_RENAME_UNSUPPORTED`, `ENCRYPTED_FIELD_RENAME_UNSUPPORTED`, `ENCRYPTION_CHANGE_UNSUPPORTED`, `RELATION_IDENTITY_CHANGED`. `409 ENVIRONMENT_BUSY`, `409 ENVIRONMENT_NOT_READY` |
+| `POST` | `/api/v1/environments/:key/promote/content` | `{ dryRun = true, items?: [{ collection, itemId }] }` → `{ data: { dryRun, plan, mergeRunId?, outcomes?, counts? } }`. `plan.items[]`: `{ collection, itemId, action, reason?, changedFields? }`, `action` là một trong `unchanged`, `origin-only`, `promote`, `create`, `delete`, `conflict`, `skip`, `blocked`; `plan.truncated` khi vượt 2 000 item. `outcomes[]`: `{ collection, itemId, action, outcome, reason?, revisionId? }`, `outcome` là một trong `promoted`, `created`, `deleted`, `conflict`, `skipped`, `failed`, `unchanged`. Lý do: `ORIGIN_CHANGED`, `ORIGIN_DELETED`, `ITEM_ID_EXISTS`, `SCHEMA_NOT_PROMOTED`, `DEPENDENCY_NOT_PROMOTED`, `EXTERNAL_REFERENCE`, hoặc mã lỗi của ItemService. `409 ENVIRONMENT_BUSY`, `409 ENVIRONMENT_NOT_READY` |
+| `GET` | `/api/v1/environments/:key/merge-runs` | Các lần promote đã áp dụng, mới nhất trước (100): `{ id, kind, status, plan, outcomes, counts, error, startedBy, startedAt, finishedAt }` |
+
+Ghi nội dung đi qua item service của người gọi ở origin với `If-Match` là
+`version` của origin lúc lập kế hoạch; lần ghi thua cuộc đua được báo là
+`conflict`. Revision do promote ghi mang
+`sources: [{ type: "environment", environmentId, mergeRunId }]`.
+
+Site con mang setting của nền tảng `environment.origin`;
+`POST /api/v1/settings` và `DELETE /api/v1/settings/:key` trả
+`403 SETTING_RESERVED` cho mọi key `environment.*`. Delivery công khai của một
+environment trả `X-Robots-Tag: noindex, nofollow`.
 
 ---
 

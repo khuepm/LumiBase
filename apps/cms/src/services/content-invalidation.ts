@@ -9,6 +9,7 @@ import type { CacheProvider, EdgeCacheProvider, QueueProvider } from '@lumibase/
 import { purgeEdgeByTag } from '@lumibase/runtime';
 import { dispatchRevalidation, parseTargets } from './revalidation';
 import { queueAccepts } from './queue-routing';
+import { isEnvironmentSite } from './environments/isolation';
 
 export const REVALIDATION_DISPATCH_QUEUE = 'revalidation-dispatch';
 
@@ -100,6 +101,8 @@ export async function runRevalidationDispatch(
   siteId: string,
   collection: string,
 ): Promise<void> {
+  // Content Environments (#853): never revalidate a frontend from an environment.
+  if (await isEnvironmentSite(db, siteId)) return;
   const [row] = await db
     .select()
     .from(settings)

@@ -1,11 +1,11 @@
 ---
-version: 62
-lastUpdated: 2026-11-20T05:35:06.709Z
+version: 63
+lastUpdated: 2026-11-25T04:00:49.119Z
 sourceLang: en
-contentHash: a752c28a3a48bf3d
-codeVerified: 2026-11-20T05:35:06.709Z
-codeVerifiedHash: a752c28a3a48bf3d
-codeVerifiedClaims: 652
+contentHash: cfc0ec0f76192584
+codeVerified: 2026-11-25T04:00:49.119Z
+codeVerifiedHash: cfc0ec0f76192584
+codeVerifiedClaims: 664
 ---
 
 # Hono API Specification — LumiBase
@@ -948,6 +948,38 @@ identical body. Responses: `Cache-Control: private, no-store`,
 `X-Robots-Tag: noindex, nofollow`, `Referrer-Policy: no-referrer`. Audit events:
 `preview.token_minted`, `preview.read`, `preview.token_rejected`,
 `preview.token_revoked`, `preview.tokens_rotated`, `preview.settings_updated`.
+
+---
+
+## 3d. Content Environments (#853)
+
+Fork a site into an isolated child site, then promote schema and content back.
+Behind the `content-environments` release flag (every route `404` while off),
+the control-plane guard and `requireSiteAdmin()` on the request's site (the
+origin). Staff users only: an API key is refused with `403 STAFF_USER_REQUIRED`.
+The environment is always loaded under the request's site, so another site's
+key is `404 NOT_FOUND`. Guide: [Content Environments](../features/content-environments.md).
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/v1/environments` | Environments of this site: `{ data: [{ id, key, name, status, statusReason, siteId, originSiteId, contentScope, progress, forkedAt, mergedAt, createdAt, updatedAt }] }`. `siteId` is the child site. |
+| `POST` | `/api/v1/environments` | Fork `{ key, name, contentScope }` → `202` with `status: "forking"`. `contentScope`: `{ mode: "none" }`, `{ mode: "all" }` or `{ mode: "collections", collections }`. `400 VALIDATION`, `400 UNKNOWN_COLLECTION`, `409 ENVIRONMENT_KEY_TAKEN`, `409 ENVIRONMENT_LIMIT_REACHED` (setting `environments.maxPerSite`, default 3), `409 ENVIRONMENT_TOO_LARGE` (setting `environments.maxItemsPerFork`, default 50 000), `409 ENVIRONMENT_NESTING_UNSUPPORTED` |
+| `GET` | `/api/v1/environments/:key` | Detail plus `originChanged`, `changedItems` (capped at 1 000) and `truncated` |
+| `DELETE` | `/api/v1/environments/:key` | Delete the child site. `409 ENVIRONMENT_BUSY` while merging or while a fork step holds the lease |
+| `POST` | `/api/v1/environments/:key/retry` | Resume a `failed` fork from its cursor (`202`). `409 ENVIRONMENT_NOT_RETRYABLE` |
+| `POST` | `/api/v1/environments/:key/promote/schema` | `{ dryRun = true, resolutions?, confirmRiskyChange?, migrationPlans? }` → `{ data: { dryRun, plan, mergeRunId?, applied? } }`. `plan.entries[]`: `{ kind, key, collection, action, renameFrom?, changes?, risk, requires?, reason? }`, `action` one of `unchanged`, `origin-only`, `create`, `update`, `rename`, `delete`, `conflict`, `blocked`. Apply errors (`422`, `details.blockers`): `UNRESOLVED_CONFLICTS`, `RISKY_CHANGE_UNCONFIRMED`, `MIGRATION_PLAN_REQUIRED`, `COLLECTION_RENAME_UNSUPPORTED`, `ENCRYPTED_FIELD_RENAME_UNSUPPORTED`, `ENCRYPTION_CHANGE_UNSUPPORTED`, `RELATION_IDENTITY_CHANGED`. `409 ENVIRONMENT_BUSY`, `409 ENVIRONMENT_NOT_READY` |
+| `POST` | `/api/v1/environments/:key/promote/content` | `{ dryRun = true, items?: [{ collection, itemId }] }` → `{ data: { dryRun, plan, mergeRunId?, outcomes?, counts? } }`. `plan.items[]`: `{ collection, itemId, action, reason?, changedFields? }`, `action` one of `unchanged`, `origin-only`, `promote`, `create`, `delete`, `conflict`, `skip`, `blocked`; `plan.truncated` past 2 000 items. `outcomes[]`: `{ collection, itemId, action, outcome, reason?, revisionId? }`, `outcome` one of `promoted`, `created`, `deleted`, `conflict`, `skipped`, `failed`, `unchanged`. Reasons: `ORIGIN_CHANGED`, `ORIGIN_DELETED`, `ITEM_ID_EXISTS`, `SCHEMA_NOT_PROMOTED`, `DEPENDENCY_NOT_PROMOTED`, `EXTERNAL_REFERENCE`, or the ItemService error code. `409 ENVIRONMENT_BUSY`, `409 ENVIRONMENT_NOT_READY` |
+| `GET` | `/api/v1/environments/:key/merge-runs` | Applied promotes, newest first (100): `{ id, kind, status, plan, outcomes, counts, error, startedBy, startedAt, finishedAt }` |
+
+Content writes go through the caller's origin item service with `If-Match` set
+to the planned origin `version`; a write that loses the race is reported as a
+`conflict`. Revisions written by a promote carry
+`sources: [{ type: "environment", environmentId, mergeRunId }]`.
+
+The child site carries the platform setting `environment.origin`;
+`POST /api/v1/settings` and `DELETE /api/v1/settings/:key` answer
+`403 SETTING_RESERVED` for any `environment.*` key. Public delivery of an
+environment answers `X-Robots-Tag: noindex, nofollow`.
 
 ---
 
