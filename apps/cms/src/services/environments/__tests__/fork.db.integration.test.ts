@@ -118,7 +118,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Content Environments — fork (DB integra
     await cleanup();
     await db.insert(users).values({ id: ADMIN, email: 'env-fork-admin@x.dev', status: 'active' }).onConflictDoNothing();
     const org = sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`;
-    const [{ id: organizationId }] = (await db.execute(sql`SELECT ${org} AS id`)) as unknown as Array<{ id: string }>;
+    const organizationId = ((await db.execute(sql`SELECT ${org} AS id`)) as unknown as Array<{ id: string }>)[0]!.id;
     await provisionSite(db, { id: ORIGIN, name: 'Fork origin', organizationId, creatorUserId: ADMIN });
     await db.insert(settings).values({ siteId: ORIGIN, key: 'release.flags', value: { 'content-environments': true } });
 
@@ -272,7 +272,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Content Environments — fork (DB integra
     await db.update(flows).set({ status: 'active' }).where(eq(flows.siteId, env.siteId)); // even if re-enabled
     const enqueue = vi.fn(async () => 'job');
     const queue = { enqueue, process: () => undefined, getStatus: async () => null } as unknown as QueueProvider;
-    const event = { collection: 'posts', action: 'update' as const, itemId: 'hello', data: {} } as Parameters<typeof dispatchItemEvent>[1];
+    const event: Parameters<typeof dispatchItemEvent>[1] = { collection: 'posts', action: 'update', itemId: 'hello', payload: {} };
 
     expect(await isEnvironmentSite(db, env.siteId)).toBe(true);
     expect(await isEnvironmentSite(db, ORIGIN)).toBe(false);

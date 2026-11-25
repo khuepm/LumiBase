@@ -34,6 +34,9 @@ import { isFrontendAudience } from '../services/auth/token-audience';
 import { EnvironmentError } from '../services/environments/errors';
 import { EnvironmentService, toEnvironmentView } from '../services/environments/environment-service';
 import { driveFork, type ForkDeps } from '../services/environments/fork';
+import { promoteSchema } from '../services/environments/schema-promote';
+import { environmentMergeRuns } from '@lumibase/database';
+import { and, desc, eq } from 'drizzle-orm';
 
 export const environmentsRouter = new Hono<AppEnv>();
 
@@ -145,6 +148,52 @@ environmentsRouter.post('/:key/retry', async (c) => {
       ),
     );
     return c.json({ data: toEnvironmentView(env) }, 202);
+  } catch (err) {
+    return environmentError(c, err);
+  }
+});
+
+const schemaPromoteSchema = z
+  .object({
+    dryRun: z.boolean().default(true),
+    resolutions: z
+      .array(z.object({ kind: z.enum(['collection', 'field', 'relation']), key: z.string().min(1).max(300), take: z.enum(['origin', 'environment']) }).strict())
+      .max(1000)
+      .optional(),
+    confirmRiskyChange: z.boolean().optional(),
+    migrationPlans: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
+  })
+  .strict();
+
+environmentsRouter.post('/:key/promote/schema', async (c) => {
+  const parsed = schemaPromoteSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return validation(c, parsed.error);
+  try {
+    const service = environmentServiceFor(c);
+    const { env } = await service.loadPair(c.req.param('key'));
+    const result = await promoteSchema(
+      { db: c.get('db'), systemDb: systemDbFor(c), userId: c.get('auth')!.userId!, cache: c.get('runtime')?.cache },
+      env,
+      parsed.data,
+    );
+    return c.json({ data: result });
+  } catch (err) {
+    return environmentError(c, err);
+  }
+});
+
+environmentsRouter.get('/:key/merge-runs', async (c) => {
+  try {
+    const service = environmentServiceFor(c);
+    const env = await service.load(c.req.param('key'));
+    const runs = await c
+      .get('db')
+      .select()
+      .from(environmentMergeRuns)
+      .where(and(eq(environmentMergeRuns.siteId, service.originSiteId), eq(environmentMergeRuns.environmentId, env.id)))
+      .orderBy(desc(environmentMergeRuns.startedAt))
+      .limit(100);
+    return c.json({ data: runs });
   } catch (err) {
     return environmentError(c, err);
   }
