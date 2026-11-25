@@ -136,7 +136,12 @@ DECLARE
     'lumibase_agent_tool_secrets',
     -- Preview tokens (#679, site-isolated). Minted and read per site; the
     -- delivery read learns the site from the URL, never from the token.
-    'lumibase_preview_secrets'
+    'lumibase_preview_secrets',
+    -- Content Environments (#853). lumibase_environments and its merge runs
+    -- belong to the ORIGIN site (it lists, deletes and promotes them); lineage
+    -- rows belong to the environment's child site. The fork/resume tick works
+    -- across sites on the system connection.
+    'lumibase_environments', 'lumibase_environment_merge_runs', 'lumibase_environment_lineage'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP
