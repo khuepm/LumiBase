@@ -7,6 +7,14 @@ import { SESSIONS_QUERY_KEY, SessionsSection } from './sessions-section';
 import { ChangePasswordSection } from './change-password-section';
 import { SECURITY_HISTORY_QUERY_KEY, SecurityHistorySection } from './security-history-section';
 import { PasskeysSection } from './passkeys-section';
+import {
+  adoptUpgradedSession,
+  isTfaVerificationRequired,
+  throwIfTfaRequired,
+  TfaReverifyNotice,
+  useHoldTfaRedirect,
+  type UpgradedSession,
+} from './tfa-session';
 
 interface TotpStatus {
   enabled: boolean;
@@ -33,6 +41,7 @@ const url = (path: string) => `${getApiBaseUrl()}${path}`;
 
 async function fetchStatus(): Promise<TotpStatus> {
   const res = await fetch(url('/api/v1/me/tfa'), { headers: headers() });
+  await throwIfTfaRequired(res);
   if (!res.ok) throw new Error('Failed to load two-factor settings.');
   const json = (await res.json()) as { data: TotpStatus };
   return json.data;
@@ -82,11 +91,17 @@ export function SecuritySettingsPage() {
         headers: headers(),
         body: JSON.stringify({ secret: setupSecret, code }),
       });
-      const body = await res.json().catch(() => null) as { data?: { recoveryCodes?: string[] }; errors?: { message?: string }[] };
+      const body = await res.json().catch(() => null) as {
+        data?: { recoveryCodes?: string[]; session?: UpgradedSession | null };
+        errors?: { message?: string }[];
+      };
       if (!res.ok) throw new Error(body?.errors?.[0]?.message ?? 'Confirmation failed.');
-      return body.data!.recoveryCodes ?? [];
+      return { codes: body.data!.recoveryCodes ?? [], session: body.data!.session ?? null };
     },
-    onSuccess: (codes) => {
+    onSuccess: ({ codes, session }) => {
+      // The server upgraded this session to TFA-verified (#1048): adopt the
+      // new pair before anything refetches, or `enforceTfa` refuses it.
+      adoptUpgradedSession(session);
       setRecoveryCodes(codes);
       setSetupSecret(null);
       setOtpauthUrl(null);
@@ -127,6 +142,10 @@ export function SecuritySettingsPage() {
   });
 
   const tfaRequired = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tfa') === 'required';
+  const showingRecoveryCodes = (recoveryCodes?.length ?? 0) > 0;
+  // Never leave the page on a `TFA_REQUIRED` while enrolling or while the
+  // one-time recovery codes are on screen (#1048).
+  useHoldTfaRedirect(setupSecret !== null || confirmMutation.isPending || showingRecoveryCodes);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 p-6">
@@ -145,7 +164,7 @@ export function SecuritySettingsPage() {
         <div role="status" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
           <p className="font-medium">Two-factor authentication is required for your role.</p>
           <p>
-            Set up an authenticator app or a passkey below. Then sign out and sign in again with it: the rest of the Studio stays closed until your session has used a second factor.
+            Set up an authenticator app or a passkey below. Once it is confirmed, this session counts as verified and the rest of the Studio opens.
           </p>
         </div>
       ) : null}
@@ -158,6 +177,8 @@ export function SecuritySettingsPage() {
         <h2 className="font-medium">Two-factor authentication (TOTP)</h2>
         {statusQuery.isPending ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : statusQuery.isError && isTfaVerificationRequired(statusQuery.error) ? (
+          <TfaReverifyNotice blocked={showingRecoveryCodes} />
         ) : statusQuery.isError ? (
           // Never fall through to "Disabled" on a failed load: that reads as a
           // definite security state and would invite a second enrollment.
@@ -231,6 +252,13 @@ export function SecuritySettingsPage() {
                 <li key={c}>{c}</li>
               ))}
             </ul>
+            <button
+              type="button"
+              onClick={() => setRecoveryCodes(null)}
+              className="rounded-md border border-amber-400 px-3 py-1 text-xs font-medium dark:border-amber-700"
+            >
+              I have saved these codes
+            </button>
           </div>
         ) : null}
 
