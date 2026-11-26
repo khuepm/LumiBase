@@ -1,20 +1,20 @@
 ---
-version: 2
+version: 3
 sourceLang: en
-lastUpdated: 2026-11-26T02:34:32.098Z
+lastUpdated: 2026-11-26T05:28:45.634Z
 translatedFrom: en
-sourceHash: 0f007afe388a83fa
+sourceHash: 83bf2e22af4d7419
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-26T02:34:32.098Z
-codeVerifiedHash: 0f007afe388a83fa
+codeVerified: 2026-11-26T05:28:45.634Z
+codeVerifiedHash: 83bf2e22af4d7419
 codeVerifiedClaims: 6
 ---
 
 # ADR-016: Retrieval có quản trị — chọn engine dựa trên bằng chứng
 
 **Date:** 2026-11-26  
-**Status:** Proposed (chỉ đóng B180 khi Decision Gate A hoặc R06 có bằng chứng)
+**Status:** Proposed (B180 chỉ đóng tại R06)
 
 ## Context
 
@@ -72,8 +72,7 @@ trước khi bất kỳ thông tin nào được dùng để ra quyết định.
 1. **PostgreSQL vẫn là source of truth** cho item, quyền, approval, audit và
    provenance. Mọi retrieval index đều là dữ liệu dẫn xuất.
 2. **Một `RetrievalService` duy nhất trong `apps/cms/src/services/`** điều phối
-   retrieval. Đây là nơi duy nhất áp tenant scope, kiểm tra quyền trực tiếp,
-   kiểm tra revision và chính sách data egress. Nó dùng lại `ItemService` và các
+   retrieval. Service áp tenant scope, kiểm tra quyền trực tiếp và kiểm tra revision. Nó dùng lại `ItemService` và các
    policy service hiện có để kiểm tra quyền, không tự viết RBAC riêng. Không có
    hệ thống `RetrievalProvider` mới và không có package mới. Candidate lexical
    lấy từ `SearchProvider` sẵn có; interface vector ở tầng thấp hơn chỉ được
@@ -139,18 +138,26 @@ trước khi bất kỳ thông tin nào được dùng để ra quyết định.
 
 | ID | Công việc | Phụ thuộc |
 | --- | --- | --- |
-| R01 | các mục còn mở của ADR này: policy B179, audit việc provision Meili trên production, kiểm tra thông tin nhà cung cấp | — |
-| R02 | bộ đánh giá tối thiểu (độ liên quan + bảo mật) | R01 |
-| R03 | retrieval lexical có quản trị: `RetrievalService`, kiểm tra quyền trực tiếp, B181 | R01 |
-| R04 | provider Voyage, E2 và E2.5, đo usage | R01 (B179 đã duyệt), R02 |
-| Gate A | Meili hybrid có đạt chất lượng, bảo mật, độ trễ và chi phí không? | R03, R04 |
-| R05 | pgvector, chunking, vòng đời index (chỉ khi Gate A không đạt) | Gate A |
+| R01 | Policy B179, mô hình đe dọa qua xếp hạng, contract phân giải S5, audit Meili production và xác minh thông tin nhà cung cấp | — |
+| R02 | Gán nhãn và chia bộ đánh giá, chốt tiêu chí quyết định | R01 |
+| R03 | Retrieval lexical có quản trị, kiểm tra quyền và vòng đời chunk theo field (B181) | R01 |
+| R04 | Voyage E2/E2.5 với vector có phiên bản, phân giải qua S5 và usage emitter hiện có | R01 (B179 đã duyệt), R02, R03, contract S5 |
+| Gate A | Dừng thử engine nếu ứng viên Meili đạt các tiêu chí đã chốt | R03, R04 |
+| R05 | Lưu trữ pgvector có điều kiện, đánh giá exact search và HNSW | Gate A không đạt |
 | R06 | chọn engine cuối cùng và TCO; đóng B180 | Gate A hoặc R05 |
 
 Agent memory, phát hiện mâu thuẫn, tìm kiếm đa phương thức, quan hệ nội dung
 và adapter MongoDB nằm trong backlog, không thuộc phạm vi này. Nền tảng
 retrieval thuộc Community (`khuepm/LumiBase`); nếu sau này có adapter MongoDB
 thì nó cũng thuộc Community.
+
+### Tiêu chí triển khai và nghiệm thu
+
+- **Gọi provider.** R01 định nghĩa contract S5 trong Community. Từ tenant và tác vụ (generation, embedding tài liệu, embedding truy vấn hoặc reranking), phân giải provider, model và tham chiếu credential. Kiểm tra B179 theo đích nhận và dữ liệu thực gửi trước khi gọi. Quyền index độc lập với quyền gửi ra ngoài. Copilot, Jev, agent, flow decision, worker lập chỉ mục và index bên ngoài đều dùng chung bước kiểm tra. Adapter chỉ nhận tác vụ đã được phép. R04 tích hợp resolver trước lần gọi provider đầu tiên. Community cung cấp cấu hình cục bộ, Enterprise có thể cung cấp chế độ managed.
+- **Thông tin lộ qua tìm kiếm.** R01 mô hình hóa thứ hạng, số lượng, điểm, kết quả thiếu và thời gian phản hồi. R03 thử cùng principal và truy vấn trên hai tập dữ liệu chỉ khác nhau ở row hoặc field bị ẩn, kể cả khi row ẩn chiếm hết top-k. So sánh thứ tự công khai, số lượng, điểm, độ dài kết quả và phân phối độ trễ. Khoanh vùng candidate trước khi xếp hạng hoặc dùng phương án truy vấn theo quyền. Ghi nhận tín hiệu còn lộ và lấy quyết định chấp nhận của owner trước khi triển khai.
+- **Vòng đời index.** R03 định danh chunk theo site, collection, item, field và vị trí. Gắn revision nguồn với mỗi lần ghi, retry idempotent, xóa chunk thừa khi sửa hoặc xóa item và dựng lại index từ PostgreSQL. Kiểm thử job đến sai thứ tự và thu hồi quyền. R04 quản lý phiên bản vector theo model và số chiều, reindex trước khi chuyển phiên bản.
+- **Tiêu chí quyết định.** R02 tách riêng tập tuning và held-out. Dùng E1 trên tập tuning để chốt mức cải thiện relevance tối thiểu, bất biến bảo mật bắt buộc, workload, trần độ trễ và chi phí vận hành. Chốt ngưỡng và điều kiện dừng hoặc chuyển bước trước khi đánh giá ứng viên. Báo cáo kết quả held-out tại Gate A và chỉ đóng B180 tại R06.
+- **Usage và hạch toán.** Ghi nhận usage cho indexing, reindexing, query embedding và reranking qua emitter hiện có. Enterprise #25/#26/#27 phụ trách phân giải managed, phân bổ usage và sổ cái credit. Billing managed giữ trước ngân sách, quyết toán usage thực tế theo cách idempotent và đối soát kết quả còn thiếu. Telemetry best-effort có thể mất sự kiện nên không đủ căn cứ để trừ credit.
 
 ## Consequences
 
@@ -160,7 +167,7 @@ thì nó cũng thuộc Community.
 - Lỗi âm thầm fallback sang Echo là bug trên `main` và được sửa riêng, trong
   khuôn khổ release freeze, dưới dạng `fix(ai)`: provider đã cấu hình mà thiếu
   credential hoặc provider không xác định thì báo lỗi rõ ràng; Echo chỉ chạy khi
-  được chọn tường minh; CMS vẫn khởi động khi tắt embedding; thông báo lỗi không
+  được chọn tường minh trong dev/test; CMS vẫn khởi động khi tắt embedding, kể cả khi chỉ cấu hình Anthropic; thông báo lỗi không
   chứa credential. Việc thêm `EMBEDDING_PROVIDER`, Voyage và reranking là công
   việc tính năng cho nhánh epic.
 - Công việc tính năng vào nhánh `epic/<issue>-governed-retrieval` trong khi

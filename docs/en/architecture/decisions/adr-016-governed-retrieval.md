@@ -1,17 +1,17 @@
 ---
-version: 2
+version: 3
 sourceLang: en
-lastUpdated: 2026-11-26T02:34:32.098Z
-contentHash: 0f007afe388a83fa
-codeVerified: 2026-11-26T02:34:32.098Z
-codeVerifiedHash: 0f007afe388a83fa
+lastUpdated: 2026-11-26T05:28:45.634Z
+contentHash: 83bf2e22af4d7419
+codeVerified: 2026-11-26T05:28:45.634Z
+codeVerifiedHash: 83bf2e22af4d7419
 codeVerifiedClaims: 6
 ---
 
 # ADR-016: Governed retrieval — evidence-driven engine choice
 
 **Date:** 2026-11-26  
-**Status:** Proposed (closes B180 only once Decision Gate A or R06 has evidence)
+**Status:** Proposed (B180 closes at R06)
 
 ## Context
 
@@ -69,8 +69,7 @@ against vendor docs, with access dates, before any of them drives a choice.
 1. **PostgreSQL stays the source of truth** for items, permissions, approvals,
    audit and provenance. Any retrieval index is derived data.
 2. **One `RetrievalService` in `apps/cms/src/services/`** orchestrates retrieval.
-   It is the only place that applies tenant scope, live authorization, revision
-   checks and the data-egress policy. It reuses `ItemService` and the existing
+   It enforces tenant scope, live authorization and revision checks. It reuses `ItemService` and the existing
    policy services for authorization and does not implement its own RBAC. There
    is no new `RetrievalProvider` hierarchy and no new package. Lexical
    candidates come from the existing `SearchProvider`; a lower-level vector
@@ -134,18 +133,26 @@ against vendor docs, with access dates, before any of them drives a choice.
 
 | ID | Work | Depends on |
 | --- | --- | --- |
-| R01 | this ADR's open items: B179 policy, Meili production provisioning audit, vendor fact check | — |
-| R02 | minimal evaluation suite (relevance + security) | R01 |
-| R03 | governed lexical retrieval: `RetrievalService`, live authorization, B181 | R01 |
-| R04 | Voyage provider, E2 and E2.5, usage metering | R01 (B179 approved), R02 |
-| Gate A | does Meili hybrid meet quality, security, latency and cost? | R03, R04 |
-| R05 | pgvector, chunking, index lifecycle (only if Gate A fails) | Gate A |
+| R01 | B179 policy, ranking threat model, S5 resolution contract, production Meili audit and vendor checks | — |
+| R02 | Label and split the evaluation set, freeze decision criteria | R01 |
+| R03 | Governed lexical retrieval, authorization and field chunk lifecycle (B181) | R01 |
+| R04 | Voyage E2/E2.5 with versioned vectors, S5 resolution and existing usage emitter | R01 (B179 approved), R02, R03, S5 contract |
+| Gate A | Stop engine trials if the Meili candidate passes the frozen criteria | R03, R04 |
+| R05 | Conditional pgvector storage, exact search and HNSW evaluation | Gate A fails |
 | R06 | final engine choice and TCO; closes B180 | Gate A or R05 |
 
 Agent memory, contradiction detection, multimodal search, content
 relationships and a MongoDB adapter are backlog, not part of this work. The
 retrieval foundation is Community (`khuepm/LumiBase`); if a MongoDB adapter is
 ever built it is Community too.
+
+### Implementation and acceptance criteria
+
+- **Provider calls.** R01 defines the Community S5 contract. Resolve the tenant and operation (generation, document embedding, query embedding or reranking) to a provider, model and credential reference. Check B179 for the actual destination and payload before dispatch. Index permission and external transfer permission are independent. Apply the shared check to Copilot, Jev, agent runs, flow decisions, index workers and external indexes. Adapters receive authorized work only. R04 must integrate the resolver before its first provider call. Community supplies local configuration and Enterprise can supply managed resolution.
+- **Search visibility.** R01 models rank, count, score, short results and timing. R03 compares the same principal and query on corpora differing only in inaccessible rows or fields, including rows that would exhaust top-k. Compare visible order, counts, scores, result length and latency distributions. Restrict the candidate set before ranking or use a permission-scoped fallback. Record any residual signal and obtain owner acceptance before rollout.
+- **Index lifecycle.** R03 keys chunks by site, collection, item, field and chunk position. Version writes by source revision, retry idempotently, remove obsolete chunks on update or deletion and rebuild from PostgreSQL. Test out-of-order jobs and revocations. R04 versions vectors by model and dimensions and reindexes before switching versions.
+- **Decision criteria.** R02 separates tuning and held-out queries. Use E1 on tuning data to set a minimum relevance gain, mandatory security invariants, workload, latency and operating cost ceilings. Freeze the thresholds and stop/advance rules before candidate evaluation. Report held-out results at Gate A and close B180 only at R06.
+- **Usage and accounting.** Attribute indexing, reindexing, query embedding and reranking through the existing usage emitter. Enterprise #25/#26/#27 own managed resolution, attribution and the credit ledger. Managed billing reserves budget before dispatch, settles actual usage idempotently and reconciles missing outcomes. Best-effort telemetry may be lost and cannot authorize charges.
 
 ## Consequences
 
@@ -154,8 +161,8 @@ ever built it is Community too.
   MongoDB driver on Workers would need is not made by this ADR.
 - The silent Echo fallback is a bug on `main` and is fixed separately, under the
   release freeze, as `fix(ai)`: a configured provider with a missing credential
-  or an unknown provider fails loudly; Echo runs only when chosen explicitly;
-  the CMS still starts with embeddings disabled; errors carry no credential.
+  or an unknown provider fails loudly; Echo requires explicit selection in development or test;
+  the CMS still starts with embeddings disabled, including Anthropic-only deployments; errors carry no credential.
   Adding `EMBEDDING_PROVIDER`, Voyage and reranking is feature work for the epic
   branch.
 - Feature work lands on an `epic/<issue>-governed-retrieval` branch while the
