@@ -1,9 +1,9 @@
 ---
-version: 5
-lastUpdated: 2026-11-21T00:28:04.489Z
+version: 6
+lastUpdated: 2026-11-26T02:34:33.783Z
 sourceLang: en
 translatedFrom: en
-sourceHash: b0d5b41e59619a84
+sourceHash: 08c209570ccf65cc
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -31,6 +31,7 @@ LumiBase tuân theo [mẫu ADR](https://adr.github.io/) để ghi lại các quy
 | [ADR-013](./adr-013-organization-plane.md) | Organization plane (phân cấp tenant và credential phân loại theo phạm vi) | Proposed |
 | [ADR-014](./adr-014-preview-bridge-threat-model.md) | Cầu nối live preview — preview token, nhúng frame và threat model của postMessage | Accepted |
 | [ADR-015](./adr-015-extension-isolation.md) | Cách ly mã của extension (host ngoài process trên Node; Workers vẫn chạy trong process) | Accepted |
+| [ADR-016](./adr-016-governed-retrieval.md) | Retrieval có quản trị (chọn engine dựa trên bằng chứng; PostgreSQL là source of truth, thử Meili hybrid trước) | Proposed |
 
 ## Template
 
