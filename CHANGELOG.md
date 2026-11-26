@@ -11,6 +11,28 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 _No unreleased changes yet._
 
+## [2.2.1] - 2026-11-25
+
+### Version
+- `v2.2.1`
+
+### Date
+- `2026-11-25`
+
+### Highlights
+- Production moves to a new Cloudflare account. The production CMS Worker, Pages apps, Hyperdrive, KV, R2 and queues now live in the new account, and the production database is a PostgreSQL instance reached through Hyperdrive.
+- First published build of the 2.2.0 feature set. `v2.2.0` was versioned on `main` but never tagged, so its npm packages, Docker image and production deploy ship with this release. See the `2.2.0` section below for what it contains.
+
+### Changed
+- `apps/cms/wrangler.toml`: production Hyperdrive, KV and R2 bindings point at resources in the new Cloudflare account (#1020).
+- Deployment docs (en, vi) no longer hard-code a Cloudflare account id (#1020).
+
+### Notes
+- Self-hosted and Docker installs are unaffected by the account move. Upgrading from 2.1.x follows the 2.2.0 notes: back up PostgreSQL, apply migrations `0035`–`0045` and re-apply `rls-policies.sql`.
+
+### Migrations
+- None beyond those listed for 2.2.0.
+
 ## [2.2.0] - 2026-11-21
 
 ### Version
