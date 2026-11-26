@@ -12,6 +12,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ### Fixed
 - Enrolling a first second factor (TOTP, or a first passkey) under an `enforceTfa` policy no longer locks the session out. `POST /me/tfa/confirm` and `POST /me/passkeys` upgrade the current session to TFA-verified (same `sid`) and return the new token pair as `session`; Studio stores it and never leaves the page while the recovery codes are shown (#1048).
 - Studio Settings → Security shows "Sign in again with 2FA" for a `403 TFA_REQUIRED` instead of a generic load error (#1048).
+- TOTP setup shows a QR code, drawn in the browser from the `otpauth://` URI (never sent to an outside service), with the secret as a copyable fallback (#1047).
 
 ## [2.2.1] - 2026-11-25
 

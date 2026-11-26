@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useId, useState } from 'react';
-import { Loader2, Shield } from 'lucide-react';
+import { lazy, Suspense, useId, useState } from 'react';
+import { Check, Copy, Loader2, Shield } from 'lucide-react';
 import { getActiveSite, getActiveToken } from '@/lib/api';
 import { getApiBaseUrl } from '@/lib/api-base';
 import { SESSIONS_QUERY_KEY, SessionsSection } from './sessions-section';
@@ -15,6 +15,10 @@ import {
   useHoldTfaRedirect,
   type UpgradedSession,
 } from './tfa-session';
+
+// The QR encoder is only needed during TOTP setup: keep it out of the page
+// chunk and the initial bundle (#1047).
+const TotpQrCode = lazy(() => import('./totp-qr-code'));
 
 interface TotpStatus {
   enabled: boolean;
@@ -218,10 +222,26 @@ export function SecuritySettingsPage() {
 
         {setupSecret ? (
           <div className="space-y-3">
-            <p className="text-sm">Add this secret to your authenticator app:</p>
-            <code className="block break-all rounded bg-muted p-2 text-xs">{setupSecret}</code>
             {otpauthUrl ? (
-              <p className="text-xs text-muted-foreground break-all">URI: {otpauthUrl}</p>
+              <>
+                <p className="text-sm">Scan this QR code with your authenticator app:</p>
+                <Suspense fallback={<div className="h-52 w-52 rounded-md bg-muted" aria-hidden="true" />}>
+                  <TotpQrCode value={otpauthUrl} />
+                </Suspense>
+                <p className="text-sm text-muted-foreground">Can&apos;t scan it? Enter this secret instead:</p>
+              </>
+            ) : (
+              <p className="text-sm">Add this secret to your authenticator app:</p>
+            )}
+            <div className="flex items-start gap-2">
+              <code className="block min-w-0 flex-1 break-all rounded bg-muted p-2 text-xs" data-testid="totp-secret">{setupSecret}</code>
+              <CopySecretButton value={setupSecret} />
+            </div>
+            {otpauthUrl ? (
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer select-none">Show setup URI</summary>
+                <p className="mt-1 break-all font-mono">{otpauthUrl}</p>
+              </details>
             ) : null}
             <label htmlFor={codeId} className="block text-sm font-medium">Enter the 6-digit code</label>
             <input
@@ -327,6 +347,25 @@ export function SecuritySettingsPage() {
 
       <SecurityHistorySection />
     </div>
+  );
+}
+
+function CopySecretButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={copied ? 'Secret copied' : 'Copy secret'}
+      onClick={() => {
+        void navigator.clipboard?.writeText(value).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        }).catch(() => undefined);
+      }}
+      className="rounded-md border border-border p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+    >
+      {copied ? <Check className="h-4 w-4 text-emerald-600" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
+    </button>
   );
 }
 

@@ -5,6 +5,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 
 /**
  * Settings → Security, TOTP section:
+ *   - #1047: setup renders a locally drawn QR code from `otpauthUrl`, keeps the
+ *     secret as a copyable fallback, and folds the raw URI away.
  *   - #1048: confirming enrolment adopts the TFA-verified session the server
  *     returns and never navigates away while the recovery codes are shown; a
  *     `403 TFA_REQUIRED` on the status read offers "sign in again with 2FA".
@@ -64,6 +66,31 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   localStorage.clear();
+});
+
+describe('TOTP setup QR code (#1047)', () => {
+  it('draws the QR code locally and keeps the secret as a fallback', async () => {
+    fetchMock
+      .mockResolvedValueOnce(disabled())
+      .mockResolvedValueOnce(jsonResponse(200, { data: { secret: 'JBSWY3DPEHPK3PXP', otpauthUrl: OTPAUTH } }));
+    await renderPage();
+    await startSetup();
+
+    const qr = await screen.findByRole('img', { name: 'QR code to scan with your authenticator app' });
+    const src = qr.getAttribute('src') ?? '';
+    expect(src.startsWith('data:image/svg+xml')).toBe(true);
+    expect(decodeURIComponent(src)).toContain('<svg');
+    // Encoded in the browser: the only requests are the two API calls.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const [input] of fetchMock.mock.calls) expect(String(input)).toContain('/api/v1/me/tfa');
+
+    expect(screen.getByTestId('totp-secret')).toHaveTextContent('JBSWY3DPEHPK3PXP');
+    expect(screen.getByRole('button', { name: 'Copy secret' })).toBeInTheDocument();
+    // The raw URI is folded away behind a disclosure.
+    const uri = screen.getByText(OTPAUTH);
+    expect(uri.closest('details')).not.toBeNull();
+    expect(uri.closest('details')).not.toHaveAttribute('open');
+  });
 });
 
 describe('TOTP enrolment keeps the session usable (#1048)', () => {
