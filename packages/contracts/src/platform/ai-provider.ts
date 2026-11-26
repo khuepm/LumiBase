@@ -32,7 +32,7 @@ interface DataScope {
 
 export type RetrievalGrant = DataScope & (
   | { action: 'index' }
-  | { action: 'transfer'; operation: ModelOperation | 'external-index'; destinationId: string }
+  | { action: 'transfer'; destinationId: string }
 );
 
 /** Evaluate one classified component. Callers must cover every component of a payload. */
@@ -42,6 +42,6 @@ export function hasRetrievalGrant(grants: readonly RetrievalGrant[], required: R
     if (grant.siteId !== required.siteId || grant.dataClass !== required.dataClass) return false;
     if (required.action === 'index') return grant.action === 'index';
     return grant.action === 'transfer' && required.destinationId.trim().length > 0
-      && grant.destinationId === required.destinationId && grant.operation === required.operation;
+      && grant.destinationId === required.destinationId;
   });
 }

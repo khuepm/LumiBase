@@ -3,10 +3,11 @@ import { hasRetrievalGrant, type RetrievalGrant } from './ai-provider';
 
 const scope = { siteId: 'site-a', dataClass: 'internal' } as const;
 const index = { ...scope, action: 'index' } as const;
-const transfer = { ...scope, action: 'transfer', operation: 'external-index', destinationId: 'meili-a' } as const;
+const transfer = { ...scope, action: 'transfer', destinationId: 'meili-a' } as const;
 
 describe('retrieval grants', () => {
   it('requires independent grants for indexing and external transfer', () => {
+    expect(hasRetrievalGrant([], transfer)).toBe(false);
     expect(hasRetrievalGrant([], index)).toBe(false);
     expect(hasRetrievalGrant([index], transfer)).toBe(false);
     expect(hasRetrievalGrant([transfer], index)).toBe(false);
@@ -17,7 +18,7 @@ describe('retrieval grants', () => {
   it('matches every scope dimension', () => {
     const otherScopes: RetrievalGrant[] = [
       { ...transfer, siteId: 'site-b' }, { ...transfer, dataClass: 'pii' },
-      { ...transfer, operation: 'reranking' }, { ...transfer, destinationId: 'meili-b' },
+      { ...transfer, destinationId: 'meili-b' },
     ];
     for (const required of otherScopes) expect(hasRetrievalGrant([transfer], required)).toBe(false);
   });
