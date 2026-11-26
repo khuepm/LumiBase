@@ -1,13 +1,13 @@
 ---
-version: 4
+version: 6
 sourceLang: en
-lastUpdated: 2026-11-26T05:30:36.622Z
+lastUpdated: 2026-11-26T06:00:33.803Z
 translatedFrom: en
-sourceHash: c60d115fbb5a8ddf
+sourceHash: cf16e470486c2591
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-26T05:30:36.622Z
-codeVerifiedHash: c60d115fbb5a8ddf
+codeVerified: 2026-11-26T06:00:33.803Z
+codeVerifiedHash: cf16e470486c2591
 codeVerifiedClaims: 16
 ---
 
@@ -42,8 +42,9 @@ Những gì đang có trong code:
 - `SearchProvider` (`packages/runtime/src/interfaces/search.ts`) đã có đủ
   `index`, `search`, `delete`, `getIndex` và `configureIndex`, với adapter
   MeiliSearch cho cả hai runtime. Ranh giới tenant nằm trong tên index
-  (`searchIndexName(siteId, collection)`). Code hỗ trợ Meili trên Workers; việc
-  production đã provision một instance Meili hay chưa thì chưa được xác minh.
+  (`searchIndexName(siteId, collection)`). Code hỗ trợ Meili trên Workers; owner
+  xác nhận ngày 26-11-2026 production chưa có Meili. Dùng instance thử nghiệm
+  riêng và tính chi phí cấp phát vào TCO.
 - `buildSearchDocument` (`apps/cms/src/services/search-document.ts`) index mọi
   field của một item thành một document. `apps/cms/src/routes/search.ts` áp row
   rule và che field sau khi Meili trả hit về, và đã báo `totalHits` là số hit
@@ -132,7 +133,8 @@ trước khi bất kỳ thông tin nào được dùng để ra quyết định.
    vấn đề cụ thể mà C không giải quyết được. ADR này không thêm datastore nào
    vào production. Startup credits được tính vào ngân sách R&D, không bao giờ
    tính vào TCO ở trạng thái ổn định.
-6. **Data egress mặc định là từ chối (B179 — Proposed, chờ owner duyệt).**
+6. **Data egress mặc định là từ chối (B179 — owner duyệt ngày 26-11-2026).**
+   - Quyền gửi khớp theo site, loại dữ liệu và đích nhận cho mọi tác vụ.
    - Quyền đọc không đồng nghĩa với quyền index hay gửi nội dung cho bên thứ
      ba, và hai quyền này là hai capability riêng: "được phép index" (vào một
      index dẫn xuất do deployment tự vận hành) và "được phép rời ra provider
@@ -287,5 +289,4 @@ không phụ thuộc vào bất kỳ implementation nào khác.
 - Phương án B giữ retrieval nằm ngoài transaction của dữ liệu gốc, nên B181 và
   kiểm tra quyền trực tiếp vẫn bắt buộc; chọn B không bỏ được phần việc của R03.
 - B180 còn mở cho tới R06; Gate A chỉ quyết định có thử thêm engine hay không.
-  B179 do owner quyết định; cho tới lúc đó R04 không gửi nội dung sang provider
-  bên ngoài, ngoài dữ liệu test fixture.
+  R04 phải thực thi B179 đã duyệt trước khi gửi dữ liệu thật.

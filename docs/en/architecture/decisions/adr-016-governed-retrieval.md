@@ -1,10 +1,10 @@
 ---
-version: 4
+version: 6
 sourceLang: en
-lastUpdated: 2026-11-26T05:30:36.622Z
-contentHash: c60d115fbb5a8ddf
-codeVerified: 2026-11-26T05:30:36.622Z
-codeVerifiedHash: c60d115fbb5a8ddf
+lastUpdated: 2026-11-26T06:00:33.803Z
+contentHash: cf16e470486c2591
+codeVerified: 2026-11-26T06:00:33.803Z
+codeVerifiedHash: cf16e470486c2591
 codeVerifiedClaims: 16
 ---
 
@@ -41,7 +41,8 @@ What exists in the tree:
   `index`, `search`, `delete`, `getIndex` and `configureIndex`, with MeiliSearch
   adapters for both runtimes. The tenant boundary lives in the index name
   (`searchIndexName(siteId, collection)`). The code supports Meili on Workers;
-  whether production has a Meili instance provisioned is not verified.
+  the owner confirmed on 2026-11-26 that production has no Meili instance.
+  Evaluate on an isolated test instance and include provisioning in TCO.
 - `buildSearchDocument` (`apps/cms/src/services/search-document.ts`) indexes
   every field of an item as one document. `apps/cms/src/routes/search.ts`
   applies the row rule and masks fields after Meili returns its hits, and
@@ -130,7 +131,8 @@ against vendor docs, with access dates, before any of them drives a choice.
    fails. **MongoDB (option D) is deferred**: tried only if R06 names a concrete
    problem C cannot solve. No production datastore is added by this ADR.
    Startup credits count toward R&D budget, never toward steady-state TCO.
-6. **Data egress is deny-by-default (B179 — Proposed, owner to approve).**
+6. **Data egress is deny-by-default (B179 — owner approved 2026-11-26).**
+   - A transfer grant matches site, data class and destination across operations.
    - Read access does not imply permission to index or to send content to a
      third party, and the two are separate capabilities: "may be indexed"
      (into a derived index the deployment operates) and "may leave to an
@@ -285,5 +287,4 @@ does not depend on any other implementation.
 - Option B keeps retrieval outside the source transaction, so B181 and live
   authorization stay mandatory; choosing B does not remove R03's work.
 - B180 stays open until R06; Gate A only decides whether another engine is
-  tried. B179 is decided by the owner; until then R04 does not send content to
-  an external provider outside test fixtures.
+  tried. R04 must enforce the approved B179 policy before sending real data.
