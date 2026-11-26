@@ -1,11 +1,11 @@
 ---
-version: 66
-lastUpdated: 2026-11-21T11:04:16.006Z
+version: 67
+lastUpdated: 2026-11-26T21:52:31.834Z
 sourceLang: en
-contentHash: 49608a0a77208a74
-codeVerified: 2026-11-21T11:04:16.006Z
-codeVerifiedHash: 49608a0a77208a74
-codeVerifiedClaims: 656
+contentHash: 000729cdb13ea06d
+codeVerified: 2026-11-26T21:52:31.834Z
+codeVerifiedHash: 000729cdb13ea06d
+codeVerifiedClaims: 658
 ---
 
 # Hono API Specification — LumiBase
@@ -201,14 +201,14 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `GET` | `/api/v1/auth/me` | bearer | Get current user profile |
 | `GET` | `/api/v1/me/tfa` | bearer | TOTP enrollment status (`{ enabled, enrolledAt, recoveryCodesRemaining }`) |
 | `POST` | `/api/v1/me/tfa/setup` | bearer | Begin enrollment (password step-up) → one-time `secret` + `otpauthUrl` |
-| `POST` | `/api/v1/me/tfa/confirm` | bearer | Confirm enrollment with a live code → single-use recovery codes |
+| `POST` | `/api/v1/me/tfa/confirm` | bearer | Confirm enrollment with a live code → single-use recovery codes + `session` (TFA-verified token pair, first factor only) |
 | `POST` | `/api/v1/me/tfa/recovery-codes` | bearer | Regenerate recovery codes (password + TOTP code) |
 | `DELETE` | `/api/v1/me/tfa` | bearer | Disable TOTP (password + either a TOTP code or a recovery code); revokes sessions and bumps `tokenVersion` |
 | `POST` | `/api/v1/auth/passkey/options` | public | Passkey authentication options: with `challengeToken` = second factor, without = passwordless staff sign-in → `{ ceremonyId, options }` |
 | `POST` | `/api/v1/auth/passkey/verify` | public | Finish a passkey ceremony → same session payload as login (`amr` contains `webauthn`, `tfaVerified`) |
 | `GET` | `/api/v1/me/passkeys` | bearer | The caller's passkeys + `recoveryCodesRemaining`, `totpEnabled`, `available` |
 | `POST` | `/api/v1/me/passkeys/registration-options` | bearer | Begin passkey registration (password step-up) → `{ ceremonyId, options }` |
-| `POST` | `/api/v1/me/passkeys` | bearer | Finish registration → `{ passkey, recoveryCodes }` (codes only for a first factor) |
+| `POST` | `/api/v1/me/passkeys` | bearer | Finish registration → `{ passkey, recoveryCodes, session }` (codes and `session` only for a first factor) |
 | `PATCH` | `/api/v1/me/passkeys/:id` | bearer | Rename a passkey |
 | `DELETE` | `/api/v1/me/passkeys/:id` | bearer | Remove a passkey (password); the last second factor revokes sessions and bumps `tokenVersion` |
 | `POST` | `/api/v1/me/passkeys/recovery-codes` | bearer | Regenerate recovery codes (password + a passkey-opened session) |
@@ -277,7 +277,13 @@ user has TOTP enrolled, and still returns `401 MFA_REQUIRED` when they do not.
 Enrollment is a two-step, password-stepped-up flow: `POST /me/tfa/setup`
 returns the base32 secret and `otpauthUrl` once (never re-readable), then
 `POST /me/tfa/confirm` proves possession with a live code and returns eight
-single-use recovery codes. The TOTP seed is persisted only as a KeyProvider
+single-use recovery codes. When this is the account's first second factor, the
+response also carries `session: { token, refreshToken, refreshTokenExpiresAt }`:
+the current session, upgraded to TFA-verified (same `sid`, `amr` gains `totp`),
+so an `enforceTfa` policy does not refuse it right after enrolment. The
+refresh cookie is rotated too. `session` is `null` for a token without `sid`.
+`POST /me/passkeys` does the same for a first passkey (`amr` gains
+`webauthn`). The TOTP seed is persisted only as a KeyProvider
 AEAD envelope, so enrollment requires `ENCRYPTION_KEY` in production;
 recovery codes are stored as PBKDF2 hashes. Set `LUMIBASE_TOTP_ISSUER` to
 control the label shown in authenticator apps (default `LumiBase`).

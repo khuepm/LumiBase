@@ -9,7 +9,8 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Fixed
+- Enrolling a first second factor (TOTP, or a first passkey) under an `enforceTfa` policy no longer locks the session out. `POST /me/tfa/confirm` and `POST /me/passkeys` upgrade the current session to TFA-verified (same `sid`) and return the new token pair as `session`; Studio stores it and never leaves the page while the recovery codes are shown (#1048).
 
 ## [2.2.1] - 2026-11-25
 

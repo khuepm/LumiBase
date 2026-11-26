@@ -1,10 +1,10 @@
 ---
-version: 18
-lastUpdated: 2026-11-21T00:02:58.713Z
+version: 19
+lastUpdated: 2026-11-26T21:52:34.880Z
 sourceLang: en
-contentHash: e3b0be70412db75d
-codeVerified: 2026-11-21T00:02:58.713Z
-codeVerifiedHash: e3b0be70412db75d
+contentHash: b3b4128f9887a028
+codeVerified: 2026-11-26T21:52:34.880Z
+codeVerifiedHash: b3b4128f9887a028
 codeVerifiedClaims: 132
 ---
 
@@ -426,8 +426,11 @@ For a logged-in user (`bearer`, under `/api/v1/me`):
     skip the check until they expire;
   - **confirming TOTP enrolment** (`POST /me/tfa/confirm`) signs out every
     *other* session — they were authenticated with the password alone —
-    and keeps the enrolling device. Password change/reset still kills every
-    session, including the current one (`tokenVersion` bump);
+    and keeps the enrolling device. When it is the first factor (TOTP or a
+    first passkey), the enrolling session itself is upgraded to TFA-verified
+    and the response returns its new token pair (#1048). Password
+    change/reset still kills every session, including the current one
+    (`tokenVersion` bump);
   - audit events: `session_revoked` (`sessionId`, `current`) and
     `sessions_revoked` (`scope: all | others`, `revoked`); `mfa_enrolled`
     gains `revokedOtherSessions`.
@@ -520,7 +523,9 @@ could still write content from a non-Studio client. The rules:
   answers `403 TFA_REQUIRED`.
 - An enrolled user needs a session whose token carries `tfaVerified` (or an
   `amr` with `totp` / `webauthn`); a password-only session answers
-  `403 TFA_REQUIRED`.
+  `403 TFA_REQUIRED`. The session that enrolls the first factor is the
+  exception: proving the factor upgrades it, and the enrolment response
+  carries its TFA-verified token pair (#1048).
 - API keys are non-interactive credentials and are **not** subject to
   `enforceTfa`; restrict them with their own policies and expiry. Anonymous
   (public-role) requests have no session and are not affected either.
