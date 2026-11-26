@@ -144,3 +144,6 @@ export * from './usage';
 // ─── External-action tools ────────────────────────────────────────────────────
 
 export * from './external-actions';
+
+// Governed retrieval and AI provider resolution (ADR-016).
+export * from './ai-provider';
