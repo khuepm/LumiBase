@@ -1,6 +1,19 @@
 @import 'tailwindcss';
 @config '../tailwind.config.ts';
 
+/*
+ * Tailwind v4 dropped the v3 preflight rule that gave buttons a pointer cursor
+ * (#1040: Back/Next in the setup wizard showed an arrow). Restore it Studio-wide
+ * for enabled buttons; `disabled:cursor-not-allowed` utilities still win on
+ * disabled ones because this rule skips them.
+ */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+}
+
 /* shadcn/ui design tokens. Override per branding via Settings → Branding. */
 @layer base {
   :root {
