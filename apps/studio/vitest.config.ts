@@ -18,6 +18,8 @@ export default defineConfig({
     include: [
       'src/**/*.{test,spec}.{ts,tsx}',
       'src/**/*.property.test.{ts,tsx}',
+      // Build-time Vite plugins (node env).
+      'vite-plugins/**/*.test.ts',
     ],
   },
   resolve: {

@@ -32,6 +32,9 @@ async function cmsStudioHeaders(): Promise<Headers> {
 /** CSP directives as a map; Pages adds `https:` to these for the cross-origin CMS. */
 const PAGES_CROSS_ORIGIN_DIRECTIVES = new Set(['img-src', 'media-src']);
 
+/** The hosted Pages Studio may load the Cloudflare Web Analytics beacon (#1045). */
+const PAGES_SCRIPT_EXTRA = 'https://static.cloudflareinsights.com';
+
 function cspDirectives(value: string | null | undefined): Map<string, string> {
   const map = new Map<string, string>();
   for (const part of (value ?? '').split(';')) {
@@ -42,12 +45,16 @@ function cspDirectives(value: string | null | undefined): Map<string, string> {
 }
 
 describe('Studio Pages _headers', () => {
-  it('content-security-policy matches the CMS, plus https: media for a cross-origin CMS', async () => {
+  it('content-security-policy matches the CMS, plus https: media for a cross-origin CMS and the analytics beacon', async () => {
     const cms = cspDirectives((await cmsStudioHeaders()).get('content-security-policy'));
     const pages = cspDirectives(pagesHeaders().get('content-security-policy'));
     expect([...pages.keys()].sort()).toEqual([...cms.keys()].sort());
     for (const [name, sources] of cms) {
-      const expected = PAGES_CROSS_ORIGIN_DIRECTIVES.has(name) ? `${sources} https:` : sources;
+      const expected = PAGES_CROSS_ORIGIN_DIRECTIVES.has(name)
+        ? `${sources} https:`
+        : name === 'script-src'
+          ? `${sources} ${PAGES_SCRIPT_EXTRA}`
+          : sources;
       expect(pages.get(name), name).toBe(expected);
     }
   });
