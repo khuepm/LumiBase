@@ -1,12 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useId, useState } from 'react';
-import { Loader2, Shield } from 'lucide-react';
+import { lazy, Suspense, useId, useState } from 'react';
+import { Check, Copy, Loader2, Shield } from 'lucide-react';
 import { getActiveSite, getActiveToken } from '@/lib/api';
 import { getApiBaseUrl } from '@/lib/api-base';
 import { SESSIONS_QUERY_KEY, SessionsSection } from './sessions-section';
 import { ChangePasswordSection } from './change-password-section';
 import { SECURITY_HISTORY_QUERY_KEY, SecurityHistorySection } from './security-history-section';
 import { PasskeysSection } from './passkeys-section';
+import {
+  adoptUpgradedSession,
+  isTfaVerificationRequired,
+  throwIfTfaRequired,
+  TfaReverifyNotice,
+  useHoldTfaRedirect,
+  type UpgradedSession,
+} from './tfa-session';
+
+// The QR encoder is only needed during TOTP setup: keep it out of the page
+// chunk and the initial bundle (#1047).
+const TotpQrCode = lazy(() => import('./totp-qr-code'));
 
 interface TotpStatus {
   enabled: boolean;
@@ -33,6 +45,7 @@ const url = (path: string) => `${getApiBaseUrl()}${path}`;
 
 async function fetchStatus(): Promise<TotpStatus> {
   const res = await fetch(url('/api/v1/me/tfa'), { headers: headers() });
+  await throwIfTfaRequired(res);
   if (!res.ok) throw new Error('Failed to load two-factor settings.');
   const json = (await res.json()) as { data: TotpStatus };
   return json.data;
@@ -82,11 +95,17 @@ export function SecuritySettingsPage() {
         headers: headers(),
         body: JSON.stringify({ secret: setupSecret, code }),
       });
-      const body = await res.json().catch(() => null) as { data?: { recoveryCodes?: string[] }; errors?: { message?: string }[] };
+      const body = await res.json().catch(() => null) as {
+        data?: { recoveryCodes?: string[]; session?: UpgradedSession | null };
+        errors?: { message?: string }[];
+      };
       if (!res.ok) throw new Error(body?.errors?.[0]?.message ?? 'Confirmation failed.');
-      return body.data!.recoveryCodes ?? [];
+      return { codes: body.data!.recoveryCodes ?? [], session: body.data!.session ?? null };
     },
-    onSuccess: (codes) => {
+    onSuccess: ({ codes, session }) => {
+      // The server upgraded this session to TFA-verified (#1048): adopt the
+      // new pair before anything refetches, or `enforceTfa` refuses it.
+      adoptUpgradedSession(session);
       setRecoveryCodes(codes);
       setSetupSecret(null);
       setOtpauthUrl(null);
@@ -127,6 +146,10 @@ export function SecuritySettingsPage() {
   });
 
   const tfaRequired = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tfa') === 'required';
+  const showingRecoveryCodes = (recoveryCodes?.length ?? 0) > 0;
+  // Never leave the page on a `TFA_REQUIRED` while enrolling or while the
+  // one-time recovery codes are on screen (#1048).
+  useHoldTfaRedirect(setupSecret !== null || confirmMutation.isPending || showingRecoveryCodes);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 p-6">
@@ -145,7 +168,7 @@ export function SecuritySettingsPage() {
         <div role="status" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
           <p className="font-medium">Two-factor authentication is required for your role.</p>
           <p>
-            Set up an authenticator app or a passkey below. Then sign out and sign in again with it: the rest of the Studio stays closed until your session has used a second factor.
+            Set up an authenticator app or a passkey below. Once it is confirmed, this session counts as verified and the rest of the Studio opens.
           </p>
         </div>
       ) : null}
@@ -158,6 +181,8 @@ export function SecuritySettingsPage() {
         <h2 className="font-medium">Two-factor authentication (TOTP)</h2>
         {statusQuery.isPending ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : statusQuery.isError && isTfaVerificationRequired(statusQuery.error) ? (
+          <TfaReverifyNotice blocked={showingRecoveryCodes} />
         ) : statusQuery.isError ? (
           // Never fall through to "Disabled" on a failed load: that reads as a
           // definite security state and would invite a second enrollment.
@@ -197,10 +222,26 @@ export function SecuritySettingsPage() {
 
         {setupSecret ? (
           <div className="space-y-3">
-            <p className="text-sm">Add this secret to your authenticator app:</p>
-            <code className="block break-all rounded bg-muted p-2 text-xs">{setupSecret}</code>
             {otpauthUrl ? (
-              <p className="text-xs text-muted-foreground break-all">URI: {otpauthUrl}</p>
+              <>
+                <p className="text-sm">Scan this QR code with your authenticator app:</p>
+                <Suspense fallback={<div className="h-52 w-52 rounded-md bg-muted" aria-hidden="true" />}>
+                  <TotpQrCode value={otpauthUrl} />
+                </Suspense>
+                <p className="text-sm text-muted-foreground">Can&apos;t scan it? Enter this secret instead:</p>
+              </>
+            ) : (
+              <p className="text-sm">Add this secret to your authenticator app:</p>
+            )}
+            <div className="flex items-start gap-2">
+              <code className="block min-w-0 flex-1 break-all rounded bg-muted p-2 text-xs" data-testid="totp-secret">{setupSecret}</code>
+              <CopySecretButton value={setupSecret} />
+            </div>
+            {otpauthUrl ? (
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer select-none">Show setup URI</summary>
+                <p className="mt-1 break-all font-mono">{otpauthUrl}</p>
+              </details>
             ) : null}
             <label htmlFor={codeId} className="block text-sm font-medium">Enter the 6-digit code</label>
             <input
@@ -231,6 +272,13 @@ export function SecuritySettingsPage() {
                 <li key={c}>{c}</li>
               ))}
             </ul>
+            <button
+              type="button"
+              onClick={() => setRecoveryCodes(null)}
+              className="rounded-md border border-amber-400 px-3 py-1 text-xs font-medium dark:border-amber-700"
+            >
+              I have saved these codes
+            </button>
           </div>
         ) : null}
 
@@ -299,6 +347,25 @@ export function SecuritySettingsPage() {
 
       <SecurityHistorySection />
     </div>
+  );
+}
+
+function CopySecretButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={copied ? 'Secret copied' : 'Copy secret'}
+      onClick={() => {
+        void navigator.clipboard?.writeText(value).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        }).catch(() => undefined);
+      }}
+      className="rounded-md border border-border p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+    >
+      {copied ? <Check className="h-4 w-4 text-emerald-600" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
+    </button>
   );
 }
 

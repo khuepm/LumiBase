@@ -138,7 +138,9 @@ describe('AI decisions settings', () => {
     stored = { ...stored, review: { enabled: true, pilotCollections: hundred, mode: 'baseline' } };
     renderPage();
     await screen.findByTestId('ai-decisions-status');
-    expect(screen.getByLabelText('Posts')).toBeDisabled();
+    // The status line can render before the stored pilot list is applied to the
+    // checkboxes; wait for the cap itself rather than racing it on a slow runner.
+    await waitFor(() => expect(screen.getByLabelText('Posts')).toBeDisabled());
     fireEvent.click(screen.getByLabelText('Posts'));
     expect(screen.getByLabelText('Posts')).not.toBeChecked();
     expect(screen.getByText(/at most 100 collections/)).toBeInTheDocument();

@@ -33,7 +33,7 @@ services:
       # release into an unattended upgrade. `pnpm version:sync` moves this line
       # to each release; your copy changes only when you change it, after
       # reading the release's upgrade notes (docs/en/deployment/one-click.md).
-      url: ghcr.io/khuepm/lumibase-cms:2.2.1
+      url: ghcr.io/khuepm/lumibase-cms:2.2.2
     # Free instances spin down when idle, which stops the scheduler, the
     # veto-commit sweep and the queue workers this process runs. Starter is
     # the smallest plan that stays up.

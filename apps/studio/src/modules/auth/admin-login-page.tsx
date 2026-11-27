@@ -1,7 +1,15 @@
 import { useNavigate } from '@tanstack/react-router';
 import { KeyRound, LogIn } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { getActiveSite, hasActiveToken, setActiveToken, setActiveRefreshToken, setActiveSite } from '@/lib/api';
+import {
+  getActiveSite,
+  handleTenantNotFound,
+  hasActiveToken,
+  isTenantNotFound,
+  setActiveToken,
+  setActiveRefreshToken,
+  setActiveSite,
+} from '@/lib/api';
 import { ADMIN_PATH_REGEX } from '@/modules/setup/schemas/admin-path-rules';
 import { sanitizeIntentReturnTo } from '@/lib/intents/paths';
 import { passkeyErrorMessage, passkeysSupported, promptPasskey } from '@/lib/passkeys';
@@ -70,6 +78,7 @@ export function AdminLoginPage({ adminPath }: AdminLoginPageProps) {
       setStatus('submitting');
       setMessage(null);
 
+      const site = getActiveSite();
       try {
         const response = await fetch('/api/v1/auth/login', {
           method: 'POST',
@@ -77,7 +86,7 @@ export function AdminLoginPage({ adminPath }: AdminLoginPageProps) {
           headers: {
             Accept: 'application/json',
             'Content-Type': 'application/json',
-            'X-Lumi-Site': getActiveSite(),
+            'X-Lumi-Site': site,
             'X-Lumi-Client': 'studio',
           },
           body: JSON.stringify({ email, password }),
@@ -93,6 +102,15 @@ export function AdminLoginPage({ adminPath }: AdminLoginPageProps) {
           setMfaMethods(Array.isArray(body.data.methods) ? body.data.methods : []);
           setStep('mfa');
           setStatus('idle');
+          return;
+        }
+
+        // A site id remembered from an earlier install (#1044): forget it so
+        // the next attempt goes to the default site.
+        if (response.status === 404 && isTenantNotFound(body)) {
+          handleTenantNotFound(site);
+          setStatus('error');
+          setMessage('This browser remembered a site that no longer exists here. Sign in again.');
           return;
         }
 

@@ -1,13 +1,13 @@
 ---
-version: 19
-lastUpdated: 2026-11-23T15:00:07.888Z
+version: 20
+lastUpdated: 2026-11-27T13:26:02.687Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 153a312f0faea7b7
+sourceHash: ae9521af1f24cd8c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-23T15:00:07.888Z
-codeVerifiedHash: 153a312f0faea7b7
+codeVerified: 2026-11-27T13:26:02.687Z
+codeVerifiedHash: ae9521af1f24cd8c
 codeVerifiedClaims: 132
 ---
 
@@ -449,8 +449,10 @@ nó (bất kỳ giá trị non-empty nào).
     kiểm tra này cho tới khi hết hạn;
   - **xác nhận enroll TOTP** (`POST /me/tfa/confirm`) đăng xuất mọi session
     *khác* — chúng được xác thực chỉ bằng mật khẩu — và giữ lại thiết bị vừa
-    enroll. Đổi/reset mật khẩu vẫn huỷ mọi session, kể cả session hiện tại
-    (tăng `tokenVersion`);
+    enroll. Khi đó là yếu tố đầu tiên (TOTP hoặc passkey đầu tiên), chính
+    session đang enroll được nâng lên trạng thái đã xác minh 2FA và response
+    trả về cặp token mới của nó (#1048). Đổi/reset mật khẩu vẫn huỷ mọi
+    session, kể cả session hiện tại (tăng `tokenVersion`);
   - audit event: `session_revoked` (`sessionId`, `current`) và
     `sessions_revoked` (`scope: all | others`, `revoked`); `mfa_enrolled`
     có thêm `revokedOtherSessions`.
@@ -542,7 +544,9 @@ client không phải Studio. Quy tắc:
   `/me/passkeys/registration-options`); mọi request khác trả
   `403 TFA_REQUIRED`.
 - User đã đăng ký cần một session có token mang `tfaVerified` (hoặc `amr` có
-  `totp` / `webauthn`); session chỉ có mật khẩu trả `403 TFA_REQUIRED`.
+  `totp` / `webauthn`); session chỉ có mật khẩu trả `403 TFA_REQUIRED`. Ngoại
+  lệ là session enroll yếu tố đầu tiên: chứng minh được yếu tố đó sẽ nâng cấp
+  session, và response enroll mang cặp token đã xác minh 2FA của nó (#1048).
 - API key là credential không tương tác và **không** chịu `enforceTfa`; hãy
   giới hạn chúng bằng policy và thời hạn riêng. Request ẩn danh (role public)
   không có session nên cũng không bị ảnh hưởng.

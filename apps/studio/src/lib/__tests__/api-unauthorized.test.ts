@@ -113,4 +113,19 @@ describe('handleTfaRequired', () => {
     expect(assign).toHaveBeenCalledWith('/admin-a7f3c1/login?tfa=verify');
     expect(api.hasActiveToken()).toBe(false);
   });
+
+  it('stays put while a hold is active, e.g. recovery codes on screen (#1048)', async () => {
+    const api = await load('/admin-a7f3c1/settings/security');
+    api.setActiveToken('session');
+    const release = api.holdTfaRedirect();
+    api.handleTfaRequired('verification_required');
+    api.handleTfaRequired('enrollment_required');
+    expect(assign).not.toHaveBeenCalled();
+    expect(api.hasActiveToken()).toBe(true);
+
+    release();
+    release(); // idempotent: must not underflow into a permanent release
+    api.handleTfaRequired('verification_required');
+    expect(assign).toHaveBeenCalledWith('/admin-a7f3c1/login?tfa=verify');
+  });
 });

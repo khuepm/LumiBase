@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/studio",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "private": true,
   "description": "LumiBase Studio — no-code admin SPA (React + Vite).",
   "type": "module",
@@ -45,6 +45,7 @@
     "i18next": "^27.2.7",
     "lucide-react": "^1.79.0",
     "maplibre-gl": "6.19.0",
+    "qrcode": "^1.5.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-hook-form": "^7.92.0",
@@ -59,6 +60,7 @@
     "@tailwindcss/postcss": "^4.3.5",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.3",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/zxcvbn": "^4.4.5",

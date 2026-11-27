@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { and, eq } from 'drizzle-orm';
 import { SignJWT } from 'jose';
 import { roles, userSites, users } from '@lumibase/database';
-import type { AppEnv } from '../../env';
+import type { AppEnv, AuthPrincipal } from '../../env';
 import {
   TOKEN_AUDIENCE,
   sessionTtlFor,
@@ -11,6 +11,7 @@ import {
   issueRefreshToken,
   newSessionId,
   refreshCookieSettings,
+  stepUpSessionFamily,
 } from './refresh-token';
 import { refreshTtlFor, ttlToSeconds } from './token-audience';
 import { setCookie } from 'hono/cookie';
@@ -155,4 +156,82 @@ export async function completePasswordLoginSession(
       },
     },
   });
+}
+
+/** The tokens `upgradeSessionAfterFirstFactor` hands back to the client. */
+export interface UpgradedSession {
+  token: string;
+  refreshToken: string;
+  refreshTokenExpiresAt: string;
+}
+
+/**
+ * Mark the CURRENT session TFA-verified right after the user enrolled their
+ * first second factor from it (#1048).
+ *
+ * Without this, a policy with `enforceTfa` refused the session the moment the
+ * factor existed: it was opened with the password alone, so every request
+ * (the status refresh, adding a passkey, the rest of the Studio) answered
+ * `403 TFA_REQUIRED verification_required`, while the one-time recovery codes
+ * were still on screen. The user has just proved the factor on this device,
+ * the same proof `/auth/verify-totp` accepts, so the session is upgraded in
+ * place: its refresh family is rotated with the new `amr` (same `sid`, see
+ * `stepUpSessionFamily`), and a fresh access token carries `tfaVerified`.
+ *
+ * Returns null, leaving the session untouched, for a legacy token without
+ * `sid`, a session with no live refresh row, or a server without JWT secret.
+ * The client then asks the user to sign in again with the new factor.
+ */
+export async function upgradeSessionAfterFirstFactor(
+  c: Context<AppEnv>,
+  auth: AuthPrincipal,
+  method: 'totp' | 'webauthn',
+): Promise<UpgradedSession | null> {
+  const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
+  const raw = auth.raw ?? {};
+  const sid = typeof raw.sid === 'string' ? raw.sid : null;
+  if (!jwtSecret || !sid || !auth.userId) return null;
+
+  // The family lives on the site the session was opened on, which a Studio
+  // token visiting a sibling site does not share with the request.
+  const sessionSiteId = typeof raw.siteId === 'string' ? raw.siteId : c.get('siteId');
+  const priorAmr = Array.isArray(raw.amr)
+    ? raw.amr.filter((v): v is string => typeof v === 'string')
+    : ['pwd'];
+
+  const family = await stepUpSessionFamily(
+    c.get('db'),
+    {
+      siteId: sessionSiteId,
+      userId: auth.userId,
+      familyId: sid,
+      priorAmr: priorAmr.length > 0 ? priorAmr : ['pwd'],
+      method,
+      ip: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
+      userAgent: c.req.header('user-agent') ?? null,
+    },
+    c.env,
+  );
+  if (!family) return null;
+
+  // Same claims as the token being replaced (the auth middleware has already
+  // checked `tokenVersion` against the user row), plus the second factor.
+  const payload: Record<string, unknown> = {
+    userId: auth.userId,
+    email: typeof raw.email === 'string' ? raw.email : auth.email,
+    roles: Array.isArray(raw.roles) ? raw.roles : auth.roles,
+    siteId: sessionSiteId,
+    tokenVersion: typeof raw.tokenVersion === 'number' ? raw.tokenVersion : 0,
+    sid,
+    tfaVerified: true,
+    amr: family.amr,
+  };
+  const token = await signSessionJwt(payload, jwtSecret, family.audience, sessionTtlFor(family.audience, c.env));
+  setRefreshCookie(c, family.token, family.audience);
+
+  return {
+    token,
+    refreshToken: family.token,
+    refreshTokenExpiresAt: family.expiresAt.toISOString(),
+  };
 }

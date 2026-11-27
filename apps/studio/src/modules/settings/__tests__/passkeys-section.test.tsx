@@ -98,6 +98,52 @@ describe('PasskeysSection', () => {
     expect(JSON.parse(registerInit.body as string)).toMatchObject({ ceremonyId: 'cer_0123456789abcdef', name: 'Work laptop' });
   });
 
+  it('a first passkey adopts the TFA-verified session the server returns (#1048)', async () => {
+    const api = await import('@/lib/api');
+    api.setActiveToken('password-only');
+    fetchMock
+      .mockResolvedValueOnce(list([]))
+      .mockResolvedValueOnce(jsonResponse(200, { data: { ceremonyId: 'cer_0123456789abcdef', options: {} } }))
+      .mockResolvedValueOnce(jsonResponse(201, {
+        data: { passkey: row, recoveryCodes: ['AAAA-BBBB'], session: { token: 'verified-access', refreshToken: 'verified-refresh' } },
+      }))
+      .mockResolvedValue(list([row]));
+    pk.createPasskey.mockResolvedValue({ id: 'cred', rawId: 'cred', type: 'public-key', response: {} });
+    renderSection();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a passkey' }));
+    fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByText('AAAA-BBBB')).toBeInTheDocument();
+    expect(api.getActiveToken()).toBe('verified-access');
+    expect(api.getActiveRefreshToken()).toBe('verified-refresh');
+    api.clearActiveToken();
+  });
+
+  it('a TFA_REQUIRED answer offers "sign in again with 2FA" instead of a generic error', async () => {
+    const tfaRequired = {
+      ok: false,
+      status: 403,
+      clone() {
+        return this;
+      },
+      json: async () => ({
+        errors: [{ code: 'TFA_REQUIRED', message: 'A two-factor verified session is required for this account.', details: { reason: 'verification_required' } }],
+      }),
+    } as unknown as Response;
+    fetchMock.mockResolvedValueOnce(list([])).mockResolvedValueOnce(tfaRequired);
+    renderSection();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a passkey' }));
+    fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByRole('button', { name: 'Sign in again with 2FA' })).toBeInTheDocument();
+    expect(screen.queryByText('A two-factor verified session is required for this account.')).not.toBeInTheDocument();
+    expect(pk.createPasskey).not.toHaveBeenCalled();
+  });
+
   it('reports a cancelled browser prompt without registering', async () => {
     fetchMock
       .mockResolvedValueOnce(list([]))

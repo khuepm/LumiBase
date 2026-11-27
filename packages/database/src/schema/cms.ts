@@ -206,7 +206,8 @@ export const items = pgTable(
      * Optimistic-concurrency counter (content-environments Phase A, migration
      * 0036). Incremented by every write that changes the item's logical
      * content: `data`, `status`, pins, soft delete (incl. tree cascade),
-     * crypto-shred, moving the item in a tree. Descendant path rebases, sibling
+     * crypto-shred, moving the item in a tree, a field rename moving the
+     * value to the new key. Descendant path rebases, sibling
      * sort renumbering and key-rotation re-encryption leave it alone. Exposed as the strong ETag
      * of `GET /items/:collection/:id`; `If-Match` compares against it.
      */

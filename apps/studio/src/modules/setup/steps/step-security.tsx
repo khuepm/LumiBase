@@ -30,6 +30,7 @@ import {
 import {
   getEmailIdentityModeDraft,
   getPolicyDraft,
+  PRESET_EMAIL_IDENTITY_MODE,
   setEmailIdentityModeDraft,
   setPolicyDraft,
   type EmailIdentityMode,
@@ -108,6 +109,7 @@ export {
   EMAIL_IDENTITY_MODES,
   getEmailIdentityModeDraft,
   getPolicyDraft,
+  PRESET_EMAIL_IDENTITY_MODE,
   setEmailIdentityModeDraft,
   setPolicyDraft,
   type EmailIdentityMode,
@@ -331,6 +333,9 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
       // define them — wiping the operator's typed-in values just
       // because they clicked a preset would be hostile UX.
       const preset = POLICY_PRESETS[id];
+      // The email identity mode follows the preset (#1041); the radio
+      // below stays editable for an operator who wants otherwise.
+      handleEmailIdentityModeChange(PRESET_EMAIL_IDENTITY_MODE[id]);
       reset(
         {
           userMaxFailedAttempts: preset.userMaxFailedAttempts,
@@ -353,7 +358,7 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
         void trigger();
       }, 0);
     },
-    [reset, allValues.webhookUrl, allValues.webhookSecret, trigger],
+    [reset, allValues.webhookUrl, allValues.webhookSecret, trigger, handleEmailIdentityModeChange],
   );
 
   useEffect(() => {
