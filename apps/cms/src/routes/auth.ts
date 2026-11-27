@@ -99,6 +99,39 @@ function isUniqueViolation(err: unknown): boolean {
   return code(err) === '23505' || code((err as { cause?: unknown })?.cause) === '23505';
 }
 
+/**
+ * Read and validate a JSON request body (#1046). A body that is not JSON, or
+ * that fails `schema`, answers 400 `VALIDATION` instead of letting a
+ * `SyntaxError` / `ZodError` escape to `app.onError` as a 500. Same shape as
+ * the passkey routes. The messages describe only the shape of the payload,
+ * never anything about an account, so they cannot be used to enumerate users.
+ */
+async function readJsonBody<S extends z.ZodType>(
+  c: Context<AppEnv>,
+  schema: S,
+): Promise<{ ok: true; data: z.infer<S> } | { ok: false; res: Response }> {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return {
+      ok: false,
+      res: c.json({ errors: [{ code: 'VALIDATION', message: 'Body must be valid JSON.' }] }, 400),
+    };
+  }
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      res: c.json(
+        { errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) },
+        400,
+      ),
+    };
+  }
+  return { ok: true, data: parsed.data };
+}
+
 export const authRouter = new Hono<AppEnv>();
 
 /**
@@ -200,7 +233,9 @@ meRouter.post('/change-password', async (c) => {
     return c.json({ errors: [{ code: 'UNAUTHENTICATED', message: 'No active session.' }] }, 401);
   }
 
-  const input = changePasswordSchema.parse(await c.req.json());
+  const read = await readJsonBody(c, changePasswordSchema);
+  if (!read.ok) return read.res;
+  const input = read.data;
 
   const [user] = await db
     .select({ id: users.id, email: users.email, passwordHash: users.passwordHash })
@@ -900,8 +935,9 @@ authRouter.post('/resend-verification', async (c) => {
     );
   }
 
-  const body = await c.req.json();
-  const input = resendVerificationSchema.parse(body);
+  const read = await readJsonBody(c, resendVerificationSchema);
+  if (!read.ok) return read.res;
+  const input = read.data;
   const emailLower = normalizeEmail(input.email);
   // #794: resolve the account under the instance email identity mode
   // (`root` mode matches any +tag / Gmail-dot alias of the stored address).
@@ -1003,8 +1039,9 @@ authRouter.post('/forgot-password', async (c) => {
     );
   }
 
-  const body = await c.req.json();
-  const input = forgotPasswordSchema.parse(body);
+  const read = await readJsonBody(c, forgotPasswordSchema);
+  if (!read.ok) return read.res;
+  const input = read.data;
   const emailLower = normalizeEmail(input.email);
   // #794: resolve the account under the instance email identity mode
   // (`root` mode matches any +tag / Gmail-dot alias of the stored address).
@@ -1080,8 +1117,9 @@ authRouter.post('/reset-password', async (c) => {
     );
   }
 
-  const body = await c.req.json();
-  const input = resetPasswordSchema.parse(body);
+  const read = await readJsonBody(c, resetPasswordSchema);
+  if (!read.ok) return read.res;
+  const input = read.data;
 
   const claims = await verifyPasswordResetToken(input.token, jwtSecret);
   // Reject expired / tampered / wrong-audience / cross-tenant tokens with
@@ -1235,8 +1273,9 @@ authRouter.post('/login', async (c) => {
 
   // Hono caches the parsed body, so this re-read doesn't re-parse the
   // stream that the LoginGuard middleware consumed.
-  const body = await c.req.json();
-  const input = loginSchema.parse(body);
+  const read = await readJsonBody(c, loginSchema);
+  if (!read.ok) return read.res;
+  const input = read.data;
 
   // Email normalisation (admin-setup-wizard Req 7.1, design §6.5):
   // delegate to the shared `normalizeEmail` helper so the
