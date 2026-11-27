@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { getApiClient, hasActiveToken } from '@/lib/api';
+import { isSetupPath } from '@/lib/admin-base';
 
 /**
  * Applies the active site's theme to Studio at runtime:
@@ -80,7 +81,10 @@ export function SiteThemeStyle() {
   const siteQuery = useQuery({
     queryKey: ['site-config'],
     queryFn: async () => (await getApiClient().site.get()).data,
-    enabled: hasActiveToken(),
+    // Mounted above the router, so it also renders on the setup wizard. No
+    // site exists there yet, and a token left from an earlier install would
+    // only fetch `/site` for a tenant this instance does not have (#1044).
+    enabled: hasActiveToken() && !isSetupPath(window.location.pathname),
     staleTime: 60_000,
   });
 

@@ -40,13 +40,19 @@ export function setActiveSite(siteId: string): void {
  * remains bound to the site where the session was issued.
  */
 export function getSessionSite(): string {
+  return tokenSiteId() ?? getActiveSite();
+}
+
+/** The `siteId` claim of the access token, or null for an opaque/absent token. */
+function tokenSiteId(): string | null {
   try {
     const part = getActiveToken().split('.')[1];
-    if (!part) return getActiveSite();
-    const payload = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
-    if (typeof payload.siteId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(payload.siteId)) return payload.siteId;
+    if (!part) return null;
+    const payload: unknown = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+    const siteId = payload && typeof payload === 'object' ? (payload as { siteId?: unknown }).siteId : undefined;
+    if (typeof siteId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(siteId)) return siteId;
   } catch { /* Opaque external tokens retain the existing active-site routing. */ }
-  return getActiveSite();
+  return null;
 }
 
 export function getActiveToken(): string {
@@ -207,6 +213,76 @@ async function inspectTfaRequired(response: Response): Promise<void> {
   }
 }
 
+/**
+ * Whether a response body is the `404 TENANT_NOT_FOUND` that `withTenantExists`
+ * (apps/cms/src/middleware/tenant-exists.ts) sends when `X-Lumi-Site` names no
+ * site on this instance (#1044).
+ */
+export function isTenantNotFound(body: unknown): boolean {
+  if (!body || typeof body !== 'object') return false;
+  const errors = (body as { errors?: unknown }).errors;
+  return Array.isArray(errors) && errors.some(
+    (entry) => !!entry && typeof entry === 'object' && (entry as { code?: unknown }).code === 'TENANT_NOT_FOUND',
+  );
+}
+
+/** Pages that work without a session and must never be navigated away from. */
+function isPublicPath(rest: string): boolean {
+  return ['/setup', '/login', '/recovery'].some((p) => rest === p || rest.startsWith(`${p}/`));
+}
+
+let tenantRecoveryInFlight = false;
+
+/**
+ * Global `404 TENANT_NOT_FOUND` handler (#1044). The site id this browser sends
+ * comes from the token's `siteId`, else `localStorage['lumibase.dev.site']`,
+ * else `__default__`. One left over from an earlier session or database makes
+ * every tenant request 404 with nothing on screen to explain it.
+ *
+ *   - A stored site id equal to the unknown one is cleared, so the next request
+ *     falls back to the default site.
+ *   - A token bound to the unknown site is cleared with its refresh token: that
+ *     session cannot work on this instance.
+ *
+ * Then the page is reloaded (site cleared) or sent to the login (session
+ * cleared), once. Setup, login and recovery pages are left alone: they carry
+ * on with the default site. When nothing stale was found (the default site
+ * itself is unknown) the handler does nothing, so a reload can never loop.
+ */
+export function handleTenantNotFound(requestedSite: string): void {
+  if (typeof window === 'undefined' || tenantRecoveryInFlight || !requestedSite) return;
+
+  let siteCleared = false;
+  try {
+    if (localStorage.getItem(STORAGE_KEY.site) === requestedSite) {
+      localStorage.removeItem(STORAGE_KEY.site);
+      siteCleared = true;
+    }
+  } catch { /* Storage unavailable: nothing persisted to clear. */ }
+
+  const signedOut = tokenSiteId() === requestedSite;
+  if (signedOut) clearActiveToken();
+  if (!siteCleared && !signedOut) return;
+  cached = null;
+
+  const { pathname, search } = window.location;
+  const adminBase = getAdminBase(pathname);
+  const rest = adminBase ? pathname.slice(adminBase.length) : pathname;
+  if (isPublicPath(rest)) return;
+
+  tenantRecoveryInFlight = true;
+  window.location.assign(signedOut ? (adminBase ? `${adminBase}/login` : '/') : `${pathname}${search ?? ''}`);
+}
+
+async function inspectTenantNotFound(response: Response, site: string | null): Promise<void> {
+  if (response.status !== 404 || !site) return;
+  try {
+    if (isTenantNotFound(await response.clone().json())) handleTenantNotFound(site);
+  } catch {
+    // Not JSON: an ordinary route 404, not ours to handle.
+  }
+}
+
 function createApiClient(token: string, site: string) {
   return createLumiClient({
     url: getApiBaseUrl(),
@@ -221,6 +297,7 @@ function createApiClient(token: string, site: string) {
       if (path === '/api/v1/auth/refresh') headers.set('X-Lumi-Site', getSessionSite());
       return fetch(input, { ...init, headers }).then(async (response) => {
         await inspectTfaRequired(response);
+        await inspectTenantNotFound(response, headers.get('X-Lumi-Site'));
         return response;
       });
     },
