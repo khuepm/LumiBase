@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-27T13:22:38.645Z",
+  "generatedAt": "2026-11-27T15:07:50.993Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 214,
+    "upToDate": 215,
     "planned": 0
   },
   "actions": [
@@ -2450,6 +2450,18 @@
     },
     {
       "rel": "security/security-history.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/security-presets.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
