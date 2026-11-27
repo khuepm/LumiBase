@@ -60,6 +60,24 @@ export function resolveExtensionRuntime(env?: Readonly<Record<string, unknown>>)
   return read('LUMIBASE_ENV') === 'production' || read('NODE_ENV') === 'production' ? 'process' : 'in-process';
 }
 
+/** Set by the Helm chart when `networkPolicy.egress.restrict` is on (#1009). */
+export const EGRESS_RESTRICTED_ENV = 'LUMIBASE_EGRESS_RESTRICTED';
+
+/**
+ * Startup warning for #1009 (accepted risk, ADR-015): extension code, in
+ * process or in its child, can open connections outside `ctx.fetch`. In
+ * production with extensions configured, the operator is expected to restrict
+ * egress at the network level and say so with `LUMIBASE_EGRESS_RESTRICTED`.
+ */
+export function extensionEgressWarning(env: Readonly<Record<string, unknown>>): string | null {
+  const read = (key: string) => env[key] ?? (typeof process !== 'undefined' ? process.env[key] : undefined);
+  const production = read('LUMIBASE_ENV') === 'production' || read('NODE_ENV') === 'production';
+  const extensions = typeof read('EXTENSION_BUNDLE_ORIGINS') === 'string' && String(read('EXTENSION_BUNDLE_ORIGINS')).trim() !== '';
+  const restricted = ['true', '1', 'yes'].includes(String(read(EGRESS_RESTRICTED_ENV) ?? ''));
+  if (!production || !extensions || restricted) return null;
+  return `[lumibase-cms] extensions are enabled (EXTENSION_BUNDLE_ORIGINS) but egress is not restricted: extension code can reach cloud metadata and private networks outside ctx.fetch. Restrict egress (Helm networkPolicy.egress.restrict=true, or Docker/firewall rules) and set ${EGRESS_RESTRICTED_ENV}=true.`;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const nodeImport = (id: string): Promise<any> => import(/* @vite-ignore */ id);
 

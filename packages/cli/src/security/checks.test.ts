@@ -202,6 +202,18 @@ describe('security rules', () => {
     expect(ids(runSecurityChecks(envOf({ ...PROD_OK })))).not.toContain('upload-uncatalogued-mime');
   });
 
+  it('flags unrestricted extension egress on Node and the Workers bundle-origin requirement (#1008, #1009)', () => {
+    const ext = { ...PROD_OK, EXTENSION_BUNDLE_ORIGINS: 'https://ext.example.com' };
+    expect(ids(runSecurityChecks(envOf(ext)), 'warning')).toContain('extension-egress-unrestricted');
+    expect(ids(runSecurityChecks(envOf({ ...ext, LUMIBASE_EGRESS_RESTRICTED: 'true' })))).not.toContain('extension-egress-unrestricted');
+    expect(ids(runSecurityChecks(envOf({ ...PROD_OK })))).not.toContain('extension-egress-unrestricted');
+    const workers = runSecurityChecks(
+      envOf({ NODE_ENV: 'production', JWT_SECRET: STRONG_JWT, ENCRYPTION_KEY: STRONG_AES, CORS_ALLOWED_ORIGINS: 'https://a.com', EXTENSION_BUNDLE_ORIGINS: 'https://ext.example.com' }, 'cloudflare'),
+    );
+    expect(ids(workers, 'warning')).toContain('extension-workers-bundle-origin');
+    expect(ids(workers)).not.toContain('extension-egress-unrestricted');
+  });
+
   it('skips Node-only rules on the Cloudflare runtime', () => {
     const r = runSecurityChecks(
       envOf({ NODE_ENV: 'production', JWT_SECRET: STRONG_JWT, ENCRYPTION_KEY: STRONG_AES, CORS_ALLOWED_ORIGINS: 'https://a.com' }, 'cloudflare'),

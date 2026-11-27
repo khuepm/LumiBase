@@ -1,13 +1,13 @@
 ---
-version: 18
-lastUpdated: 2026-11-21T00:02:58.713Z
+version: 19
+lastUpdated: 2026-11-23T15:00:07.888Z
 sourceLang: en
 translatedFrom: en
-sourceHash: e3b0be70412db75d
+sourceHash: 153a312f0faea7b7
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-21T00:02:58.713Z
-codeVerifiedHash: e3b0be70412db75d
+codeVerified: 2026-11-23T15:00:07.888Z
+codeVerifiedHash: 153a312f0faea7b7
 codeVerifiedClaims: 132
 ---
 
@@ -252,13 +252,29 @@ Visitor (Next.js)            CMS                              Email
 | `POST /api/v1/auth/refresh` | public | Xoay refresh token được trình ra (cookie hoặc body `{refreshToken}`) → access JWT mới + refresh token đã xoay. Việc dùng lại một token đã revoke sẽ revoke toàn bộ family. |
 | `POST /api/v1/auth/logout` | public | Revoke family của refresh token được trình ra và xóa cookie. Idempotent. |
 
-**Mức chi phí băm mật khẩu (#994).** Mật khẩu dùng PBKDF2-SHA256, mặc định
-100.000 vòng. `PASSWORD_PBKDF2_ITERATIONS` nâng mức chi phí cho hash mới trên
-Node/Docker (100.000–2.000.000), và một lần đăng nhập thành công sẽ băm lại mật
-khẩu đang lưu ở mức thấp hơn; nhánh "email không tồn tại" dùng một hash giả cùng
-chi phí để thời gian đăng nhập không lộ email nào có thật. Cloudflare Workers
-giữ ở 100.000 vì Web Crypto của nó từ chối mức cao hơn — đừng nâng giá trị này
-trên bản Docker nếu database sau này có thể được phục vụ bởi Workers.
+**Băm mật khẩu (#994, B230).** Mật khẩu mới được băm bằng scheme do
+`PASSWORD_HASH_SCHEME` chọn:
+
+- `scrypt` (mặc định trên Node/Docker): memory-hard, N=2^15, r=8, p=3
+  (32 MiB cho mỗi hash, mức tối thiểu của OWASP), lưu dạng
+  `scrypt$N$r$p$salt$hash`. Node tính nó bằng mã native.
+- `pbkdf2` (mặc định trên Cloudflare Workers): PBKDF2-SHA256, 100.000 vòng,
+  nâng bằng `PASSWORD_PBKDF2_ITERATIONS` (100.000–2.000.000). Trên Workers, hash
+  PBKDF2 *mới* giữ ở 100.000 vì Web Crypto từ chối mức cao hơn.
+
+Một lần đăng nhập thành công sẽ băm lại mật khẩu đang lưu bằng scheme khác hoặc
+chi phí thấp hơn mục tiêu, nên các hash PBKDF2 hiện có chuyển dần sang scrypt
+khi user đăng nhập. Nhánh "email không tồn tại" dùng một hash giả cùng scheme và
+chi phí, để thời gian đăng nhập không lộ email nào có thật.
+
+Mọi hash đã lưu đều xác minh được trên mọi runtime, nên chuyển database từ
+Docker sang Workers không khoá ai. Workers xác minh hash scrypt và hash PBKDF2
+trên 100.000 vòng bằng JavaScript thay vì Web Crypto, tốn khoảng 300 ms (scrypt)
+tới 1 s (PBKDF2 ở 600.000 vòng) CPU cho mỗi lần đăng nhập. Trên gói Workers có
+giới hạn CPU chặt, hãy giữ `PASSWORD_HASH_SCHEME=pbkdf2` ngay từ đầu, hoặc chấp
+nhận rằng lần đăng nhập của user được băm ở nơi khác cần mức CPU đó. Chỉ đặt
+`PASSWORD_HASH_SCHEME=scrypt` trên Workers khi gói của bạn có giới hạn CPU đủ
+cho nó.
 | `POST /api/v1/me/change-password` | bearer | Body `{currentPassword,newPassword}`. Xác minh mật khẩu hiện tại, đặt hash mới, revoke tất cả refresh token. |
 | `GET /api/v1/me/sessions` | bearer | Các session đang hoạt động của caller (refresh token còn sống), đã redact. |
 | `DELETE /api/v1/me/sessions/:id` | bearer | Revoke một trong các session của chính caller (`:id` = `sessionId`); có hiệu lực ngay. |

@@ -227,6 +227,17 @@ export class ExtensionSandbox {
       return this.loadInProcessHost(opts, this.buildCtx(new Set(opts.capabilities), opts.name));
     }
 
+    // Node in process (#1008): the same one-download rule as the process
+    // host. The module is imported from a `data:` URL of the verified bytes,
+    // never from the bundle URL, so a second response cannot run.
+    if (!isWorkersRuntime()) {
+      return this.loadVerifiedInProcess(opts, this.buildCtx(new Set(opts.capabilities), opts.name));
+    }
+
+    // Cloudflare Workers (#1008, accepted risk; ADR-015): Workers cannot
+    // import a `data:`/`blob:` module, so the bundle URL is verified here and
+    // imported below as two fetches. Operators must serve bundles from an
+    // origin they control at immutable, content-addressed URLs.
     // Signature gate (fail-closed for official / when signature is required).
     // Runs BEFORE import + cache so an unverifiable official bundle never
     // executes and is never cached. A missing verifier when one is required is
@@ -298,22 +309,9 @@ export class ExtensionSandbox {
     const dispatch = ctxDispatcher(ctx as unknown as Parameters<typeof ctxDispatcher>[0]);
     try {
       // One download; every check below and the child see this same buffer.
-      const bytes = await this.fetchBundleBytes(opts.bundleUrl);
-      const digest = await sha256Hex(bytes);
-      if (opts.expectedSha256 && opts.expectedSha256.toLowerCase() !== digest) {
-        console.error(`[extension-sandbox] refused to load "${opts.name}": bundle SHA-256 does not match the recorded value`);
-        return null;
-      }
-      if (opts.isOfficial || opts.requireSignature) {
-        // Fail closed: without a byte verifier there is nothing that checked these bytes.
-        const ok = opts.verifyBytes ? await opts.verifyBytes(bytes) : false;
-        if (!ok) {
-          console.error(
-            `[extension-sandbox] refused to load "${opts.name}": signature verification failed (official=${Boolean(opts.isOfficial)})`,
-          );
-          return null;
-        }
-      }
+      const verified = await this.downloadVerified(opts);
+      if (!verified) return null;
+      const { bytes, digest } = verified;
       // Keyed by digest: a reused child always runs bytes that passed these
       // checks; a child of the same extension holding other bytes is ended.
       const key = processKey(opts.siteId, opts.name, opts.bundleUrl, digest);
@@ -337,11 +335,61 @@ export class ExtensionSandbox {
   }
 
   /**
+   * Node, `EXTENSION_RUNTIME=in-process` (#1008): download once, verify that
+   * buffer, import exactly those bytes. Same gates as the process host.
+   */
+  private async loadVerifiedInProcess(opts: SandboxLoadOptions, ctx: ReturnType<ExtensionSandbox['buildCtx']>): Promise<ExtensionModule | null> {
+    const bundleGuard = validateExtensionBundleUrl(opts.bundleUrl);
+    if (!bundleGuard.allowed) {
+      console.error(`[extension-sandbox] refused to load "${opts.name}": ${bundleGuard.reason ?? 'bundle URL not allowed'}`);
+      return null;
+    }
+    try {
+      const verified = await this.downloadVerified(opts);
+      if (!verified) return null;
+      const mod = await this.importWithTimeout(toJavaScriptDataUrl(verified.bytes), opts.timeoutMs ?? 5000);
+      const extensionMod: ExtensionModule = typeof mod.default === 'function' ? await mod.default(ctx) : mod;
+      this.cache.set(opts.name, extensionMod);
+      return extensionMod;
+    } catch (err) {
+      console.error(`[extension-sandbox] failed to load "${opts.name}"`, formatSafeError(err));
+      return null;
+    }
+  }
+
+  /**
+   * One download of the bundle, checked against the recorded SHA-256 and,
+   * when required, the signature over that very buffer (fail-closed without a
+   * byte verifier). Returns the bytes to execute, or null when refused.
+   */
+  private async downloadVerified(opts: SandboxLoadOptions): Promise<{ bytes: Uint8Array; digest: string } | null> {
+    const bytes = await this.fetchBundleBytes(opts.bundleUrl);
+    const digest = await sha256Hex(bytes);
+    if (opts.expectedSha256 && opts.expectedSha256.toLowerCase() !== digest) {
+      console.error(`[extension-sandbox] refused to load "${opts.name}": bundle SHA-256 does not match the recorded value`);
+      return null;
+    }
+    if (opts.isOfficial || opts.requireSignature) {
+      const ok = opts.verifyBytes ? await opts.verifyBytes(bytes) : false;
+      if (!ok) {
+        console.error(
+          `[extension-sandbox] refused to load "${opts.name}": signature verification failed (official=${Boolean(opts.isOfficial)})`,
+        );
+        return null;
+      }
+    }
+    return { bytes, digest };
+  }
+
+  /**
    * The bundle bytes for the out-of-process host: downloaded through the SSRF
    * guard (DNS re-checked), redirects refused, at most 5 MB. Called once per
    * load; the caller verifies and executes exactly what this returns.
    */
   protected async fetchBundleBytes(bundleUrl: string): Promise<Uint8Array> {
+    // Only reachable for a `data:` URL that passed the trust policy (which
+    // refuses them in production): decoded locally, no network.
+    if (bundleUrl.startsWith('data:')) return decodeDataUrl(bundleUrl);
     const res = await guardedFetch(bundleUrl, { redirect: 'error' }, { allowLocalhost: isLoopbackUrl(bundleUrl), allowPrivateNetwork: isLoopbackUrl(bundleUrl) });
     if (!res.ok) throw new SandboxLoadError(bundleUrl, `bundle download failed with HTTP ${res.status}`);
     const bytes = new Uint8Array(await res.arrayBuffer());
@@ -546,6 +594,23 @@ export class ExtensionSandbox {
 
 
 const MAX_REMOTE_BUNDLE_BYTES = 5 * 1024 * 1024;
+
+/** Bytes of a `data:` URL (base64 or percent-encoded), decoded without a fetch. */
+function decodeDataUrl(url: string): Uint8Array {
+  const comma = url.indexOf(',');
+  const meta = url.slice(5, comma);
+  const payload = url.slice(comma + 1);
+  if (meta.endsWith(';base64')) {
+    const binary = atob(payload);
+    return Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+  }
+  return new TextEncoder().encode(decodeURIComponent(payload));
+}
+
+/** True on Cloudflare Workers, which cannot import a `data:`/`blob:` module. */
+function isWorkersRuntime(): boolean {
+  return typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers';
+}
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource));

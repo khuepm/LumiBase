@@ -65,6 +65,14 @@ export const extensionSchema = z.object({
   type: z.enum(EXTENSION_TYPES),
   enabled: z.boolean().default(false),
   bundleUrl: bundleUrlSchema,
+  // Signature metadata for the bundle (B228): what the install and every later
+  // load verify against. Without it, a direct install could never pass the
+  // default `require` policy, and a row stored without it could never be
+  // verified at load time.
+  bundleSha256: z.string().regex(/^[0-9a-f]{64}$/i).transform((v) => v.toLowerCase()).optional(),
+  signature: z.string().min(1).max(4096).optional(),
+  publisherKeyId: z.string().min(1).max(200).optional(),
+  signatureAlg: z.enum(['ed25519']).optional(),
   // Free-form string metadata, plus the structured `mcp` block (#715), which
   // is validated here so a malformed declaration is refused at install time
   // instead of being skipped silently at request time.
@@ -107,7 +115,7 @@ function patchActions(input: Partial<z.infer<typeof extensionSchema>>): Permissi
   if (Object.prototype.hasOwnProperty.call(input, 'enabled')) actions.add('enable');
   if (Object.prototype.hasOwnProperty.call(input, 'capabilities')) actions.add('grant_capability');
   if (
-    ['key', 'name', 'version', 'type', 'bundleUrl', 'manifest'].some((field) =>
+    ['key', 'name', 'version', 'type', 'bundleUrl', 'manifest', 'bundleSha256', 'signature', 'publisherKeyId', 'signatureAlg'].some((field) =>
       Object.prototype.hasOwnProperty.call(input, field),
     )
   ) {
@@ -151,15 +159,24 @@ export class ExtensionsService {
     await this.require(createActions(input));
     const verifier = new ExtensionVerifierService(this.deps.db, this.deps.env ?? { LUMIBASE_ENV: 'production' });
     const verdict = await verifier.verifyByMetadata(input.name, {
-      bundleUrl: input.bundleUrl, bundleSha256: null, signature: null,
-      publisherKeyId: null, signatureAlg: null,
+      bundleUrl: input.bundleUrl,
+      bundleSha256: input.bundleSha256 ?? null,
+      signature: input.signature ?? null,
+      publisherKeyId: input.publisherKeyId ?? null,
+      signatureAlg: input.signatureAlg ?? null,
     });
     const reserved = ExtensionVerifierService.isReservedName(input.name);
     if (reserved && !verdict.isOfficial) {
       throw new ExtensionMutationError('RESERVED_NAMESPACE', 'lumibase-* requires an official signature.', 400);
     }
     if ((reserved || (this.deps.env?.LUMIBASE_EXT_SIGNATURE_POLICY ?? 'require') !== 'warn') && !verdict.ok) {
-      throw new ExtensionMutationError('SIGNATURE_REQUIRED', `Signature check failed: ${verdict.reason}`, 400);
+      throw new ExtensionMutationError(
+        'SIGNATURE_REQUIRED',
+        verdict.reason === 'missing-fields'
+          ? 'This site requires signed extensions: include bundleSha256, signature, publisherKeyId and signatureAlg, or install from the marketplace.'
+          : `Signature check failed: ${verdict.reason}`,
+        400,
+      );
     }
     const [row] = await this.deps.db.insert(extensions).values({
       ...input, key: extensionKey(input), siteId: this.deps.siteId,
@@ -185,19 +202,25 @@ export class ExtensionsService {
     // signature metadata — and refuse the change when the policy requires a
     // signature, so the previous, verified bundle stays the active one instead
     // of being swapped silently (or replaced by one that will never load).
+    // New signature metadata is checked like a new bundle: it is what every
+    // later load verifies against (B228).
     const bundleChanged =
       (input.bundleUrl !== undefined && input.bundleUrl !== current.bundleUrl) ||
-      (input.version !== undefined && input.version !== current.version);
+      (input.version !== undefined && input.version !== current.version) ||
+      (input.bundleSha256 !== undefined && input.bundleSha256 !== current.bundleSha256) ||
+      (input.signature !== undefined && input.signature !== current.signature) ||
+      (input.publisherKeyId !== undefined && input.publisherKeyId !== current.publisherKeyId) ||
+      (input.signatureAlg !== undefined && input.signatureAlg !== current.signatureAlg);
     let verifiedAt: Date | null | undefined;
     if (bundleChanged) {
       const nextName = input.name ?? current.name;
       const verifier = new ExtensionVerifierService(this.deps.db, this.deps.env ?? { LUMIBASE_ENV: 'production' });
       const verdict = await verifier.verifyByMetadata(nextName, {
         bundleUrl: input.bundleUrl ?? current.bundleUrl,
-        bundleSha256: current.bundleSha256 ?? null,
-        signature: current.signature ?? null,
-        publisherKeyId: current.publisherKeyId ?? null,
-        signatureAlg: current.signatureAlg ?? null,
+        bundleSha256: input.bundleSha256 ?? current.bundleSha256 ?? null,
+        signature: input.signature ?? current.signature ?? null,
+        publisherKeyId: input.publisherKeyId ?? current.publisherKeyId ?? null,
+        signatureAlg: input.signatureAlg ?? current.signatureAlg ?? null,
       });
       const signatureRequired =
         current.isOfficial ||

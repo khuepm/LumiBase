@@ -309,8 +309,9 @@ describe('POST /admin/security/reset-password', () => {
       failedCount: 0,
       failedCountWindowStart: null,
     });
+    // scrypt on Node by default (B230), pbkdf2 when PASSWORD_HASH_SCHEME says so.
     expect((updates[0] as { passwordHash?: string }).passwordHash).toMatch(
-      /^pbkdf2\$/,
+      /^(scrypt|pbkdf2)\$/,
     );
   });
 

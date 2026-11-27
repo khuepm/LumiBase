@@ -136,6 +136,11 @@ async function main() {
       port,
     });
     console.log(`[lumibase-cms] Started in ${runtime.runtime} mode on port ${port} (role=${role})`);
+    // #1009: extension egress is an operator-level control; say when it is missing.
+    void import('./extensions/host/process-host').then(({ extensionEgressWarning }) => {
+      const warning = extensionEgressWarning(process.env);
+      if (warning) console.warn(warning);
+    });
   } else {
     console.log(`[lumibase-cms] HTTP API disabled (role=${role})`);
     workerHealthServer = startWorkerHealthServer(workerHealthPort);

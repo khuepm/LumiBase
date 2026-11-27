@@ -6,6 +6,7 @@ import { MemoryRateLimiter } from '@lumibase/runtime';
 
 import type { AppEnv } from '../env';
 import { STANDARD_LOCKOUT_POLICY } from '../modules/setup/policy-codec';
+import { hashPassword } from '../services/auth/password';
 import { connectDbIntegration, hasDbIntegrationUrl } from './helpers/db-harness';
 
 /**
@@ -67,15 +68,29 @@ describe.skipIf(!hasDbIntegrationUrl)('credential defaults — DB integration', 
   const post = (a: Hono<AppEnv>, path: string, body: unknown, env: Record<string, string> = {}) =>
     a.request(path, { method: 'POST', headers: { 'content-type': 'application/json', 'cf-connecting-ip': '203.0.113.9' }, body: JSON.stringify(body) }, { JWT_SECRET, ...env } as never);
 
+  const storedHash = async () => (await db.select({ h: users.passwordHash }).from(users).where(eq(users.id, userId)))[0]!.h!;
+
   it('re-hashes a password stored below the target work factor on login', async () => {
-    const before = (await db.select({ h: users.passwordHash }).from(users).where(eq(users.id, userId)))[0]!.h!;
-    expect(before.split('$')[1]).toBe('100000');
-    const res = await post(app(), '/auth/login', { email: EMAIL, password: PASSWORD }, { PASSWORD_PBKDF2_ITERATIONS: '150000' });
+    // A PBKDF2 hash from before scrypt became the Node default (B230).
+    await db.update(users).set({ passwordHash: await hashPassword(PASSWORD, 100_000) }).where(eq(users.id, userId));
+    const env = { PASSWORD_HASH_SCHEME: 'pbkdf2', PASSWORD_PBKDF2_ITERATIONS: '150000' };
+    const res = await post(app(), '/auth/login', { email: EMAIL, password: PASSWORD }, env);
     expect(res.status).toBe(200);
-    const after = (await db.select({ h: users.passwordHash }).from(users).where(eq(users.id, userId)))[0]!.h!;
-    expect(after.split('$')[1]).toBe('150000');
+    expect((await storedHash()).split('$').slice(0, 2)).toEqual(['pbkdf2', '150000']);
     // And the user can still sign in with the same password.
-    expect((await post(app(), '/auth/login', { email: EMAIL, password: PASSWORD }, { PASSWORD_PBKDF2_ITERATIONS: '150000' })).status).toBe(200);
+    expect((await post(app(), '/auth/login', { email: EMAIL, password: PASSWORD }, env)).status).toBe(200);
+  });
+
+  it('moves a PBKDF2 password to scrypt on login, and it keeps working (B230)', async () => {
+    await db.update(users).set({ passwordHash: await hashPassword(PASSWORD, 100_000) }).where(eq(users.id, userId));
+    expect((await post(app(), '/auth/login', { email: EMAIL, password: PASSWORD }, { PASSWORD_HASH_SCHEME: 'scrypt' })).status).toBe(200);
+    expect((await storedHash()).split('$').slice(0, 4)).toEqual(['scrypt', '32768', '8', '3']);
+    expect((await post(app(), '/auth/login', { email: EMAIL, password: PASSWORD }, { PASSWORD_HASH_SCHEME: 'scrypt' })).status).toBe(200);
+    expect((await post(app(), '/auth/login', { email: EMAIL, password: 'WrongHorseBatteryStaple!42' }, { PASSWORD_HASH_SCHEME: 'scrypt' })).status).toBe(401);
+  });
+
+  it('setup stores the first admin with scrypt on Node by default (B230)', async () => {
+    expect((await storedHash()).startsWith('scrypt$')).toBe(true);
   });
 
   it('refuses self-registration on a closed site, creating nothing', async () => {
