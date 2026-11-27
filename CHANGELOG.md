@@ -9,6 +9,11 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Fixed
+- Enrolling a first second factor (TOTP, or a first passkey) under an `enforceTfa` policy no longer locks the session out. `POST /me/tfa/confirm` and `POST /me/passkeys` upgrade the current session to TFA-verified (same `sid`) and return the new token pair as `session`; Studio stores it and never leaves the page while the recovery codes are shown (#1048).
+- Studio Settings → Security shows "Sign in again with 2FA" for a `403 TFA_REQUIRED` instead of a generic load error (#1048).
+- TOTP setup shows a QR code, drawn in the browser from the `otpauth://` URI (never sent to an outside service), with the secret as a copyable fallback (#1047).
+
 ### Security
 - **Extensions run only the bytes that were verified (#1008, ADR-015).** On Node with `EXTENSION_RUNTIME=in-process`, an extension bundle was verified on one download and then imported from its URL with a second, unchecked one. It is now downloaded once, checked against the recorded SHA-256 and the signature on that buffer, and imported from a `data:` URL of those exact bytes, as the out-of-process host already did. The Studio loader likewise downloads a UI bundle once, checks its SHA-256 and imports a `blob:` URL of those bytes; the CMS and Studio Pages CSP `script-src` now allow `blob:` for that. On Cloudflare Workers, which cannot import `data:`/`blob:` modules, the two-fetch load is an accepted risk with an operator requirement (immutable, content-addressed bundle origins you control); `lumibase doctor --security` reports `extension-workers-bundle-origin`.
 - **Media responses no longer publicly cacheable when access is restricted (#1012).** `GET`/`HEAD /api/v1/media/:key` checks `media:read` for every caller but sent `Cache-Control: public` (`immutable` for a year on a pinned `?v=`), so a shared cache or CDN could serve bytes an authorised user fetched to a caller without access, and, with the site picked by `X-Lumi-Site`, to another site. The response is now `public` (with `Vary: X-Lumi-Site`) only when the site's anonymous `public` role grants `media:read` with no row rule, and `private` otherwise; transformed derivatives and redirects follow the same rule.

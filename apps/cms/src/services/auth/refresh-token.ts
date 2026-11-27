@@ -314,6 +314,81 @@ export async function rotateRefreshToken(
   });
 }
 
+export interface SteppedUpFamily {
+  token: string;
+  expiresAt: Date;
+  familyId: string;
+  audience: string;
+  amr: string[];
+}
+
+/**
+ * Record a second factor on a live session (#1048). The user enrolled their
+ * first factor from this session and proved it there (a valid TOTP code, or a
+ * completed WebAuthn registration), so the session is now as strong as a
+ * second-factor login. The family's live row is rotated, exactly like
+ * `/auth/refresh` does it, into a successor that carries `amr` with the new
+ * method, so every later renewal stays TFA-verified.
+ *
+ * Same family on purpose: the session id (`sid`) the device already holds
+ * stays live, `revokeOtherSessions` keeps it, and nothing else about the
+ * session changes. Returns null when the family has no live row (an expired
+ * or already-revoked session): the caller then leaves the session as it is.
+ */
+export async function stepUpSessionFamily(
+  db: Database,
+  args: {
+    siteId: string;
+    userId: string;
+    familyId: string;
+    /** Methods the session already proved, from the access token. */
+    priorAmr: readonly string[];
+    method: 'totp' | 'webauthn';
+    ip?: string | null;
+    userAgent?: string | null;
+  },
+  env: RefreshTtlEnv | undefined,
+): Promise<SteppedUpFamily | null> {
+  return db.transaction(async (tx) => {
+    const claimed = await tx
+      .update(refreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(refreshTokens.siteId, args.siteId),
+          eq(refreshTokens.userId, args.userId),
+          eq(refreshTokens.familyId, args.familyId),
+          isNull(refreshTokens.revokedAt),
+          gt(refreshTokens.expiresAt, new Date()),
+        ),
+      )
+      .returning({ id: refreshTokens.id, audience: refreshTokens.audience, amr: refreshTokens.amr });
+    const current = claimed[0];
+    if (!current) return null;
+
+    const amr = normalizeAmr([...(current.amr ?? args.priorAmr), args.method]) ?? [args.method];
+    const next = await issueRefreshToken(
+      tx as unknown as Database,
+      {
+        siteId: args.siteId,
+        userId: args.userId,
+        audience: current.audience,
+        familyId: args.familyId,
+        ip: args.ip,
+        userAgent: args.userAgent,
+        amr,
+      },
+      env,
+    );
+    await tx
+      .update(refreshTokens)
+      .set({ replacedBy: next.id })
+      .where(and(eq(refreshTokens.siteId, args.siteId), inArray(refreshTokens.id, claimed.map((r) => r.id))));
+
+    return { token: next.token, expiresAt: next.expiresAt, familyId: args.familyId, audience: current.audience, amr };
+  });
+}
+
 /**
  * Revoke the family of the presented token (logout). Idempotent; a missing
  * or already-revoked token is a no-op. Returns true when something was

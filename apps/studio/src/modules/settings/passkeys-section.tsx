@@ -6,6 +6,14 @@ import { getActiveSite, getActiveToken } from '@/lib/api';
 import { getApiBaseUrl } from '@/lib/api-base';
 import { createPasskey, passkeyErrorMessage, passkeysSupported } from '@/lib/passkeys';
 import { SESSIONS_QUERY_KEY } from './sessions-section';
+import {
+  adoptUpgradedSession,
+  isTfaVerificationRequired,
+  throwIfTfaRequired,
+  TfaReverifyNotice,
+  useHoldTfaRedirect,
+  type UpgradedSession,
+} from './tfa-session';
 
 /**
  * Passkeys (#735) under Settings → Security: list, add (password step-up, then
@@ -53,6 +61,7 @@ async function errorMessage(res: Response, fallback: string): Promise<string> {
 
 async function fetchPasskeys(): Promise<PasskeysPayload> {
   const res = await fetch(url('/api/v1/me/passkeys'), { headers: headers() });
+  await throwIfTfaRequired(res);
   if (!res.ok) throw new Error('Failed to load passkeys.');
   return ((await res.json()) as { data: PasskeysPayload }).data;
 }
@@ -75,6 +84,7 @@ export function PasskeysSection() {
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [removing, setRemoving] = useState<{ id: string; password: string } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [reverify, setReverify] = useState(false);
 
   const query = useQuery({ queryKey: PASSKEYS_QUERY_KEY, queryFn: fetchPasskeys });
 
@@ -90,6 +100,7 @@ export function PasskeysSection() {
         headers: headers(),
         body: JSON.stringify({ password }),
       });
+      await throwIfTfaRequired(optionsRes);
       if (!optionsRes.ok) throw new Error(await errorMessage(optionsRes, 'Could not start passkey setup.'));
       const { data } = (await optionsRes.json()) as {
         data: { ceremonyId: string; options: PublicKeyCredentialCreationOptionsJSON };
@@ -105,10 +116,14 @@ export function PasskeysSection() {
         headers: headers(),
         body: JSON.stringify({ ceremonyId: data.ceremonyId, response, ...(name.trim() ? { name: name.trim() } : {}) }),
       });
+      await throwIfTfaRequired(res);
       if (!res.ok) throw new Error(await errorMessage(res, 'Passkey setup failed.'));
-      return ((await res.json()) as { data: { recoveryCodes: string[] | null } }).data;
+      return ((await res.json()) as { data: { recoveryCodes: string[] | null; session?: UpgradedSession | null } }).data;
     },
     onSuccess: (data) => {
+      // A first factor upgrades this session to TFA-verified (#1048).
+      adoptUpgradedSession(data.session);
+      setReverify(false);
       setRecoveryCodes(data.recoveryCodes);
       setPassword('');
       setName('');
@@ -118,7 +133,14 @@ export function PasskeysSection() {
       // A first second factor signs out every other session server-side.
       void qc.invalidateQueries({ queryKey: SESSIONS_QUERY_KEY });
     },
-    onError: (err: Error) => setMessage(err.message),
+    onError: (err: Error) => {
+      if (isTfaVerificationRequired(err)) {
+        setReverify(true);
+        setMessage(null);
+        return;
+      }
+      setMessage(err.message);
+    },
   });
 
   const renameMutation = useMutation({
@@ -160,6 +182,9 @@ export function PasskeysSection() {
     onError: (err: Error) => setMessage(err.message),
   });
 
+  const showingRecoveryCodes = (recoveryCodes?.length ?? 0) > 0;
+  useHoldTfaRedirect(addMutation.isPending || showingRecoveryCodes);
+
   const rows = query.data?.passkeys ?? [];
   const canAdd = supported && query.data?.available !== false;
 
@@ -178,8 +203,14 @@ export function PasskeysSection() {
         <p role="alert" className="text-sm text-red-600">{message}</p>
       ) : null}
 
+      {reverify && !(query.isError && isTfaVerificationRequired(query.error)) ? (
+        <TfaReverifyNotice blocked={showingRecoveryCodes} />
+      ) : null}
+
       {query.isPending ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : query.isError && isTfaVerificationRequired(query.error) ? (
+        <TfaReverifyNotice blocked={showingRecoveryCodes} />
       ) : query.isError ? (
         <p role="alert" className="text-sm text-red-600">Could not load passkeys. Reload to try again.</p>
       ) : rows.length === 0 ? (
@@ -274,6 +305,13 @@ export function PasskeysSection() {
               <li key={c}>{c}</li>
             ))}
           </ul>
+          <button
+            type="button"
+            onClick={() => setRecoveryCodes(null)}
+            className="rounded-md border border-amber-400 px-3 py-1 text-xs font-medium dark:border-amber-700"
+          >
+            I have saved these codes
+          </button>
         </div>
       ) : null}
 

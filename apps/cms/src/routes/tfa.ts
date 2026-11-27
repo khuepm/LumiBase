@@ -31,7 +31,8 @@ import {
 } from '../services/auth/mfa-challenge';
 import { revokeAllRefreshTokens, revokeOtherSessions } from '../services/auth/refresh-token';
 import { TOKEN_AUDIENCE } from '../services/auth/token-audience';
-import { completePasswordLoginSession } from '../services/auth/login-session';
+import { completePasswordLoginSession, upgradeSessionAfterFirstFactor } from '../services/auth/login-session';
+import { loadSecondFactors } from '../modules/mfa/tfa-state';
 import { detectNewDevice, scheduleNewDeviceNotice } from '../modules/security-history/new-device';
 import type { LoginAttemptDraft } from '../modules/anomaly/types';
 
@@ -256,6 +257,10 @@ tfaMeRouter.post('/tfa/confirm', async (c) => {
     );
   }
 
+  // Read before enrolling: only a FIRST factor upgrades this session (below).
+  const factorsBefore = await loadSecondFactors(c.get('db'), userId);
+  const firstFactor = !factorsBefore.totp && factorsBefore.passkeys === 0;
+
   try {
     const result = await confirmTotpSetup(
       c.get('db'),
@@ -281,7 +286,14 @@ tfaMeRouter.post('/tfa/confirm', async (c) => {
       requestId: c.get('requestId'),
       ip: extractClientIp(c),
     });
-    return c.json({ data: result });
+    // The code just verified proves the factor on this device, so this
+    // session is now TFA-verified (#1048): a fresh token pair, same `sid`,
+    // so `enforceTfa` does not lock the user out while the recovery codes are
+    // still on screen. Only for a first factor: a session that skipped an
+    // existing factor must not earn `tfaVerified` by adding another one.
+    // `session` is null when the session cannot be upgraded (legacy token).
+    const session = firstFactor ? await upgradeSessionAfterFirstFactor(c, auth, 'totp') : null;
+    return c.json({ data: { ...result, session } });
   } catch (err) {
     if (err instanceof TotpError) {
       const status = err.code === 'SETUP_EXPIRED' ? 410 : 400;

@@ -176,6 +176,36 @@ export function tfaRequiredReason(body: unknown): TfaRequiredReason | null {
 }
 
 let tfaRedirectInFlight = false;
+let tfaRedirectHolds = 0;
+
+/**
+ * Suspend the automatic `TFA_REQUIRED` redirect (#1048) while something the
+ * user cannot get back is on screen: the one-time recovery codes after
+ * enrolling a factor, or the enrolment itself. Returns the release function;
+ * calling it twice is harmless. A user-initiated {@link signInAgainWithTfa}
+ * is not affected.
+ */
+export function holdTfaRedirect(): () => void {
+  tfaRedirectHolds++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    tfaRedirectHolds--;
+  };
+}
+
+/**
+ * Sign this session out and go to the login page in `?tfa=verify` mode, so the
+ * next session uses the second factor. Used by the automatic redirect and by
+ * the "sign in again with 2FA" buttons on Settings → Security.
+ */
+export async function signInAgainWithTfa(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  const adminBase = getAdminBase(window.location.pathname);
+  await logout();
+  window.location.assign(adminBase ? `${adminBase}/login?tfa=verify` : '/?tfa=verify');
+}
 
 /**
  * Global `403 TFA_REQUIRED` handler (#987). A policy with `enforceTfa` now
@@ -187,7 +217,7 @@ let tfaRedirectInFlight = false;
  *     use it (it predates enrolment). Sign in again, with the factor.
  */
 export function handleTfaRequired(reason: TfaRequiredReason): void {
-  if (typeof window === 'undefined' || tfaRedirectInFlight) return;
+  if (typeof window === 'undefined' || tfaRedirectInFlight || tfaRedirectHolds > 0) return;
   const { pathname } = window.location;
   const adminBase = getAdminBase(pathname);
   const rest = adminBase ? pathname.slice(adminBase.length) : pathname;
@@ -203,8 +233,12 @@ export function handleTfaRequired(reason: TfaRequiredReason): void {
   window.location.assign(`${adminBase}/settings/security?tfa=required`);
 }
 
-async function inspectTfaRequired(response: Response): Promise<void> {
+async function inspectTfaRequired(response: Response, sentAuthorization: string | null): Promise<void> {
   if (response.status !== 403) return;
+  // Answered for a token this tab no longer uses — e.g. a request sent just
+  // before enrolment swapped in a TFA-verified pair (#1048). The current
+  // session is not the one that was refused, so there is nothing to redirect.
+  if (sentAuthorization && sentAuthorization !== `Bearer ${getActiveToken()}`) return;
   try {
     const reason = tfaRequiredReason(await response.clone().json());
     if (reason) handleTfaRequired(reason);
@@ -295,8 +329,9 @@ function createApiClient(token: string, site: string) {
       const path = url.slice(getApiBaseUrl().length).split('?')[0] ?? '';
       if (path === '/api/v1/orgs' || path.startsWith('/api/v1/orgs/')) headers.delete('X-Lumi-Site');
       if (path === '/api/v1/auth/refresh') headers.set('X-Lumi-Site', getSessionSite());
+      const sentAuthorization = headers.get('Authorization');
       return fetch(input, { ...init, headers }).then(async (response) => {
-        await inspectTfaRequired(response);
+        await inspectTfaRequired(response, sentAuthorization);
         await inspectTenantNotFound(response, headers.get('X-Lumi-Site'));
         return response;
       });
