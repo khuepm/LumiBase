@@ -431,6 +431,45 @@ test('worker.enabled splits web and worker roles; workers never apply migrations
   assert.equal(envOf(single, 'LUMIBASE_PROCESS_ROLE').value, 'all');
 });
 
+test('networkPolicy.egress.restrict keeps CMS and worker pods off metadata and private ranges (#1009)', { skip }, () => {
+  const off = mustRender([...BASE, '--set', 'networkPolicy.enabled=true', '--set', 'worker.enabled=true']);
+  for (const name of ['lb-lumibase', 'lb-lumibase-worker']) {
+    assert.deepEqual(find(off, 'NetworkPolicy', name).spec.policyTypes, ['Ingress'], `${name}: egress open by default`);
+  }
+  const docs = mustRender([
+    ...BASE,
+    '--set', 'networkPolicy.enabled=true',
+    '--set', 'networkPolicy.egress.restrict=true',
+    '--set', 'worker.enabled=true',
+    '--set-json', 'networkPolicy.egress.allowTo=[{"ipBlock":{"cidr":"10.20.0.15/32"}}]',
+  ]);
+  // Tells the CMS and `lumibase doctor --security` that egress is restricted.
+  assert.equal(find(docs, 'ConfigMap').data.LUMIBASE_EGRESS_RESTRICTED, 'true');
+  assert.equal(find(off, 'ConfigMap').data.LUMIBASE_EGRESS_RESTRICTED, undefined);
+  for (const name of ['lb-lumibase', 'lb-lumibase-worker']) {
+    const policy = find(docs, 'NetworkPolicy', name);
+    assert.deepEqual(policy.spec.policyTypes, ['Ingress', 'Egress'], name);
+    const rules = policy.spec.egress;
+    // DNS
+    assert.deepEqual(rules[0].ports.map((p) => `${p.port}/${p.protocol}`), ['53/UDP', '53/TCP'], name);
+    // the release's own data services
+    assert.equal(rules[1].to[0].podSelector.matchLabels['app.kubernetes.io/instance'], 'lb', name);
+    // operator allowlist
+    assert.equal(rules[2].to[0].ipBlock.cidr, '10.20.0.15/32', name);
+    // public internet minus metadata and private ranges
+    const pub = rules[3].to[0].ipBlock;
+    assert.equal(pub.cidr, '0.0.0.0/0', name);
+    for (const cidr of ['169.254.0.0/16', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']) {
+      assert.ok(pub.except.includes(cidr), `${name} blocks ${cidr}`);
+    }
+    assert.equal(rules[3].to.length, 1, `${name}: no IPv6 rule unless enabled`);
+  }
+  const v6 = mustRender([...BASE, '--set', 'networkPolicy.enabled=true', '--set', 'networkPolicy.egress.restrict=true', '--set', 'networkPolicy.egress.ipv6=true']);
+  const v6rule = find(v6, 'NetworkPolicy', 'lb-lumibase').spec.egress.at(-1).to[1].ipBlock;
+  assert.equal(v6rule.cidr, '::/0');
+  assert.ok(v6rule.except.includes('fe80::/10'));
+});
+
 test('HPA, PDB and NetworkPolicy render when enabled', { skip }, () => {
   const docs = mustRender([
     ...BASE,

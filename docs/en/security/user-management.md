@@ -1,10 +1,10 @@
 ---
-version: 19
-lastUpdated: 2026-11-26T21:52:34.880Z
+version: 20
+lastUpdated: 2026-11-27T13:26:02.687Z
 sourceLang: en
-contentHash: b3b4128f9887a028
-codeVerified: 2026-11-26T21:52:34.880Z
-codeVerifiedHash: b3b4128f9887a028
+contentHash: ae9521af1f24cd8c
+codeVerified: 2026-11-27T13:26:02.687Z
+codeVerifiedHash: ae9521af1f24cd8c
 codeVerifiedClaims: 132
 ---
 
@@ -248,13 +248,30 @@ Visitor (Next.js)            CMS                              Email
 | `POST /api/v1/auth/refresh` | public | Rotates the presented refresh token (cookie or body `{refreshToken}`) → fresh access JWT + rotated refresh token. Reuse of a revoked token revokes the whole family. |
 | `POST /api/v1/auth/logout` | public | Revokes the presented refresh token's family and clears the cookie. Idempotent. |
 
-**Password work factor (#994).** Passwords are PBKDF2-SHA256, 100,000
-iterations by default. `PASSWORD_PBKDF2_ITERATIONS` raises the work factor of
-new hashes on Node/Docker (100,000–2,000,000), and a successful login re-hashes
-a password stored below it; the "unknown email" path uses a dummy hash of the
-same cost so login timing does not reveal which emails exist. Cloudflare
-Workers stay at 100,000 because their Web Crypto refuses more — do not raise
-it on a Docker deployment whose database may later be served by Workers.
+**Password hashing (#994, B230).** New passwords are hashed with the scheme
+`PASSWORD_HASH_SCHEME` picks:
+
+- `scrypt` (the default on Node/Docker): memory-hard, N=2^15, r=8, p=3
+  (32 MiB per hash, the OWASP minimum), stored as
+  `scrypt$N$r$p$salt$hash`. Node computes it natively.
+- `pbkdf2` (the default on Cloudflare Workers): PBKDF2-SHA256, 100,000
+  iterations, raised with `PASSWORD_PBKDF2_ITERATIONS` (100,000–2,000,000).
+  On Workers, *new* PBKDF2 hashes stay at 100,000 because Web Crypto refuses
+  more.
+
+A successful login re-hashes a password stored with another scheme or a lower
+cost than the target, so existing PBKDF2 hashes move to scrypt as users sign
+in. The "unknown email" path uses a dummy hash of the same scheme and cost, so
+login timing does not reveal which emails exist.
+
+Every stored hash verifies on every runtime, so moving a database from Docker
+to Workers locks nobody out. Workers verify scrypt hashes and PBKDF2 hashes
+above 100,000 iterations in JavaScript instead of Web Crypto, which costs about
+300 ms (scrypt) to 1 s (PBKDF2 at 600,000) of CPU per login. On a Workers plan
+with a tight CPU limit, keep `PASSWORD_HASH_SCHEME=pbkdf2` from the start, or
+expect logins of users hashed elsewhere to need that budget. Set
+`PASSWORD_HASH_SCHEME=scrypt` on Workers only on a plan whose CPU limit allows
+it.
 | `POST /api/v1/me/change-password` | bearer | Body `{currentPassword,newPassword}`. Verifies current password, sets new hash, revokes all refresh tokens. |
 | `GET /api/v1/me/sessions` | bearer | The caller's active sessions (live refresh tokens), redacted. |
 | `DELETE /api/v1/me/sessions/:id` | bearer | Revoke one of the caller's own sessions (`:id` = `sessionId`); effective immediately. |

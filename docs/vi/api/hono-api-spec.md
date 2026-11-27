@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 66
-lastUpdated: 2026-11-26T21:52:31.834Z
+version: 67
+lastUpdated: 2026-11-27T13:25:58.677Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 000729cdb13ea06d
+sourceHash: e97a56fbdff41910
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-26T21:52:31.834Z
-codeVerifiedHash: 000729cdb13ea06d
-codeVerifiedClaims: 658
+codeVerified: 2026-11-27T13:25:58.677Z
+codeVerifiedHash: e97a56fbdff41910
+codeVerifiedClaims: 660
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -1413,6 +1413,8 @@ Gắn tại `/api/v1/admin/erasure`. Hủy mã hóa (bỏ DEK từng bản ghi) 
 | `GET` | `/api/v1/extensions/ui/manifest` | UI manifest cho Studio import động |
 
 **Ký tên & các extension chính thức.** Mọi đường dẫn cài đặt/tải (marketplace install, CRUD chung `POST /extensions`, điểm cuối gắn động, và điều phối hook) đều định tuyến qua một trình xác minh dùng chung. Chữ ký Ed25519 đính kèm được kiểm tra đối chiếu với key nhà xuất bản từ `MARKETPLACE_PUBLIC_KEYS` (env) gộp với bảng `lumibase_publisher_keys` (**DB ghi đè env** cho `official`/`revoked`). `isOfficial` được suy ra ở phía server (tên trong namespace `lumibase-` **và** chữ ký bởi key chính thức) — không bao giờ lấy từ khai báo manifest. Các extension chính thức hoạt động theo chế độ **fail-closed**: gói không thể xác minh sẽ không bao giờ tải. Việc thực thi phía thứ ba tuân theo `LUMIBASE_EXT_SIGNATURE_POLICY` (mặc định `require`, hoặc `warn`). Namespace `lumibase-` được bảo lưu: cộng đồng `/marketplace/submit` sẽ từ chối nó, và các extension chính thức có `autoInstall`/`enabledByDefault` sẽ được cài đặt trong quá trình setup / khi tạo site bởi reconciler. Ký gói với `@lumibase/extension-cli` (`lumibase-ext keygen|sign|verify`).
+
+Một lần `POST /extensions` trực tiếp (hoặc `PATCH /extensions/:id` với bundle mới) mang metadata chữ ký trong body: `bundleSha256` (64 ký tự hex), `signature` (base64), `publisherKeyId` và `signatureAlg` (`ed25519`). Metadata này được xác minh lúc cài và lưu trên dòng dữ liệu, và mọi lần tải sau đều xác minh theo nó. Thay đổi bất kỳ trường nào trong số này sẽ được xác minh lại như một bundle mới. Nếu thiếu, site theo chính sách `require` trả `400 SIGNATURE_REQUIRED` và nêu tên các trường còn thiếu (B228).
 
 ---
 

@@ -2,14 +2,14 @@
 title: Caching
 description: HTTP cache ở edge, CacheProvider tầng ứng dụng, và các lớp phòng thủ cache penetration
 translatedFrom: en
-sourceHash: 223bc6999f6ddd0d
-version: 10
-lastUpdated: 2026-11-18T04:25:25.638Z
+sourceHash: 957c988596ff7568
+version: 11
+lastUpdated: 2026-11-23T11:10:20.987Z
 sourceLang: en
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-18T04:25:25.638Z
-codeVerifiedHash: 223bc6999f6ddd0d
+codeVerified: 2026-11-23T11:10:20.987Z
+codeVerifiedHash: 957c988596ff7568
 codeVerifiedClaims: 18
 ---
 
@@ -81,9 +81,20 @@ Store nằm ở cấp module và có chặn trên (256 entry, TTL 5s). Cả hai 
 
 | URL | `Cache-Control` |
 |-----|-----------------|
-| `/api/v1/media/logo.png` | `public, max-age=300, must-revalidate` |
-| `/api/v1/media/logo.png?v=<contentHash>` (pin khớp bytes đang lưu) | `public, max-age=31536000, immutable` |
-| `/api/v1/media/logo.png?v=<stale>` (pin đã cũ, không khớp) | `public, max-age=300, must-revalidate` |
+| `/api/v1/media/logo.png` | `<scope>, max-age=300, must-revalidate` |
+| `/api/v1/media/logo.png?v=<contentHash>` (pin khớp bytes đang lưu) | `<scope>, max-age=31536000, immutable` |
+| `/api/v1/media/logo.png?v=<stale>` (pin đã cũ, không khớp) | `<scope>, max-age=300, must-revalidate` |
+
+`<scope>` quyết định ai được lưu response (#1012). Mọi lần đọc media đều kiểm
+`media:read` của người gọi, nên cache dùng chung hay CDN chỉ được giữ những
+byte mà bất kỳ ai cũng đọc được:
+
+- `public`, kèm `Vary: X-Lumi-Site`, khi role ẩn danh `public` của site được
+  cấp `media:read` không kèm row rule. Site công khai vẫn giữ được cache CDN,
+  và bộ chọn site nằm trong cache key.
+- `private` trong mọi trường hợp còn lại: không có truy cập công khai, quyền
+  công khai bị giới hạn bởi row rule, hoặc không xác định được kết quả kiểm
+  tra. Chỉ trình duyệt của chính người gọi lưu nó.
 
 Fingerprint được ghi vào metadata của storage (`contentHash`) lúc upload và trả về trong response upload dưới trường `version`. Một `GET` thường cũng báo giá trị này qua header `X-Lumi-Media-Version`, nên client dựng được URL có pin mà không cần thấy response upload. Response mang một `ETag` weak tính trên fingerprint và trả `304` cho `If-None-Match`.
 

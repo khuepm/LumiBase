@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-11-21T03:36:06.095Z
+version: 4
+lastUpdated: 2026-11-21T12:08:30.751Z
 sourceLang: en
-contentHash: 64456fef2a7ac15c
-codeVerified: 2026-11-21T03:36:06.095Z
-codeVerifiedHash: 64456fef2a7ac15c
+contentHash: 72e0b204fa836186
+codeVerified: 2026-11-21T12:08:30.751Z
+codeVerifiedHash: 72e0b204fa836186
 codeVerifiedClaims: 16
 ---
 
@@ -88,6 +88,30 @@ do not match the recorded SHA-256 (`importVerifiedBundle` in
    deployment needs per-extension isolation there.
 4. Do not adopt C or D: C cannot run on Workers, and D shares the process, so
    it limits nothing that matters here.
+5. **Run only the bytes that were verified (#1008), per runtime:**
+
+   | Runtime | Decision |
+   | --- | --- |
+   | Node, process host | Mitigated (#990): one download; signature and SHA-256 checked on that buffer; the child receives those bytes. |
+   | Node, `EXTENSION_RUNTIME=in-process` | Mitigated: the same one-download check, then `import()` of a `data:` URL of the verified bytes (`ExtensionSandbox.loadVerifiedInProcess`), never of the bundle URL. |
+   | Studio (browser) | Mitigated: `importVerifiedBundle` downloads once, checks the SHA-256, and imports a `blob:` URL of those bytes. The CSP `script-src` therefore allows `blob:` (CMS and Studio Pages). A Studio bundle must be a single file, since a `blob:` module cannot resolve relative imports. |
+   | Cloudflare Workers | **Risk accepted.** Workers cannot import a `data:`/`blob:` module, so the bundle is verified and imported as two fetches. Operator requirement: `EXTENSION_BUNDLE_ORIGINS` lists only origins you control, serving immutable, content-addressed URLs (the SHA-256 in the path, never overwritten). `lumibase doctor --security` warns when extensions are enabled on Workers. Option B (Workers for Platforms) removes the requirement. |
+
+6. **Network egress of extension code (#1009), per runtime: risk accepted at
+   the process level; restricted at the network level.** Node's permission
+   model has no network control, and an in-child `fetch` shim would not be a
+   boundary.
+
+   | Runtime | Decision |
+   | --- | --- |
+   | Kubernetes (Helm chart) | `networkPolicy.egress.restrict=true` gives the CMS and worker pods an egress policy. It allows DNS, the release's own bundled services, `networkPolicy.egress.allowTo` peers and public addresses, and blocks `169.254.0.0/16` (cloud metadata), private, CGNAT and loopback ranges. It is off by default (it limits the whole CMS, and needs a CNI that enforces egress) and recommended in production. The chart then sets `LUMIBASE_EGRESS_RESTRICTED=true`. |
+   | Node / Docker without the chart | Operator requirement: block metadata and private ranges for the CMS container (firewall, Docker network rules or an egress proxy), then set `LUMIBASE_EGRESS_RESTRICTED=true`. |
+   | Cloudflare Workers | Risk accepted: outbound `fetch` from the isolate is not restricted. Workers have no private network or metadata endpoint to reach; the residual risk is exfiltration of data the extension receives through `ctx`. |
+
+   In production with extensions configured, the CMS logs a warning at
+   startup and `lumibase doctor --security` reports
+   `extension-egress-unrestricted` until `LUMIBASE_EGRESS_RESTRICTED=true` is
+   set.
 
 ## Consequences
 
@@ -95,20 +119,19 @@ do not match the recorded SHA-256 (`importVerifiedBundle` in
   write files, spawn processes or patch the host's capability checks; what it
   can do is what its declared capabilities let `ctx` do.
 - The permission model does not cover the network: code in the child can open
-  its own connections, without any of the CMS's credentials. Restrict egress
-  at the container level if that matters.
+  its own connections, without any of the CMS's credentials. Egress is
+  restricted at the network level instead (decision 6).
 - Out of process, `ctx.env.EXTENSION_X` is a promise (`await` it), `ctx.fetch`
   returns a copy of the response (at most 5 MB), the CDC `ctx.logger` is the
   child's console, and the extension factory runs once per child rather than
   once per request. Arguments and results must be structured-cloneable.
 - A remote `https` bundle now loads on Node: the host downloads it, which a
   Node `import()` could not.
-- Out of process, nothing runs that was not verified: there is one download,
-  and the signature and SHA-256 are checked on the buffer the child receives.
-  A server that answers a later download differently is refused at that load.
-  The in-process path (Workers, `EXTENSION_RUNTIME=in-process`) still verifies
-  one response and imports the URL separately.
-- Studio's integrity check catches a bundle replaced at its URL, but not a
-  server that answers the verification fetch and the module import
-  differently; closing that needs a `blob:` import and therefore `blob:` in the
-  Studio CSP `script-src`, which is deferred.
+- On Node (either runtime) and in the Studio, nothing runs that was not
+  verified: there is one download, and the signature and SHA-256 are checked
+  on the buffer that is executed. A server that answers a later download
+  differently is refused at that load. Only Cloudflare Workers still verify one
+  response and import the URL separately (decision 5, accepted risk).
+- `script-src` allows `blob:`. A page can only create a `blob:` script by
+  already running script, so it adds no injection path; `'unsafe-inline'` and
+  `'unsafe-eval'` stay off.

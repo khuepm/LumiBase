@@ -50,7 +50,8 @@ describe('security headers middleware', () => {
     const csp = res.headers.get('content-security-policy') ?? '';
     // Both policies are delivered (and therefore both enforced by browsers).
     expect(csp).toContain('sandbox');
-    expect(csp).toContain("script-src 'self'");
+    // `blob:` only: verified extension bundles (#1008). No inline, no eval, no remote origins.
+    expect(csp).toContain("script-src 'self' blob:;");
   });
 
   it('sends exactly the baseline when the route set none', async () => {
