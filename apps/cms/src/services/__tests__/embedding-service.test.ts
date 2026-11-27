@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertEmbeddings,
   cosineSimilarity,
+  createEmbeddingProvider,
   EchoEmbeddingProvider,
   OpenAIEmbeddingProvider,
   WorkersAIEmbeddingProvider,
@@ -85,5 +86,39 @@ describe('providers', () => {
     const [v] = await echo.embed(['x']);
     expect(v).toHaveLength(echo.dimensions);
     expect(echo.model).toBe('echo');
+  });
+});
+
+describe('createEmbeddingProvider', () => {
+  it.each([undefined, 'anthropic', 'claude', 'gemini', 'nvidia', 'vertex'])(
+    'keeps embeddings optional for %s and honors an existing OpenAI key',
+    (LLM_PROVIDER) => {
+      expect(createEmbeddingProvider({ LLM_PROVIDER })).toBeNull();
+      expect(createEmbeddingProvider({ LLM_PROVIDER, OPENAI_API_KEY: 'key' })).toBeInstanceOf(OpenAIEmbeddingProvider);
+    },
+  );
+
+  it('requires credentials for the selected backend', () => {
+    expect(() => createEmbeddingProvider({ LLM_PROVIDER: 'openai' })).toThrow(/OPENAI_API_KEY/);
+    for (const credentials of [{ WORKERS_AI_ACCOUNT_ID: 'id' }, { WORKERS_AI_API_TOKEN: 'token' }]) {
+      expect(() => createEmbeddingProvider({ LLM_PROVIDER: 'workers-ai', ...credentials })).toThrow(/Workers|WORKERS/);
+    }
+    expect(createEmbeddingProvider({ LLM_PROVIDER: 'workers-ai', WORKERS_AI_ACCOUNT_ID: 'id', WORKERS_AI_API_TOKEN: 'token' }))
+      .toBeInstanceOf(WorkersAIEmbeddingProvider);
+    expect(createEmbeddingProvider({ LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'key' })).toBeInstanceOf(OpenAIEmbeddingProvider);
+  });
+
+  it('rejects unknown providers even with a usable OpenAI key', () => {
+    expect(() => createEmbeddingProvider({ LLM_PROVIDER: 'unknown', OPENAI_API_KEY: 'key' }))
+      .toThrow('Unsupported embedding provider configuration');
+  });
+
+  it.each(['development', 'test'])('allows explicit Echo in %s', (LUMIBASE_ENV) => {
+    expect(createEmbeddingProvider({ LLM_PROVIDER: 'echo', LUMIBASE_ENV })).toBeInstanceOf(EchoEmbeddingProvider);
+    expect(createEmbeddingProvider({ LUMIBASE_ENV })).toBeNull();
+  });
+
+  it.each([undefined, 'staging', 'production'])('rejects explicit Echo in %s', (LUMIBASE_ENV) => {
+    expect(() => createEmbeddingProvider({ LLM_PROVIDER: 'echo', LUMIBASE_ENV })).toThrow(/Echo embeddings require/);
   });
 });
