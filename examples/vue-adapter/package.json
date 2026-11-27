@@ -10,7 +10,7 @@
   "dependencies": {
     "@lumibase/sdk": "workspace:*",
     "@lumibase/vue": "workspace:*",
-    "vue": "^3.5.45"
+    "vue": "^3.5.46"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
