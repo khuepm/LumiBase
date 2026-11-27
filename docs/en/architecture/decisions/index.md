@@ -1,8 +1,8 @@
 ---
-version: 6
-lastUpdated: 2026-11-21T00:28:04.489Z
+version: 7
+lastUpdated: 2026-11-26T02:34:33.783Z
 sourceLang: en
-contentHash: b0d5b41e59619a84
+contentHash: 08c209570ccf65cc
 ---
 
 # Architecture Decision Records (ADR)
@@ -28,6 +28,7 @@ LumiBase follows the [ADR pattern](https://adr.github.io/) to document significa
 | [ADR-013](./adr-013-organization-plane.md) | Organization plane (tenant hierarchy and scope-typed credentials) | Proposed |
 | [ADR-014](./adr-014-preview-bridge-threat-model.md) | Live preview bridge — preview tokens, framing and postMessage threat model | Accepted |
 | [ADR-015](./adr-015-extension-isolation.md) | Extension code isolation (out-of-process host on Node; Workers stay in process) | Accepted |
+| [ADR-016](./adr-016-governed-retrieval.md) | Governed retrieval (evidence-driven engine choice; PostgreSQL source of truth, Meili hybrid first) | Proposed |
 
 ## Template
 
