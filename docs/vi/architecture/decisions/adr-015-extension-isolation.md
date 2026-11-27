@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-11-21T12:08:30.751Z
+version: 5
+lastUpdated: 2026-11-27T13:43:11.800Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 72e0b204fa836186
+sourceHash: 8713b022d078113c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-21T12:08:30.751Z
-codeVerifiedHash: 72e0b204fa836186
+codeVerified: 2026-11-27T13:43:11.800Z
+codeVerifiedHash: 8713b022d078113c
 codeVerifiedClaims: 16
 ---
 
@@ -81,7 +81,12 @@ khớp SHA-256 đã ghi nhận (`importVerifiedBundle` trong
    ấy cho child. Child được định danh theo digest đã xác minh, nên một child
    được dùng lại luôn chạy byte đã kiểm, và child đang giữ byte khác của cùng
    extension sẽ bị kết thúc. Một child bị kết thúc khi nạp lỗi, khi một lời gọi chạy quá
-   10 giây, khi extension được cập nhật, hoặc khi CMS thoát.
+   10 giây, khi extension được cập nhật, hoặc khi CMS thoát. Một bundle đã ghim
+   (có `bundleSha256` được ghi nhận) được định địa chỉ theo nội dung, nên các byte
+   đã xác minh được giữ trong bộ nhớ theo digest đó (tối đa 64 bundle, 64 MB) và
+   các lần nạp sau dùng lại chúng thay vì tải lại. Chữ ký vẫn được kiểm ở mỗi
+   lần nạp, nên việc thu hồi một key có hiệu lực ngay. Điều này cũng áp dụng cho
+   Node chạy trong process.
 2. **`EXTENSION_RUNTIME` chọn chế độ này**: `process` hoặc `in-process`; khi
    không đặt, là `process` ở production (`LUMIBASE_ENV` hoặc `NODE_ENV` =
    `production`) và `in-process` ở nơi khác, để môi trường phát triển và test

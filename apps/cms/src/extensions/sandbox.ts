@@ -363,8 +363,15 @@ export class ExtensionSandbox {
    * byte verifier). Returns the bytes to execute, or null when refused.
    */
   private async downloadVerified(opts: SandboxLoadOptions): Promise<{ bytes: Uint8Array; digest: string } | null> {
-    const bytes = await this.fetchBundleBytes(opts.bundleUrl);
-    const digest = await sha256Hex(bytes);
+    // A pinned bundle (recorded SHA-256) is content-addressed: bytes already
+    // downloaded under that digest are exactly the bytes a new download must
+    // equal, so they are reused instead of fetching the bundle on every
+    // request. The signature is still checked below on every load, so a
+    // revoked key takes effect at once.
+    const pinned = opts.expectedSha256?.toLowerCase() ?? null;
+    const cached = pinned ? verifiedBundleCache.get(pinned) : undefined;
+    const bytes = cached ?? (await this.fetchBundleBytes(opts.bundleUrl));
+    const digest = cached ? pinned! : await sha256Hex(bytes);
     if (opts.expectedSha256 && opts.expectedSha256.toLowerCase() !== digest) {
       console.error(`[extension-sandbox] refused to load "${opts.name}": bundle SHA-256 does not match the recorded value`);
       return null;
@@ -378,6 +385,7 @@ export class ExtensionSandbox {
         return null;
       }
     }
+    if (pinned && !cached) verifiedBundleCache.set(pinned, bytes);
     return { bytes, digest };
   }
 
@@ -594,6 +602,54 @@ export class ExtensionSandbox {
 
 
 const MAX_REMOTE_BUNDLE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Bundle bytes keyed by their own SHA-256, for pinned loads (see
+ * `downloadVerified`). Only bytes whose digest was computed here are stored,
+ * under that digest, so an entry can never hold other bytes than its key
+ * names. Bounded by entries and total size; least recently used goes first.
+ */
+class VerifiedBundleCache {
+  private readonly entries = new Map<string, Uint8Array>();
+  private bytes = 0;
+  constructor(private readonly maxEntries: number, private readonly maxBytes: number) {}
+
+  get(digest: string): Uint8Array | undefined {
+    const hit = this.entries.get(digest);
+    if (hit) {
+      this.entries.delete(digest);
+      this.entries.set(digest, hit);
+    }
+    return hit;
+  }
+
+  set(digest: string, value: Uint8Array): void {
+    if (this.entries.has(digest) || value.byteLength > this.maxBytes) return;
+    this.entries.set(digest, value.slice());
+    this.bytes += value.byteLength;
+    for (const [key, entry] of this.entries) {
+      if (this.entries.size <= this.maxEntries && this.bytes <= this.maxBytes) break;
+      this.entries.delete(key);
+      this.bytes -= entry.byteLength;
+    }
+  }
+
+  clear(): void {
+    this.entries.clear();
+    this.bytes = 0;
+  }
+
+  get size(): number {
+    return this.entries.size;
+  }
+}
+
+const verifiedBundleCache = new VerifiedBundleCache(64, 64 * 1024 * 1024);
+
+/** Drop every cached bundle (tests; diagnostics). */
+export function clearVerifiedBundleCache(): void {
+  verifiedBundleCache.clear();
+}
 
 /** Bytes of a `data:` URL (base64 or percent-encoded), decoded without a fetch. */
 function decodeDataUrl(url: string): Uint8Array {

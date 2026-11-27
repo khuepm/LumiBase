@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-11-21T12:08:30.751Z
+version: 5
+lastUpdated: 2026-11-27T13:43:11.800Z
 sourceLang: en
-contentHash: 72e0b204fa836186
-codeVerified: 2026-11-21T12:08:30.751Z
-codeVerifiedHash: 72e0b204fa836186
+contentHash: 8713b022d078113c
+codeVerified: 2026-11-27T13:43:11.800Z
+codeVerifiedHash: 8713b022d078113c
 codeVerifiedClaims: 16
 ---
 
@@ -78,7 +78,11 @@ do not match the recorded SHA-256 (`importVerifiedBundle` in
    by the verified digest, so a reused child always runs checked bytes, and a
    child holding other bytes of the same extension is ended. A child is killed on a
    load failure, a call that runs past 10 s, an update of the extension, or
-   CMS exit.
+   CMS exit. A pinned bundle (one with a recorded `bundleSha256`) is
+   content-addressed, so its verified bytes are kept in memory under that
+   digest (at most 64 bundles, 64 MB) and later loads reuse them instead of
+   downloading again. The signature is still checked on every load, so a
+   revoked key takes effect at once. The same applies to Node in process.
 2. **`EXTENSION_RUNTIME` selects it**: `process` or `in-process`; unset, it is
    `process` in production (`LUMIBASE_ENV` or `NODE_ENV` = `production`) and
    `in-process` elsewhere, so development and tests keep one process.
