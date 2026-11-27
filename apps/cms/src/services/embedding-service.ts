@@ -3,7 +3,7 @@
  *
  * Provides vector embedding generation for RAG (Retrieval Augmented
  * Generation) in AI skills. Supports OpenAI embeddings and Workers AI
- * embeddings, with a fallback echo provider for testing.
+ * embeddings, with an explicit echo provider for testing.
  *
  * Status (#581 audit): nothing in the CMS calls this module or reads/writes
  * `lumibase_ai_embeddings` yet. The `aiContentAssist` "RAG" context is a live
@@ -56,6 +56,7 @@ export function assertEmbeddings(
 
 export interface EmbeddingProviderEnv {
   LLM_PROVIDER?: string;
+  LUMIBASE_ENV?: string;
   OPENAI_API_KEY?: string;
   WORKERS_AI_ACCOUNT_ID?: string;
   WORKERS_AI_API_TOKEN?: string;
@@ -233,30 +234,40 @@ function simpleHash(str: string): number {
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createEmbeddingProvider(env: EmbeddingProviderEnv): EmbeddingProvider {
-  const provider = env.LLM_PROVIDER ?? 'echo';
-
-  switch (provider) {
-    case 'openai': {
-      if (!env.OPENAI_API_KEY) return new EchoEmbeddingProvider();
+/** A null provider means this deployment has embeddings disabled. */
+export function createEmbeddingProvider(env: EmbeddingProviderEnv): EmbeddingProvider | null {
+  switch (env.LLM_PROVIDER) {
+    case 'openai':
+      if (!env.OPENAI_API_KEY) {
+        throw new Error('Embedding configuration requires OPENAI_API_KEY');
+      }
       return new OpenAIEmbeddingProvider(env.OPENAI_API_KEY);
-    }
 
-    case 'workers-ai': {
+    case 'workers-ai':
       if (!env.WORKERS_AI_ACCOUNT_ID || !env.WORKERS_AI_API_TOKEN) {
-        return new EchoEmbeddingProvider();
+        throw new Error('Embedding configuration requires WORKERS_AI_ACCOUNT_ID and WORKERS_AI_API_TOKEN');
       }
       return new WorkersAIEmbeddingProvider({
         accountId: env.WORKERS_AI_ACCOUNT_ID,
         apiToken: env.WORKERS_AI_API_TOKEN,
       });
-    }
+
+    case 'echo':
+      if (env.LUMIBASE_ENV === 'development' || env.LUMIBASE_ENV === 'test') {
+        return new EchoEmbeddingProvider();
+      }
+      throw new Error('Echo embeddings require a development or test environment');
+
+    case undefined:
+    case 'anthropic':
+    case 'claude':
+    case 'gemini':
+    case 'nvidia':
+    case 'vertex':
+      // Preserve the existing OpenAI embedding path for generation-only providers.
+      return env.OPENAI_API_KEY ? new OpenAIEmbeddingProvider(env.OPENAI_API_KEY) : null;
 
     default:
-      // 'anthropic' does not have an embedding API — fall back to OpenAI or echo
-      if (env.OPENAI_API_KEY) {
-        return new OpenAIEmbeddingProvider(env.OPENAI_API_KEY);
-      }
-      return new EchoEmbeddingProvider();
+      throw new Error('Unsupported embedding provider configuration');
   }
 }
