@@ -10,7 +10,13 @@ spec:
   podSelector:
     matchLabels:
       {{- include "lumibase.selectorLabels" (dict "ctx" . "component" "cms") | nindent 6 }}
+  {{- if .Values.networkPolicy.egress.restrict }}
+  policyTypes: [Ingress, Egress]
+  egress:
+    {{- include "lumibase.restrictedEgress" . | nindent 4 }}
+  {{- else }}
   policyTypes: [Ingress]
+  {{- end }}
   ingress:
     - ports:
         - port: http
@@ -36,7 +42,13 @@ spec:
   podSelector:
     matchLabels:
       {{- include "lumibase.selectorLabels" (dict "ctx" . "component" "worker") | nindent 6 }}
+  {{- if .Values.networkPolicy.egress.restrict }}
+  policyTypes: [Ingress, Egress]
+  egress:
+    {{- include "lumibase.restrictedEgress" . | nindent 4 }}
+  {{- else }}
   policyTypes: [Ingress]
+  {{- end }}
   # Only the kubelet probes the worker's health port, and traffic from the
   # pod's own node is always allowed, so nothing else needs to be admitted.
   ingress: []
