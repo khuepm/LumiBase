@@ -27,6 +27,7 @@ import { AuditLogger } from '../modules/audit/logger';
 import { OutboxWriter, type OutboxActor } from '../modules/cdc/change-feed';
 import { CDC_DISPATCH_QUEUE } from '../modules/cdc/change-feed/dispatcher';
 import { validateTreeMeta } from './tree-service';
+import { nextItemVersion } from './item-etag';
 
 /**
  * SchemaService — owns the no-code collection/field/relation lifecycle.
@@ -627,12 +628,17 @@ export class SchemaService {
     return next;
   }
 
-  private async renameFieldInStoredLayout(collection: CollectionRow, from: string, to: string) {
+  private async renameFieldInStoredLayout(
+    collection: CollectionRow,
+    from: string,
+    to: string,
+    db: Database = this.deps.db,
+  ) {
     if (from === to) return;
     const meta = (collection.meta as Record<string, unknown> | null) ?? {};
     const layout = parseFormLayout(meta.formLayout);
     if (!layout) return;
-    await this.deps.db
+    await db
       .update(collections)
       .set({ meta: { ...meta, formLayout: renameFieldInLayout(layout, from, to) }, updatedAt: new Date() })
       .where(and(scopeSite(collections.siteId, this.deps.siteId), eq(collections.id, collection.id)));
@@ -826,12 +832,24 @@ export class SchemaService {
       migrationPlan: input.migrationPlan,
       confirmRiskyChange: input.confirmRiskyChange,
     });
-    const [row] = await this.deps.db
-      .update(fields)
-      .set({ ...toFieldDbInput(input), updatedAt: new Date() })
-      .where(eq(fields.id, existing.id))
-      .returning();
-    await this.renameFieldInStoredLayout(collection, fieldName, input.name);
+    if (existing.encrypted && input.name !== fieldName) {
+      // Ciphertext is bound to the field name through its AAD
+      // (`{siteId}|{collection}|{field}|{recordId}`, crypto/aad.ts): moved
+      // under a new key it would no longer decrypt. Soft-deleted rows count —
+      // their ciphertext would be orphaned the same way on restore.
+      const encryptedRows = await this.countFieldDataRows(collection.id, fieldName, { includeDeleted: true });
+      assertEncryptedFieldRenameAllowed(collection.name, fieldName, encryptedRows);
+    }
+    const row = await this.inTransaction(async (db) => {
+      const [updated] = await db
+        .update(fields)
+        .set({ ...toFieldDbInput(input), updatedAt: new Date() })
+        .where(eq(fields.id, existing.id))
+        .returning();
+      await moveItemDataKey(db, this.deps.siteId, collection.id, fieldName, input.name);
+      await this.renameFieldInStoredLayout(collection, fieldName, input.name, db);
+      return updated;
+    });
     await this.invalidate(collection.name);
     // Rename is an update keyed on the new field name.
     await this.emitCdcSchemaEvent(
@@ -899,7 +917,11 @@ export class SchemaService {
     return { ok: true } as const;
   }
 
-  private async countFieldDataRows(collectionId: string, fieldName: string): Promise<number> {
+  private async countFieldDataRows(
+    collectionId: string,
+    fieldName: string,
+    options: { includeDeleted?: boolean } = {},
+  ): Promise<number> {
     const [row] = await this.deps.db
       .select({ count: sql<number>`count(*)::int` })
       .from(items)
@@ -907,11 +929,22 @@ export class SchemaService {
         and(
           scopeSite(items.siteId, this.deps.siteId),
           eq(items.collectionId, collectionId),
-          isNull(items.deletedAt),
+          options.includeDeleted ? undefined : isNull(items.deletedAt),
           sql`${items.data} ? ${fieldName}`,
         ),
       );
     return row?.count ?? 0;
+  }
+
+  /**
+   * Run `work` in a transaction when the driver offers one (the D1/mock
+   * adapters may not); inside an outer transaction drizzle nests a savepoint.
+   */
+  private async inTransaction<T>(work: (db: Database) => Promise<T>): Promise<T> {
+    const db = this.deps.db as Database & {
+      transaction?: <R>(callback: (tx: Database) => Promise<R>) => Promise<R>;
+    };
+    return typeof db.transaction === 'function' ? db.transaction(work) : work(this.deps.db);
   }
 
   private async backupFieldDataToRevisions(collectionId: string, fieldName: string) {
@@ -1165,8 +1198,14 @@ export class SchemaService {
 
     if (fieldInputs) {
       const proposedFieldNames = new Set(fieldInputs.map((field) => field.name));
+      // A field renamed via `renameFrom` is kept under its old name until
+      // upsertField renames it (moving its item data); deleting it here first
+      // would drop the field and make the rename 404.
+      const renamedFrom = new Set(
+        fieldInputs.flatMap((field) => (field.renameFrom && field.renameFrom !== field.name ? [field.renameFrom] : [])),
+      );
       for (const existing of currentFields) {
-        if (!proposedFieldNames.has(existing.name)) {
+        if (!proposedFieldNames.has(existing.name) && !renamedFrom.has(existing.name)) {
           await this.deleteField(name, existing.name);
         }
       }
@@ -1657,9 +1696,69 @@ export function assertFieldMutationAllowed(
 }
 
 /**
+ * Renaming an encrypted field is refused while any item (live or
+ * soft-deleted) holds a value for it. The field name is part of the AES-GCM
+ * AAD (`crypto/aad.ts`), so a ciphertext moved to a new key would fail
+ * authentication on read. Re-encrypting under the new name is not done here:
+ * SchemaService has no key provider and a rename should not need key access.
+ * Rename an empty encrypted field freely, or decrypt/export → rename →
+ * re-import.
+ */
+export function assertEncryptedFieldRenameAllowed(collection: string, field: string, populatedRows: number): void {
+  if (populatedRows === 0) return;
+  throw new SchemaServiceError(
+    'ENCRYPTED_FIELD_RENAME_UNSUPPORTED',
+    `Field "${collection}.${field}" is encrypted and has values in ${populatedRows} item(s); ` +
+      'its ciphertext is bound to the field name, so it cannot be renamed while populated.',
+    409,
+  );
+}
+
+/**
+ * Move an item value from `data[from]` to `data[to]` for every item of the
+ * collection in this site (soft-deleted items included, so a restore finds the
+ * value under the current name), and carry a pin on `from` over to `to`.
+ *
+ * - A content change: `version` moves (strong ETag), like
+ *   `dependents-service.ts` writing `data` directly.
+ * - No revision is written and `updated_at` is left alone: this is a
+ *   structural move of an existing value, not an edit. Older revisions keep
+ *   the old key; restoring one brings back a value under a name the schema no
+ *   longer has.
+ * - A stale value already sitting under `to` is overwritten by `from`'s.
+ */
+async function moveItemDataKey(db: Database, siteId: string, collectionId: string, from: string, to: string): Promise<void> {
+  if (from === to) return;
+  await db
+    .update(items)
+    .set({
+      data: sql`CASE WHEN ${items.data} ? ${from}::text
+        THEN (${items.data} - ${from}::text) || jsonb_build_object(${to}::text, ${items.data} -> ${from}::text)
+        ELSE ${items.data} END`,
+      pinnedFields: sql`CASE WHEN jsonb_typeof(${items.pinnedFields}) = 'array' AND ${items.pinnedFields} ? ${from}::text
+        THEN (${items.pinnedFields} - ${from}::text)
+          || CASE WHEN ${items.pinnedFields} ? ${to}::text THEN '[]'::jsonb ELSE jsonb_build_array(${to}::text) END
+        ELSE ${items.pinnedFields} END`,
+      version: nextItemVersion(),
+    })
+    .where(
+      and(
+        scopeSite(items.siteId, siteId),
+        eq(items.collectionId, collectionId),
+        or(
+          sql`${items.data} ? ${from}::text`,
+          sql`jsonb_typeof(${items.pinnedFields}) = 'array' AND ${items.pinnedFields} ? ${from}::text`,
+        ),
+      ),
+    );
+}
+
+/**
  * Fail closed (#865): a plan only confirms a risky change when it names a
  * non-empty string `strategy`. `{}` or a plan of unknown shape used to pass
- * the guard just by being truthy. The plan is still not executed (B213).
+ * the guard just by being truthy. The plan itself is still not executed
+ * (B213): a rename moves item data on its own (`moveItemDataKey`), a type
+ * change leaves stored values as they are.
  */
 function isMigrationPlanDeclared(plan: Record<string, unknown> | undefined): boolean {
   if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return false;

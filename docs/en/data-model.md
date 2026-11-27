@@ -1,10 +1,10 @@
 ---
-version: 28
-lastUpdated: 2026-11-21T09:19:59.126Z
+version: 29
+lastUpdated: 2026-11-25T04:49:36.738Z
 sourceLang: en
-contentHash: 7882282901381d84
-codeVerified: 2026-11-21T09:19:59.126Z
-codeVerifiedHash: 7882282901381d84
+contentHash: 416a55b78bf90ec5
+codeVerified: 2026-11-25T04:49:36.738Z
+codeVerifiedHash: 416a55b78bf90ec5
 codeVerifiedClaims: 24
 ---
 
@@ -170,7 +170,7 @@ Compiled schemas expose generated system fields in addition to user-defined rows
 | `siteId`, `collectionId` | text FK |
 | `status` | text | `draft`/`published`/`archived` |
 | `data` | jsonb | values keyed by field.name |
-| `version` | integer, default 0 | Optimistic-concurrency counter: incremented by every write that changes the item's content (data, status, pins, soft delete including tree cascade, crypto-shred, moving the item in a tree); descendant path rebases, sibling sort renumbering and key-rotation re-encryption leave it alone. Served as the item's `ETag`; `If-Match` compares against it. |
+| `version` | integer, default 0 | Optimistic-concurrency counter: incremented by every write that changes the item's content (data, status, pins, soft delete including tree cascade, crypto-shred, moving the item in a tree, a field rename moving its value to the new key); descendant path rebases, sibling sort renumbering and key-rotation re-encryption leave it alone. Served as the item's `ETag`; `If-Match` compares against it. |
 | `sort` | integer |
 | `userCreated`, `userUpdated` | text FK users |
 | `publishAt`, `unpublishAt` | timestamp nullable | Scheduling window (Req 7); the reconcile worker flips status, delivery filters to the window. |

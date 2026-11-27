@@ -9,6 +9,21 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [2.2.2] - 2026-11-27
+
+### Version
+- `v2.2.2`
+
+### Date
+- `2026-11-27`
+
+### Highlights
+- Security close-out of epic #985: extensions run only verified bytes, opt-in egress restriction for extensions, private caching for access-restricted media, signed direct extension installs and scrypt password hashing on Node.
+- 2FA: enrolling a first second factor under `enforceTfa` keeps the session usable, and TOTP setup shows a QR code.
+- Fixes for auth error codes, stale Studio site ids, field renames, the setup wizard and AI embedding resolution.
+
 ### Security
 - **Extensions run only the bytes that were verified (#1008, ADR-015).** On Node with `EXTENSION_RUNTIME=in-process`, an extension bundle was verified on one download and then imported from its URL with a second, unchecked one. It is now downloaded once, checked against the recorded SHA-256 and the signature on that buffer, and imported from a `data:` URL of those exact bytes, as the out-of-process host already did. The Studio loader likewise downloads a UI bundle once, checks its SHA-256 and imports a `blob:` URL of those bytes; the CMS and Studio Pages CSP `script-src` now allow `blob:` for that. On Cloudflare Workers, which cannot import `data:`/`blob:` modules, the two-fetch load is an accepted risk with an operator requirement (immutable, content-addressed bundle origins you control); `lumibase doctor --security` reports `extension-workers-bundle-origin`.
 - **Media responses no longer publicly cacheable when access is restricted (#1012).** `GET`/`HEAD /api/v1/media/:key` checks `media:read` for every caller but sent `Cache-Control: public` (`immutable` for a year on a pinned `?v=`), so a shared cache or CDN could serve bytes an authorised user fetched to a caller without access, and, with the site picked by `X-Lumi-Site`, to another site. The response is now `public` (with `Vary: X-Lumi-Site`) only when the site's anonymous `public` role grants `media:read` with no row rule, and `private` otherwise; transformed derivatives and redirects follow the same rule.
@@ -18,6 +33,18 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 - **Extension loads no longer download the bundle on every request (#1008 follow-up).** Since the verified-bytes fix, each Node extension load (one per request with hooks) downloaded and hashed its bundle again. A pinned bundle (recorded `bundleSha256`) is now kept in memory under that digest (at most 64 bundles, 64 MB) and reused; the signature is still checked on every load, so revoking a publisher key takes effect at once. Unpinned bundles are downloaded each time, as before.
+- Enrolling a first second factor (TOTP, or a first passkey) under an `enforceTfa` policy no longer locks the session out. `POST /me/tfa/confirm` and `POST /me/passkeys` upgrade the current session to TFA-verified (same `sid`) and return the new token pair as `session`; Studio stores it and never leaves the page while the recovery codes are shown (#1048).
+- Studio Settings → Security shows "Sign in again with 2FA" for a `403 TFA_REQUIRED` instead of a generic load error (#1048).
+- TOTP setup shows a QR code, drawn in the browser from the `otpauth://` URI (never sent to an outside service), with the secret as a copyable fallback (#1047).
+- Auth routes answer `400 VALIDATION` instead of `500 INTERNAL` for an empty, invalid or non-JSON body (`POST /auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/resend-verification`, `/me/change-password`). The app error handler maps a `ZodError` or a request-body JSON `SyntaxError` to `400` and no longer reports it as an ops error (#1046).
+- Studio recovers from a stale site id. A `404 TENANT_NOT_FOUND` clears the stored site (and the token, when it was issued for that site) and reloads or returns to login once; the setup pages no longer fetch `/site` or UI translations, and queries no longer retry `4xx` errors (#1044).
+- Renaming a field moves each item's value to the new key, in the same transaction, including soft-deleted items, and bumps the item `version`. Renaming an encrypted field that holds data is refused with `409 ENCRYPTED_FIELD_RENAME_UNSUPPORTED`. `updateSchema` with `renameFrom` no longer deletes the field it renames.
+- Setup: the "How to choose a preset" and invite docs links resolve (#1039); enabled buttons show the pointer cursor again (#1040); the Strict preset defaults to "One account per mailbox" (#1041); the advanced-settings notice has a "Switch to advanced setup" button (#1043).
+- AI embeddings are resolved explicitly: missing credentials or an unknown configuration fail at provider resolution instead of silently falling back to the Echo provider, which now needs explicit selection (#1026).
+- CDC: the keyset antisymmetry property test no longer fails on `-0` (#980).
+
+### Changed
+- Dependencies: 54 minor/patch updates (#1037), `actions/checkout` 7.0.1, `actions/upload-artifact` 7.0.2, `ossf/scorecard-action` 2.6.0 and the `distroless/nodejs22-debian13` base image digest.
 
 ### Upgrade notes
 - **Passwords (B230).** On Node/Docker, new and re-hashed passwords are scrypt by default: each login of a user with a PBKDF2 hash re-hashes it once (about 200 ms of CPU, natively). To keep PBKDF2, set `PASSWORD_HASH_SCHEME=pbkdf2`. If the database may be served by Cloudflare Workers, note that Workers verify scrypt in JavaScript (about 300 ms of CPU per login); on a plan with a tight CPU limit, set `PASSWORD_HASH_SCHEME=pbkdf2` on Docker too.
@@ -25,6 +52,9 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - **Studio extensions (#1008).** A Studio extension bundle with a recorded hash is imported from a `blob:` URL, so it must be a single file: relative imports (`./chunk.js`) do not resolve. A custom CSP in front of the Studio must allow `blob:` in `script-src`.
 - **Node with `EXTENSION_RUNTIME=in-process` (#1008).** A remote `https` bundle now loads (the host downloads it); before, Node could not import it at all.
 - **Egress (#1009).** Before enabling `networkPolicy.egress.restrict`, list in `networkPolicy.egress.allowTo` any private-address peer the CMS needs (an external database, SMTP relay or object store on a private network). Outside the chart, restrict egress yourself and set `LUMIBASE_EGRESS_RESTRICTED=true`.
+
+### Migrations
+- None. Re-applying `rls-policies.sql` is not required.
 
 ## [2.2.1] - 2026-11-25
 

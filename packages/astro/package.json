@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/astro",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "Astro integration, content-layer loader and client realtime helper for LumiBase — a thin, typed layer over @lumibase/sdk.",
   "license": "Apache-2.0",
   "type": "module",
@@ -65,10 +65,10 @@
     }
   },
   "devDependencies": {
-    "jsdom": "^31.0.0",
+    "jsdom": "^31.0.1",
     "tsup": "^9.0.0",
     "typescript": "^5.6.2",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   },
   "files": [
     "dist"

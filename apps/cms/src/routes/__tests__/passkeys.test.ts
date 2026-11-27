@@ -26,6 +26,7 @@ const stub = vi.hoisted(() => ({
   revokeAllRefreshTokens: vi.fn(),
   audit: vi.fn(),
   issueRefreshToken: vi.fn(),
+  stepUpSessionFamily: vi.fn(),
 }));
 
 vi.mock('@simplewebauthn/server', async (importOriginal) => {
@@ -47,6 +48,7 @@ vi.mock('../../services/auth/refresh-token', async (importOriginal) => {
     },
     revokeOtherSessions: stub.revokeOtherSessions,
     revokeAllRefreshTokens: stub.revokeAllRefreshTokens,
+    stepUpSessionFamily: stub.stepUpSessionFamily,
   };
 });
 vi.mock('../../modules/audit/logger', () => ({
@@ -260,6 +262,14 @@ describe('/me/passkeys', () => {
   const staff = { userId: 'usr_staff', email: 'staff@example.test', raw: { sid: 'fam-1' } };
 
   beforeEach(() => {
+    stub.stepUpSessionFamily.mockReset();
+    stub.stepUpSessionFamily.mockResolvedValue({
+      token: 'stepped-up-refresh',
+      expiresAt: new Date(Date.now() + 60_000),
+      familyId: 'fam-1',
+      audience: 'studio',
+      amr: ['pwd', 'webauthn'],
+    });
     // Start from a staff user without any factor.
     const rows = mini.rows(userPasskeys);
     rows.splice(0, rows.length);
@@ -298,6 +308,17 @@ describe('/me/passkeys', () => {
     expect(isTfaEnrolled(mini.rows(users).find((u) => u.id === 'usr_staff')!.tfa)).toBe(true);
     expect(stub.revokeOtherSessions).toHaveBeenCalledWith(expect.anything(), 'site-a', 'usr_staff', 'fam-1');
     expect(stub.audit).toHaveBeenCalledWith(expect.objectContaining({ event: 'passkey_registered' }));
+    // #1048: the first factor upgrades this session in place (same family).
+    expect(stub.stepUpSessionFamily).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ siteId: 'site-a', userId: 'usr_staff', familyId: 'fam-1', method: 'webauthn' }),
+      expect.anything(),
+    );
+    const session = (body.data as { session?: { token: string; refreshToken: string } | null }).session;
+    expect(session?.refreshToken).toBe('stepped-up-refresh');
+    const claims = decodeJwt(session!.token);
+    expect(claims).toMatchObject({ sid: 'fam-1', tfaVerified: true, amr: ['pwd', 'webauthn'] });
+    expect(isSessionTfaVerified({ userId: 'usr_staff', raw: claims } as AuthPrincipal)).toBe(true);
 
     const list = await (await buildApp(staff).request('/api/v1/me/passkeys', {}, ENV)).json() as {
       data: { passkeys: { name: string }[]; recoveryCodesRemaining: number; available: boolean };

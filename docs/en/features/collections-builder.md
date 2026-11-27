@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:14:13.087Z
+version: 2
+lastUpdated: 2026-11-25T04:49:36.538Z
 sourceLang: en
-contentHash: 98a39c55026d8f08
-codeVerified: 2026-08-02T19:14:13.087Z
-codeVerifiedHash: 98a39c55026d8f08
+contentHash: 4996cabb80c026c3
+codeVerified: 2026-11-25T04:49:36.538Z
+codeVerifiedHash: 4996cabb80c026c3
 codeVerifiedClaims: 4
 ---
 
@@ -153,6 +153,8 @@ client.schema.relations.create({
 client.schema.diff("posts", proposedSchema);
 client.schema.apply("posts", proposedSchema);
 ```
+
+`fields.rename` moves each item's value from the old key to the new one in the same transaction; see [Field Types And Configuration §9](./field-types-and-config.md#9-risky-field-mutations) for the full rename contract.
 
 Legacy flat methods such as `schema.listCollections()` and `schema.upsertField()` remain available. SDK errors preserve backend `code`, `path`, and `risk` metadata through `LumiError.body`.
 

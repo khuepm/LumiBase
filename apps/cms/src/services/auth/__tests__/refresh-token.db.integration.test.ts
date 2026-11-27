@@ -8,6 +8,8 @@ import {
   listUserSessions,
   revokeSessionById,
   pruneRefreshTokens,
+  stepUpSessionFamily,
+  isSessionLive,
 } from '../refresh-token';
 
 /**
@@ -81,6 +83,27 @@ describe.skipIf(!hasDbIntegrationUrl)('Refresh-token flow — DB integration', (
     expect(await pruneRefreshTokens(db, new Date(0))).toBe(0);
     // Everything is "expired" relative to a far-future cutoff.
     expect(await pruneRefreshTokens(db, new Date(9e12))).toBeGreaterThanOrEqual(1);
+  });
+
+  it('steps up a live family in place: same session, second factor recorded (#1048)', async () => {
+    const first = await issueRefreshToken(db, { siteId: SITE, userId: USER, audience: 'studio' }, undefined);
+
+    const stepped = await stepUpSessionFamily(
+      db,
+      { siteId: SITE, userId: USER, familyId: first.familyId, priorAmr: ['pwd'], method: 'totp' },
+      undefined,
+    );
+    expect(stepped).toMatchObject({ familyId: first.familyId, audience: 'studio', amr: ['pwd', 'totp'] });
+    expect(await isSessionLive(db, first.familyId)).toBe(true);
+
+    // The successor renews TFA-verified; the password-only predecessor is retired.
+    const renewed = await rotateRefreshToken(db, { rawToken: stepped!.token, siteId: SITE }, undefined);
+    expect(renewed).toMatchObject({ ok: true, familyId: first.familyId, amr: ['pwd', 'totp'] });
+
+    // A dead family is left alone.
+    expect(
+      await stepUpSessionFamily(db, { siteId: SITE, userId: USER, familyId: 'no-such-family', priorAmr: ['pwd'], method: 'totp' }, undefined),
+    ).toBeNull();
   });
 
   it('rejects an unknown token as invalid', async () => {
