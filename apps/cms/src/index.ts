@@ -123,8 +123,7 @@ import {
   gitRouter,
   gitPublicRouter,
 } from './modules/git-integration/routes';
-import { formatSafeError } from '@lumibase/contracts/utils';
-import { captureOpsError } from './modules/ops/capture';
+import { appErrorHandler } from './lib/app-error-handler';
 import { opsRouter } from './modules/ops/routes';
 import { ENTITLEMENT_DIMENSIONS } from '@lumibase/contracts/platform';
 
@@ -520,15 +519,7 @@ app.route('/api/v1', api);
 app.notFound((c) =>
   c.json({ errors: [{ code: 'NOT_FOUND', message: 'Route not found.' }] }, 404),
 );
-app.onError((err, c) => {
-  const requestId = c.get('requestId');
-  console.error('[lumibase-cms] unhandled error', { requestId, err: formatSafeError(err) });
-  captureOpsError(c, { err, status: 500, errorCode: 'INTERNAL' });
-  return c.json(
-    { errors: [{ code: 'INTERNAL', message: 'Internal Server Error', requestId }] },
-    500,
-  );
-});
+app.onError(appErrorHandler);
 
 export default app;
 
