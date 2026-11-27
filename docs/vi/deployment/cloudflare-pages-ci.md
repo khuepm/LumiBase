@@ -1,14 +1,14 @@
 ---
-version: 4
-lastUpdated: 2026-11-24T17:12:14.598Z
+version: 5
+lastUpdated: 2026-11-27T14:36:38.975Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 40b6d29d4842c2b9
+sourceHash: e1a8173bd29b2423
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-24T17:12:14.598Z
-codeVerifiedHash: 40b6d29d4842c2b9
-codeVerifiedClaims: 4
+codeVerified: 2026-11-27T14:36:38.975Z
+codeVerifiedHash: e1a8173bd29b2423
+codeVerifiedClaims: 12
 ---
 
 # Thiết lập deploy Cloudflare Pages qua CI
@@ -78,6 +78,24 @@ curl -s -o /dev/null -w "%{http_code} %{size_download}\n" \
   "https://docs.lumibase.dev/en/docs/data-model/?cb=$(date +%s)"   # mong đợi 200 ~200000
 curl -s -o /dev/null -w "%{http_code}\n" "https://lumibase.dev/llms.txt?cb=$(date +%s)"  # mong đợi 200
 ```
+
+## Tuỳ chọn: Cloudflare Web Analytics cho Studio
+
+Bản build Studio chỉ chèn beacon Cloudflare Web Analytics khi
+`LUMIBASE_CF_WEB_ANALYTICS_TOKEN` được đặt lúc build
+(`apps/studio/vite-plugins/cf-web-analytics.ts`). Các lần deploy
+`studio.lumibase.dev` đặt biến này trong
+`.github/workflows/deploy-studio-production.yml` và
+`.github/workflows/pages-deploy.yml`. Không đặt biến (mặc định của Studio tự
+host) thì trang không có beacon và không gửi số liệu nào.
+
+- Giá trị là token công khai của site trong mục "manual JS snippet" của Web
+  Analytics (32 ký tự hex); giá trị khác sẽ làm build thất bại.
+- `apps/studio/public/_headers` cho phép `https://static.cloudflareinsights.com`
+  trong `script-src` để phục vụ việc này. Studio do CMS phục vụ (Docker) vẫn
+  giữ `script-src 'self' blob:`.
+- Dùng manual snippet, không dùng chế độ tự chèn của Cloudflare, nếu không
+  trang sẽ tải beacon hai lần.
 
 ## Phương án thủ công (không dùng CI)
 

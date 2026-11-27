@@ -1,11 +1,11 @@
 ---
-version: 4
-lastUpdated: 2026-11-24T17:12:14.598Z
+version: 5
+lastUpdated: 2026-11-27T14:36:38.975Z
 sourceLang: en
-contentHash: 40b6d29d4842c2b9
-codeVerified: 2026-11-24T17:12:14.598Z
-codeVerifiedHash: 40b6d29d4842c2b9
-codeVerifiedClaims: 4
+contentHash: e1a8173bd29b2423
+codeVerified: 2026-11-27T14:36:38.975Z
+codeVerifiedHash: e1a8173bd29b2423
+codeVerifiedClaims: 12
 ---
 
 # Cloudflare Pages CI Deployment Setup
@@ -76,6 +76,24 @@ curl -s -o /dev/null -w "%{http_code} %{size_download}\n" \
   "https://docs.lumibase.dev/en/docs/data-model/?cb=$(date +%s)"   # expect 200 ~200000
 curl -s -o /dev/null -w "%{http_code}\n" "https://lumibase.dev/llms.txt?cb=$(date +%s)"  # expect 200
 ```
+
+## Optional: Cloudflare Web Analytics for the Studio
+
+The Studio build injects the Cloudflare Web Analytics beacon only when
+`LUMIBASE_CF_WEB_ANALYTICS_TOKEN` is set at build time
+(`apps/studio/vite-plugins/cf-web-analytics.ts`). The hosted
+`studio.lumibase.dev` deploys set it in
+`.github/workflows/deploy-studio-production.yml` and
+`.github/workflows/pages-deploy.yml`. Without it, which is the default for a
+self-hosted Studio, the page carries no beacon and reports nothing.
+
+- The value is the public site token from the Web Analytics "manual JS
+  snippet" (32 hex characters); any other value fails the build.
+- `apps/studio/public/_headers` allows `https://static.cloudflareinsights.com`
+  in `script-src` for this. The Studio served by the CMS (Docker) keeps
+  `script-src 'self' blob:`.
+- Use the manual snippet, not Cloudflare's automatic injection, or the page
+  loads the beacon twice.
 
 ## Manual fallback (no CI)
 

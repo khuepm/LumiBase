@@ -4,6 +4,7 @@ import path from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { assertNoAdminPathEnv } from './src/lib/build-assertions';
+import { cfWebAnalyticsPlugin } from './vite-plugins/cf-web-analytics';
 import { devExtensionsPlugin } from './vite-plugins/dev-extensions';
 
 // Fail the build (or dev server startup) if any env var starts with
@@ -52,6 +53,9 @@ export default defineConfig({
     // Dev-only: auto-detect UI extensions from the source `extensions/` folder
     // (the lumibase-ai/extensions submodule). No-op in production builds.
     devExtensionsPlugin({ extensionsRoot: path.resolve(repoRoot, 'extensions') }),
+    // Hosted studio.lumibase.dev only: injects the Cloudflare Web Analytics
+    // beacon when LUMIBASE_CF_WEB_ANALYTICS_TOKEN is set (#1045).
+    cfWebAnalyticsPlugin(),
   ],
   define: {
     'import.meta.env.VITE_LUMIBASE_VERSION': JSON.stringify(viteBuildMetadata.VITE_LUMIBASE_VERSION),
