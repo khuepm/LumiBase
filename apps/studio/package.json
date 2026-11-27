@@ -58,7 +58,7 @@
   "devDependencies": {
     "@lumibase/extensions": "workspace:*",
     "@tailwindcss/postcss": "^4.3.5",
-    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/jest-dom": "^8.0.0",
     "@testing-library/react": "^16.3.3",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
