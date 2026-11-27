@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 6
-lastUpdated: 2026-11-17T19:26:39.389Z
+version: 7
+lastUpdated: 2026-11-25T04:49:36.329Z
 sourceLang: en
 translatedFrom: en
-sourceHash: bd2b3b94530b8811
+sourceHash: 48cbd0d44f19c050
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-17T19:26:39.389Z
-codeVerifiedHash: bd2b3b94530b8811
+codeVerified: 2026-11-25T04:49:36.329Z
+codeVerifiedHash: 48cbd0d44f19c050
 codeVerifiedClaims: 6
 ---
 
@@ -185,7 +185,9 @@ Generated base collection interfaces biểu diễn stored values. Generated `Col
 Schema service phân loại risky field mutations trước apply:
 
 - Rename: dùng `renameFrom` và giữ nguyên `type`/`interface` hiện tại trong SDK rename helper.
-- Đổi tên hoặc đổi type khi đã có data: cần `migrationPlan` có `strategy` là chuỗi không rỗng (ví dụ `{ "strategy": "cast" }`), hoặc `confirmRiskyChange: true`. Plan rỗng hoặc không có strategy như `{}` bị từ chối với `409 FIELD_MIGRATION_REQUIRED`. Plan chưa được thực thi; nó chỉ xác nhận thay đổi.
+- Đổi tên hoặc đổi type khi đã có data: cần `migrationPlan` có `strategy` là chuỗi không rỗng (ví dụ `{ "strategy": "cast" }`), hoặc `confirmRiskyChange: true`. Plan rỗng hoặc không có strategy như `{}` bị từ chối với `409 FIELD_MIGRATION_REQUIRED`. Bản thân plan không được thực thi; nó chỉ xác nhận thay đổi.
+- Đổi tên sẽ chuyển data của item: trong cùng transaction với việc cập nhật field row, mọi item của collection trong site (kể cả item đã xoá mềm) được chuyển giá trị từ `data[old]` sang `data[new]`, và pin trên tên cũ chuyển sang tên mới. Điều này áp dụng cho `renameField`, `updateField` với `name` mới, và `renameFrom` trong `upsertField` hoặc schema apply toàn phần. `version` (tức `ETag`) của mỗi item được chuyển sẽ tăng; không ghi revision và `updatedAt` giữ nguyên, vì bản thân giá trị không bị sửa. Các revision cũ vẫn giữ key cũ. Site khác không bao giờ bị đụng tới.
+- Field mã hoá: đổi tên field mã hoá bị từ chối với `409 ENCRYPTED_FIELD_RENAME_UNSUPPORTED` khi còn bất kỳ item nào (kể cả đã xoá mềm) có giá trị cho field đó. Tên field là một phần của AES-GCM AAD (`{siteId}|{collection}|{field}|{recordId}`), nên ciphertext bị chuyển sang key mới sẽ không giải mã được nữa. Field mã hoá chưa có data thì đổi tên bình thường.
 - Xóa field khi đã có data: cần destructive path rõ ràng. SDK nhận delete options như `confirmRiskyChange`, `migrationPlan`, `force`, `backupToRevisions`.
 
 Schema diff trả `risk` và `runtimeImpact` để Studio/automation yêu cầu xác nhận trước thay đổi phá hủy.

@@ -1,6 +1,6 @@
 import type { AccountFormValues } from './schemas/account';
 import type { AdminPathFormValues } from './schemas/admin-path';
-import type { LockoutPolicyFormValues } from './schemas/policy';
+import type { LockoutPolicyFormValues, PolicyPresetId } from './schemas/policy';
 import type { ProjectConfigurationFormValues } from './schemas/project';
 
 /**
@@ -98,6 +98,19 @@ export function setPolicyDraft(value: LockoutPolicyFormValues): void {
 export const EMAIL_IDENTITY_MODES = ['exact', 'root'] as const;
 export type EmailIdentityMode = (typeof EMAIL_IDENTITY_MODES)[number];
 export const DEFAULT_EMAIL_IDENTITY_MODE: EmailIdentityMode = 'exact';
+
+/**
+ * Email identity mode each security preset selects (#1041). Strict and
+ * anything stricter default to one account per mailbox, so `+tag` aliases
+ * cannot farm separate accounts; the operator can still override the radio
+ * after picking a preset. A `Record` so a new preset must declare its mode.
+ */
+export const PRESET_EMAIL_IDENTITY_MODE: Readonly<Record<PolicyPresetId, EmailIdentityMode>> =
+  Object.freeze({
+    standard: 'exact',
+    strict: 'root',
+    lenient: 'exact',
+  });
 
 let emailIdentityModeDraft: EmailIdentityMode = DEFAULT_EMAIL_IDENTITY_MODE;
 

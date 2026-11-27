@@ -1,6 +1,7 @@
 import { getApiBaseUrl } from '@/lib/api-base';
 import {
   AlertTriangle,
+  ArrowRight,
   BookOpen,
   Check,
   Copy,
@@ -61,6 +62,7 @@ import {
   getEmailIdentityModeDraft,
   getPolicyDraft,
   inferActivePreset,
+  PRESET_EMAIL_IDENTITY_MODE,
   setEmailIdentityModeDraft,
   setPolicyDraft,
   type EmailIdentityMode,
@@ -94,8 +96,10 @@ interface SimpleSetupDraft {
  * docs route is added in-app these can point there instead.
  */
 const DOCS_BASE_URL = 'https://docs.lumibase.dev';
-const DOCS_SECURITY_URL = 'https://docs.lumibase.dev/setup/security-presets';
-const DOCS_USERS_URL = 'https://docs.lumibase.dev/setup/users';
+// The docs site serves pages at `/<locale>/docs/<path>/` (#1039: the old
+// `/setup/*` paths never existed and 404'd).
+const DOCS_SECURITY_URL = `${DOCS_BASE_URL}/en/docs/security/security-presets/`;
+const DOCS_USERS_URL = `${DOCS_BASE_URL}/en/docs/security/user-management/`;
 
 interface SetupCompleteResponse {
   user: {
@@ -166,6 +170,14 @@ export function SimpleSetupWizard() {
     setEmailIdentityModeDraft(mode);
     setEmailIdentityMode(mode);
   }, []);
+  const handlePresetChange = useCallback(
+    (preset: PolicyPresetId) => {
+      setSecurityPreset(preset);
+      // Strict and above default to one account per mailbox (#1041).
+      handleEmailIdentityModeChange(PRESET_EMAIL_IDENTITY_MODE[preset]);
+    },
+    [handleEmailIdentityModeChange],
+  );
   const [draft, setDraft] = useState<SimpleSetupDraft | null>(null);
   const [invites, setInvites] = useState<InviteDraft[]>([]);
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -348,7 +360,7 @@ export function SimpleSetupWizard() {
               submitError={submitError}
               isSubmitting={isSubmitting}
               onBack={() => setStep('essentials')}
-              onPresetChange={setSecurityPreset}
+              onPresetChange={handlePresetChange}
               onInvitesChange={setInvites}
               onComplete={handleComplete}
               onAdvancedSetup={() => {
@@ -726,6 +738,14 @@ function ReviewStep({
             you need custom webhook notifications, anomaly thresholds, or exact
             lockout windows before the first admin account is created.
           </p>
+          <button
+            type="button"
+            onClick={onAdvancedSetup}
+            className="mt-3 inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-amber-400 bg-white/60 px-3 py-1.5 text-sm font-medium text-amber-900 transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-600 dark:bg-amber-900/40 dark:text-amber-100 dark:hover:bg-amber-900/70"
+          >
+            Switch to advanced setup
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
       </aside>
 

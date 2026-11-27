@@ -24,6 +24,18 @@ vi.mock('../../services/auth/refresh-token', async (importOriginal) => {
   return { ...actual, revokeOtherSessions: svc.revokeOtherSessions };
 });
 
+// No live family in these tests: the session-upgrade path (#1048) is covered
+// by tfa-confirm-session-upgrade.test.ts.
+vi.mock('../../services/auth/login-session', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/auth/login-session')>();
+  return { ...actual, upgradeSessionAfterFirstFactor: vi.fn().mockResolvedValue(null) };
+});
+
+vi.mock('../../modules/mfa/tfa-state', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../modules/mfa/tfa-state')>();
+  return { ...actual, loadSecondFactors: vi.fn().mockResolvedValue({ totp: false, passkeys: 0 }) };
+});
+
 vi.mock('../../modules/audit/logger', () => ({
   AuditLogger: class {
     write(entry: unknown) {

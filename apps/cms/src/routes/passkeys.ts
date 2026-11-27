@@ -53,7 +53,7 @@ import { countUnusedRecoveryCodes, loadSecondFactors } from '../modules/mfa/tfa-
 import { checkPasskeyOptionsRateLimit, checkPasskeyVerifyRateLimit } from '../modules/mfa/rate-limit';
 import { resolveWebAuthnRp, webAuthnEnvFrom, type WebAuthnEnv, type WebAuthnRp } from '../modules/mfa/webauthn-config';
 import { verifyMfaChallengeToken } from '../services/auth/mfa-challenge';
-import { completePasswordLoginSession, resolveLoginAudience } from '../services/auth/login-session';
+import { completePasswordLoginSession, resolveLoginAudience, upgradeSessionAfterFirstFactor } from '../services/auth/login-session';
 import { revokeAllRefreshTokens, revokeOtherSessions } from '../services/auth/refresh-token';
 import { TOKEN_AUDIENCE } from '../services/auth/token-audience';
 import { systemDbFor } from '../middleware/db';
@@ -453,7 +453,12 @@ passkeyMeRouter.post('/passkeys', async (c) => {
       requestId: c.get('requestId'),
       ip: extractClientIp(c),
     });
-    return c.json({ data: { passkey: result.passkey, recoveryCodes: result.recoveryCodes } }, 201);
+    // Same as TOTP confirmation (#1048): the first factor was just proved on
+    // this device, so the session is upgraded instead of being locked out by
+    // `enforceTfa` with the recovery codes still on screen.
+    const auth = c.get('auth');
+    const session = result.firstFactor && auth ? await upgradeSessionAfterFirstFactor(c, auth, 'webauthn') : null;
+    return c.json({ data: { passkey: result.passkey, recoveryCodes: result.recoveryCodes, session } }, 201);
   } catch (err) {
     if (err instanceof PasskeyError) {
       const status = err.code === 'CEREMONY_EXPIRED' ? 410 : err.code === 'PASSKEY_EXISTS' ? 409 : 400;

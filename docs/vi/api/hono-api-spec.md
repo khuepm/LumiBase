@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 66
-lastUpdated: 2026-11-23T11:14:02.341Z
+version: 67
+lastUpdated: 2026-11-27T13:25:58.677Z
 sourceLang: en
 translatedFrom: en
-sourceHash: eb101a9d712ff639
+sourceHash: e97a56fbdff41910
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-23T11:14:02.341Z
-codeVerifiedHash: eb101a9d712ff639
-codeVerifiedClaims: 658
+codeVerified: 2026-11-27T13:25:58.677Z
+codeVerifiedHash: e97a56fbdff41910
+codeVerifiedClaims: 660
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -180,14 +180,14 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `GET` | `/api/v1/auth/me` | bearer | Lấy thông tin người dùng hiện tại |
 | `GET` | `/api/v1/me/tfa` | bearer | Trạng thái enroll TOTP (`{ enabled, enrolledAt, recoveryCodesRemaining }`) |
 | `POST` | `/api/v1/me/tfa/setup` | bearer | Bắt đầu enroll (step-up mật khẩu) → `secret` + `otpauthUrl` dùng một lần |
-| `POST` | `/api/v1/me/tfa/confirm` | bearer | Xác nhận enroll bằng một code sống → recovery code dùng-một-lần |
+| `POST` | `/api/v1/me/tfa/confirm` | bearer | Xác nhận enroll bằng một code sống → recovery code dùng-một-lần + `session` (cặp token đã xác minh 2FA, chỉ với yếu tố đầu tiên) |
 | `POST` | `/api/v1/me/tfa/recovery-codes` | bearer | Tạo lại recovery code (mật khẩu + TOTP code) |
 | `DELETE` | `/api/v1/me/tfa` | bearer | Tắt TOTP (mật khẩu + một TOTP code hoặc một recovery code); thu hồi session và tăng `tokenVersion` |
 | `POST` | `/api/v1/auth/passkey/options` | public | Options xác thực passkey: có `challengeToken` = yếu tố thứ hai, không có = đăng nhập staff không mật khẩu → `{ ceremonyId, options }` |
 | `POST` | `/api/v1/auth/passkey/verify` | public | Hoàn tất nghi thức passkey → cùng payload session với login (`amr` chứa `webauthn`, `tfaVerified`) |
 | `GET` | `/api/v1/me/passkeys` | bearer | Các passkey của người gọi + `recoveryCodesRemaining`, `totpEnabled`, `available` |
 | `POST` | `/api/v1/me/passkeys/registration-options` | bearer | Bắt đầu đăng ký passkey (step-up mật khẩu) → `{ ceremonyId, options }` |
-| `POST` | `/api/v1/me/passkeys` | bearer | Hoàn tất đăng ký → `{ passkey, recoveryCodes }` (chỉ có code khi là yếu tố đầu tiên) |
+| `POST` | `/api/v1/me/passkeys` | bearer | Hoàn tất đăng ký → `{ passkey, recoveryCodes, session }` (chỉ có code và `session` khi là yếu tố đầu tiên) |
 | `PATCH` | `/api/v1/me/passkeys/:id` | bearer | Đổi tên passkey |
 | `DELETE` | `/api/v1/me/passkeys/:id` | bearer | Xóa passkey (mật khẩu); yếu tố thứ hai cuối cùng sẽ thu hồi session và tăng `tokenVersion` |
 | `POST` | `/api/v1/me/passkeys/recovery-codes` | bearer | Tạo lại recovery code (mật khẩu + phiên mở bằng passkey) |
@@ -250,6 +250,12 @@ enroll TOTP, và vẫn trả `401 MFA_REQUIRED` khi họ chưa enroll.
 Enroll là luồng hai bước có step-up mật khẩu: `POST /me/tfa/setup` trả secret
 base32 và `otpauthUrl` một lần (không đọc lại được), rồi `POST /me/tfa/confirm`
 chứng minh sở hữu bằng một code sống và trả về tám recovery code dùng-một-lần.
+Khi đây là yếu tố thứ hai đầu tiên của tài khoản, response còn có
+`session: { token, refreshToken, refreshTokenExpiresAt }`: chính session hiện
+tại, được nâng lên trạng thái đã xác minh 2FA (giữ nguyên `sid`, `amr` thêm
+`totp`), nên policy `enforceTfa` không từ chối nó ngay sau khi enroll. Refresh
+cookie cũng được xoay vòng. `session` là `null` với token không có `sid`.
+`POST /me/passkeys` làm tương tự với passkey đầu tiên (`amr` thêm `webauthn`).
 Seed TOTP chỉ được lưu dưới dạng envelope AEAD của KeyProvider, nên enroll ở
 production đòi `ENCRYPTION_KEY`; recovery code được lưu dưới dạng hash PBKDF2.
 Đặt `LUMIBASE_TOTP_ISSUER` để điều khiển nhãn hiện trong app authenticator (mặc

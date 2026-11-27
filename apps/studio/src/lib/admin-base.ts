@@ -63,3 +63,12 @@ export const adminBaseRewrite: LocationRewrite = {
     return out;
   },
 };
+
+/**
+ * Whether a pathname is the first-run setup wizard (`/setup/*`, never prefixed).
+ * Those pages run before any session exists on the instance, so tenant
+ * endpoints (`/translations`, `/site`) must not be called from them (#1044).
+ */
+export function isSetupPath(pathname: string): boolean {
+  return pathname === '/setup' || pathname.startsWith('/setup/');
+}

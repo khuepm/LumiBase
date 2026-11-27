@@ -1,14 +1,14 @@
 ---
 title: Trình tạo Collection
-version: 1
-lastUpdated: 2026-08-02T19:14:13.087Z
+version: 2
+lastUpdated: 2026-11-25T04:49:36.538Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 98a39c55026d8f08
+sourceHash: 4996cabb80c026c3
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:14:13.087Z
-codeVerifiedHash: 98a39c55026d8f08
+codeVerified: 2026-11-25T04:49:36.538Z
+codeVerifiedHash: 4996cabb80c026c3
 codeVerifiedClaims: 4
 ---
 
@@ -157,6 +157,8 @@ client.schema.relations.create({
 client.schema.diff("posts", proposedSchema);
 client.schema.apply("posts", proposedSchema);
 ```
+
+`fields.rename` chuyển giá trị của từng item từ key cũ sang key mới trong cùng transaction; xem [Field Types And Configuration §9](./field-types-and-config.md#9-risky-field-mutations) cho đầy đủ contract đổi tên.
 
 Legacy flat methods như `schema.listCollections()` và `schema.upsertField()` vẫn tồn tại. SDK errors giữ metadata backend `code`, `path`, `risk` qua `LumiError.body`.
 

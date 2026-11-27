@@ -1,16 +1,16 @@
 {
   "stable": {
-    "version": "2.2.1",
-    "releaseDate": "2026-11-25",
-    "changelogUrl": "https://github.com/khuepm/lumibase/releases/tag/v2.2.1",
+    "version": "2.2.2",
+    "releaseDate": "2026-11-27",
+    "changelogUrl": "https://github.com/khuepm/lumibase/releases/tag/v2.2.2",
     "minimumSafeUpgradeVersion": "0.26.0",
     "migrationWarning": false,
     "upgradeGuideUrl": "https://docs.lumibase.dev/upgrade"
   },
   "edge": {
-    "version": "2.2.1",
-    "releaseDate": "2026-11-25",
-    "changelogUrl": "https://github.com/khuepm/lumibase/releases/tag/v2.2.1",
+    "version": "2.2.2",
+    "releaseDate": "2026-11-27",
+    "changelogUrl": "https://github.com/khuepm/lumibase/releases/tag/v2.2.2",
     "minimumSafeUpgradeVersion": "0.26.0",
     "migrationWarning": false,
     "upgradeGuideUrl": "https://docs.lumibase.dev/upgrade"

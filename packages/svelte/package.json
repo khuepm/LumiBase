@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/svelte",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "Svelte stores, actions and SvelteKit server helpers for LumiBase — a thin, typed layer over @lumibase/sdk.",
   "license": "Apache-2.0",
   "type": "module",
