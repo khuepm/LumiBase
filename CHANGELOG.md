@@ -9,10 +9,20 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-### Fixed
-- Enrolling a first second factor (TOTP, or a first passkey) under an `enforceTfa` policy no longer locks the session out. `POST /me/tfa/confirm` and `POST /me/passkeys` upgrade the current session to TFA-verified (same `sid`) and return the new token pair as `session`; Studio stores it and never leaves the page while the recovery codes are shown (#1048).
-- Studio Settings → Security shows "Sign in again with 2FA" for a `403 TFA_REQUIRED` instead of a generic load error (#1048).
-- TOTP setup shows a QR code, drawn in the browser from the `otpauth://` URI (never sent to an outside service), with the secret as a copyable fallback (#1047).
+_No unreleased changes yet._
+
+## [2.2.2] - 2026-11-27
+
+### Version
+- `v2.2.2`
+
+### Date
+- `2026-11-27`
+
+### Highlights
+- Security close-out of epic #985: extensions run only verified bytes, opt-in egress restriction for extensions, private caching for access-restricted media, signed direct extension installs and scrypt password hashing on Node.
+- 2FA: enrolling a first second factor under `enforceTfa` keeps the session usable, and TOTP setup shows a QR code.
+- Fixes for auth error codes, stale Studio site ids, field renames, the setup wizard and AI embedding resolution.
 
 ### Security
 - **Extensions run only the bytes that were verified (#1008, ADR-015).** On Node with `EXTENSION_RUNTIME=in-process`, an extension bundle was verified on one download and then imported from its URL with a second, unchecked one. It is now downloaded once, checked against the recorded SHA-256 and the signature on that buffer, and imported from a `data:` URL of those exact bytes, as the out-of-process host already did. The Studio loader likewise downloads a UI bundle once, checks its SHA-256 and imports a `blob:` URL of those bytes; the CMS and Studio Pages CSP `script-src` now allow `blob:` for that. On Cloudflare Workers, which cannot import `data:`/`blob:` modules, the two-fetch load is an accepted risk with an operator requirement (immutable, content-addressed bundle origins you control); `lumibase doctor --security` reports `extension-workers-bundle-origin`.
@@ -21,12 +31,29 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - **scrypt password hashing; no Workers lockout (B230, epic #985).** New password hashes use scrypt (memory-hard, N=2^15 r=8 p=3, the OWASP minimum) by default on Node/Docker, computed natively; `PASSWORD_HASH_SCHEME` (`scrypt` | `pbkdf2`) overrides, and Cloudflare Workers keep `pbkdf2` by default because scrypt runs in JavaScript there. A successful login re-hashes a password stored with another scheme or a lower cost, so PBKDF2 hashes move to scrypt as users sign in. Workers now verify scrypt hashes and PBKDF2 hashes above 100,000 iterations in JavaScript, so a database hashed on Docker no longer locks its users out when served by Workers. Adds `@noble/hashes` (pure JavaScript, no install scripts).
 - **Extension network egress (#1009, ADR-015).** Extension code can open connections outside the capability-checked `ctx.fetch`; Node's permission model has no network control. The Helm chart gains `networkPolicy.egress.restrict`: an egress policy for the CMS and worker pods that allows DNS, the release's bundled services, `networkPolicy.egress.allowTo` peers and public addresses, and blocks cloud metadata (`169.254.0.0/16`), private, CGNAT and loopback ranges. It is off by default and recommended in production. With extensions enabled in production, the CMS logs a startup warning and `lumibase doctor --security` reports `extension-egress-unrestricted` until `LUMIBASE_EGRESS_RESTRICTED=true` (set by the chart with the policy).
 
+### Fixed
+- Enrolling a first second factor (TOTP, or a first passkey) under an `enforceTfa` policy no longer locks the session out. `POST /me/tfa/confirm` and `POST /me/passkeys` upgrade the current session to TFA-verified (same `sid`) and return the new token pair as `session`; Studio stores it and never leaves the page while the recovery codes are shown (#1048).
+- Studio Settings → Security shows "Sign in again with 2FA" for a `403 TFA_REQUIRED` instead of a generic load error (#1048).
+- TOTP setup shows a QR code, drawn in the browser from the `otpauth://` URI (never sent to an outside service), with the secret as a copyable fallback (#1047).
+- Auth routes answer `400 VALIDATION` instead of `500 INTERNAL` for an empty, invalid or non-JSON body (`POST /auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/resend-verification`, `/me/change-password`). The app error handler maps a `ZodError` or a request-body JSON `SyntaxError` to `400` and no longer reports it as an ops error (#1046).
+- Studio recovers from a stale site id. A `404 TENANT_NOT_FOUND` clears the stored site (and the token, when it was issued for that site) and reloads or returns to login once; the setup pages no longer fetch `/site` or UI translations, and queries no longer retry `4xx` errors (#1044).
+- Renaming a field moves each item's value to the new key, in the same transaction, including soft-deleted items, and bumps the item `version`. Renaming an encrypted field that holds data is refused with `409 ENCRYPTED_FIELD_RENAME_UNSUPPORTED`. `updateSchema` with `renameFrom` no longer deletes the field it renames.
+- Setup: the "How to choose a preset" and invite docs links resolve (#1039); enabled buttons show the pointer cursor again (#1040); the Strict preset defaults to "One account per mailbox" (#1041); the advanced-settings notice has a "Switch to advanced setup" button (#1043).
+- AI embeddings are resolved explicitly: missing credentials or an unknown configuration fail at provider resolution instead of silently falling back to the Echo provider, which now needs explicit selection (#1026).
+- CDC: the keyset antisymmetry property test no longer fails on `-0` (#980).
+
+### Changed
+- Dependencies: 54 minor/patch updates (#1037), `actions/checkout` 7.0.1, `actions/upload-artifact` 7.0.2, `ossf/scorecard-action` 2.6.0 and the `distroless/nodejs22-debian13` base image digest.
+
 ### Upgrade notes
 - **Passwords (B230).** On Node/Docker, new and re-hashed passwords are scrypt by default: each login of a user with a PBKDF2 hash re-hashes it once (about 200 ms of CPU, natively). To keep PBKDF2, set `PASSWORD_HASH_SCHEME=pbkdf2`. If the database may be served by Cloudflare Workers, note that Workers verify scrypt in JavaScript (about 300 ms of CPU per login); on a plan with a tight CPU limit, set `PASSWORD_HASH_SCHEME=pbkdf2` on Docker too.
 - **Media caching (#1012).** On sites without anonymous `media:read`, `/api/v1/media` responses are now `private`: a CDN in front of the CMS stops caching them. Grant `media:read` to the `public` role (no row rule) for media that should be CDN-cached, or serve public assets from a dedicated public origin.
 - **Studio extensions (#1008).** A Studio extension bundle with a recorded hash is imported from a `blob:` URL, so it must be a single file: relative imports (`./chunk.js`) do not resolve. A custom CSP in front of the Studio must allow `blob:` in `script-src`.
 - **Node with `EXTENSION_RUNTIME=in-process` (#1008).** A remote `https` bundle now loads (the host downloads it); before, Node could not import it at all.
 - **Egress (#1009).** Before enabling `networkPolicy.egress.restrict`, list in `networkPolicy.egress.allowTo` any private-address peer the CMS needs (an external database, SMTP relay or object store on a private network). Outside the chart, restrict egress yourself and set `LUMIBASE_EGRESS_RESTRICTED=true`.
+
+### Migrations
+- None. Re-applying `rls-policies.sql` is not required.
 
 ## [2.2.1] - 2026-11-25
 

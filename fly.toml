@@ -33,7 +33,7 @@ kill_timeout = 15
   # (major) release into an unattended upgrade. `pnpm version:sync` moves this
   # line to each release; your copy changes only when you change it, after
   # reading the release's upgrade notes (docs/en/deployment/one-click.md).
-  image = "ghcr.io/khuepm/lumibase-cms:2.2.1"
+  image = "ghcr.io/khuepm/lumibase-cms:2.2.2"
 
 [env]
   NODE_ENV = "production"
