@@ -1,7 +1,7 @@
 import { generateKeyPairSync, sign } from 'node:crypto';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { sha256Hex, verifyBundle } from '@lumibase/contracts/extensions';
-import { ExtensionSandbox } from '../sandbox';
+import { clearVerifiedBundleCache, ExtensionSandbox } from '../sandbox';
 
 /**
  * #1008: on Node with `EXTENSION_RUNTIME=in-process`, the bundle is
@@ -47,6 +47,7 @@ async function signedOptions(source: string) {
 
 describe('in-process extension load runs the verified bytes (#1008)', () => {
   const evil = () => (globalThis as { __lumibaseEvilRan?: boolean }).__lumibaseEvilRan;
+  beforeEach(() => clearVerifiedBundleCache());
   afterEach(() => {
     delete (globalThis as { __lumibaseEvilRan?: boolean }).__lumibaseEvilRan;
   });
@@ -91,5 +92,49 @@ describe('in-process extension load runs the verified bytes (#1008)', () => {
     const expectedSha256 = await sha256Hex(new TextEncoder().encode(SIGNED));
     expect(await sandbox().load({ name: 'pinned', bundleUrl: url, capabilities: [], expectedSha256 })).toBeNull();
     expect(evil()).toBeUndefined();
+  });
+
+  describe('pinned bundles are cached by their SHA-256', () => {
+    it('a second load of the same pinned bundle does not download it again', async () => {
+      const url = `${ORIGIN}/cached.mjs`;
+      RESPONSES[url] = [SIGNED, EVIL];
+      downloads[url] = 0;
+      const opts = await signedOptions(SIGNED);
+      const first = await sandbox().load({ name: 'cached', bundleUrl: url, capabilities: [], ...opts });
+      const second = await sandbox().load({ name: 'cached', bundleUrl: url, capabilities: [], ...opts });
+      expect(downloads[url]).toBe(1);
+      // The swapped response is never fetched, let alone run.
+      expect(await second!.hooks!['items.create.before']!({ collection: 'x' })).toEqual({ who: 'signed' });
+      expect(await first!.hooks!['items.create.before']!({ collection: 'x' })).toEqual({ who: 'signed' });
+      expect(evil()).toBeUndefined();
+    });
+
+    it('still checks the signature on every load: a revoked key refuses cached bytes', async () => {
+      const url = `${ORIGIN}/revoked.mjs`;
+      RESPONSES[url] = [SIGNED];
+      const opts = await signedOptions(SIGNED);
+      expect(await sandbox().load({ name: 'revoked', bundleUrl: url, capabilities: [], ...opts })).not.toBeNull();
+      const revoked = { ...opts, verifyBytes: async () => false };
+      expect(await sandbox().load({ name: 'revoked', bundleUrl: url, capabilities: [], ...revoked })).toBeNull();
+    });
+
+    it('a different recorded SHA-256 is a cache miss and downloads', async () => {
+      const url = `${ORIGIN}/miss.mjs`;
+      RESPONSES[url] = [SIGNED, EVIL];
+      downloads[url] = 0;
+      await sandbox().load({ name: 'miss', bundleUrl: url, capabilities: [], ...(await signedOptions(SIGNED)) });
+      const other = await sandbox().load({ name: 'miss', bundleUrl: url, capabilities: [], ...(await signedOptions(EVIL)) });
+      expect(downloads[url]).toBe(2);
+      expect(other).not.toBeNull();
+    });
+
+    it('an unpinned load is never served from the cache', async () => {
+      const url = `${ORIGIN}/unpinned.mjs`;
+      RESPONSES[url] = [SIGNED, SIGNED];
+      downloads[url] = 0;
+      await sandbox().load({ name: 'unpinned', bundleUrl: url, capabilities: [] });
+      await sandbox().load({ name: 'unpinned', bundleUrl: url, capabilities: [] });
+      expect(downloads[url]).toBe(2);
+    });
   });
 });

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { sha256Hex, verifyBundle } from '@lumibase/contracts/extensions';
-import { ExtensionSandbox } from '../../sandbox';
+import { clearVerifiedBundleCache, ExtensionSandbox } from '../../sandbox';
 import { evictExtensionProcesses, extensionEgressWarning, extensionProcessCount, resolveExtensionRuntime } from '../process-host';
 
 /**
@@ -103,6 +103,7 @@ describe('out-of-process extension host (#990)', () => {
   });
   afterEach(async () => {
     await evictExtensionProcesses();
+    clearVerifiedBundleCache();
   });
   afterAll(() => {
     process.env.LUMIBASE_ENV = saved;
@@ -201,12 +202,20 @@ describe('out-of-process extension host (#990)', () => {
       expect(downloads[url]).toBe(1);
       expect(await first!.hooks!['items.create.before']!({ collection: 'x' })).toEqual({ who: 'signed' });
 
-      // A later load (new request) gets the swapped bytes: refused before any child runs them.
+      // A later load (new request) of the same pinned bundle reuses the verified
+      // bytes: the swapped response is never downloaded, let alone run.
       const second = await sandbox().load({ name: 'swap', bundleUrl: url, capabilities: [], siteId: 'site_a', timeoutMs: 20_000, ...opts });
-      expect(second).toBeNull();
-      expect(downloads[url]).toBe(2);
+      expect(await second!.hooks!['items.create.before']!({ collection: 'x' })).toEqual({ who: 'signed' });
+      expect(downloads[url]).toBe(1);
       expect(extensionProcessCount()).toBe(1);
-      expect(await first!.hooks!['items.create.before']!({ collection: 'x' })).toEqual({ who: 'signed' });
+
+      // Without the cached copy, the swapped bytes are refused before any child runs them.
+      clearVerifiedBundleCache();
+      await evictExtensionProcesses();
+      const third = await sandbox().load({ name: 'swap', bundleUrl: url, capabilities: [], siteId: 'site_a', timeoutMs: 20_000, ...opts });
+      expect(third).toBeNull();
+      expect(downloads[url]).toBe(2);
+      expect(extensionProcessCount()).toBe(0);
     }, 40_000);
 
     it('refuses unsigned bytes even though the URL-based verify() would pass', async () => {
