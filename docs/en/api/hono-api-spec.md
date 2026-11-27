@@ -1,11 +1,11 @@
 ---
-version: 66
-lastUpdated: 2026-11-21T11:04:16.006Z
+version: 67
+lastUpdated: 2026-11-23T11:14:02.341Z
 sourceLang: en
-contentHash: 49608a0a77208a74
-codeVerified: 2026-11-21T11:04:16.006Z
-codeVerifiedHash: 49608a0a77208a74
-codeVerifiedClaims: 656
+contentHash: eb101a9d712ff639
+codeVerified: 2026-11-23T11:14:02.341Z
+codeVerifiedHash: eb101a9d712ff639
+codeVerifiedClaims: 658
 ---
 
 # Hono API Specification — LumiBase
@@ -1615,6 +1615,14 @@ follows `LUMIBASE_EXT_SIGNATURE_POLICY` (`require` default, or `warn`). The
 official extensions with `autoInstall`/`enabledByDefault` are installed during
 setup / on site-create by the reconciler. Sign bundles with the
 `@lumibase/extension-cli` (`lumibase-ext keygen|sign|verify`).
+
+A direct `POST /extensions` (or `PATCH /extensions/:id` with a new bundle)
+carries the signature metadata in the body: `bundleSha256` (64 hex),
+`signature` (base64), `publisherKeyId` and `signatureAlg` (`ed25519`). It is
+verified on install and stored on the row, and every later load verifies
+against it. A change to any of these fields re-verifies like a new bundle.
+Without them, a site under the `require` policy answers
+`400 SIGNATURE_REQUIRED` and names the missing fields (B228).
 
 ---
 

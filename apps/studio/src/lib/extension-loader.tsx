@@ -406,38 +406,60 @@ export function ExtensionComponent({ name, ...props }: ExtensionComponentProps) 
 }
 
 /**
+ * The module importer (a seam for tests: a `blob:` module cannot be imported
+ * under jsdom). Production always uses the browser's dynamic `import()`.
+ */
+export const bundleImporter = {
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  import: (url: string) => import(/* @vite-ignore */ url) as Promise<Record<string, unknown>>,
+};
+
+/**
  * Import an extension bundle only if its bytes match the SHA-256 the server
- * recorded for it (#990). A bundle whose content was replaced at its URL — a
- * compromised CDN, a swapped file — is refused instead of running inside the
- * admin origin. Rows without a recorded hash (installed under the `warn`
- * signature policy) load as before, with a console warning.
+ * recorded for it (#990, #1008). The bundle is downloaded ONCE, its digest is
+ * checked, and the module is imported from a `blob:` URL of exactly those
+ * bytes, so neither a swapped file nor a server that answers a second request
+ * differently can run code the check did not see. That `blob:` import is why
+ * the Studio CSP `script-src` allows `blob:` (ADR-015).
  *
- * Limit: the check fetches the bytes, then `import()`s the same URL, which the
- * browser normally serves from the HTTP cache. It catches a persistent swap,
- * not a server that answers the two requests differently; a blob-URL import
- * would close that gap but needs `blob:` in the Studio CSP `script-src`. See
- * ADR-015.
+ * Rows without a recorded hash (installed under the `warn` signature policy)
+ * load from their URL as before, with a console warning: there is nothing to
+ * verify them against.
+ *
+ * A bundle that imports other files by relative URL (`./chunk.js`) cannot be
+ * resolved from a `blob:` URL; Studio extension bundles must be single-file.
  */
 export async function importVerifiedBundle(
   name: string,
   bundleUrl: string,
   expectedSha256: string | null,
 ): Promise<Record<string, unknown>> {
-  if (expectedSha256) {
-    await assertBundleIntegrity(name, bundleUrl, expectedSha256);
-  } else {
+  if (!expectedSha256) {
     console.warn(`[extension-loader] "${name}" has no recorded bundle hash; loading without an integrity check.`);
+    return bundleImporter.import(bundleUrl);
   }
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval
-  return (await import(/* @vite-ignore */ bundleUrl)) as Record<string, unknown>;
+  const bytes = await fetchVerifiedBundle(name, bundleUrl, expectedSha256);
+  const blobUrl = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'text/javascript' }));
+  try {
+    return await bundleImporter.import(blobUrl);
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
 }
 
-export async function assertBundleIntegrity(name: string, bundleUrl: string, expectedSha256: string): Promise<void> {
+/** Download the bundle once and return its bytes if they match `expectedSha256`. */
+export async function fetchVerifiedBundle(name: string, bundleUrl: string, expectedSha256: string): Promise<Uint8Array> {
   const res = await fetch(bundleUrl, { credentials: 'omit' });
   if (!res.ok) throw new Error(`Extension "${name}": bundle could not be fetched for verification (${res.status}).`);
-  const digest = await crypto.subtle.digest('SHA-256', await res.arrayBuffer());
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  const digest = await crypto.subtle.digest('SHA-256', bytes as BufferSource);
   const actual = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
   if (actual !== expectedSha256.toLowerCase()) {
     throw new Error(`Extension "${name}": bundle content does not match its recorded SHA-256; refusing to load it.`);
   }
+  return bytes;
+}
+
+export async function assertBundleIntegrity(name: string, bundleUrl: string, expectedSha256: string): Promise<void> {
+  await fetchVerifiedBundle(name, bundleUrl, expectedSha256);
 }

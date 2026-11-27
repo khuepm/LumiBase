@@ -3,7 +3,7 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { sha256Hex, verifyBundle } from '@lumibase/contracts/extensions';
 import { ExtensionSandbox } from '../../sandbox';
-import { evictExtensionProcesses, extensionProcessCount, resolveExtensionRuntime } from '../process-host';
+import { evictExtensionProcesses, extensionEgressWarning, extensionProcessCount, resolveExtensionRuntime } from '../process-host';
 
 /**
  * #990: on Node, `EXTENSION_RUNTIME=process` runs each bundle in a forked
@@ -72,6 +72,18 @@ function serve(name: string, source: string): string {
 }
 
 const PROBE = serve('probe', PROBE_SOURCE);
+
+describe('extensionEgressWarning (#1009)', () => {
+  const base = { LUMIBASE_ENV: 'production', EXTENSION_BUNDLE_ORIGINS: 'https://ext.example.com' };
+  it('warns in production with extensions and no egress restriction', () => {
+    expect(extensionEgressWarning(base)).toMatch(/egress is not restricted/);
+  });
+  it('is silent once egress is restricted, without extensions, or outside production', () => {
+    expect(extensionEgressWarning({ ...base, LUMIBASE_EGRESS_RESTRICTED: 'true' })).toBeNull();
+    expect(extensionEgressWarning({ ...base, EXTENSION_BUNDLE_ORIGINS: '' })).toBeNull();
+    expect(extensionEgressWarning({ ...base, LUMIBASE_ENV: 'development', NODE_ENV: 'test' })).toBeNull();
+  });
+});
 
 describe('resolveExtensionRuntime', () => {
   it('follows EXTENSION_RUNTIME, else production → process', () => {

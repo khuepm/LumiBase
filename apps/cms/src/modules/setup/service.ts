@@ -51,7 +51,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import { nanoid } from 'nanoid';
-import { targetPbkdf2Iterations, hashPassword } from '../../services/auth/password';
+import { targetPasswordPolicy, hashPassword } from '../../services/auth/password';
 import { ROLE_LIBRARY } from '../../services/agent-role-service';
 import { AUTONOMY_LEVELS } from '../../services/autonomy-service';
 import {
@@ -616,7 +616,7 @@ export class SetupService {
         //       before reaching this point.
         const passwordHash = await hashPassword(
           input.account.password,
-          targetPbkdf2Iterations(this.deps.env as unknown as Record<string, unknown> | undefined),
+          targetPasswordPolicy(this.deps.env as unknown as Record<string, unknown> | undefined),
         );
         const plainBackupCodes: string[] = [];
         for (let i = 0; i < BACKUP_CODE_COUNT; i++) {

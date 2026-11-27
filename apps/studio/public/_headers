@@ -7,7 +7,7 @@
 # media-src also allow https: — with 'self' only, every file thumbnail and
 # video served by the CMS would be blocked.
 /*
-  Content-Security-Policy: default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; font-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; frame-src https: http://localhost:* http://127.0.0.1:*
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; font-src 'self' data:; object-src 'none'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; frame-src https: http://localhost:* http://127.0.0.1:*
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: no-referrer

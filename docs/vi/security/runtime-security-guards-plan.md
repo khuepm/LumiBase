@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 7
-lastUpdated: 2026-11-14T02:15:35.397Z
+version: 8
+lastUpdated: 2026-11-21T12:08:31.863Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 40ce7652d5196dc5
+sourceHash: 46d9db0365e85cd5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T02:15:35.397Z
-codeVerifiedHash: 40ce7652d5196dc5
+codeVerified: 2026-11-21T12:08:31.863Z
+codeVerifiedHash: 46d9db0365e85cd5
 codeVerifiedClaims: 36
 ---
 
@@ -70,7 +70,7 @@ Chuẩn bị nền bảo mật runtime rõ ràng trước khi AI Harness đượ
    `X-Content-Type-Options: nosniff` và CSP `sandbox`, còn SVG được làm sạch lại
    khi trả ra — nên object HTML/SVG đã lưu không thể render (và chạy script)
    dưới origin app khi mở top-level. Chi tiết đầy đủ, gồm dò magic bytes,
-   corpus polyglot và bộ làm sạch SVG: [upload-security.md](./upload-security.md). Kết hợp với CSP toàn cục (`script-src 'self'`, không
+   corpus polyglot và bộ làm sạch SVG: [upload-security.md](./upload-security.md). Kết hợp với CSP toàn cục (`script-src 'self' blob:`, không
    `unsafe-inline`) như phòng thủ nhiều lớp. Storage adapter map `contentType`
    sang field native R2 `httpMetadata` / S3 `ContentType` để `Content-Type` khi
    serve round-trip đúng (trước đây chỉ ghi vào custom metadata nên trả về undefined).

@@ -362,6 +362,29 @@ export function runSecurityChecks(env: ProjectEnv, options: SecurityCheckOptions
     });
   }
 
+  // ── Extension isolation (#1008, #1009; ADR-015) ─────────────────────────
+  const extensionsOn = val('EXTENSION_BUNDLE_ORIGINS') !== undefined;
+  if (extensionsOn && env.runtime === 'docker' && !isTrue(val('LUMIBASE_EGRESS_RESTRICTED'))) {
+    add({
+      id: 'extension-egress-unrestricted',
+      severity: prodOr('warning', 'info'),
+      rule: 'Extension code can open its own network connections outside ctx.fetch; egress must be restricted at the network level.',
+      message: 'Extensions are enabled (EXTENSION_BUNDLE_ORIGINS) and nothing says egress is restricted: an extension can reach cloud metadata (169.254.169.254) and private networks from the CMS host.',
+      fix: 'Restrict egress (Helm: networkPolicy.enabled=true and networkPolicy.egress.restrict=true; Docker: firewall or an egress proxy), then set LUMIBASE_EGRESS_RESTRICTED=true.',
+      keys: ['EXTENSION_BUNDLE_ORIGINS', 'LUMIBASE_EGRESS_RESTRICTED'],
+    });
+  }
+  if (extensionsOn && env.runtime === 'cloudflare') {
+    add({
+      id: 'extension-workers-bundle-origin',
+      severity: prodOr('warning', 'info'),
+      rule: 'On Workers an extension bundle is verified and imported as two fetches; its origin must not be able to change what it serves.',
+      message: 'Extensions are enabled on Cloudflare Workers: a bundle origin that answers the verification and the import differently can run code that was not verified.',
+      fix: 'List in EXTENSION_BUNDLE_ORIGINS only origins you control, serving immutable, content-addressed URLs (the SHA-256 in the path, never overwritten).',
+      keys: ['EXTENSION_BUNDLE_ORIGINS'],
+    });
+  }
+
   // ── Row-level security ─────────────────────────────────────────────────
   const rlsRaw = val('LUMIBASE_DB_RLS')?.toLowerCase();
   if (rlsRaw && rlsRaw !== 'off' && rlsRaw !== 'enforce') {
