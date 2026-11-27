@@ -8,7 +8,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { roles, systemState, users, userSites } from '@lumibase/database';
 import type { AppEnv } from '../env';
 import { runDetached } from '../lib/detached';
-import { hashPassword, passwordNeedsRehash, targetPbkdf2Iterations, verifyPassword } from '../services/auth/password';
+import { hashPassword, passwordNeedsRehash, passwordPolicyKey, targetPasswordPolicy, verifyPassword, type PasswordHashPolicy } from '../services/auth/password';
 import { isSelfRegistrationEnabled } from '../services/auth/registration-settings';
 import { ensureSubscriberRole } from '../services/auth/frontend-role';
 import {
@@ -263,7 +263,7 @@ meRouter.post('/change-password', async (c) => {
   });
   if (policyFailure) return c.json(passwordPolicyErrorBody(policyFailure), 400);
 
-  const passwordHash = await hashPassword(input.newPassword, targetPbkdf2Iterations(c.env as unknown as Record<string, unknown>));
+  const passwordHash = await hashPassword(input.newPassword, targetPasswordPolicy(c.env as unknown as Record<string, unknown>));
   const now = new Date();
   await db
     .update(users)
@@ -708,7 +708,7 @@ authRouter.post('/register', async (c) => {
     .limit(1);
 
   if (!existing) {
-    const passwordHash = await hashPassword(input.password, targetPbkdf2Iterations(c.env as unknown as Record<string, unknown>));
+    const passwordHash = await hashPassword(input.password, targetPasswordPolicy(c.env as unknown as Record<string, unknown>));
     // (1) Server-resolved least-privilege role. Never from the body.
     const subscriberRoleId = await ensureSubscriberRole(db, siteId);
 
@@ -1167,7 +1167,7 @@ authRouter.post('/reset-password', async (c) => {
   const policyFailure = await checkNewPassword(c, input.password, { userInputs: [user.email] });
   if (policyFailure) return c.json(passwordPolicyErrorBody(policyFailure), 400);
 
-  const passwordHash = await hashPassword(input.password, targetPbkdf2Iterations(c.env as unknown as Record<string, unknown>));
+  const passwordHash = await hashPassword(input.password, targetPasswordPolicy(c.env as unknown as Record<string, unknown>));
   // Single winner (#732): compare-and-swap on the session generation read
   // above. A concurrent request with the same link already bumped it, so
   // this one updates nothing and the link reads as spent.
@@ -1223,18 +1223,18 @@ authRouter.use('/login', loginGuardMiddleware());
  * cold-start cost doesn't pad the first successful login.
  */
 // Keyed by work factor (#994): the dummy must cost what a real account's hash
-// costs, or a raised PASSWORD_PBKDF2_ITERATIONS would make unknown emails
+// costs (per scheme and cost, B230), or a different policy would make unknown emails
 // answer faster than known ones.
-const DUMMY_PASSWORD_HASHES = new Map<number, string>();
-async function getDummyPasswordHash(iterations: number): Promise<string> {
-  const cached = DUMMY_PASSWORD_HASHES.get(iterations);
+const DUMMY_PASSWORD_HASHES = new Map<string, string>();
+async function getDummyPasswordHash(policy: PasswordHashPolicy): Promise<string> {
+  const cached = DUMMY_PASSWORD_HASHES.get(passwordPolicyKey(policy));
   if (cached) return cached;
   const seed = crypto.getRandomValues(new Uint8Array(32));
   const seedStr = Array.from(seed)
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
-  const hash = await hashPassword(seedStr, iterations);
-  DUMMY_PASSWORD_HASHES.set(iterations, hash);
+  const hash = await hashPassword(seedStr, policy);
+  DUMMY_PASSWORD_HASHES.set(passwordPolicyKey(policy), hash);
   return hash;
 }
 
@@ -1341,7 +1341,7 @@ authRouter.post('/login', async (c) => {
     // missing-user branch matches the existing-user branch in CPU
     // time (Req 7.5). The verify always returns false, but we don't
     // even check the result — the only point is the wall clock.
-    await verifyPassword(input.password, await getDummyPasswordHash(targetPbkdf2Iterations(c.env as unknown as Record<string, unknown>)));
+    await verifyPassword(input.password, await getDummyPasswordHash(targetPasswordPolicy(c.env as unknown as Record<string, unknown>)));
 
     await recordLoginFailure(
       db,
@@ -1419,16 +1419,16 @@ authRouter.post('/login', async (c) => {
     );
   }
 
-  // Re-hash on a successful login when the stored hash uses fewer PBKDF2
-  // iterations than the configured target (#994). Best-effort: a failed write
+  // Re-hash on a successful login when the stored hash uses a weaker or different
+  // scheme or cost than the configured target (#994, B230). Best-effort: a failed write
   // never fails the login, and the password itself is unchanged, so sessions
   // and tokenVersion are left alone.
-  const targetIterations = targetPbkdf2Iterations(c.env as unknown as Record<string, unknown>);
-  if (passwordNeedsRehash(user.passwordHash, targetIterations)) {
+  const targetPolicy = targetPasswordPolicy(c.env as unknown as Record<string, unknown>);
+  if (passwordNeedsRehash(user.passwordHash, targetPolicy)) {
     try {
       await db
         .update(users)
-        .set({ passwordHash: await hashPassword(input.password, targetIterations) })
+        .set({ passwordHash: await hashPassword(input.password, targetPolicy) })
         .where(eq(users.id, user.id));
     } catch (err) {
       console.warn('[auth] password re-hash failed', formatSafeError(err));

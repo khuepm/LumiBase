@@ -1,10 +1,10 @@
 ---
-version: 9
-lastUpdated: 2026-10-17T16:36:20.639Z
+version: 10
+lastUpdated: 2026-11-21T12:08:32.120Z
 sourceLang: en
-contentHash: 7af46441f83e7d8e
-codeVerified: 2026-10-17T16:36:20.639Z
-codeVerifiedHash: 7af46441f83e7d8e
+contentHash: 79aeceacf3fa2d6d
+codeVerified: 2026-11-21T12:08:32.120Z
+codeVerifiedHash: 79aeceacf3fa2d6d
 codeVerifiedClaims: 56
 ---
 
@@ -53,7 +53,7 @@ Of the **78 applicable** weaknesses: **78 mitigated (100%)**, 0 partial, 0 not a
 
 | # | CWE | Weakness | Verdict | Evidence / note |
 |---|-----|----------|---------|-----------------|
-| 1 | 79 | Cross-site Scripting | ✅ | Central DOMPurify allowlist `apps/studio/src/lib/sanitize-html.ts`; markdown escaped then sanitized; CSP `script-src 'self'` in `apps/cms/src/middleware/security-headers.ts`; SVG active-content scan on upload. |
+| 1 | 79 | Cross-site Scripting | ✅ | Central DOMPurify allowlist `apps/studio/src/lib/sanitize-html.ts`; markdown escaped then sanitized; CSP `script-src 'self' blob:` in `apps/cms/src/middleware/security-headers.ts`; SVG active-content scan on upload. |
 | 2 | 89 | SQL Injection | ✅ | **Fixed 2026-07-06.** `materialize-service.ts` now uses Drizzle bind parameters for all values and `sql.identifier()` for the validated physical-table name; the one spot where bind params are impossible (the PL/pgSQL trigger body) validates ids fail-closed against `/^[A-Za-z0-9_-]+$/` instead of escaping. Elsewhere Drizzle is parameterized throughout. Covered by `materialize-sql-injection.test.ts` + `materialize-service.test.ts`. |
 | 3 | 352 | CSRF | ✅ | Auth is bearer-header only on this branch — no cookies are issued, so no ambient credentials exist for CSRF to ride on. CORS origins validated (`apps/cms/src/config/cors.ts`). Re-verify if cookie-based refresh lands (exists on a feature branch, commits 807d0fbd / 4469c36c — not merged here). |
 | 4 | 862 | Missing Authorization | ✅ | `withAuth()` on the whole `/api/v1` stack (`apps/cms/src/index.ts`); only intentional bypasses: login, setup wizard (state-gated), recovery (rate-limited), realtime ticket exchange. |

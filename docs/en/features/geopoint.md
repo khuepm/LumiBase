@@ -1,10 +1,10 @@
 ---
-version: 3
+version: 4
 sourceLang: en
-lastUpdated: 2026-11-15T11:57:28.932Z
-contentHash: 9863d4c9c17ad1fa
-codeVerified: 2026-11-15T17:12:06.232Z
-codeVerifiedHash: 9863d4c9c17ad1fa
+lastUpdated: 2026-11-21T12:08:31.624Z
+contentHash: 3c1893cf56a3ed68
+codeVerified: 2026-11-21T12:08:31.624Z
+codeVerifiedHash: 3c1893cf56a3ed68
 codeVerifiedClaims: 8
 ---
 
@@ -125,7 +125,7 @@ or `http://localhost`; anything else falls back to the default.
 
 ### Browser policies
 
-- **CSP.** The CMS serves the Studio in Docker with `script-src 'self'` and
+- **CSP.** The CMS serves the Studio in Docker with `script-src 'self' blob:` and
   `connect-src 'self' https:`. Tiles, glyphs and sprites are fetched over https,
   and MapLibre's worker is a same-origin file (Studio sets it with
   `setWorkerUrl`), so the policy needs no change. A style served over plain

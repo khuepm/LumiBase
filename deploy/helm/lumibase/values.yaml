@@ -265,8 +265,33 @@ networkPolicy:
   #       kubernetes.io/metadata.name: ingress-nginx
   ingressFrom: []
   # Bundled PostgreSQL/Redis/Meilisearch always accept only the CMS pods
-  # (and the helm test pod) when the policy is enabled. Egress is not
-  # restricted: the CMS calls S3, LLM providers and webhooks.
+  # (and the helm test pod) when the policy is enabled.
+  egress:
+    # Restrict outbound traffic from the CMS and worker pods (#1009, ADR-015).
+    # Extension code (in process, or in its child process with
+    # EXTENSION_RUNTIME=process) can open its own connections outside
+    # ctx.fetch; this keeps it, and the CMS, off cloud metadata and private
+    # networks. Public internet stays reachable (S3, LLM providers, webhooks).
+    # Recommended in production; needs a CNI that enforces egress policies.
+    restrict: false
+    # Extra peers to allow, e.g. a managed database or SMTP relay on a private
+    # address (NetworkPolicy `to` entries):
+    # - ipBlock:
+    #     cidr: 10.20.0.15/32
+    allowTo: []
+    blockedCidrs:
+      - 169.254.0.0/16   # link-local, incl. cloud metadata 169.254.169.254
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 100.64.0.0/10    # CGNAT
+      - 127.0.0.0/8
+    # Also allow public IPv6 (minus the ranges below). Off for IPv4-only clusters.
+    ipv6: false
+    blockedCidrsV6:
+      - fc00::/7         # unique local
+      - fe80::/10        # link-local
+      - ::1/128
 
 # --- Database ---------------------------------------------------------------------
 database:

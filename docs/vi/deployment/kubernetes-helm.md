@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 5
-lastUpdated: 2026-11-15T19:31:37.541Z
+version: 6
+lastUpdated: 2026-11-21T12:08:31.012Z
 translatedFrom: en
-sourceHash: 9490b1c95961333c
+sourceHash: 49dd5613ca139ca4
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T19:31:37.541Z
-codeVerifiedHash: 9490b1c95961333c
+codeVerified: 2026-11-21T12:08:31.012Z
+codeVerifiedHash: 49dd5613ca139ca4
 codeVerifiedClaims: 36
 ---
 
@@ -327,8 +327,33 @@ Với `networkPolicy.enabled`, web pod chỉ nhận traffic trên cổng HTTP (t
 `networkPolicy.ingressFrom` nếu có đặt), worker không nhận gì (traffic từ chính
 node của pod, nơi kubelet gửi probe, luôn được phép), còn PostgreSQL, Redis và Meilisearch kèm sẵn
 chỉ nhận web pod và worker pod của release (và pod của Job migration khi
-`migrations.mode=job`). Egress không bị giới hạn: CMS gọi
-object storage, nhà cung cấp LLM và webhook.
+`migrations.mode=job`).
+
+Egress mặc định để mở: CMS gọi object storage, nhà cung cấp LLM và webhook.
+Mã extension cũng có thể tự mở kết nối, bên ngoài `ctx.fetch` đã kiểm
+capability (ADR-015, #1009). Ở production, hãy bật
+`networkPolicy.egress.restrict` để pod CMS và worker không chạm được tới
+metadata của cloud hay mạng private:
+
+```yaml
+networkPolicy:
+  enabled: true
+  egress:
+    restrict: true
+    # Database managed hoặc SMTP relay trên địa chỉ private:
+    allowTo:
+      - ipBlock:
+          cidr: 10.20.0.15/32
+```
+
+Policy này cho phép DNS (`kube-dns`), các service kèm sẵn của release, các peer
+trong `allowTo` và địa chỉ công khai. Nó chặn `169.254.0.0/16`, `10.0.0.0/8`,
+`172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10` và `127.0.0.0/8`
+(`networkPolicy.egress.blockedCidrs`). Đặt `networkPolicy.egress.ipv6: true`
+trên cluster dual-stack để cho phép cả IPv6 công khai. CNI phải thực thi
+egress policy (Calico, Cilium, …). Khi đó chart đặt
+`LUMIBASE_EGRESS_RESTRICTED=true`, giúp tắt cảnh báo lúc khởi động của CMS và
+của `lumibase doctor --security`.
 
 ## Kiểm tra
 

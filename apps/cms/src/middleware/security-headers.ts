@@ -10,7 +10,9 @@ const DEFAULT_SECURITY_HEADER_POLICY: Record<string, string[]> = {
   'media-src': ["'self'", 'blob:'],
   'font-src': ["'self'", 'data:'],
   'object-src': ["'none'"],
-  'script-src': ["'self'"],
+  // `blob:`: the Studio imports an extension bundle from a blob of the bytes
+  // it verified, never from the bundle URL a second time (#1008, ADR-015).
+  'script-src': ["'self'", 'blob:'],
   'style-src': ["'self'", "'unsafe-inline'"],
   'connect-src': ["'self'", 'https:', 'wss:'],
 };

@@ -128,7 +128,7 @@ import { users } from '@lumibase/database';
 
 import type { AppEnv } from '../../env';
 import { withSystemDb } from '../../middleware/db';
-import { hashPassword, targetPbkdf2Iterations } from '../../services/auth/password';
+import { hashPassword, targetPasswordPolicy } from '../../services/auth/password';
 import { extractClientIp } from '../login-guard/ip-extract';
 import { AuditLogger } from '../audit/logger';
 import { RecoveryService } from './service';
@@ -382,7 +382,7 @@ recoveryRouter.post('/reset-password', async (c) => {
     return c.json({ errors: [{ code: 'INVALID_RECOVERY_TOKEN' }] }, 401);
   }
 
-  const passwordHash = await hashPassword(parsed.data.password, targetPbkdf2Iterations(c.env as unknown as Record<string, unknown>));
+  const passwordHash = await hashPassword(parsed.data.password, targetPasswordPolicy(c.env as unknown as Record<string, unknown>));
   await c
     .get('db')
     .update(users)

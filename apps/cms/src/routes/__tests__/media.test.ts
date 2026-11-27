@@ -1,6 +1,12 @@
 import { Hono } from 'hono';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mediaRouter } from '../media';
+
+// The site's anonymous `public` role, per test (#1012). null = no public access.
+let publicRoleId: string | null = null;
+vi.mock('../../services/auth/public-role', () => ({
+  resolvePublicRoleIdCached: vi.fn(async () => publicRoleId),
+}));
 import { PermissionService, type CompiledPermission } from '../../services/permission-service';
 import type { AppEnv } from '../../env';
 
@@ -167,7 +173,7 @@ describe('media cache policy (#388)', () => {
     const res = await appFor(storedObject({ contentHash: version })).request('/media/logo.png');
 
     expect(res.status).toBe(200);
-    expect(res.headers.get('Cache-Control')).toBe('public, max-age=300, must-revalidate');
+    expect(res.headers.get('Cache-Control')).toBe('private, max-age=300, must-revalidate');
     expect(res.headers.get('Cache-Control')).not.toContain('immutable');
     expect(res.headers.get('X-Lumi-Media-Version')).toBe(version);
     expect(res.headers.get('ETag')).toMatch(/^W\/"[0-9a-f]{32}"$/);
@@ -179,7 +185,7 @@ describe('media cache policy (#388)', () => {
     const res = await appFor(storedObject({ contentHash: version })).request(`/media/logo.png?v=${version}`);
 
     expect(res.status).toBe(200);
-    expect(res.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
+    expect(res.headers.get('Cache-Control')).toBe('private, max-age=31536000, immutable');
   });
 
   it('downgrades a stale pin instead of freezing current bytes for a year', async () => {
@@ -188,7 +194,7 @@ describe('media cache policy (#388)', () => {
     const res = await appFor(storedObject({ contentHash: version })).request('/media/logo.png?v=deadbeef');
 
     expect(res.status).toBe(200);
-    expect(res.headers.get('Cache-Control')).toBe('public, max-age=300, must-revalidate');
+    expect(res.headers.get('Cache-Control')).toBe('private, max-age=300, must-revalidate');
   });
 
   it('answers a matching If-None-Match with 304 and no body-length header', async () => {
@@ -210,9 +216,83 @@ describe('media cache policy (#388)', () => {
     // written through the streaming `PUT /files/upload/:key` receiver.
     const res = await appFor(storedObject()).request('/media/logo.png');
 
-    expect(res.headers.get('Cache-Control')).toBe('public, max-age=300, must-revalidate');
+    expect(res.headers.get('Cache-Control')).toBe('private, max-age=300, must-revalidate');
     expect(res.headers.get('X-Lumi-Media-Version')).toBeNull();
     expect(res.headers.get('ETag')).toBeNull();
+  });
+});
+
+/**
+ * #1012 — `public` only when any caller could have read the bytes: the site's
+ * anonymous `public` role grants `media:read` with no row rule. Otherwise a
+ * shared cache must not store the response.
+ */
+describe('media cache scope (#1012)', () => {
+  const bytes = Buffer.from('hello');
+  const version = '2cf24dba5fb0a30e26e83b2ac5b9e29e';
+  function storedObject(metadata: Record<string, string> = {}) {
+    return mockStorage({
+      get: vi.fn(async () => ({
+        body: Buffer.from(bytes),
+        size: bytes.byteLength,
+        contentType: 'image/png',
+        metadata: { contentType: 'image/png', ...metadata },
+      })),
+    });
+  }
+  afterEach(() => {
+    publicRoleId = null;
+    vi.restoreAllMocks();
+  });
+
+  /** canAccess as the caller (user-a) and as the anonymous public role. */
+  function grant({ user, anonymous }: { user: CompiledPermission | null; anonymous: CompiledPermission | null }) {
+    vi.spyOn(PermissionService.prototype, 'canAccess').mockImplementation(async function (this: PermissionService) {
+      const ctx = (this as unknown as { deps: { ctx: { roleId: string | null } } }).deps.ctx;
+      return ctx.roleId === 'role-public' ? anonymous : user;
+    });
+  }
+
+  it('an authorised read on a site without public access is private', async () => {
+    grant({ user: allowPermission, anonymous: null });
+    const res = await appFor(storedObject({ contentHash: version })).request(`/media/logo.png?v=${version}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Cache-Control')).toBe('private, max-age=31536000, immutable');
+    expect(res.headers.get('Vary')).toBeNull();
+  });
+
+  it('is private when the public role exists but cannot read media', async () => {
+    publicRoleId = 'role-public';
+    grant({ user: allowPermission, anonymous: null });
+    const res = await appFor(storedObject({ contentHash: version })).request('/media/logo.png');
+    expect(res.headers.get('Cache-Control')).toBe('private, max-age=300, must-revalidate');
+  });
+
+  it('is private when the public grant carries a row rule', async () => {
+    publicRoleId = 'role-public';
+    grant({ user: allowPermission, anonymous: { ...allowPermission, rule: { folder: { _eq: 'public' } } } as CompiledPermission });
+    const res = await appFor(storedObject({ contentHash: version })).request('/media/logo.png');
+    expect(res.headers.get('Cache-Control')).toBe('private, max-age=300, must-revalidate');
+  });
+
+  it('is public, and varies by site, when anonymous callers may read media', async () => {
+    publicRoleId = 'role-public';
+    grant({ user: allowPermission, anonymous: allowPermission });
+    const app = appFor(storedObject({ contentHash: version }));
+    const pinned = await app.request(`/media/logo.png?v=${version}`);
+    expect(pinned.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
+    expect(pinned.headers.get('Vary')).toBe('X-Lumi-Site');
+    const unpinned = await app.request('/media/logo.png');
+    expect(unpinned.headers.get('Cache-Control')).toBe('public, max-age=300, must-revalidate');
+  });
+
+  it('a 304 keeps the same scope', async () => {
+    grant({ user: allowPermission, anonymous: null });
+    const app = appFor(storedObject({ contentHash: version }));
+    const etag = (await app.request('/media/logo.png')).headers.get('ETag')!;
+    const revalidated = await app.request('/media/logo.png', { headers: { 'If-None-Match': etag } });
+    expect(revalidated.status).toBe(304);
+    expect(revalidated.headers.get('Cache-Control')).toBe('private, max-age=300, must-revalidate');
   });
 });
 
