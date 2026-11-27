@@ -2,8 +2,9 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Context } from 'hono';
 import type { AppEnv } from '../env';
-import { type PermissionAction } from '../services/permission-service';
-import { permissionServiceForRequest } from '../services/item-service-factory';
+import { PermissionService, type PermissionAction } from '../services/permission-service';
+import { buildRequestPermissionContext, permissionServiceForRequest } from '../services/item-service-factory';
+import { resolvePublicRoleIdCached } from '../services/auth/public-role';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { scopeSite, settings, transformPresets } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
@@ -114,10 +115,52 @@ function publicKey(siteId: string, key: string): string {
 const CONTENT_HASH_METADATA = 'contentHash';
 
 /** Revalidating default: safe on a key whose bytes can be replaced in place. */
-const MEDIA_MUTABLE_CACHE_CONTROL = 'public, max-age=300, must-revalidate';
+const MEDIA_MUTABLE_CACHE_CONTROL = 'max-age=300, must-revalidate';
 
 /** One year, unrevocable. Only ever correct on a version-pinned URL. */
-const MEDIA_IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+const MEDIA_IMMUTABLE_CACHE_CONTROL = 'max-age=31536000, immutable';
+
+/**
+ * Who may cache a media response (#1012). `public` lets a shared cache or CDN
+ * serve the stored bytes to any later caller, so it is only correct when any
+ * caller could have read them: the site's anonymous `public` role grants
+ * `media:read` with no row rule. Everything else is `private` (the browser
+ * of the caller who was authorised may still cache it).
+ */
+export type MediaCacheScope = 'public' | 'private';
+
+/**
+ * Evaluate the site's `public` role as an anonymous caller with no IP and no
+ * headers would see it. A grant limited by a row rule, an IP or anything that
+ * fails to resolve reads as `private`: wrongly private only costs a cache
+ * miss, wrongly public serves permission-bound bytes to strangers.
+ */
+export async function mediaCacheScope(c: Context<AppEnv>): Promise<MediaCacheScope> {
+  try {
+    const db = c.get('db');
+    const siteId = c.get('siteId');
+    const cache = c.get('runtime')?.cache;
+    const auth = c.get('auth');
+    const roleId = auth?.type === 'anonymous' && auth.roleId
+      ? auth.roleId
+      : await resolvePublicRoleIdCached(db, siteId, cache);
+    if (!roleId) return 'private';
+    const anonymous = new PermissionService({
+      db,
+      cache,
+      ctx: buildRequestPermissionContext({
+        auth: { type: 'anonymous', roleId, roles: [roleId], raw: { anonymous: true } },
+        siteId,
+        headers: {},
+        ip: null,
+      }),
+    });
+    const perm = await anonymous.canAccess('media', 'read');
+    return perm && perm.rule == null ? 'public' : 'private';
+  } catch {
+    return 'private';
+  }
+}
 
 /** Short content fingerprint over the uploaded bytes. */
 async function contentHashOf(bytes: BufferSource): Promise<string> {
@@ -150,11 +193,23 @@ async function contentHashOf(bytes: BufferSource): Promise<string> {
  * face value — the URL still changes with the content, which is what the
  * promise rests on.
  */
-function mediaCacheControl(requestUrl: string, storedVersion: string | null): string {
+export function mediaCacheControl(requestUrl: string, storedVersion: string | null, scope: MediaCacheScope): string {
   const pinned = new URL(requestUrl).searchParams.get('v');
-  if (!pinned) return MEDIA_MUTABLE_CACHE_CONTROL;
-  if (storedVersion !== null && pinned !== storedVersion) return MEDIA_MUTABLE_CACHE_CONTROL;
-  return MEDIA_IMMUTABLE_CACHE_CONTROL;
+  const policy = !pinned || (storedVersion !== null && pinned !== storedVersion)
+    ? MEDIA_MUTABLE_CACHE_CONTROL
+    : MEDIA_IMMUTABLE_CACHE_CONTROL;
+  return `${scope}, ${policy}`;
+}
+
+/**
+ * Cache headers for a media response: the `Cache-Control` above and, when it
+ * is `public`, `Vary: X-Lumi-Site` so a shared cache keyed on the URL never
+ * serves one site's object for another site's request to the same path.
+ */
+function mediaCacheHeaders(requestUrl: string, storedVersion: string | null, scope: MediaCacheScope): Record<string, string> {
+  const headers: Record<string, string> = { 'Cache-Control': mediaCacheControl(requestUrl, storedVersion, scope) };
+  if (scope === 'public') headers.Vary = 'X-Lumi-Site';
+  return headers;
 }
 
 /** Stored content fingerprint, or null for objects written before it existed. */
@@ -322,7 +377,7 @@ mediaRouter.get('/:key{.+}', async (c) => {
         const derivativeKey = transformKey(scoped, dsl);
         const etag = await weakEtag([version, derivativeKey]);
         const headers: Record<string, string> = {
-          'Cache-Control': mediaCacheControl(c.req.url, version),
+          ...mediaCacheHeaders(c.req.url, version, await mediaCacheScope(c)),
           ETag: etag,
           'X-Transform-Key': derivativeKey,
           'X-Content-Type-Options': 'nosniff',
@@ -352,7 +407,9 @@ mediaRouter.get('/:key{.+}', async (c) => {
     // here, so there is no stored fingerprint to check the pin against.
     const targetUrl = media.getUrl(scoped, options);
     const res = c.redirect(targetUrl, 302);
-    res.headers.set('Cache-Control', mediaCacheControl(c.req.url, null));
+    for (const [name, value] of Object.entries(mediaCacheHeaders(c.req.url, null, await mediaCacheScope(c)))) {
+      res.headers.set(name, value);
+    }
     res.headers.set('X-Transform-Key', transformKey(scoped, dsl));
     return res;
   }
@@ -378,7 +435,7 @@ mediaRouter.get('/:key{.+}', async (c) => {
     // `Cache-Control` at all and letting each cache apply its own heuristic
     // (#388). Versioned only when the caller pinned a matching `?v=`.
     const version = storedVersionOf(obj);
-    headers['Cache-Control'] = mediaCacheControl(c.req.url, version);
+    Object.assign(headers, mediaCacheHeaders(c.req.url, version, await mediaCacheScope(c)));
     if (version) {
       // Surfaced so a client can build the pinned `?v=` URL from a plain GET,
       // without having to have seen the upload response.

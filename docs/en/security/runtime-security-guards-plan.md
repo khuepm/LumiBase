@@ -1,10 +1,10 @@
 ---
-version: 7
-lastUpdated: 2026-11-14T02:15:35.397Z
+version: 8
+lastUpdated: 2026-11-21T12:08:31.863Z
 sourceLang: en
-contentHash: 40ce7652d5196dc5
-codeVerified: 2026-11-14T02:15:35.397Z
-codeVerifiedHash: 40ce7652d5196dc5
+contentHash: 46d9db0365e85cd5
+codeVerified: 2026-11-21T12:08:31.863Z
+codeVerifiedHash: 46d9db0365e85cd5
 codeVerifiedClaims: 36
 ---
 
@@ -79,7 +79,7 @@ team can understand, review, and later enforce Harness usage of it.
    (and its script executed) under the app origin when opened top-level. Full
    detail, including magic-byte sniffing, the polyglot corpus and the SVG
    sanitiser: [upload-security.md](./upload-security.md). This composes with the global CSP
-   (`script-src 'self'`, no `unsafe-inline`) as defense-in-depth. The storage
+   (`script-src 'self' blob:`, no `unsafe-inline`) as defense-in-depth. The storage
    adapters map the logical `contentType` onto the native R2 `httpMetadata` /
    S3 `ContentType` field so the served `Content-Type` round-trips correctly
    (previously it was written only to custom metadata and came back undefined).

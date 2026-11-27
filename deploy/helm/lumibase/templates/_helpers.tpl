@@ -330,3 +330,42 @@ so concurrent runners serialise and the later ones find nothing to apply.
       app.kubernetes.io/component: migrate
 {{- end }}
 {{- end -}}
+
+{{/*
+Egress rules for pods that run extension code (CMS and worker), when
+networkPolicy.egress.restrict is on (#1009, ADR-015). Allows DNS, the
+release's own bundled data services, `allowTo` peers, and public addresses;
+blocks cloud metadata, private, CGNAT and link-local ranges, so an extension
+(in process or in its child process) cannot reach them outside ctx.fetch.
+*/}}
+{{- define "lumibase.restrictedEgress" -}}
+- to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+  ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+- to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/instance: {{ .Release.Name }}
+{{- with .Values.networkPolicy.egress.allowTo }}
+- to:
+    {{- toYaml . | nindent 4 }}
+{{- end }}
+- to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+          {{- toYaml .Values.networkPolicy.egress.blockedCidrs | nindent 10 }}
+{{- if .Values.networkPolicy.egress.ipv6 }}
+    - ipBlock:
+        cidr: ::/0
+        except:
+          {{- toYaml .Values.networkPolicy.egress.blockedCidrsV6 | nindent 10 }}
+{{- end }}
+{{- end -}}

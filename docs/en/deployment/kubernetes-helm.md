@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 5
-lastUpdated: 2026-11-15T19:31:37.541Z
-contentHash: 9490b1c95961333c
-codeVerified: 2026-11-15T19:31:37.541Z
-codeVerifiedHash: 9490b1c95961333c
+version: 6
+lastUpdated: 2026-11-21T12:08:31.012Z
+contentHash: 49dd5613ca139ca4
+codeVerified: 2026-11-21T12:08:31.012Z
+codeVerifiedHash: 49dd5613ca139ca4
 codeVerifiedClaims: 36
 ---
 
@@ -331,8 +331,33 @@ With `networkPolicy.enabled` the web pods accept traffic only on their HTTP port
 (from `networkPolicy.ingressFrom` when set), the worker accepts none (traffic from
 the pod's own node, which carries the kubelet probes, is always allowed), and the bundled PostgreSQL, Redis and
 Meilisearch accept only the release's web and worker pods (and the migration
-Job's pods in `migrations.mode=job`). Egress is not
-restricted: the CMS calls object storage, LLM providers and webhooks.
+Job's pods in `migrations.mode=job`).
+
+Egress is open by default: the CMS calls object storage, LLM providers and
+webhooks. Extension code can also open its own connections, outside the
+capability-checked `ctx.fetch` (ADR-015, #1009). In production, turn on
+`networkPolicy.egress.restrict` so the CMS and worker pods cannot reach cloud
+metadata or private networks:
+
+```yaml
+networkPolicy:
+  enabled: true
+  egress:
+    restrict: true
+    # A managed database or SMTP relay on a private address:
+    allowTo:
+      - ipBlock:
+          cidr: 10.20.0.15/32
+```
+
+This allows DNS (`kube-dns`), the release's bundled services, the `allowTo`
+peers and public addresses. It blocks `169.254.0.0/16`, `10.0.0.0/8`,
+`172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10` and `127.0.0.0/8`
+(`networkPolicy.egress.blockedCidrs`). Set `networkPolicy.egress.ipv6: true` on
+a dual-stack cluster to allow public IPv6 as well. The CNI must enforce egress
+policies (Calico, Cilium, …). The chart then sets
+`LUMIBASE_EGRESS_RESTRICTED=true`, which silences the CMS startup warning and
+`lumibase doctor --security`.
 
 ## Verify
 

@@ -1,12 +1,12 @@
 ---
 title: Caching
 description: Edge HTTP cache, application CacheProvider, and cache-penetration defences
-version: 10
-lastUpdated: 2026-11-18T04:25:25.638Z
+version: 11
+lastUpdated: 2026-11-23T11:10:20.987Z
 sourceLang: en
-contentHash: 223bc6999f6ddd0d
-codeVerified: 2026-11-18T04:25:25.638Z
-codeVerifiedHash: 223bc6999f6ddd0d
+contentHash: 957c988596ff7568
+codeVerified: 2026-11-23T11:10:20.987Z
+codeVerifiedHash: 957c988596ff7568
 codeVerifiedClaims: 18
 ---
 
@@ -78,9 +78,20 @@ The store is module-level and bounded (256 entries, 5s TTL). Both matter: a per-
 
 | URL | `Cache-Control` |
 |-----|-----------------|
-| `/api/v1/media/logo.png` | `public, max-age=300, must-revalidate` |
-| `/api/v1/media/logo.png?v=<contentHash>` (pin matches stored bytes) | `public, max-age=31536000, immutable` |
-| `/api/v1/media/logo.png?v=<stale>` (pin does not match) | `public, max-age=300, must-revalidate` |
+| `/api/v1/media/logo.png` | `<scope>, max-age=300, must-revalidate` |
+| `/api/v1/media/logo.png?v=<contentHash>` (pin matches stored bytes) | `<scope>, max-age=31536000, immutable` |
+| `/api/v1/media/logo.png?v=<stale>` (pin does not match) | `<scope>, max-age=300, must-revalidate` |
+
+`<scope>` decides who may store the response (#1012). Every media read checks
+`media:read` for the caller, so a shared cache or CDN may only keep bytes that
+any caller could have read:
+
+- `public`, with `Vary: X-Lumi-Site`, when the site's anonymous `public` role
+  grants `media:read` with no row rule. Public sites keep CDN caching, and the
+  site selector is part of the cache key.
+- `private` in every other case: no public access, a public grant limited by a
+  row rule, or a check that cannot be resolved. Only the caller's own browser
+  stores it.
 
 The fingerprint is written to storage metadata (`contentHash`) at upload time and returned as `version` in the upload response. A plain `GET` also reports it as `X-Lumi-Media-Version`, so a client can build the pinned URL without having seen the upload. Responses carry a weak `ETag` over the fingerprint and answer `If-None-Match` with `304`.
 

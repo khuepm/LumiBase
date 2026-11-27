@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-11-21T00:28:04.283Z
+version: 4
+lastUpdated: 2026-11-21T12:08:32.348Z
 sourceLang: en
 translatedFrom: en
-sourceHash: caac29248d95f271
+sourceHash: 493dacdb586f3c5b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-21T00:28:04.283Z
-codeVerifiedHash: caac29248d95f271
+codeVerified: 2026-11-21T12:08:32.348Z
+codeVerifiedHash: 493dacdb586f3c5b
 codeVerifiedClaims: 16
 ---
 
@@ -47,7 +47,7 @@ vẫn là việc của frontend, và phải làm gì vào ngày có điều bấ
 | Đặc quyền tối thiểu | Chỉ cấp `lumibase_pages` cho người sửa trang; giới hạn bằng rule theo dòng. Giữ extension và API key cho admin. Agent không thể cài extension, tạo key, hay đổi setting, role hoặc webhook mà không có người, ở mọi mức autonomy. |
 | Giám sát toàn vẹn | Lọc tab audit bảo mật theo `admin_change` (ai đổi gì, từ đâu) và `content_integrity_alert` (nội dung đáng ngờ đã lên live). |
 | Kiểm soát upload file | Giữ `FILE_UPLOAD_ALLOWED_MIME_TYPES` trong catalogue; mặc định không upload được file nén và script. |
-| Vá lỗi và thành phần tin cậy | Extension chỉ nạp từ `EXTENSION_BUNDLE_ORIGINS` với chữ ký hợp lệ; đổi bundle sẽ được kiểm lại. Trên Node ở production, mỗi extension chạy trong process riêng, không có secret của CMS (`EXTENSION_RUNTIME`, [ADR-015](../architecture/decisions/adr-015-extension-isolation.md)). |
+| Vá lỗi và thành phần tin cậy | Extension chỉ nạp từ `EXTENSION_BUNDLE_ORIGINS` với chữ ký hợp lệ; đổi bundle sẽ được kiểm lại. Trên Node ở production, mỗi extension chạy trong process riêng, không có secret của CMS (`EXTENSION_RUNTIME`, [ADR-015](../architecture/decisions/adr-015-extension-isolation.md)). Hãy giới hạn egress của CMS để mã extension không chạm được tới metadata của cloud hay mạng private (Helm `networkPolicy.egress.restrict`, rồi `LUMIBASE_EGRESS_RESTRICTED=true`). Trên Cloudflare Workers, chỉ liệt kê origin bạn kiểm soát và phục vụ URL bundle bất biến, định địa chỉ theo nội dung. |
 | Tập trung bằng chứng | Xuất audit log (`GET /api/v1/admin/security/audit-log/export`) ra nơi lưu trữ ngoài CMS. |
 
 Chạy `lumibase doctor --security` với môi trường production của bạn; lệnh này
